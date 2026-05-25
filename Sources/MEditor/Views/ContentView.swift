@@ -47,7 +47,7 @@ struct ContentView: View {
             Image(systemName: "doc.text.magnifyingglass")
                 .font(.system(size: 48))
                 .foregroundStyle(.secondary)
-            Text("MarkEdit")
+            Text("MEditor")
                 .font(.largeTitle)
                 .fontWeight(.bold)
             Text("Markdown & HTML Editor")

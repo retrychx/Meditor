@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "MarkEdit",
+    name: "MEditor",
     platforms: [.macOS(.v14)],
     dependencies: [
         .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.0"),
@@ -10,7 +10,7 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "MarkEdit",
+            name: "MEditor",
             dependencies: [
                 .product(name: "MarkdownUI", package: "swift-markdown-ui"),
                 .product(name: "Splash", package: "Splash"),

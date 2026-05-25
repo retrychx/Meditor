@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct MarkEditApp: App {
+struct MEditorApp: App {
     @State private var appState = AppState()
 
     var body: some Scene {
