@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body { background: var(--bg); }
+  #editor { height: 100%; }
+  .cm-editor { height: 100%; }
+  .cm-scroller { overflow: auto; font-family: 'SF Mono', Menlo, Consolas, monospace !important; font-size: 14px !important; }
+  .cm-gutters {
+    border-right: 1px solid var(--gutter-border) !important;
+    background: var(--gutter-bg) !important;
+  }
+  .cm-activeLineGutter { background: var(--active-gutter) !important; }
+
+  :root {
+    --bg: #ffffff;
+    --gutter-bg: #f5f5f5;
+    --gutter-border: #e0e0e0;
+    --active-gutter: #e8e8e8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1e1e1e;
+      --gutter-bg: #252526;
+      --gutter-border: #333333;
+      --active-gutter: #2a2a2b;
+    }
+  }
+</style>
+</head>
+<body>
+<div id="editor"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "codemirror": "https://cdn.jsdelivr.net/npm/codemirror@6.0.1/+esm",
+    "@codemirror/state": "https://cdn.jsdelivr.net/npm/@codemirror/state@6.4.1/+esm",
+    "@codemirror/view": "https://cdn.jsdelivr.net/npm/@codemirror/view@6.29.1/+esm",
+    "@codemirror/commands": "https://cdn.jsdelivr.net/npm/@codemirror/commands@6.6.2/+esm",
+    "@codemirror/language": "https://cdn.jsdelivr.net/npm/@codemirror/language@6.10.3/+esm",
+    "@codemirror/lang-markdown": "https://cdn.jsdelivr.net/npm/@codemirror/lang-markdown@6.3.1/+esm",
+    "@codemirror/lang-html": "https://cdn.jsdelivr.net/npm/@codemirror/lang-html@6.4.9/+esm",
+    "@codemirror/lang-css": "https://cdn.jsdelivr.net/npm/@codemirror/lang-css@6.3.1/+esm",
+    "@codemirror/lang-javascript": "https://cdn.jsdelivr.net/npm/@codemirror/lang-javascript@6.2.2/+esm",
+    "@codemirror/theme-one-dark": "https://cdn.jsdelivr.net/npm/@codemirror/theme-one-dark@6.1.2/+esm",
+    "@codemirror/autocomplete": "https://cdn.jsdelivr.net/npm/@codemirror/autocomplete@6.18.1/+esm",
+    "@codemirror/search": "https://cdn.jsdelivr.net/npm/@codemirror/search@6.5.7/+esm"
+  }
+}
+</script>
+
+<script type="module">
+import { EditorState } from "@codemirror/state";
+import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, highlightSpecialChars } from "@codemirror/view";
+import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, indentOnInput } from "@codemirror/language";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { html } from "@codemirror/lang-html";
+import { oneDark } from "@codemirror/theme-one-dark";
+import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from "@codemirror/autocomplete";
+import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
+
+let editor = null;
+let isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+let currentContent = '';
+let callbacksReady = false;
+
+function sendToSwift(type, data = {}) {
+  if (!window.webkit || !window.webkit.messageHandlers || !window.webkit.messageHandlers.editorMessage) return;
+  try {
+    window.webkit.messageHandlers.editorMessage.postMessage({ type, ...data });
+  } catch(e) {
+    // Ignore errors during message passing
+  }
+}
+
+let changeTimeout = null;
+
+function createEditor(content, mode) {
+  const lang = mode === 'html' ? html() : markdown();
+
+  const theme = isDark ? [oneDark] : [];
+
+  const state = EditorState.create({
+    doc: content || '',
+    extensions: [
+      lineNumbers(),
+      highlightActiveLineGutter(),
+      highlightActiveLine(),
+      drawSelection(),
+      highlightSpecialChars(),
+      foldGutter(),
+      bracketMatching(),
+      closeBrackets(),
+      autocompletion(),
+      indentOnInput(),
+      highlightSelectionMatches(),
+      history(),
+      keymap.of([
+        ...defaultKeymap,
+        ...searchKeymap,
+        ...closeBracketsKeymap,
+        ...completionKeymap,
+        ...historyKeymap,
+      ]),
+      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+      lang,
+      ...theme,
+      EditorView.updateListener.of(update => {
+        if (update.docChanged) {
+          const text = update.state.doc.toString();
+          currentContent = text;
+
+          if (changeTimeout) clearTimeout(changeTimeout);
+          changeTimeout = setTimeout(() => {
+            sendToSwift('contentChanged', { content: text });
+          }, 50);
+        }
+      }),
+      EditorView.theme({
+        '&': { backgroundColor: isDark ? '#1e1e1e' : '#fafafa' },
+        '.cm-content': {
+          caretColor: isDark ? '#fff' : '#000',
+          fontFamily: "'SF Mono', Menlo, Consolas, monospace",
+          fontSize: '14px',
+          lineHeight: '1.6',
+          padding: '8px 0',
+        },
+        '.cm-line': { padding: '0 8px' },
+        '&.cm-focused .cm-cursor': { borderLeftColor: isDark ? '#fff' : '#000' },
+        '.cm-selectionBackground, ::selection': { background: isDark ? '#264f78' : '#d7d4f0' },
+        '.cm-activeLine': { background: isDark ? '#2a2d2e' : '#f0f0f0' },
+      }),
+    ]
+  });
+
+  if (editor) {
+    editor.destroy();
+  }
+
+  editor = new EditorView({
+    state,
+    parent: document.getElementById('editor')
+  });
+
+  // Signal ready
+  if (!callbacksReady) {
+    callbacksReady = true;
+    setTimeout(() => sendToSwift('ready'), 100);
+  }
+}
+
+// API for Swift to call
+window.setContent = function(content, mode) {
+  currentContent = content || '';
+  createEditor(content || '', mode || 'markdown');
+};
+
+window.getContent = function() {
+  return editor ? editor.state.doc.toString() : '';
+};
+
+// Listen for system appearance changes
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+  isDark = e.matches;
+  if (editor) {
+    const content = editor.state.doc.toString();
+    // We need to know the current mode. The Swift side can set it.
+    createEditor(content, window._currentMode || 'markdown');
+  }
+});
+
+// Initial creation with placeholder
+createEditor('', 'markdown');
+
+// Tell Swift we're ready
+document.addEventListener('DOMContentLoaded', () => {
+  sendToSwift('ready');
+});
+</script>
+</body>
+</html>
