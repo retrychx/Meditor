@@ -22,9 +22,19 @@ A native macOS Markdown editor built with SwiftUI.
 ## Build & Run
 
 ```bash
+# Build
 swift build
+
+# Run directly (no app icon or document associations)
 swift run
+
+# Or create a proper .app bundle (with icon & .md file associations)
+bash scripts/bundle.sh
+open .build/debug/MEditor.app
 ```
+
+> **Note:** The `.app` bundle requires ad-hoc code signing (automatic via `bundle.sh`).
+> After opening, `.md` and `.html` files can be associated with MEditor via Get Info.
 
 Or open in Xcode:
 
@@ -37,6 +47,7 @@ open Package.swift
 ```
 Sources/MEditor/
 ├── MEditorApp.swift           # App entry point
+├── Info.plist                 # Bundle config, document type associations
 ├── Models/
 │   ├── EditorTab.swift        # Editor tab management
 │   └── FileItem.swift         # File representation
@@ -44,6 +55,7 @@ Sources/MEditor/
 │   ├── FileServiceProtocol.swift
 │   └── SyntaxHighlightEngine.swift
 ├── Resources/
+│   ├── AppIcon.icns           # App icon
 │   └── Preview/               # JS libraries (marked, highlight, mermaid)
 ├── Services/
 │   ├── FileService.swift      # File I/O operations
