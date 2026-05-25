@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Sources/MEditor/Resources/AppIcon.icns" width="128" alt="MEditor 图标" />
+  <img src="assets/icon.png" width="128" alt="MEditor 图标" />
 </p>
 
 <h1 align="center">MEditor</h1>
@@ -81,7 +81,7 @@ MEditor/
 ├── scripts/
 │   └── bundle.sh                # .app 包组装脚本
 ├── docs/
-│   └── code-review-and-roadmap.md  # 代码质量分析 & 功能路线图
+│   └── code-review-and-roadmap.zh.md  # 代码质量分析 & 功能路线图
 └── Sources/MEditor/
     ├── MEditorApp.swift         # 应用入口 & @main 结构体
     ├── Info.plist               # 应用配置 & 文档类型关联
@@ -128,7 +128,7 @@ MEditor/
 
 ## 🔍 代码质量与路线图
 
-详见 [`docs/code-review-and-roadmap.md`](docs/code-review-and-roadmap.md)（中文完整版）。
+详见 [`docs/code-review-and-roadmap.zh.md`](docs/code-review-and-roadmap.zh.md)（中文完整版）。
 
 简要评价：
 
@@ -144,8 +144,8 @@ MEditor/
 ### 路线图概要
 
 **P1（优先）**
-- [ ] 应用图标 ✓ 已完成
-- [ ] 文档类型关联 ✓ 已完成
+- [x] 应用图标
+- [x] 文档类型关联
 - [ ] 编辑器字体/字号设置
 - [ ] 偏好设置窗口
 - [ ] 自动保存 + 会话恢复

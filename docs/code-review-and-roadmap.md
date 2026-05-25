@@ -1,119 +1,119 @@
-# MEditor 代码质量评审与功能路线图
+# MEditor — Code Quality Review & Feature Roadmap
 
-> 评审日期：2026-05-26
-> 项目版本：初版（MarkEdit → MEditor 重命名后）
-
----
-
-## 项目概览
-
-| 维度 | 数据 |
-|------|------|
-| Swift 源文件 | 23 个，共 1,350 行代码 |
-| HTML/CSS/JS 资源 | 4 个文件（~2,700 行，含嵌入样式和 JS 库） |
-| 架构层次 | Models / Protocols / Services / ViewModels / Views |
-| 编译状态 | ✅ 零错误零警告 |
-| macOS 目标 | 14.0+ (Sonoma) |
-| SPM 依赖 | swift-markdown-ui, Splash（已不用） |
+> Review date: 2026-05-26
+> Project version: Initial release (post MarkEdit → MEditor rename)
 
 ---
 
-## 一、代码质量分析
+## Project Overview
 
-### ✅ 优点
-
-**1. 架构设计清晰**
-- Protocol 层抽象到位 — `FileServiceProtocol` / `SyntaxHighlightEngine` 方便测试和扩展
-- Service 注册模式 — `HighlightService.shared.register()` 易于添加新的语言引擎
-- `@Observable` macro 替代 Combine，状态管理简洁
-
-**2. 性能边界考虑全面**
-- 大文件（>500KB）跳过 regex 高亮，防止 UI 冻结
-- 内容更新 50ms 防抖 + 高亮 300ms 防抖，打字不卡顿
-- Mermaid XSS 防护使用 JSON encoder 而非字符串拼接
-- 滚动双向同步的防循环机制（`isProgrammaticScroll` 标记 100ms 重置）
-
-**3. macOS 原生风格**
-- 使用 `NSVisualEffectView` / `NSTextView` / `WKWebView` 等原生组件
-- 支持 macOS 深色/浅色模式自适应
-- 拖拽分隔线手势热区（6px）与视觉线（1px）分离，交互细致
-
-**4. 代码组织合理**
-- 目录结构与职责对应清晰
-- 命名一致，SwiftUI + AppKit 边界明确
+| Metric | Value |
+|--------|-------|
+| Swift source files | 23 files, ~1,350 lines of code |
+| HTML/CSS/JS resources | 4 files (~2,700 lines, including embedded styles and JS libs) |
+| Architecture layers | Models / Protocols / Services / ViewModels / Views |
+| Build status | ✅ Zero errors, zero warnings |
+| macOS target | 14.0+ (Sonoma) |
+| SPM dependencies | swift-markdown-ui, Splash (unused) |
 
 ---
 
-### ⚠️ 待改进问题
+## 1. Code Quality Analysis
 
-#### 中优先级
+### ✅ Strengths
 
-| # | 问题 | 文件 | 说明 |
-|---|------|------|------|
-| 1 | **HTML/JS/CSS 嵌入 Swift 字符串** | `MarkdownWebPreview.swift` | ~300 行的 CSS+JS+HTML 以 `"""` 字面量嵌入，难以维护和版本管理。应抽为独立 `.html` 模板文件，运行时替换占位符 |
-| 2 | **资源复制代码重复** | `MarkdownWebPreview.swift:386-413` | `prepareResources()` 中 3 个 JS 文件的复制逻辑完全一致，可用数组循环或 `copyIfNeeded` 方法抽取 |
-| 3 | **FileSidebar List 重复** | `FileSidebar.swift:61-96` | 搜索模式和非搜索模式的 List 代码几乎完全一样，只有数据源不同，可合并为一个条件数据源 |
-| 4 | **Bundle ID 残留** | `FileWatcherService.swift:16` | GCD 队列 label 仍为 `com.markedit.filewatcher`，应改为 `com.meditor.filewatcher` |
-| 5 | **Cache 目录硬编码** | `MarkdownWebPreview.swift:375` | `com.markedit.preview` 同样残留旧 bundle ID |
+**1. Clean Architecture**
+- Protocol-oriented design — `FileServiceProtocol` / `SyntaxHighlightEngine` for testability and extensibility
+- Service registry pattern — `HighlightService.shared.register()` makes it easy to add new language engines
+- `@Observable` macro replaces Combine, keeping state management concise
 
-#### 低优先级
+**2. Performance Boundaries**
+- Large files (>500KB) skip regex highlighting to prevent UI freezes
+- Content update debounce (50ms) + highlight debounce (300ms) for smooth typing
+- Mermaid XSS protection via JSON encoder instead of string concatenation
+- Anti-loop protection in bidirectional scroll sync (`isProgrammaticScroll` flag, 100ms reset)
 
-| # | 问题 | 文件 | 说明 |
-|---|------|------|------|
-| 6 | **`try?` 静默失败** | `MarkdownWebPreview.swift:383-411` | JS 文件复制失败时无反馈，预览可能空白但用户看不到错误 |
-| 7 | **`openFolder()` 重复** | `MEditorApp.swift` + `ContentView.swift` | 两处有几乎一样的 `NSOpenPanel` 逻辑，可抽取为共享方法 |
-| 8 | **WKWebView 延迟释放** | `WebPreviewView.swift` | 未实现 `dismantleNSView`，WebView 内存不会及时回收 |
-| 9 | **高亮主题硬编码** | `MarkdownWebPreview.swift:89-120` | GitHub 主题 CSS 嵌入在 Swift 中，用户无法切换 |
-| 10 | **编辑器字体 14pt 硬编码** | `NativeEditorView.swift:29,177` | 用户无法调整字体和字号 |
-| 11 | **无单元测试** | — | 整个项目零测试文件 |
+**3. macOS Native Feel**
+- Uses native components: `NSVisualEffectView`, `NSTextView`, `WKWebView`
+- Full dark/light mode support
+- Drag dividers with 6px hit target vs 1px visual line — attention to UX detail
 
----
-
-## 二、功能路线图
-
-### P1 — 核心补齐（建议优先做）
-
-| 功能 | 说明 | 工作量 |
-|------|------|--------|
-| **应用图标** | 目前为空白默认图标，需配 `.icns` | ~1h |
-| **文档类型关联** | `Info.plist` 中注册 `.md` 文件类型，双击用 MEditor 打开 | ~1h |
-| **编辑器字体/字号设置** | 偏好面板，支持调整字体、字号、行高 | ~3h |
-| **偏好设置窗口** | 使用 `Settings` Scene（`SettingsLink`），放置字体、主题、自动保存选项 | ~2h |
-| **自动保存 + 会话恢复** | 退出时记住打开的文件列表和未保存内容，启动自动恢复 | ~4h |
-| **HTML 模板抽取** | 将内嵌的 HTML/CSS/JS 抽为独立模板文件 | ~2h |
-
-### P2 — 体验增强
-
-| 功能 | 说明 | 工作量 |
-|------|------|--------|
-| **Git 状态指示** | 侧栏文件旁显示 `M`/`A`/`?` 等状态标记 | ~5h |
-| **全局搜索** | `⌘⇧F` 递归搜索项目文件内容，显示匹配行 | ~6h |
-| **目录导航（Outline）** | 侧栏新增 Outline 面板，解析 `##` 标题生成目录树 | ~4h |
-| **图片粘贴/拖入** | 从剪贴板粘贴图片 → 自动保存到 `assets/` → 插入 `![](...)` | ~3h |
-| **代码折叠** | NSTextView 原生支持，增加折叠标记和交互 | ~5h |
-| **导出为 PDF/HTML** | 将 Markdown 导出为 PDF 或独立 HTML 文件 | ~2h |
-
-### P3 — 锦上添花
-
-| 功能 | 说明 | 工作量 |
-|------|------|--------|
-| **多窗口支持** | 每个窗口独立状态，`WindowGroup` + `openWindow` | ~6h |
-| **Vim 模式** | 嵌入 vim 按键映射 | 大 |
-| **CSV/JSON/Log 预览** | 格式化展示非 Markdown 文件 | ~4h |
-| **打字机模式** | 编辑时当前行始终居中（iA Writer 风格） | ~3h |
-| **字数统计** | 状态栏可选显示单词/字符/行数 | ~1h |
-| **Minimap** | 编辑器右侧缩略图导航 | 大 |
-| **主题市场** | 用户可下载/切换编辑器高亮主题 | 大 |
+**4. Well-Organized Code**
+- Directory structure maps clearly to responsibilities
+- Consistent naming conventions, clear SwiftUI/AppKit boundary
 
 ---
 
-## 三、总体评价
+### ⚠️ Issues to Address
+
+#### Medium Priority
+
+| # | Issue | File | Description |
+|---|-------|------|-------------|
+| 1 | **HTML/CSS/JS embedded in Swift strings** | `MarkdownWebPreview.swift` | ~300 lines of CSS+JS+HTML in `"""` string literals. Should be extracted to standalone `.html` template files with runtime placeholder substitution |
+| 2 | **Resource copy code duplication** | `MarkdownWebPreview.swift:386-413` | `prepareResources()` replicates the same logic 3 times for each JS file. Refactor into a loop or `copyIfNeeded` helper |
+| 3 | **FileSidebar List duplication** | `FileSidebar.swift:61-96` | Search mode and non-search mode List views are nearly identical — only the data source differs. Can be merged |
+| 4 | **Stale bundle ID** | `FileWatcherService.swift:16` | GCD queue label still reads `com.markedit.filewatcher`, should be `com.meditor.filewatcher` |
+| 5 | **Hardcoded cache path** | `MarkdownWebPreview.swift:375` | `com.markedit.preview` — same stale bundle ID issue |
+
+#### Low Priority
+
+| # | Issue | File | Description |
+|---|-------|------|-------------|
+| 6 | **Silent `try?` failures** | `MarkdownWebPreview.swift:383-411` | JS file copy failures produce no feedback — preview goes blank with no error shown |
+| 7 | **`openFolder()` duplication** | `MEditorApp.swift` + `ContentView.swift` | Nearly identical `NSOpenPanel` logic in two places, could be extracted |
+| 8 | **WKWebView lingering** | `WebPreviewView.swift` | Missing `dismantleNSView` implementation, WebView memory not immediately reclaimed |
+| 9 | **Hardcoded highlight theme** | `MarkdownWebPreview.swift:89-120` | GitHub theme CSS embedded in Swift, no user theme selection |
+| 10 | **Hardcoded 14pt editor font** | `NativeEditorView.swift:29,177` | Font size and family not user-configurable |
+| 11 | **No unit tests** | — | Zero test files across the entire project |
+
+---
+
+## 2. Feature Roadmap
+
+### P1 — Core (Recommended First)
+
+| Feature | Description | Effort |
+|---------|-------------|--------|
+| **App icon** | Currently blank default icon; needs `.icns` | ~1h ✅ Done |
+| **Document type association** | Register `.md` files in `Info.plist` so double-click opens MEditor | ~1h ✅ Done |
+| **Editor font/size settings** | Preferences panel for font family, size, line height | ~3h |
+| **Preferences window** | Use `Settings` Scene (`SettingsLink`) for fonts, themes, auto-save | ~2h |
+| **Auto-save + session restore** | Remember open files and unsaved content across launches | ~4h |
+| **Extract HTML template** | Move inline HTML/CSS/JS out of Swift into standalone template files | ~2h |
+
+### P2 — Experience Enhancement
+
+| Feature | Description | Effort |
+|---------|-------------|--------|
+| **Git status indicators** | Show `M`/`A`/`?` badges next to files in sidebar | ~5h |
+| **Global search** | `⌘⇧F` to recursively search file contents with match preview | ~6h |
+| **Outline / TOC panel** | Parse `##` headings into a clickable table of contents sidebar | ~4h |
+| **Image paste/drop** | Paste images from clipboard → auto-save to `assets/` → insert `![](...)` | ~3h |
+| **Code folding** | NSTextView-native code folding with gutter markers | ~5h |
+| **Export to PDF/HTML** | Export rendered Markdown as PDF or standalone HTML | ~2h |
+
+### P3 — Polish
+
+| Feature | Description | Effort |
+|---------|-------------|--------|
+| **Multi-window** | Independent per-window state via `WindowGroup` + `openWindow` | ~6h |
+| **Vim mode** | Vim keybinding emulation in the editor | Large |
+| **CSV/JSON/Log preview** | Formatted preview for non-Markdown files | ~4h |
+| **Typewriter mode** | Current line stays centered (iA Writer style) | ~3h |
+| **Word/character count** | Optional word/char/line count in status bar | ~1h |
+| **Minimap** | Right-side thumbnail navigation | Large |
+| **Theme marketplace** | Downloadable editor highlight themes | Large |
+
+---
+
+## 3. Overall Assessment
 
 **7 / 10**
 
-作为初版项目，架构选型合理（SwiftUI + Observation + WKWebView），关键性能边界考虑到了，功能覆盖了 Markdown 编辑器的核心需求。
+As a first release, the architecture choices are solid (SwiftUI + Observation + WKWebView), key performance boundaries are considered, and it covers the core Markdown editor feature set.
 
-**最值得先做**：
-1. 将 HTML 模板从 Swift 字符串中抽离（后续修改样式轻松 10 倍）
-2. 配应用图标和文档类型关联
-3. 加偏好设置界面
+**Recommended next steps:**
+1. Extract HTML templates from Swift strings (makes style changes 10× easier)
+2. Add preferences window
+3. Implement session restore and auto-save
