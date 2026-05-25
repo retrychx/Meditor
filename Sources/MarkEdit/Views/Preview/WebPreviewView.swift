@@ -5,22 +5,33 @@ import WebKit
 struct WebPreviewView: NSViewRepresentable {
     let htmlContent: String
 
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
         webView.autoresizingMask = [.width, .height]
 
-        if !htmlContent.isEmpty {
-            webView.loadHTMLString(htmlContent, baseURL: nil)
-        }
+        context.coordinator.lastLoadedContent = htmlContent
+        webView.loadHTMLString(htmlContent, baseURL: nil)
 
         return webView
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
-        if !htmlContent.isEmpty {
-            webView.loadHTMLString(htmlContent, baseURL: nil)
-        }
+        guard htmlContent != context.coordinator.lastLoadedContent else { return }
+        context.coordinator.lastLoadedContent = htmlContent
+        webView.loadHTMLString(htmlContent, baseURL: nil)
+    }
+}
+
+// MARK: - Coordinator
+
+extension WebPreviewView {
+    class Coordinator {
+        var lastLoadedContent: String = ""
     }
 }

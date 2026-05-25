@@ -14,41 +14,12 @@ enum FileServiceError: LocalizedError {
     }
 }
 
-final class FileService {
+final class FileService: FileServiceProtocol {
     private let fm = FileManager.default
 
     // MARK: - Directory scanning
 
-    /// Load immediate children of a directory, returning only supported files + folders.
-    func loadContents(of directory: URL) -> [FileItem] {
-        guard let enumerator = fm.enumerator(
-            at: directory,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
-        ) else { return [] }
-
-        var items: [URL: FileItem] = [:]
-
-        for case let fileURL as URL in enumerator {
-            guard let values = try? fileURL.resourceValues(forKeys: [.isDirectoryKey]),
-                  let isDir = values.isDirectory
-            else { continue }
-
-            let ext = fileURL.pathExtension.lowercased()
-            // Skip directories we don't want (keep going into subdirectories though)
-            if !isDir && !FileItem.supportedExtensions.contains(ext) {
-                continue
-            }
-
-            let item = FileItem(url: fileURL, isDirectory: isDir)
-            items[fileURL] = item
-        }
-
-        // Build tree from flat list
-        let rootItems = buildTree(from: items, root: directory)
-        return sortItems(rootItems)
-    }
-
+    /// Load immediate children of a directory (one level only).
     func loadImmediateChildren(of directory: URL) -> [FileItem] {
         guard let urls = try? fm.contentsOfDirectory(
             at: directory,
@@ -61,8 +32,7 @@ final class FileService {
                   let isDir = values.isDirectory
             else { return nil }
 
-            let ext = url.pathExtension.lowercased()
-            if !isDir && !FileItem.supportedExtensions.contains(ext) {
+            if !isDir && !FileTypeConfiguration.shared.supportedExtensions.contains(url.pathExtension.lowercased()) {
                 return nil
             }
 
@@ -88,17 +58,6 @@ final class FileService {
     }
 
     // MARK: - Private
-
-    private func buildTree(from items: [URL: FileItem], root: URL) -> [FileItem] {
-        let rootChildren = items.filter { $0.key.deletingLastPathComponent() == root }
-        let sorted = sortItems(Array(rootChildren.values))
-
-        for item in sorted where item.isDirectory {
-            item.children = buildTree(from: items, root: item.url)
-        }
-
-        return sorted
-    }
 
     private func sortItems(_ items: [FileItem]) -> [FileItem] {
         items.sorted { a, b in
