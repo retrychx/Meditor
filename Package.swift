@@ -19,6 +19,10 @@ let package = Package(
             resources: [
                 .copy("Resources")
             ]
-        )
+        ),
+        .testTarget(
+            name: "MEditorTests",
+            dependencies: ["MEditor"]
+        ),
     ]
 )
