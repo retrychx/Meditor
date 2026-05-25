@@ -15,6 +15,10 @@
   <img src="https://img.shields.io/badge/build-passing-brightgreen" alt="Build Passing" />
 </p>
 
+<p align="center">
+  🌐 <a href="README.zh.md"><strong>中文</strong></a> | <strong>English</strong>
+</p>
+
 ---
 
 ## ✨ Features

@@ -15,6 +15,10 @@
   <img src="https://img.shields.io/badge/%E7%BC%96%E8%AF%91-%E9%80%9A%E8%BF%87-brightgreen" alt="编译通过" />
 </p>
 
+<p align="center">
+  🌐 <strong>中文</strong> | <a href="README.md"><strong>English</strong></a>
+</p>
+
 ---
 
 ## ✨ 功能特性
