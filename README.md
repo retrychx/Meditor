@@ -1,13 +1,16 @@
-# MarkEdit
+# MEditor
 
 A native macOS Markdown editor built with SwiftUI.
 
 ## Features
 
-- **Live Preview** — Real-time Markdown rendering powered by [`swift-markdown-ui`](https://github.com/gonzalezreal/swift-markdown-ui)
-- **Syntax Highlighting** — Code blocks highlighted via [Splash](https://github.com/JohnSundell/Splash)
-- **Sidebar** — File browser for project navigation
-- **WYSIWYG-like Editing** — Web-based editor with native integration
+- **Live Preview** — Real-time Markdown rendering with highlight.js + marked.js + Mermaid
+- **Syntax Highlighting** — Code blocks highlighted via highlight.js (supports 40+ languages)
+- **Sidebar** — File browser with search for project navigation
+- **Bidirectional Scroll Sync** — Editor and preview scroll in sync
+- **File Tree Auto-Refresh** — FSEvents-based file watcher
+- **Tab Management** — Drag-to-reorder tabs with save confirmation
+- **Drag-to-Resize Panels** — Resizable sidebar, editor, and preview panels
 - **macOS Native** — Built with SwiftUI, designed for macOS 14+
 
 ## Requirements
@@ -32,28 +35,40 @@ open Package.swift
 ## Project Structure
 
 ```
-Sources/MarkEdit/
-├── MarkEditApp.swift          # App entry point
+Sources/MEditor/
+├── MEditorApp.swift           # App entry point
 ├── Models/
 │   ├── EditorTab.swift        # Editor tab management
 │   └── FileItem.swift         # File representation
+├── Protocols/
+│   ├── FileServiceProtocol.swift
+│   └── SyntaxHighlightEngine.swift
 ├── Resources/
-│   ├── Editor/editor.html     # Web-based editor
-│   └── Preview/markdown.html  # Preview rendering
+│   └── Preview/               # JS libraries (marked, highlight, mermaid)
 ├── Services/
-│   └── FileService.swift      # File I/O operations
+│   ├── FileService.swift      # File I/O operations
+│   ├── FileWatcherService.swift # FSEvents file tree watcher
+│   ├── FileTypeConfiguration.swift
+│   ├── HTMLHighlightEngine.swift
+│   ├── HighlightService.swift
+│   └── MarkdownHighlightEngine.swift
 ├── ViewModels/
 │   └── AppState.swift         # Global app state
 └── Views/
     ├── ContentView.swift      # Root view
     ├── Editor/
+    │   ├── EditorTabBar.swift
     │   ├── EditorView.swift
     │   └── NativeEditorView.swift
     ├── Preview/
+    │   ├── MarkdownWebPreview.swift
     │   ├── PreviewPanel.swift
-    │   ├── SplashHighlighter.swift
     │   └── WebPreviewView.swift
+    ├── Shared/
+    │   ├── PanelLabel.swift
+    │   └── VisualEffect.swift
     └── Sidebar/
+        ├── FileRow.swift
         └── FileSidebar.swift
 ```
 
