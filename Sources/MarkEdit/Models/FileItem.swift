@@ -7,7 +7,6 @@ final class FileItem: Identifiable, Hashable {
     let url: URL
     let isDirectory: Bool
     var children: [FileItem]?
-    var isLoading = false
 
     init(url: URL, isDirectory: Bool, children: [FileItem]? = nil) {
         self.url = url
@@ -16,25 +15,11 @@ final class FileItem: Identifiable, Hashable {
     }
 
     var name: String { url.lastPathComponent }
-    var `extension`: String { url.pathExtension.lowercased() }
+    var fileExtension: String { url.pathExtension.lowercased() }
 
-    var iconName: String {
-        if isDirectory { return "folder" }
-        switch `extension` {
-        case "md", "markdown": return "doc.text"
-        case "html", "htm": return "doc.richtext"
-        case "css": return "paintbrush"
-        case "js": return "doc.append"
-        case "json": return "curlybraces"
-        case "png", "jpg", "jpeg", "gif", "svg": return "photo"
-        default: return "doc"
-        }
-    }
-
-    static let supportedExtensions: Set<String> = ["md", "markdown", "html", "htm"]
-
+    /// True if this file can be opened by the editor.
     var isSupported: Bool {
-        isDirectory || Self.supportedExtensions.contains(self.extension)
+        isDirectory || FileTypeConfiguration.shared.supportedExtensions.contains(fileExtension)
     }
 
     static func == (lhs: FileItem, rhs: FileItem) -> Bool {
