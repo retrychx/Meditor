@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Sources/MEditor/Resources/AppIcon.icns" width="128" alt="MEditor Icon" />
+  <img src="assets/icon.png" width="128" alt="MEditor Icon" />
 </p>
 
 <h1 align="center">MEditor</h1>
