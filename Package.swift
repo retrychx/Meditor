@@ -15,6 +15,7 @@ let package = Package(
                 .product(name: "MarkdownUI", package: "swift-markdown-ui"),
                 .product(name: "Splash", package: "Splash"),
             ],
+            exclude: ["Info.plist"],
             resources: [
                 .copy("Resources")
             ]

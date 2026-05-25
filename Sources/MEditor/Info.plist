@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>MEditor</string>
+	<key>CFBundleExecutable</key>
+	<string>MEditor</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.meditor.app</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>MEditor</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSSupportsAutomaticTermination</key>
+	<false/>
+	<key>NSSupportsSuddenTermination</key>
+	<false/>
+
+	<!-- Document Types -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Markdown Document</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Default</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>net.daringfireball.markdown</string>
+			</array>
+			<key>NSDocumentClass</key>
+			<string>MEditorApp</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>HTML Document</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Default</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.html</string>
+			</array>
+			<key>NSDocumentClass</key>
+			<string>MEditorApp</string>
+		</dict>
+	</array>
+
+	<!-- Exported UTIs for .md extension -->
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.meditor.markdown</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>md</string>
+					<string>markdown</string>
+				</array>
+			</dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.plain-text</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Markdown Document</string>
+		</dict>
+	</array>
+
+	<!-- macOS Dock -->
+	<key>LSUIElement</key>
+	<false/>
+</dict>
+</plist>
