@@ -272,13 +272,3 @@ tags: []
 2. **① HTML ↔ MD 互转** — 与模板系统协同（模板内容常来自网页），但实现复杂度较高，需要 turndown.js 集成和边界情况处理
 3. **③ 代码块交互增强** — 纯前端增强，不依赖其他系统，技术风险低，但 JS → Swift 桥接需要额外测试
 4. **④ 预览主题切换** — 纯视觉美化，优先级最低。建议等到 CSS 模板提取重构完成后再做
-
----
-
-## 附录：关于 MarkEdit 名称来源
-
-MEditor 是一个**从零构建**的原生 macOS 项目，并非 fork 或派生项目。
-
-项目最初在代码中暂命名为 **MarkEdit**（见首个 commit `0af7e8c`），后续更名为 **MEditor**，以避免与 GitHub 上同名的开源项目 [MarkEdit-app/MarkEdit](https://github.com/MarkEdit-app/MarkEdit) 混淆。
-
-MEditor 的产品方向应该围绕 **「写作体验」** 而非 **「代码编辑」** 展开，上述四个方向均以此为核心。
