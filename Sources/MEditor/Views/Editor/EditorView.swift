@@ -14,10 +14,14 @@ struct EditorView: View {
                 onCursorChange: { line, col in
                     state.updateCursorPosition(line: line, column: col)
                 },
-                onScrollChange: { percent in
-                    state.editorScrollPercent = percent
-                },
-                previewScrollPercent: state.previewScrollPercent
+                // Scroll sync intentionally disabled. Source-view height
+                // (compact code) and rendered-view height (large headings,
+                // expanded blocks) diverge enough that percentage-based sync
+                // is misleading. A future enhancement can use source-line
+                // anchors emitted by marked.js for accurate sync.
+                onScrollChange: nil,
+                previewScrollPercent: 0,
+                theme: state.themeStore.current
             )
         } else {
             VStack(spacing: 8) {

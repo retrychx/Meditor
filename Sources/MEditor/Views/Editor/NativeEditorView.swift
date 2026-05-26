@@ -14,6 +14,9 @@ struct NativeEditorView: NSViewRepresentable {
     let onCursorChange: ((Int, Int) -> Void)?
     let onScrollChange: ((Double) -> Void)?
     let previewScrollPercent: Double
+    /// Theme drives the text view's background and foreground colors so the
+    /// editor pane visually matches the rest of the app.
+    var theme: PreviewTheme = .github
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onContentChange: onContentChange, onCursorChange: onCursorChange, onScrollChange: onScrollChange)
@@ -25,14 +28,27 @@ struct NativeEditorView: NSViewRepresentable {
 
         textView.isRichText = false
         textView.allowsUndo = true
-        textView.textContainerInset = NSSize(width: 8, height: 12)
-        textView.font = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+        // Generous insets give the content room to breathe — code editors
+        // can feel cramped when text starts at the very edge.
+        textView.textContainerInset = NSSize(width: 24, height: 20)
+        // System UI font (not monospaced): renders Chinese / Japanese / Korean
+        // characters with the correct glyph widths and avoids the awkward
+        // mid-line gaps that monospaced + CJK fallback produces.
+        // Code spans / fenced blocks switch to monospaced via the highlighter.
+        textView.font = NSFont.systemFont(ofSize: 14)
+
+        // Comfortable line height + a touch of paragraph spacing for prose feel.
+        let baseParagraph = NSMutableParagraphStyle()
+        baseParagraph.lineHeightMultiple = 1.18
+        baseParagraph.paragraphSpacing = 4
+        textView.defaultParagraphStyle = baseParagraph
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
-        textView.textColor = NSColor.labelColor
-        textView.backgroundColor = NSColor.controlBackgroundColor
+        textView.textColor = theme.foregroundNSColor
+        textView.backgroundColor = theme.editorBackgroundNSColor
         textView.drawsBackground = true
+        textView.insertionPointColor = theme.foregroundNSColor
 
         // Performance: enable non-contiguous layout so the text system only
         // lays out visible glyphs eagerly. Crucial for opening large markdown
@@ -82,6 +98,16 @@ struct NativeEditorView: NSViewRepresentable {
 
         guard let textView = scrollView.documentView as? NSTextView else { return }
 
+        // Apply theme colors when theme changes.
+        if context.coordinator.lastTheme != theme {
+            context.coordinator.lastTheme = theme
+            textView.backgroundColor = theme.editorBackgroundNSColor
+            textView.textColor = theme.foregroundNSColor
+            textView.insertionPointColor = theme.foregroundNSColor
+            // Re-highlight to refresh attribute colors that depend on theme.
+            context.coordinator.scheduleHighlight()
+        }
+
         // Only push content to the editor if it changed externally (e.g., tab switch).
         // Highlighting is deferred to the next runloop tick so the user sees plain
         // text instantly, with syntax colors fading in shortly after.
@@ -117,6 +143,7 @@ struct NativeEditorView: NSViewRepresentable {
         var onCursorChange: ((Int, Int) -> Void)?
         var onScrollChange: ((Double) -> Void)?
         var currentLanguage: EditorLanguage = .markdown
+        var lastTheme: PreviewTheme = .github
         var lastAcknowledgedContent: String = ""
         weak var textView: NSTextView?
         var scrollObserver: NSObjectProtocol?
@@ -200,15 +227,22 @@ struct NativeEditorView: NSViewRepresentable {
 
             let storage = textView.textStorage!
             let fullRange = NSRange(location: 0, length: (text as NSString).length)
-            let baseColor = NSColor.labelColor
-            let baseFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+            let baseColor = lastTheme.foregroundNSColor
+            let baseFont = NSFont.systemFont(ofSize: 14)
 
             // Reset to base style
             storage.removeAttribute(.foregroundColor, range: fullRange)
             storage.removeAttribute(.font, range: fullRange)
             storage.removeAttribute(.backgroundColor, range: fullRange)
+            storage.removeAttribute(.paragraphStyle, range: fullRange)
             storage.addAttribute(.foregroundColor, value: baseColor, range: fullRange)
             storage.addAttribute(.font, value: baseFont, range: fullRange)
+
+            // Apply comfortable line spacing across the whole document.
+            let para = NSMutableParagraphStyle()
+            para.lineHeightMultiple = 1.18
+            para.paragraphSpacing = 4
+            storage.addAttribute(.paragraphStyle, value: para, range: fullRange)
 
             guard let engine = HighlightService.shared.engine(for: currentLanguage) else { return }
             engine.highlight(text: text, into: storage, range: fullRange, baseFont: baseFont)

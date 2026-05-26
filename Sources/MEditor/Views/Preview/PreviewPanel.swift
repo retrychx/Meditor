@@ -11,10 +11,9 @@ struct PreviewPanel: View {
             MarkdownWebPreview(
                 content: showsMarkdown ? state.previewContent : "",
                 theme: state.themeStore.current,
-                scrollPercentage: state.editorScrollPercent,
-                onScrollChange: { percent in
-                    state.previewScrollPercent = percent
-                },
+                // Scroll sync disabled — see EditorView for rationale.
+                scrollPercentage: 0,
+                onScrollChange: nil,
                 exporter: state.previewExporter,
                 sourceURL: showsMarkdown ? state.selectedTab?.url : nil
             )

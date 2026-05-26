@@ -17,6 +17,9 @@ struct ContentView: View {
                 mainLayout
             }
         }
+        // Make the entire window (sidebar, toolbar, editor, status bar) follow
+        // the chosen preview theme. GitHub → light, Nord / Dracula → dark.
+        .preferredColorScheme(state.themeStore.current.isDark ? .dark : .light)
         .alert("Error", isPresented: Binding(
             get: { state.errorMessage != nil },
             set: { if !$0 { state.errorMessage = nil } }
@@ -70,8 +73,8 @@ struct ContentView: View {
     // MARK: - Main Layout
 
     private var mainLayout: some View {
-        VStack(spacing: 0) {
-            // Content area
+        let theme = state.themeStore.current
+        return VStack(spacing: 0) {
             HStack(spacing: 0) {
                 if showSidebar {
                     sidebarColumn
@@ -79,33 +82,41 @@ struct ContentView: View {
                     draggableDivider(width: $sidebarWidth, minValue: 160, maxValue: 360)
                 }
 
-                if showEditor {
-                    editorColumn
-                        .frame(maxWidth: .infinity)
-                }
+                // Right side: shared tab bar above editor + preview so their
+                // content starts at the same Y position.
+                VStack(spacing: 0) {
+                    if !state.openTabs.isEmpty {
+                        EditorTabBar()
+                    }
+                    HStack(spacing: 0) {
+                        if showEditor {
+                            editorColumn
+                                .frame(maxWidth: .infinity)
+                        }
 
-                if showEditor && showPreview {
-                    Color(nsColor: .separatorColor).opacity(0.4)
-                        .frame(width: 1)
-                }
+                        if showEditor && showPreview {
+                            theme.separator
+                                .frame(width: 1)
+                        }
 
-                if showPreview {
-                    previewColumn
-                        .frame(maxWidth: .infinity)
-                }
+                        if showPreview {
+                            previewColumn
+                                .frame(maxWidth: .infinity)
+                        }
 
-                if !showEditor && !showPreview {
-                    // Empty placeholder when both panels hidden
-                    Color(nsColor: .textBackgroundColor)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        if !showEditor && !showPreview {
+                            theme.editorBackground
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // Status bar
             statusBar
         }
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(theme.editorBackground)
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 sidebarToggleBtn
@@ -123,22 +134,17 @@ struct ContentView: View {
 
     private var sidebarColumn: some View {
         FileSidebar()
-            .background(Color(nsColor: .windowBackgroundColor))
+            .background(state.themeStore.current.chromeBackground)
     }
 
     private var editorColumn: some View {
-        VStack(spacing: 0) {
-            if !state.openTabs.isEmpty {
-                EditorTabBar()
-            }
-            EditorView()
-        }
-        .background(Color(nsColor: .textBackgroundColor))
+        EditorView()
+            .background(state.themeStore.current.editorBackground)
     }
 
     private var previewColumn: some View {
         PreviewPanel()
-            .background(Color(nsColor: .textBackgroundColor))
+            .background(state.themeStore.current.editorBackground)
     }
 
     // MARK: - Toolbar Buttons
