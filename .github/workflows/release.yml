@@ -22,9 +22,7 @@ jobs:
 
       - name: Bundle .app
         run: |
-          # For release builds, change build dir path
-          sed -i '' 's|BUILD_DIR="$PROJECT_DIR/.build/debug"|BUILD_DIR="$PROJECT_DIR/.build/release"|' scripts/bundle.sh
-          bash scripts/bundle.sh
+          bash scripts/bundle.sh release
           ditto -c -k --keepParent .build/release/MEditor.app MEditor-${{ github.ref_name }}.zip
 
       - name: Create Release
