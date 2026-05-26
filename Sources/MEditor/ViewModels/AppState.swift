@@ -104,11 +104,20 @@ final class AppState {
         let children = fileService.loadImmediateChildren(of: rootURL)
         fileTree = children
         addToMap(children)
-        // Pre-load one more level for sidebar expand indicators
+        // Recursively load subtree for full hierarchy display.
+        // Depth-limited to avoid hanging on huge trees.
         for item in children where item.isDirectory {
-            let subChildren = fileService.loadImmediateChildren(of: item.url)
-            item.children = subChildren
-            addToMap(subChildren)
+            loadSubtree(item, depth: 1, maxDepth: 6)
+        }
+    }
+
+    private func loadSubtree(_ item: FileItem, depth: Int, maxDepth: Int) {
+        guard depth <= maxDepth else { return }
+        let subChildren = fileService.loadImmediateChildren(of: item.url)
+        item.children = subChildren
+        addToMap(subChildren)
+        for child in subChildren where child.isDirectory {
+            loadSubtree(child, depth: depth + 1, maxDepth: maxDepth)
         }
     }
 
@@ -198,10 +207,6 @@ final class AppState {
         guard let idx = openTabs.firstIndex(where: { $0.id == tabID }) else { return }
         openTabs[idx].content = content
         openTabs[idx].isModified = true
-
-        if tabID == selectedTabID {
-            schedulePreviewUpdate(content: content, language: openTabs[idx].language)
-        }
     }
 
     private func schedulePreviewUpdate(content: String, language: EditorLanguage) {
@@ -220,6 +225,9 @@ final class AppState {
             try fileService.writeFile(at: tab.url, content: tab.content)
             if let idx = openTabs.firstIndex(where: { $0.id == tab.id }) {
                 openTabs[idx].isModified = false
+                if tab.id == selectedTabID {
+                    syncPreviewContent(from: openTabs[idx])
+                }
             }
         } catch {
             setError("Failed to save “\(tab.name)”: \(error.localizedDescription)")

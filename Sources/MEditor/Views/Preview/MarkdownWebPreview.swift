@@ -63,7 +63,10 @@ private struct MarkdownWebView: NSViewRepresentable {
 
         let fileURL = coordinator.previewDir.appendingPathComponent("preview.html")
         try? html.write(to: fileURL, atomically: true, encoding: .utf8)
-        webView.loadFileURL(fileURL, allowingReadAccessTo: coordinator.previewDir)
+
+        // Use a unique fragment to bypass WKWebView's file URL cache
+        let uniqueURL = URL(string: fileURL.absoluteString + "?t=\(Date.timeIntervalSinceReferenceDate)")!
+        webView.loadFileURL(uniqueURL, allowingReadAccessTo: coordinator.previewDir)
     }
 
     // MARK: - HTML Generation
@@ -382,35 +385,51 @@ extension MarkdownWebView {
             let fm = FileManager.default
             try? fm.createDirectory(at: previewDir, withIntermediateDirectories: true)
 
-            // Copy marked.min.js from app bundle
-            if let srcURL = Bundle.module.url(forResource: "marked.min", withExtension: "js", subdirectory: "Resources/Preview") {
-                try? fm.copyItem(at: srcURL, to: previewDir.appendingPathComponent("marked.min.js"))
-            }
-            // Fallback: try main bundle
-            if !fm.fileExists(atPath: previewDir.appendingPathComponent("marked.min.js").path),
-               let srcURL = Bundle.main.url(forResource: "marked.min", withExtension: "js", subdirectory: "Preview") {
-                try? fm.copyItem(at: srcURL, to: previewDir.appendingPathComponent("marked.min.js"))
-            }
+            let jsFiles = ["marked.min.js", "highlight.min.js", "mermaid.min.js"]
+            for fileName in jsFiles {
+                let dest = previewDir.appendingPathComponent(fileName)
 
-            // Copy highlight.min.js
-            if let srcURL = Bundle.module.url(forResource: "highlight.min", withExtension: "js", subdirectory: "Resources/Preview") {
-                try? fm.copyItem(at: srcURL, to: previewDir.appendingPathComponent("highlight.min.js"))
-            }
-            if !fm.fileExists(atPath: previewDir.appendingPathComponent("highlight.min.js").path),
-               let srcURL = Bundle.main.url(forResource: "highlight.min", withExtension: "js", subdirectory: "Preview") {
-                try? fm.copyItem(at: srcURL, to: previewDir.appendingPathComponent("highlight.min.js"))
-            }
-
-            // Copy mermaid.min.js
-            if let srcURL = Bundle.module.url(forResource: "mermaid.min", withExtension: "js", subdirectory: "Resources/Preview") {
-                try? fm.copyItem(at: srcURL, to: previewDir.appendingPathComponent("mermaid.min.js"))
-            }
-            if !fm.fileExists(atPath: previewDir.appendingPathComponent("mermaid.min.js").path),
-               let srcURL = Bundle.main.url(forResource: "mermaid.min", withExtension: "js", subdirectory: "Preview") {
-                try? fm.copyItem(at: srcURL, to: previewDir.appendingPathComponent("mermaid.min.js"))
+                if let srcURL = Self.findResource(named: fileName) {
+                    copyIfNeeded(from: srcURL, to: dest, fm: fm)
+                }
             }
 
             resourcesPrepared = true
+        }
+
+        /// Find a resource file by name. Tries multiple known locations to avoid
+        /// relying on `Bundle.module`, which can crash if the SPM-generated
+        /// resource bundle lacks an Info.plist.
+        private static func findResource(named fileName: String) -> URL? {
+            let fm = FileManager.default
+            let mainURL = Bundle.main.bundleURL
+
+            // Candidate locations, in order of preference:
+            let candidates: [URL] = [
+                // 1. SPM resource bundle next to executable (debug builds)
+                mainURL.appendingPathComponent("MEditor_MEditor.bundle/Resources/Preview/\(fileName)"),
+                // 2. App bundle Resources/Preview (release .app bundle)
+                mainURL.appendingPathComponent("Contents/Resources/Preview/\(fileName)"),
+                // 3. Direct Resources/Preview next to executable
+                mainURL.appendingPathComponent("Preview/\(fileName)"),
+                // 4. Bundle.main url lookup as last resort
+            ]
+
+            for url in candidates {
+                if fm.fileExists(atPath: url.path) {
+                    return url
+                }
+            }
+
+            // 5. Last resort: Bundle.main API lookup
+            return Bundle.main.url(forResource: String(fileName.dropLast(3)), withExtension: "js", subdirectory: "Preview")
+        }
+
+        private func copyIfNeeded(from src: URL, to dest: URL, fm: FileManager) {
+            if fm.fileExists(atPath: dest.path) {
+                try? fm.removeItem(at: dest)
+            }
+            try? fm.copyItem(at: src, to: dest)
         }
     }
 }
