@@ -8,7 +8,6 @@ struct ContentView: View {
 
     // Panel widths
     @State private var sidebarWidth: CGFloat = 220
-    @State private var previewWidth: CGFloat = 300
 
     var body: some View {
         Group {
@@ -43,28 +42,26 @@ struct ContentView: View {
     // MARK: - Welcome Screen
 
     private var welcomeScreen: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 14) {
             Image(systemName: "doc.text.magnifyingglass")
-                .font(.system(size: 48))
+                .font(.system(size: 36, weight: .light))
                 .foregroundStyle(.secondary)
             Text("MEditor")
-                .font(.largeTitle)
-                .fontWeight(.bold)
+                .font(.system(size: 22, weight: .semibold))
             Text("Markdown & HTML Editor")
-                .font(.subheadline)
+                .font(.system(size: 13))
                 .foregroundStyle(.secondary)
-            Button("Open Folder\u{2026}") {
-                openFolder()
+            Button(action: openFolder) {
+                Text("Open Folder\u{2026}")
+                    .font(.system(size: 13, weight: .medium))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
             }
             .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .padding(.top, 8)
-            Text("or drag a folder here")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+            .padding(.top, 6)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Color(nsColor: .textBackgroundColor))
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
             handleDrop(providers)
         }
@@ -74,56 +71,46 @@ struct ContentView: View {
 
     private var mainLayout: some View {
         VStack(spacing: 0) {
+            // Content area
             HStack(spacing: 0) {
                 if showSidebar {
                     sidebarColumn
                         .frame(width: sidebarWidth)
-                        .transition(.move(edge: .leading).combined(with: .opacity))
-                    if showEditor {
-                        draggableDivider(
-                            width: $sidebarWidth,
-                            minValue: 150,
-                            maxValue: 400
-                        )
-                        .transition(.opacity)
-                    }
+                    draggableDivider(width: $sidebarWidth, minValue: 160, maxValue: 360)
                 }
+
                 if showEditor {
                     editorColumn
                         .frame(maxWidth: .infinity)
-                        .transition(.opacity)
                 }
+
+                if showEditor && showPreview {
+                    Color(nsColor: .separatorColor).opacity(0.4)
+                        .frame(width: 1)
+                }
+
                 if showPreview {
-                    if showEditor {
-                        draggableDivider(
-                            width: $previewWidth,
-                            minValue: 200,
-                            maxValue: 600,
-                            invert: true
-                        )
-                        .transition(.opacity)
-                    }
                     previewColumn
-                        .frame(
-                            minWidth: 200,
-                            idealWidth: previewWidth,
-                            maxWidth: showEditor ? 600 : .infinity
-                        )
-                        .layoutPriority(showEditor ? 0 : 1)
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                        .frame(maxWidth: .infinity)
+                }
+
+                if !showEditor && !showPreview {
+                    // Empty placeholder when both panels hidden
+                    Color(nsColor: .textBackgroundColor)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .animation(.easeInOut(duration: 0.2), value: showSidebar)
-            .animation(.easeInOut(duration: 0.2), value: showEditor)
-            .animation(.easeInOut(duration: 0.2), value: showPreview)
 
+            // Status bar
             statusBar
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .textBackgroundColor))
         .toolbar {
-            ToolbarItemGroup {
+            ToolbarItemGroup(placement: .navigation) {
                 sidebarToggleBtn
+            }
+            ToolbarItemGroup(placement: .primaryAction) {
                 editorToggleBtn
                 previewToggleBtn
             }
@@ -133,28 +120,23 @@ struct ContentView: View {
     // MARK: - Columns
 
     private var sidebarColumn: some View {
-        VStack(spacing: 0) {
-            PanelLabel("Files", icon: "folder")
-            Divider()
-            FileSidebar()
-        }
-        .background(VisualEffect(material: .sidebar))
+        FileSidebar()
+            .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var editorColumn: some View {
         VStack(spacing: 0) {
-            PanelLabel("Editor", icon: "doc.text")
-            Divider()
+            if !state.openTabs.isEmpty {
+                EditorTabBar()
+            }
             EditorView()
         }
+        .background(Color(nsColor: .textBackgroundColor))
     }
 
     private var previewColumn: some View {
-        VStack(spacing: 0) {
-            PanelLabel("Preview", icon: "eye")
-            Divider()
-            PreviewPanel()
-        }
+        PreviewPanel()
+            .background(Color(nsColor: .textBackgroundColor))
     }
 
     // MARK: - Toolbar Buttons
@@ -164,19 +146,8 @@ struct ContentView: View {
             showSidebar.toggle()
         } label: {
             Image(systemName: "sidebar.left")
-                .symbolVariant(showSidebar ? .fill : .none)
         }
         .help(showSidebar ? "Hide Sidebar" : "Show Sidebar")
-    }
-
-    private var editorToggleBtn: some View {
-        Button {
-            showEditor.toggle()
-        } label: {
-            Image(systemName: "doc.text")
-                .symbolVariant(showEditor ? .fill : .none)
-        }
-        .help(showEditor ? "Hide Editor" : "Show Editor")
     }
 
     private var previewToggleBtn: some View {
@@ -184,9 +155,17 @@ struct ContentView: View {
             showPreview.toggle()
         } label: {
             Image(systemName: "sidebar.right")
-                .symbolVariant(showPreview ? .fill : .none)
         }
         .help(showPreview ? "Hide Preview" : "Show Preview")
+    }
+
+    private var editorToggleBtn: some View {
+        Button {
+            showEditor.toggle()
+        } label: {
+            Image(systemName: "doc.text")
+        }
+        .help(showEditor ? "Hide Editor" : "Show Editor")
     }
 
     // MARK: - Draggable Divider
@@ -197,62 +176,46 @@ struct ContentView: View {
         maxValue: CGFloat,
         invert: Bool = false
     ) -> some View {
-        // Use 1px visible line but 6px hit target
-        ZStack(alignment: .center) {
-            Rectangle()
-                .fill(Color(nsColor: .separatorColor))
-                .frame(width: 1)
-
-            Rectangle()
-                .fill(Color.clear)
-                .frame(width: 6)
-        }
-        .contentShape(Rectangle())
-        .frame(width: 6)
-        .onHover { inside in
-            if inside { NSCursor.resizeLeftRight.push() }
-            else { NSCursor.pop() }
-        }
-        .gesture(
-            DragGesture(minimumDistance: 1, coordinateSpace: .local)
-                .onChanged { value in
-                    let delta = value.translation.width
-                    let newWidth = width.wrappedValue + (invert ? -delta : delta)
-                    width.wrappedValue = max(minValue, min(maxValue, newWidth))
-                }
-        )
+        Color(nsColor: .separatorColor).opacity(0.4)
+            .frame(width: 1)
+            .overlay {
+                Color.clear
+                    .frame(width: 5)
+                    .contentShape(Rectangle())
+                    .onHover { inside in
+                        if inside { NSCursor.resizeLeftRight.push() }
+                        else { NSCursor.pop() }
+                    }
+                    .gesture(
+                        DragGesture(minimumDistance: 1, coordinateSpace: .local)
+                            .onChanged { value in
+                                let delta = value.translation.width
+                                let newWidth = width.wrappedValue + (invert ? -delta : delta)
+                                width.wrappedValue = max(minValue, min(maxValue, newWidth))
+                            }
+                    )
+            }
     }
 
     // MARK: - Status Bar
 
     private var statusBar: some View {
-        HStack(spacing: 12) {
-            if state.openTabs.isEmpty {
-                Text("No file open")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            } else if let _ = state.selectedTab {
+        HStack(spacing: 10) {
+            if let _ = state.selectedTab {
                 Text("Ln \(state.cursorLine), Col \(state.cursorColumn)")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
                     .fixedSize()
-                Divider()
-                    .frame(height: 12)
+                Text("·")
                 Text(state.currentFileSize)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                Divider()
-                    .frame(height: 12)
+                Text("·")
                 Text("UTF-8")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
             }
             Spacer()
         }
+        .font(.system(size: 11, design: .monospaced))
+        .foregroundStyle(.tertiary)
         .padding(.horizontal, 12)
-        .frame(height: 24)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .overlay(Divider(), alignment: .top)
+        .frame(height: 20)
+        .background(Color(nsColor: .windowBackgroundColor).opacity(0.5))
     }
 
     // MARK: - Actions

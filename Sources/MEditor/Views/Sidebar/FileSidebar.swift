@@ -37,25 +37,30 @@ struct FileSidebar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Search bar
-            HStack(spacing: 6) {
+            // Compact search
+            HStack(spacing: 5) {
                 Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                    .font(.system(size: 12))
-                TextField("Search files...", text: $searchText)
+                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 10))
+                TextField("Search", text: $searchText)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .font(.system(size: 11.5))
                 if !searchText.isEmpty {
                     Button(action: { searchText = "" }) {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                            .font(.system(size: 12))
+                            .foregroundStyle(.tertiary)
+                            .font(.system(size: 10))
                     }
                     .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.vertical, 6)
+            .background(Color(nsColor: .quaternaryLabelColor).opacity(0.3))
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+            .padding(.horizontal, 8)
+            .padding(.top, 6)
+            .padding(.bottom, 4)
 
             Group {
                 if searchText.isEmpty {

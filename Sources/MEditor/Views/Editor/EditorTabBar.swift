@@ -24,10 +24,9 @@ struct EditorTabBar: View {
                         )
                 }
             }
-            .padding(.horizontal, 4)
         }
-        .frame(height: 32)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .frame(height: 30)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private func tabButton(_ tab: EditorTab) -> some View {
@@ -35,8 +34,8 @@ struct EditorTabBar: View {
 
         return HStack(spacing: 4) {
             Image(systemName: FileTypeConfiguration.shared.icon(for: tab.url.pathExtension))
-                .font(.system(size: 10))
-                .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                .font(.system(size: 9.5))
+                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
 
             Text(tab.name)
                 .font(.system(size: 11, weight: isSelected ? .medium : .regular))
@@ -45,29 +44,25 @@ struct EditorTabBar: View {
 
             if tab.isModified {
                 Circle()
-                    .fill(.secondary)
-                    .frame(width: 6, height: 6)
+                    .fill(Color.orange)
+                    .frame(width: 5, height: 5)
             }
 
             Button {
                 state.closeTab(tab.id)
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .padding(2)
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(.tertiary)
             }
             .buttonStyle(.plain)
-            .help("Close")
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 10)
         .padding(.vertical, 4)
-        .background {
+        .background(isSelected ? Color(nsColor: .textBackgroundColor) : Color.clear)
+        .overlay(alignment: .bottom) {
             if isSelected {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.accentColor.opacity(0.1))
-                RoundedRectangle(cornerRadius: 4)
-                    .stroke(Color.accentColor.opacity(0.3), lineWidth: 0.5)
+                Color.accentColor.frame(height: 2)
             }
         }
         .contentShape(Rectangle())

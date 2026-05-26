@@ -14,11 +14,13 @@ struct FileRow: View {
     var body: some View {
         Label {
             Text(item.name)
-                .font(.system(size: 13))
+                .font(.system(size: 12.5))
+                .lineLimit(1)
+                .truncationMode(.middle)
         } icon: {
             Image(systemName: item.isDirectory ? "folder.fill" : iconName)
-                .foregroundStyle(item.isDirectory ? .primary : (isSelected ? Color(nsColor: .alternateSelectedControlTextColor) : fileColor))
-                .font(.system(size: 11.5))
+                .foregroundStyle(item.isDirectory ? .orange : .secondary)
+                .font(.system(size: 11))
         }
         .contextMenu {
             if item.isDirectory {

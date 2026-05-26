@@ -10,17 +10,18 @@ struct PanelLabel: View {
     }
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
-            Text(title)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.tertiary)
+            Text(title.uppercased())
+                .font(.system(size: 10, weight: .semibold, design: .default))
+                .foregroundStyle(.tertiary)
+                .tracking(0.5)
             Spacer()
         }
-        .padding(.horizontal, 12)
-        .frame(height: 28)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .padding(.horizontal, 14)
+        .frame(height: 30)
+        .background(.ultraThinMaterial)
     }
 }
