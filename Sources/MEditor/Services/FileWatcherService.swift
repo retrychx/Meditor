@@ -21,7 +21,7 @@ final class FileWatcherService {
 
         self.onChange = onChange
 
-        let paths = urls.map { ($0 as NSURL).fileSystemRepresentation }
+        let paths = urls.map { $0.path } as CFArray
 
         var context = FSEventStreamContext(
             version: 0,
@@ -35,7 +35,7 @@ final class FileWatcherService {
             kCFAllocatorDefault,
             fileWatcherCallback,
             &context,
-            paths as CFArray,
+            paths,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
             1.0,
             FSEventStreamCreateFlags(kFSEventStreamCreateFlagWatchRoot | kFSEventStreamCreateFlagFileEvents)

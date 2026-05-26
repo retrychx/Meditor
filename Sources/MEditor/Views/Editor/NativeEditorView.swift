@@ -79,9 +79,11 @@ struct NativeEditorView: NSViewRepresentable {
 
         // Only push content to the editor if it changed externally (e.g., tab switch)
         if context.coordinator.lastAcknowledgedContent != content {
+            context.coordinator.isProgrammaticChange = true
             textView.string = content
             context.coordinator.lastAcknowledgedContent = content
             context.coordinator.applyHighlighting()
+            context.coordinator.isProgrammaticChange = false
         }
 
         // Sync editor scroll position from preview
@@ -116,7 +118,7 @@ struct NativeEditorView: NSViewRepresentable {
 
         private var debounceTimer: Timer?
         private var highlightTimer: Timer?
-        private var isProgrammaticChange = false
+        fileprivate var isProgrammaticChange = false
 
         init(onContentChange: @escaping (String) -> Void, onCursorChange: ((Int, Int) -> Void)?, onScrollChange: ((Double) -> Void)?) {
             self.onContentChange = onContentChange
