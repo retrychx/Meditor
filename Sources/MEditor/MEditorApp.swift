@@ -23,7 +23,7 @@ struct MEditorApp: App {
                 }
         }
         .windowStyle(.titleBar)
-        .windowToolbarStyle(.unified)
+        .windowToolbarStyle(.unifiedCompact)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Open Folder…") {

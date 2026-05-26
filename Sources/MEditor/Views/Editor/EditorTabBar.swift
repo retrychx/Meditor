@@ -25,7 +25,7 @@ struct EditorTabBar: View {
                 }
             }
         }
-        .frame(height: 30)
+        .frame(height: 26)
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
@@ -58,7 +58,7 @@ struct EditorTabBar: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 4)
+        .padding(.vertical, 3)
         .background(isSelected ? Color(nsColor: .textBackgroundColor) : Color.clear)
         .overlay(alignment: .bottom) {
             if isSelected {
