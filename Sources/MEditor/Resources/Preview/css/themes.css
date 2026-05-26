@@ -1,0 +1,111 @@
+/* MEditor preview themes — all in one file for instant switching.
+   Switch via `document.documentElement.className = 'theme-X'`.
+   No stylesheet swap, no FOUC, no reload. */
+
+/* ============================== GitHub Light ============================== */
+.theme-github {
+  --bg: #ffffff;
+  --text: #24292e;
+  --border: #e1e4e8;
+  --code-bg: #f6f8fa;
+  --blockquote-border: #d0d7de;
+  --blockquote-text: #57606a;
+  --link: #0969da;
+  --heading: #1f2328;
+  --hr: #d0d7de;
+  --table-bg: #f6f8fa;
+  --table-border: #d0d7de;
+  --mermaid-theme: 'default';
+}
+.theme-github .hljs { color: #24292e; background: #f6f8fa; }
+.theme-github .hljs-doctag, .theme-github .hljs-keyword, .theme-github .hljs-meta .hljs-keyword,
+.theme-github .hljs-template-tag, .theme-github .hljs-template-variable, .theme-github .hljs-type,
+.theme-github .hljs-variable.language_ { color: #d73a49; }
+.theme-github .hljs-title, .theme-github .hljs-title.class_, .theme-github .hljs-title.class_.inherited__,
+.theme-github .hljs-title.function_ { color: #6f42c1; }
+.theme-github .hljs-attr, .theme-github .hljs-attribute, .theme-github .hljs-literal, .theme-github .hljs-meta,
+.theme-github .hljs-number, .theme-github .hljs-operator, .theme-github .hljs-selector-attr,
+.theme-github .hljs-selector-class, .theme-github .hljs-selector-id, .theme-github .hljs-variable { color: #005cc5; }
+.theme-github .hljs-meta .hljs-string, .theme-github .hljs-regexp, .theme-github .hljs-string { color: #032f62; }
+.theme-github .hljs-built_in, .theme-github .hljs-symbol { color: #e36209; }
+.theme-github .hljs-code, .theme-github .hljs-comment, .theme-github .hljs-formula { color: #6a737d; }
+.theme-github .hljs-name, .theme-github .hljs-quote, .theme-github .hljs-selector-pseudo, .theme-github .hljs-selector-tag { color: #22863a; }
+.theme-github .hljs-subst { color: #24292e; }
+.theme-github .hljs-section { color: #005cc5; font-weight: 700; }
+.theme-github .hljs-bullet { color: #735c0f; }
+.theme-github .hljs-emphasis { color: #24292e; font-style: italic; }
+.theme-github .hljs-strong { color: #24292e; font-weight: 700; }
+.theme-github .hljs-addition { color: #22863a; background: #f0fff4; }
+.theme-github .hljs-deletion { color: #b31d28; background: #ffeef0; }
+
+/* ============================== Nord ============================== */
+.theme-nord {
+  --bg: #2e3440;
+  --text: #d8dee9;
+  --border: #3b4252;
+  --code-bg: #3b4252;
+  --blockquote-border: #4c566a;
+  --blockquote-text: #a3aab9;
+  --link: #88c0d0;
+  --heading: #eceff4;
+  --hr: #4c566a;
+  --table-bg: #3b4252;
+  --table-border: #4c566a;
+  --mermaid-theme: 'dark';
+}
+.theme-nord .hljs { color: #d8dee9; background: #3b4252; }
+.theme-nord .hljs-doctag, .theme-nord .hljs-keyword, .theme-nord .hljs-meta .hljs-keyword,
+.theme-nord .hljs-template-tag, .theme-nord .hljs-template-variable, .theme-nord .hljs-type,
+.theme-nord .hljs-variable.language_ { color: #81a1c1; }
+.theme-nord .hljs-title, .theme-nord .hljs-title.class_, .theme-nord .hljs-title.class_.inherited__,
+.theme-nord .hljs-title.function_ { color: #88c0d0; }
+.theme-nord .hljs-attr, .theme-nord .hljs-attribute, .theme-nord .hljs-literal, .theme-nord .hljs-meta,
+.theme-nord .hljs-number, .theme-nord .hljs-operator, .theme-nord .hljs-selector-attr,
+.theme-nord .hljs-selector-class, .theme-nord .hljs-selector-id, .theme-nord .hljs-variable { color: #b48ead; }
+.theme-nord .hljs-meta .hljs-string, .theme-nord .hljs-regexp, .theme-nord .hljs-string { color: #a3be8c; }
+.theme-nord .hljs-built_in, .theme-nord .hljs-symbol { color: #d08770; }
+.theme-nord .hljs-code, .theme-nord .hljs-comment, .theme-nord .hljs-formula { color: #616e88; font-style: italic; }
+.theme-nord .hljs-name, .theme-nord .hljs-quote, .theme-nord .hljs-selector-pseudo, .theme-nord .hljs-selector-tag { color: #8fbcbb; }
+.theme-nord .hljs-subst { color: #d8dee9; }
+.theme-nord .hljs-section { color: #88c0d0; font-weight: 700; }
+.theme-nord .hljs-bullet { color: #ebcb8b; }
+.theme-nord .hljs-emphasis { color: #d8dee9; font-style: italic; }
+.theme-nord .hljs-strong { color: #d8dee9; font-weight: 700; }
+.theme-nord .hljs-addition { color: #a3be8c; background: #2e3440; }
+.theme-nord .hljs-deletion { color: #bf616a; background: #2e3440; }
+
+/* ============================== Dracula ============================== */
+.theme-dracula {
+  --bg: #282a36;
+  --text: #f8f8f2;
+  --border: #44475a;
+  --code-bg: #44475a;
+  --blockquote-border: #6272a4;
+  --blockquote-text: #bd93f9;
+  --link: #8be9fd;
+  --heading: #f8f8f2;
+  --hr: #44475a;
+  --table-bg: #44475a;
+  --table-border: #6272a4;
+  --mermaid-theme: 'dark';
+}
+.theme-dracula .hljs { color: #f8f8f2; background: #282a36; }
+.theme-dracula .hljs-doctag, .theme-dracula .hljs-keyword, .theme-dracula .hljs-meta .hljs-keyword,
+.theme-dracula .hljs-template-tag, .theme-dracula .hljs-template-variable, .theme-dracula .hljs-type,
+.theme-dracula .hljs-variable.language_ { color: #ff79c6; }
+.theme-dracula .hljs-title, .theme-dracula .hljs-title.class_, .theme-dracula .hljs-title.class_.inherited__,
+.theme-dracula .hljs-title.function_ { color: #50fa7b; }
+.theme-dracula .hljs-attr, .theme-dracula .hljs-attribute, .theme-dracula .hljs-literal, .theme-dracula .hljs-meta,
+.theme-dracula .hljs-number, .theme-dracula .hljs-operator, .theme-dracula .hljs-selector-attr,
+.theme-dracula .hljs-selector-class, .theme-dracula .hljs-selector-id, .theme-dracula .hljs-variable { color: #bd93f9; }
+.theme-dracula .hljs-meta .hljs-string, .theme-dracula .hljs-regexp, .theme-dracula .hljs-string { color: #f1fa8c; }
+.theme-dracula .hljs-built_in, .theme-dracula .hljs-symbol { color: #ffb86c; }
+.theme-dracula .hljs-code, .theme-dracula .hljs-comment, .theme-dracula .hljs-formula { color: #6272a4; font-style: italic; }
+.theme-dracula .hljs-name, .theme-dracula .hljs-quote, .theme-dracula .hljs-selector-pseudo, .theme-dracula .hljs-selector-tag { color: #ff79c6; }
+.theme-dracula .hljs-subst { color: #f8f8f2; }
+.theme-dracula .hljs-section { color: #50fa7b; font-weight: 700; }
+.theme-dracula .hljs-bullet { color: #ffb86c; }
+.theme-dracula .hljs-emphasis { color: #f8f8f2; font-style: italic; }
+.theme-dracula .hljs-strong { color: #f8f8f2; font-weight: 700; }
+.theme-dracula .hljs-addition { color: #50fa7b; background: #282a36; }
+.theme-dracula .hljs-deletion { color: #ff5555; background: #282a36; }

@@ -13,7 +13,7 @@ private let fileWatcherCallback: FSEventStreamCallback = { _, info, _, _, _, _ i
 
 final class FileWatcherService {
     private var streamRef: FSEventStreamRef?
-    private let queue = DispatchQueue(label: "com.markedit.filewatcher")
+    private let queue = DispatchQueue(label: "com.meditor.filewatcher")
     fileprivate var onChange: (() -> Void)?
 
     func startWatching(urls: [URL], onChange: @escaping () -> Void) {

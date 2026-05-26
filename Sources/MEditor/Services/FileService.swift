@@ -50,7 +50,15 @@ final class FileService: FileServiceProtocol {
     // MARK: - File I/O
 
     func readFile(at url: URL) throws -> String {
-        try String(contentsOf: url, encoding: .utf8)
+        // String(contentsOf:encoding:) does BOM sniffing + potential line-ending
+        // normalization. For the common case (UTF-8, no BOM), reading as Data
+        // and decoding directly is measurably faster on large files.
+        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        if let s = String(data: data, encoding: .utf8) {
+            return s
+        }
+        // Fallback for non-UTF8 files (BOM, UTF-16, etc).
+        return try String(contentsOf: url, encoding: .utf8)
     }
 
     func writeFile(at url: URL, content: String) throws {

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en" class="theme-{{INITIAL_THEME}}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MEditor Preview</title>
+
+<!-- All themes inlined as one stylesheet — switching themes is just a
+     class change on <html>, no stylesheet swap or reload. -->
+<link rel="stylesheet" href="css/themes.css">
+<link rel="stylesheet" href="css/base.css">
+
+<!-- Vendor libraries (mermaid is loaded lazily by render.js when needed) -->
+<script src="marked.min.js"></script>
+<script src="highlight.min.js"></script>
+
+<!-- MEditor scripts -->
+<script src="scripts/render.js"></script>
+<script src="scripts/bridge.js"></script>
+</head>
+<body>
+<div id="content"></div>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    window.MEditor.boot({{INITIAL_CONTENT_JSON}});
+  });
+</script>
+</body>
+</html>

@@ -12,6 +12,9 @@ struct MEditorApp: App {
                 .onAppear {
                     NSWindow.allowsAutomaticWindowTabbing = false
                 }
+                .onOpenURL { url in
+                    handleOpenURL(url)
+                }
                 .onDisappear {
                     // Save all modified tabs on quit
                     for tab in appState.openTabs where tab.isModified {
@@ -114,6 +117,24 @@ struct MEditorApp: App {
                 }
                 .keyboardShortcut("w", modifiers: .command)
             }
+        }
+    }
+
+    private func handleOpenURL(_ url: URL) {
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) else { return }
+        appState.beginAccessing(url)
+        if isDir.boolValue {
+            appState.openFolder(url)
+        } else {
+            // Ensure the parent folder is opened so the sidebar has context.
+            if appState.rootURL == nil {
+                let parent = url.deletingLastPathComponent()
+                appState.beginAccessing(parent)
+                appState.openFolder(parent)
+            }
+            let item = FileItem(url: url, isDirectory: false)
+            appState.openFile(item)
         }
     }
 

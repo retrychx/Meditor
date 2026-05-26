@@ -32,7 +32,23 @@ struct FileSidebar: View {
 
     private var displayedTree: [FileItem] {
         guard !searchText.isEmpty else { return state.fileTree }
-        return filterFiles(state.fileTree, searchText: searchText)
+        return flattenMatches(state.fileTree, searchText: searchText)
+    }
+
+    /// Walk the tree and collect every leaf file whose name matches the query.
+    /// Returns a flat list (no directory hierarchy preserved) — best for search UX
+    /// where users want to see all matches regardless of depth.
+    private func flattenMatches(_ items: [FileItem], searchText: String) -> [FileItem] {
+        var matches: [FileItem] = []
+        for item in items {
+            if !item.isDirectory && item.name.localizedCaseInsensitiveContains(searchText) {
+                matches.append(item)
+            }
+            if let children = item.children {
+                matches.append(contentsOf: flattenMatches(children, searchText: searchText))
+            }
+        }
+        return matches
     }
 
     var body: some View {
@@ -64,35 +80,23 @@ struct FileSidebar: View {
 
             Group {
                 if searchText.isEmpty {
-                    List(state.fileTree, id: \.id, children: \.children, selection: Binding(
-                        get: { state.selectedFileID },
-                        set: { newID in
-                            if let id = newID,
-                               let item = state.fileItemMap[id] ?? findItem(by: id, in: state.fileTree),
-                               !item.isDirectory {
-                                state.openFile(item)
-                            } else {
-                                state.selectedFileID = newID
-                            }
-                        }
-                    )) { item in
+                    List(state.fileTree, id: \.id, children: \.children, selection: fileSelectionBinding) { item in
                         FileRow(item: item, isSelected: item.id == state.selectedFileID, onAction: handleFileAction)
                             .help(item.url.path)
                             .listRowSeparator(.hidden)
                     }
+                } else if displayedTree.isEmpty {
+                    VStack(spacing: 6) {
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .font(.system(size: 20, weight: .light))
+                            .foregroundStyle(.tertiary)
+                        Text("No matches")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    List(displayedTree, id: \.id, selection: Binding(
-                        get: { state.selectedFileID },
-                        set: { newID in
-                            if let id = newID,
-                               let item = state.fileItemMap[id] ?? findItem(by: id, in: state.fileTree),
-                               !item.isDirectory {
-                                state.openFile(item)
-                            } else {
-                                state.selectedFileID = newID
-                            }
-                        }
-                    )) { item in
+                    List(displayedTree, id: \.id, selection: fileSelectionBinding) { item in
                         FileRow(item: item, isSelected: item.id == state.selectedFileID, onAction: handleFileAction)
                             .help(item.url.path)
                             .listRowSeparator(.hidden)
@@ -254,6 +258,23 @@ struct FileSidebar: View {
         state.reloadFileTree()
     }
 
+    /// Shared selection binding for file rows.
+    /// On selecting a file, opens it; on selecting a directory, just records selection.
+    private var fileSelectionBinding: Binding<UUID?> {
+        Binding(
+            get: { state.selectedFileID },
+            set: { newID in
+                if let id = newID,
+                   let item = state.fileItemMap[id] ?? findItem(by: id, in: state.fileTree),
+                   !item.isDirectory {
+                    state.openFile(item)
+                } else {
+                    state.selectedFileID = newID
+                }
+            }
+        )
+    }
+
     private func findItem(by id: UUID, in items: [FileItem]) -> FileItem? {
         for item in items {
             if item.id == id { return item }
@@ -262,36 +283,5 @@ struct FileSidebar: View {
             }
         }
         return nil
-    }
-
-    /// Recursively filter the file tree to only show items matching the search text.
-    /// - If an item's name matches, the entire subtree is included.
-    /// - If a directory doesn't match but has matching descendants, the directory is shown
-    ///   as a copy with only the matching children (to preserve tree context).
-    /// - Returns the filtered tree (original `FileItem` instances for leaf files and
-    ///   matching directories; new `FileItem` copies for non-matching ancestor directories).
-    private func filterFiles(_ items: [FileItem], searchText: String) -> [FileItem] {
-        items.compactMap { item in
-            let nameMatches = item.name.localizedCaseInsensitiveContains(searchText)
-
-            var filteredChildren: [FileItem]?
-            if let children = item.children {
-                let result = filterFiles(children, searchText: searchText)
-                filteredChildren = result.isEmpty ? nil : result
-            }
-
-            if nameMatches {
-                // Name matches — include entire subtree as-is
-                return item
-            }
-
-            if let filtered = filteredChildren, !filtered.isEmpty {
-                // Directory doesn't match but has matching descendants — show as a copy
-                let copy = FileItem(url: item.url, isDirectory: true, children: filtered)
-                return copy
-            }
-
-            return nil
-        }
     }
 }
