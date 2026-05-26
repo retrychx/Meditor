@@ -34,6 +34,11 @@ struct NativeEditorView: NSViewRepresentable {
         textView.backgroundColor = NSColor.controlBackgroundColor
         textView.drawsBackground = true
 
+        // Performance: enable non-contiguous layout so the text system only
+        // lays out visible glyphs eagerly. Crucial for opening large markdown
+        // files without a multi-second hang.
+        textView.layoutManager?.allowsNonContiguousLayout = true
+
         textView.delegate = context.coordinator
         context.coordinator.textView = textView
 
@@ -63,7 +68,7 @@ struct NativeEditorView: NSViewRepresentable {
         if !content.isEmpty {
             textView.string = content
             context.coordinator.lastAcknowledgedContent = content
-            context.coordinator.applyHighlighting()
+            context.coordinator.scheduleHighlight()
         }
 
         return scrollView
@@ -77,13 +82,15 @@ struct NativeEditorView: NSViewRepresentable {
 
         guard let textView = scrollView.documentView as? NSTextView else { return }
 
-        // Only push content to the editor if it changed externally (e.g., tab switch)
+        // Only push content to the editor if it changed externally (e.g., tab switch).
+        // Highlighting is deferred to the next runloop tick so the user sees plain
+        // text instantly, with syntax colors fading in shortly after.
         if context.coordinator.lastAcknowledgedContent != content {
             context.coordinator.isProgrammaticChange = true
             textView.string = content
             context.coordinator.lastAcknowledgedContent = content
-            context.coordinator.applyHighlighting()
             context.coordinator.isProgrammaticChange = false
+            context.coordinator.scheduleHighlight()
         }
 
         // Sync editor scroll position from preview
@@ -168,23 +175,33 @@ struct NativeEditorView: NSViewRepresentable {
             onCursorChange(line, column)
         }
 
+        /// Apply syntax highlighting on the next runloop tick, debounced.
+        /// Lets the text view paint plain text first for snappy file switching.
+        func scheduleHighlight() {
+            highlightTimer?.invalidate()
+            highlightTimer = Timer.scheduledTimer(withTimeInterval: 0.0, repeats: false) { [weak self] _ in
+                self?.applyHighlighting()
+            }
+        }
+
         func applyHighlighting() {
             guard let textView = textView else { return }
             let text = textView.string
             guard !text.isEmpty else { return }
 
+            // Large files: skip both regex highlighting AND full-range attribute
+            // resets. The text view's typingAttributes (set during makeNSView)
+            // already render the body with the right font/color, so doing
+            // nothing is the correct fast path. Touching the full NSTextStorage
+            // would defeat `allowsNonContiguousLayout`.
+            if text.utf8.count > NativeEditorView.largeFileThreshold {
+                return
+            }
+
             let storage = textView.textStorage!
             let fullRange = NSRange(location: 0, length: (text as NSString).length)
             let baseColor = NSColor.labelColor
             let baseFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
-
-            // Large files: skip regex-based syntax highlighting to prevent UI freezes.
-            // Only apply basic font and color attributes.
-            if text.utf8.count > NativeEditorView.largeFileThreshold {
-                storage.addAttribute(.font, value: baseFont, range: fullRange)
-                storage.addAttribute(.foregroundColor, value: baseColor, range: fullRange)
-                return
-            }
 
             // Reset to base style
             storage.removeAttribute(.foregroundColor, range: fullRange)

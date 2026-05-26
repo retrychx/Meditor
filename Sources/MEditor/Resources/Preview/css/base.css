@@ -1,0 +1,101 @@
+/* MEditor preview — base layout & typography (theme-agnostic).
+   Colors and code-block highlighting come from themes/*.css. */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', 'Segoe UI', Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.7;
+  /* Padding scales with viewport: 18px on narrow panes, up to 36px on wide. */
+  padding: 24px clamp(18px, 3vw, 36px);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: var(--heading);
+  margin-top: 24px;
+  margin-bottom: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+h1 { font-size: 2em; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+h2 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+h3 { font-size: 1.25em; }
+h4 { font-size: 1em; }
+
+p { margin-bottom: 16px; }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+ul, ol { padding-left: 2em; margin-bottom: 16px; }
+li { margin-bottom: 4px; }
+
+blockquote {
+  margin: 0 0 16px;
+  padding: 0 16px;
+  color: var(--blockquote-text);
+  border-left: 4px solid var(--blockquote-border);
+}
+
+code {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 13px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--code-bg);
+  color: var(--text);
+}
+
+pre {
+  margin-bottom: 16px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+pre code {
+  background: none;
+  padding: 16px;
+  display: block;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+hr {
+  height: 1px;
+  border: none;
+  background: var(--hr);
+  margin: 24px 0;
+}
+
+table { border-collapse: collapse; width: 100%; margin-bottom: 16px; }
+th, td { border: 1px solid var(--table-border); padding: 8px 12px; text-align: left; }
+th { background: var(--table-bg); font-weight: 600; }
+tr:nth-child(even) { background: var(--table-bg); }
+
+img { max-width: 100%; border-radius: 6px; }
+
+.mermaid-container { margin: 16px 0; display: flex; justify-content: center; }
+.mermaid-container svg { max-width: 100%; height: auto; }
+
+.error-block {
+  color: #d73a49;
+  background: var(--code-bg);
+  border: 1px solid #d73a49;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--blockquote-border); }

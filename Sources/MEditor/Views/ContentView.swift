@@ -111,6 +111,8 @@ struct ContentView: View {
                 sidebarToggleBtn
             }
             ToolbarItemGroup(placement: .primaryAction) {
+                exportMenu
+                themeMenu
                 editorToggleBtn
                 previewToggleBtn
             }
@@ -166,6 +168,49 @@ struct ContentView: View {
             Image(systemName: "doc.text")
         }
         .help(showEditor ? "Hide Editor" : "Show Editor")
+    }
+
+    private var themeMenu: some View {
+        Menu {
+            ForEach(PreviewTheme.allCases) { theme in
+                Button {
+                    state.themeStore.current = theme
+                } label: {
+                    if state.themeStore.current == theme {
+                        Label(theme.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(theme.displayName)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "paintpalette")
+        }
+        .help("Preview Theme")
+        .menuIndicator(.hidden)
+    }
+
+    private var exportMenu: some View {
+        Menu {
+            Button("Export as HTML\u{2026}") { performExport(.html) }
+                .disabled(!state.previewExporter.isExportAvailable)
+            Button("Export as PDF\u{2026}") { performExport(.pdf) }
+                .disabled(!state.previewExporter.isExportAvailable)
+        } label: {
+            Image(systemName: "square.and.arrow.up")
+        }
+        .help("Export Preview")
+        .menuIndicator(.hidden)
+        .disabled(state.previewMode != .markdown)
+    }
+
+    private func performExport(_ format: PreviewExporter.ExportFormat) {
+        let suggestedName = state.selectedTab?.url.deletingPathExtension().lastPathComponent ?? "Untitled"
+        state.previewExporter.export(format: format, suggestedName: suggestedName) { result in
+            if case .failure(let error) = result {
+                state.setError(error.localizedDescription)
+            }
+        }
     }
 
     // MARK: - Draggable Divider
