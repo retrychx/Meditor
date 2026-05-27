@@ -12,14 +12,21 @@ struct NativeEditorView: NSViewRepresentable {
     let language: EditorLanguage
     let onContentChange: (String) -> Void
     let onCursorChange: ((Int, Int) -> Void)?
-    let onScrollChange: ((Double) -> Void)?
-    let previewScrollPercent: Double
+    /// Reports the 0-based line index visible at the top of the editor.
+    /// Used to drive editor→preview scroll sync.
+    let onVisibleTopLineChange: ((Int) -> Void)?
+    /// Target line to scroll the editor to (preview→editor sync). -1 = none.
+    let scrollToLine: Int
     /// Theme drives the text view's background and foreground colors so the
     /// editor pane visually matches the rest of the app.
     var theme: PreviewTheme = .github
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onContentChange: onContentChange, onCursorChange: onCursorChange, onScrollChange: onScrollChange)
+        Coordinator(
+            onContentChange: onContentChange,
+            onCursorChange: onCursorChange,
+            onVisibleTopLineChange: onVisibleTopLineChange
+        )
     }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -71,14 +78,13 @@ struct NativeEditorView: NSViewRepresentable {
             queue: .main
         ) { [weak coordinator = context.coordinator] _ in
             guard let coordinator = coordinator,
-                  let textView = coordinator.textView,
-                  let scrollView = textView.enclosingScrollView else { return }
-            let docHeight = scrollView.documentView!.bounds.height
-            let visibleHeight = scrollView.contentView.bounds.height
-            let maxScroll = max(0, docHeight - visibleHeight)
-            let percent = maxScroll > 0 ? scrollView.contentView.bounds.origin.y / maxScroll : 0
+                  let textView = coordinator.textView else { return }
             guard !coordinator.isProgrammaticScroll else { return }
-            coordinator.onScrollChange?(min(1, max(0, percent)))
+            let line = coordinator.computeVisibleTopLine(textView: textView)
+            // Throttle: only emit on line changes, not every pixel scroll.
+            guard line != coordinator.lastReportedLine else { return }
+            coordinator.lastReportedLine = line
+            coordinator.onVisibleTopLineChange?(line)
         }
 
         if !content.isEmpty {
@@ -93,7 +99,7 @@ struct NativeEditorView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.onContentChange = onContentChange
         context.coordinator.onCursorChange = onCursorChange
-        context.coordinator.onScrollChange = onScrollChange
+        context.coordinator.onVisibleTopLineChange = onVisibleTopLineChange
         context.coordinator.currentLanguage = language
 
         guard let textView = scrollView.documentView as? NSTextView else { return }
@@ -119,20 +125,10 @@ struct NativeEditorView: NSViewRepresentable {
             context.coordinator.scheduleHighlight()
         }
 
-        // Sync editor scroll position from preview
-        let lastPct = context.coordinator.lastPreviewScrollPercent
-        if abs(previewScrollPercent - lastPct) > 0.005 {
-            context.coordinator.lastPreviewScrollPercent = previewScrollPercent
-            context.coordinator.isProgrammaticScroll = true
-            let docHeight = scrollView.documentView!.bounds.height
-            let visibleHeight = scrollView.contentView.bounds.height
-            let maxScroll = max(0, docHeight - visibleHeight)
-            let targetY = maxScroll * CGFloat(previewScrollPercent)
-            scrollView.contentView.scroll(to: NSPoint(x: 0, y: targetY))
-            scrollView.reflectScrolledClipView(scrollView.contentView)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                context.coordinator.isProgrammaticScroll = false
-            }
+        // Sync editor scroll position from preview using source line.
+        if scrollToLine >= 0 && scrollToLine != context.coordinator.lastAppliedTargetLine {
+            context.coordinator.lastAppliedTargetLine = scrollToLine
+            context.coordinator.scrollToLine(scrollToLine)
         }
     }
 
@@ -141,23 +137,26 @@ struct NativeEditorView: NSViewRepresentable {
     class Coordinator: NSObject, NSTextViewDelegate {
         var onContentChange: (String) -> Void
         var onCursorChange: ((Int, Int) -> Void)?
-        var onScrollChange: ((Double) -> Void)?
+        var onVisibleTopLineChange: ((Int) -> Void)?
         var currentLanguage: EditorLanguage = .markdown
         var lastTheme: PreviewTheme = .github
         var lastAcknowledgedContent: String = ""
         weak var textView: NSTextView?
         var scrollObserver: NSObjectProtocol?
-        var lastPreviewScrollPercent: Double = -1
+        var lastReportedLine: Int = -1
+        var lastAppliedTargetLine: Int = -1
         var isProgrammaticScroll = false
 
         private var debounceTimer: Timer?
         private var highlightTimer: Timer?
         fileprivate var isProgrammaticChange = false
 
-        init(onContentChange: @escaping (String) -> Void, onCursorChange: ((Int, Int) -> Void)?, onScrollChange: ((Double) -> Void)?) {
+        init(onContentChange: @escaping (String) -> Void,
+             onCursorChange: ((Int, Int) -> Void)?,
+             onVisibleTopLineChange: ((Int) -> Void)?) {
             self.onContentChange = onContentChange
             self.onCursorChange = onCursorChange
-            self.onScrollChange = onScrollChange
+            self.onVisibleTopLineChange = onVisibleTopLineChange
         }
 
         deinit {
@@ -200,6 +199,66 @@ struct NativeEditorView: NSViewRepresentable {
             let line = nsText.substring(to: range.location).components(separatedBy: "\n").count
             let column = range.location - lineRange.location + 1
             onCursorChange(line, column)
+        }
+
+        /// Apply syntax highlighting on the next runloop tick, debounced.
+        /// Lets the text view paint plain text first for snappy file switching.
+        /// Compute the 0-based line index of the first visible character at
+        /// the top of the editor's viewport. Used for editor→preview sync.
+        func computeVisibleTopLine(textView: NSTextView) -> Int {
+            guard let scrollView = textView.enclosingScrollView,
+                  let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer else { return 0 }
+
+            let visibleRect = scrollView.contentView.bounds
+            // Offset for textContainerInset
+            let pointInTextContainer = NSPoint(
+                x: 0,
+                y: visibleRect.origin.y - textView.textContainerInset.height
+            )
+            let glyphIndex = layoutManager.glyphIndex(for: pointInTextContainer, in: textContainer)
+            let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+
+            // Count newlines from start to charIndex.
+            let nsText = textView.string as NSString
+            guard charIndex <= nsText.length else { return 0 }
+            var line = 0
+            var i = 0
+            while i < charIndex {
+                if nsText.character(at: i) == 0x0A { line += 1 }
+                i += 1
+            }
+            return line
+        }
+
+        /// Scroll the editor so the given 0-based source line is at the top.
+        /// Used for preview→editor sync.
+        func scrollToLine(_ line: Int) {
+            guard line >= 0,
+                  let textView = textView,
+                  let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer,
+                  let scrollView = textView.enclosingScrollView else { return }
+            let nsText = textView.string as NSString
+
+            // Walk to find the character index of the start of the target line.
+            var currentLine = 0
+            var charIndex = 0
+            while currentLine < line && charIndex < nsText.length {
+                if nsText.character(at: charIndex) == 0x0A { currentLine += 1 }
+                charIndex += 1
+            }
+            // Lay out and find the rect.
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: NSRange(location: charIndex, length: 0), actualCharacterRange: nil)
+            let rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+            let targetY = rect.origin.y + textView.textContainerInset.height
+
+            isProgrammaticScroll = true
+            scrollView.contentView.scroll(to: NSPoint(x: 0, y: targetY))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                self?.isProgrammaticScroll = false
+            }
         }
 
         /// Apply syntax highlighting on the next runloop tick, debounced.

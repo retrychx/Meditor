@@ -47,7 +47,37 @@
 
   /** Render markdown content to HTML string (without code-block highlighting). */
   function renderMarkdown(content) {
-    return marked.parse(content, { breaks: true, gfm: true });
+    // Pre-compute heading source lines so we can stamp each <h*> with a
+    // data-source-line attribute. This is what powers Swift→JS scroll sync.
+    var headingLines = collectHeadingLines(content);
+    var idx = 0;
+    var renderer = new marked.Renderer();
+    var defaultHeading = renderer.heading.bind(renderer);
+    renderer.heading = function (text, level, raw, slugger) {
+      var html = defaultHeading(text, level, raw, slugger);
+      var line = headingLines[idx++];
+      if (line === undefined) return html;
+      // Inject data-source-line into the opening <h*> tag.
+      return html.replace(/^<h(\d)/, '<h$1 data-source-line="' + line + '"');
+    };
+    return marked.parse(content, { breaks: true, gfm: true, renderer: renderer });
+  }
+
+  /// Walk the raw markdown text and record the 0-based line index of every
+  /// ATX-style heading (`# `, `## `, etc). Order matches marked's heading
+  /// render order, so we can pop them in sequence.
+  function collectHeadingLines(content) {
+    var lines = content.split('\n');
+    var out = [];
+    var inFence = false;
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      // Skip ATX-style heading detection inside fenced code blocks.
+      if (/^\s*```/.test(line)) { inFence = !inFence; continue; }
+      if (inFence) continue;
+      if (/^#{1,6}\s+\S/.test(line)) out.push(i);
+    }
+    return out;
   }
 
   /**
@@ -110,6 +140,48 @@
       // and font apply, but skip syntax coloring entirely.
       block.classList.add('hljs');
     }
+
+    attachCopyButton(block);
+  }
+
+  /// Attach a hover-revealed copy button to a code block's <pre> wrapper.
+  /// Sends raw text to Swift via messageHandler; Swift does NSPasteboard write.
+  /// Falls back to navigator.clipboard if messageHandler isn't installed.
+  function attachCopyButton(codeEl) {
+    var pre = codeEl.parentElement;
+    if (!pre || pre.tagName !== 'PRE') return;
+    if (pre.querySelector('.meditor-copy-btn')) return;
+    pre.classList.add('meditor-codeblock');
+
+    var btn = document.createElement('button');
+    btn.className = 'meditor-copy-btn';
+    btn.type = 'button';
+    btn.textContent = 'Copy';
+    btn.setAttribute('aria-label', 'Copy code');
+    btn.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      var text = codeEl.textContent || '';
+      var posted = false;
+      try {
+        if (window.webkit && window.webkit.messageHandlers &&
+            window.webkit.messageHandlers.copyHandler) {
+          window.webkit.messageHandlers.copyHandler.postMessage({ text: text });
+          posted = true;
+        }
+      } catch (e) { /* fall through */ }
+      if (!posted && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).catch(function () {});
+      }
+      // Brief affordance
+      var prev = btn.textContent;
+      btn.textContent = 'Copied';
+      btn.classList.add('meditor-copy-btn--copied');
+      setTimeout(function () {
+        btn.textContent = prev;
+        btn.classList.remove('meditor-copy-btn--copied');
+      }, 1200);
+    });
+    pre.appendChild(btn);
   }
 
   /**

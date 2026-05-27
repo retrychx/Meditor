@@ -20,6 +20,13 @@ struct ContentView: View {
         // Make the entire window (sidebar, toolbar, editor, status bar) follow
         // the chosen preview theme. GitHub → light, Nord / Dracula → dark.
         .preferredColorScheme(state.themeStore.current.isDark ? .dark : .light)
+        .sheet(isPresented: Binding(
+            get: { state.showingQuickOpen },
+            set: { state.showingQuickOpen = $0 }
+        )) {
+            QuickOpenSheet()
+                .environment(state)
+        }
         .alert("Error", isPresented: Binding(
             get: { state.errorMessage != nil },
             set: { if !$0 { state.errorMessage = nil } }
@@ -155,7 +162,8 @@ struct ContentView: View {
         } label: {
             Image(systemName: "sidebar.left")
         }
-        .help(showSidebar ? "Hide Sidebar" : "Show Sidebar")
+        .help(showSidebar ? "Hide Sidebar (⌘B)" : "Show Sidebar (⌘B)")
+        .keyboardShortcut("b", modifiers: .command)
     }
 
     private var previewToggleBtn: some View {
@@ -164,7 +172,8 @@ struct ContentView: View {
         } label: {
             Image(systemName: "sidebar.right")
         }
-        .help(showPreview ? "Hide Preview" : "Show Preview")
+        .help(showPreview ? "Hide Preview (⌘⇧V)" : "Show Preview (⌘⇧V)")
+        .keyboardShortcut("v", modifiers: [.command, .shift])
     }
 
     private var editorToggleBtn: some View {
@@ -173,12 +182,13 @@ struct ContentView: View {
         } label: {
             Image(systemName: "doc.text")
         }
-        .help(showEditor ? "Hide Editor" : "Show Editor")
+        .help(showEditor ? "Hide Editor (⌘⇧M)" : "Show Editor (⌘⇧M)")
+        .keyboardShortcut("m", modifiers: [.command, .shift])
     }
 
     private var themeMenu: some View {
         Menu {
-            ForEach(PreviewTheme.allCases) { theme in
+            ForEach(Array(PreviewTheme.allCases.enumerated()), id: \.element.id) { idx, theme in
                 Button {
                     state.themeStore.current = theme
                 } label: {
@@ -188,11 +198,12 @@ struct ContentView: View {
                         Text(theme.displayName)
                     }
                 }
+                .keyboardShortcut(KeyEquivalent(Character("\(idx + 1)")), modifiers: .command)
             }
         } label: {
             Image(systemName: "paintpalette")
         }
-        .help("Preview Theme")
+        .help("Preview Theme (⌘1/2/3)")
         .menuIndicator(.hidden)
     }
 
@@ -200,8 +211,10 @@ struct ContentView: View {
         Menu {
             Button("Export as HTML\u{2026}") { performExport(.html) }
                 .disabled(!state.previewExporter.isExportAvailable)
+                .keyboardShortcut("e", modifiers: [.command, .option])
             Button("Export as PDF\u{2026}") { performExport(.pdf) }
                 .disabled(!state.previewExporter.isExportAvailable)
+                .keyboardShortcut("e", modifiers: [.command, .shift])
         } label: {
             Image(systemName: "square.and.arrow.up")
         }

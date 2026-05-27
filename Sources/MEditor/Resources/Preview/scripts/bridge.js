@@ -121,6 +121,27 @@
     setTimeout(function () { ignoreScrollEvent = false; }, 50);
   }
 
+  /** Scroll to the rendered element whose source line is closest to (but not
+   *  greater than) the given line. Used by Swift for editor→preview sync. */
+  function scrollToLine(line) {
+    if (!contentEl) return;
+    var anchors = contentEl.querySelectorAll('[data-source-line]');
+    if (anchors.length === 0) return;
+    // Find the last anchor whose data-source-line <= target line.
+    var target = null;
+    for (var i = 0; i < anchors.length; i++) {
+      var l = parseInt(anchors[i].getAttribute('data-source-line'), 10);
+      if (isNaN(l)) continue;
+      if (l <= line) target = anchors[i];
+      else break;
+    }
+    if (!target) target = anchors[0];
+    ignoreScrollEvent = true;
+    var rect = target.getBoundingClientRect();
+    window.scrollTo({ top: window.scrollY + rect.top - 16, behavior: 'auto' });
+    setTimeout(function () { ignoreScrollEvent = false; }, 50);
+  }
+
   /** Return rendered HTML for export. Includes inlined CSS for portability. */
   function getRenderedHTML(documentTitle) {
     if (!contentEl) return '';
@@ -163,13 +184,41 @@
       if (ignoreScrollEvent) return;
       var docHeight = document.documentElement.scrollHeight - window.innerHeight;
       var percent = docHeight > 0 ? window.scrollY / docHeight : 0;
-      // Throttle: only post when meaningfully changed.
       if (Math.abs(percent - lastReportedScrollPercent) < 0.005) return;
       lastReportedScrollPercent = percent;
+
+      // Find the topmost visible source-line anchor for preview→editor sync.
+      var line = currentVisibleLine();
+
       try {
-        window.webkit.messageHandlers.scrollHandler.postMessage({ percent: percent });
+        window.webkit.messageHandlers.scrollHandler.postMessage({
+          percent: percent,
+          line: line
+        });
       } catch (e) { /* Swift handler not registered */ }
     });
+  }
+
+  /// Return the data-source-line of the topmost anchor currently visible in
+  /// the viewport, or -1 if none exists / nothing in view.
+  function currentVisibleLine() {
+    if (!contentEl) return -1;
+    var anchors = contentEl.querySelectorAll('[data-source-line]');
+    var topmost = null;
+    var topmostY = Infinity;
+    for (var i = 0; i < anchors.length; i++) {
+      var rect = anchors[i].getBoundingClientRect();
+      // Anchors above viewport (rect.bottom < 0) are skipped; we want the
+      // first one within or just past the top edge.
+      if (rect.bottom < 0) continue;
+      if (rect.top < topmostY) {
+        topmostY = rect.top;
+        topmost = anchors[i];
+      }
+    }
+    if (!topmost) return -1;
+    var l = parseInt(topmost.getAttribute('data-source-line'), 10);
+    return isNaN(l) ? -1 : l;
   }
 
   /** Set the document base URL so relative image/link/asset paths in
@@ -192,6 +241,7 @@
     setTheme: setTheme,
     setBaseURL: setBaseURL,
     scrollToPercent: scrollToPercent,
+    scrollToLine: scrollToLine,
     getRenderedHTML: getRenderedHTML
   };
 })(window);

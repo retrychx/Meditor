@@ -11,6 +11,9 @@ struct MEditorApp: App {
                 .frame(minWidth: 900, minHeight: 500)
                 .onAppear {
                     NSWindow.allowsAutomaticWindowTabbing = false
+                    // Restore previous session (root folder + open tabs + selection).
+                    // No-op on first launch or if every bookmark has gone stale.
+                    appState.restoreSession()
                 }
                 .onOpenURL { url in
                     handleOpenURL(url)
@@ -20,6 +23,8 @@ struct MEditorApp: App {
                     for tab in appState.openTabs where tab.isModified {
                         appState.saveTab(tab)
                     }
+                    // Force-flush session to disk so the next launch restores it.
+                    appState.flushSession()
                 }
         }
         .windowStyle(.titleBar)
@@ -116,6 +121,29 @@ struct MEditorApp: App {
                     }
                 }
                 .keyboardShortcut("w", modifiers: .command)
+
+                Button("Reopen Closed Tab") {
+                    appState.reopenLastClosedTab()
+                }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
+
+                Button("Next Tab") {
+                    appState.selectNextTab()
+                }
+                .keyboardShortcut("]", modifiers: [.command, .shift])
+
+                Button("Previous Tab") {
+                    appState.selectPreviousTab()
+                }
+                .keyboardShortcut("[", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button("Quick Open\u{2026}") {
+                    appState.showingQuickOpen = true
+                }
+                .keyboardShortcut("p", modifiers: .command)
+                .disabled(appState.rootURL == nil)
             }
         }
     }

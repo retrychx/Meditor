@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import OSLog
 
 enum EditorLanguage: String {
     case markdown
@@ -41,9 +42,10 @@ final class AppState {
 
     var cursorLine: Int = 1
     var cursorColumn: Int = 1
-    var editorScrollPercent: Double = 0
-    var previewScrollPercent: Double = 0
-    var isSyncingScroll = false
+    /// Source line at the top of the editor's viewport. Drives editor→preview sync.
+    var editorVisibleLine: Int = 0
+    /// Source line at the top of the preview's viewport. Drives preview→editor sync.
+    var previewVisibleLine: Int = 0
 
     func updateCursorPosition(line: Int, column: Int) {
         cursorLine = line
@@ -102,19 +104,128 @@ final class AppState {
     var pendingCloseTab: EditorTab?
     var showingCloseConfirmation = false
 
+    /// Stack of URLs from recently closed tabs, used by ⌘⇧T to reopen.
+    /// Capped to avoid unbounded growth in long sessions.
+    @ObservationIgnored
+    private var recentlyClosedURLs: [URL] = []
+    private static let recentlyClosedLimit = 16
+
+    /// True when user invoked Quick Open (⌘P) and the picker should appear.
+    var showingQuickOpen = false
+
     private let fileService: FileServiceProtocol
     let fileWatcher = FileWatcherService()
     let themeStore: PreviewThemeStore
     let previewExporter = PreviewExporter()
+    private let sessionStore: SessionStore
 
     init(fileService: FileServiceProtocol = FileService(),
-         themeStore: PreviewThemeStore = PreviewThemeStore()) {
+         themeStore: PreviewThemeStore = PreviewThemeStore(),
+         sessionStore: SessionStore = SessionStore()) {
         self.fileService = fileService
         self.themeStore = themeStore
+        self.sessionStore = sessionStore
     }
 
     func setError(_ message: String) {
         errorMessage = message
+    }
+
+    /// Report a typed `AppError`: always log to OSLog; surface to the user
+    /// via Alert only when severity is `.user`.
+    func report(_ error: AppError, logger: Logger = AppLog.app) {
+        AppLog.error(error, in: logger)
+        if error.severity == .user {
+            errorMessage = error.errorDescription
+        }
+    }
+
+    // MARK: - Session persistence
+
+    /// Schedule a debounced save of the current session shape (root folder,
+    /// open tabs, selected tab). Safe to call from any state-change site.
+    private func persistSession() {
+        let urls = openTabs.map { $0.url }
+        let selectedIdx: Int? = {
+            guard let id = selectedTabID else { return nil }
+            return openTabs.firstIndex(where: { $0.id == id })
+        }()
+        sessionStore.scheduleSave(
+            rootURL: rootURL,
+            openTabURLs: urls,
+            selectedIndex: selectedIdx
+        )
+    }
+
+    /// Force an immediate synchronous save — call before the app quits.
+    func flushSession() {
+        let urls = openTabs.map { $0.url }
+        let selectedIdx: Int? = {
+            guard let id = selectedTabID else { return nil }
+            return openTabs.firstIndex(where: { $0.id == id })
+        }()
+        sessionStore.saveNow(
+            rootURL: rootURL,
+            openTabURLs: urls,
+            selectedIndex: selectedIdx
+        )
+    }
+
+    /// Restore a previously persisted session if any. Silently no-ops on
+    /// first launch or if every bookmark has gone stale / been revoked.
+    /// Should be called once at app startup, after `AppState` is built.
+    func restoreSession() {
+        guard let session = sessionStore.load() else { return }
+
+        // 1. Restore root folder
+        if let rootData = session.rootBookmark,
+           let resolved = SessionStore.resolveBookmark(rootData),
+           FileManager.default.fileExists(atPath: resolved.url.path) {
+            beginAccessing(resolved.url)
+            openFolder(resolved.url)
+        }
+
+        // 2. Restore tabs (skip ones whose files vanished)
+        var restoredTabs: [(EditorTab, URL)] = []
+        for tabBookmark in session.tabs {
+            guard let resolved = SessionStore.resolveBookmark(tabBookmark) else { continue }
+            let url = resolved.url
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            guard !url.hasDirectoryPath else { continue }
+
+            beginAccessing(url)
+            let lang = FileTypeConfiguration.shared
+                .editorLanguage(for: url.pathExtension.lowercased()) ?? .markdown
+            let tab = EditorTab(url: url, content: "", language: lang)
+            restoredTabs.append((tab, url))
+        }
+        openTabs.append(contentsOf: restoredTabs.map { $0.0 })
+
+        // 3. Restore selected tab (clamp index to bounds)
+        if let idx = session.selectedTabIndex,
+           idx >= 0, idx < openTabs.count {
+            selectedTabID = openTabs[idx].id
+            syncSidebarSelectionToTab(openTabs[idx])
+            syncPreviewContent(from: openTabs[idx])
+        }
+
+        // 4. Read each restored tab's contents asynchronously.
+        for (tab, url) in restoredTabs {
+            let tabID = tab.id
+            let service = fileService
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                do {
+                    let content = try service.readFile(at: url)
+                    DispatchQueue.main.async {
+                        self?.applyLoadedContent(tabID: tabID, content: content)
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        self?.failLoadingTab(tabID: tabID, url: url, error: error)
+                    }
+                }
+            }
+        }
     }
 
     var selectedTab: EditorTab? {
@@ -136,6 +247,7 @@ final class AppState {
         fileWatcher.startWatching(urls: [url]) { [weak self] in
             self?.reloadFileTree()
         }
+        persistSession()
     }
 
     func reloadFileTree() {
@@ -193,6 +305,7 @@ final class AppState {
             endAccessing(item.url)
             selectedTabID = existing.id
             syncPreviewContent(from: existing)
+            persistSession()
             return
         }
 
@@ -219,7 +332,6 @@ final class AppState {
 
         let tabID = tab.id
         let url = item.url
-        let displayName = item.name
         let service = fileService
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -230,10 +342,12 @@ final class AppState {
                 }
             } catch {
                 DispatchQueue.main.async {
-                    self?.failLoadingTab(tabID: tabID, name: displayName, error: error)
+                    self?.failLoadingTab(tabID: tabID, url: url, error: error)
                 }
             }
         }
+
+        persistSession()
     }
 
     private func applyLoadedContent(tabID: UUID, content: String) {
@@ -244,10 +358,10 @@ final class AppState {
         }
     }
 
-    private func failLoadingTab(tabID: UUID, name: String, error: Error) {
+    private func failLoadingTab(tabID: UUID, url: URL, error: Error) {
         guard let idx = openTabs.firstIndex(where: { $0.id == tabID }) else {
             // Tab was already closed or never inserted; just surface the error.
-            setError("Failed to open “\(name)”: \(error.localizedDescription)")
+            report(.fileRead(url, underlying: error), logger: AppLog.file)
             return
         }
 
@@ -272,11 +386,15 @@ final class AppState {
                 previewMode = .empty
             }
             if let tab = selectedTab {
+                syncSidebarSelectionToTab(tab)
                 syncPreviewContent(from: tab)
+            } else {
+                selectedFileID = nil
             }
         }
 
-        setError("Failed to open “\(name)”: \(error.localizedDescription)")
+        report(.fileRead(url, underlying: error), logger: AppLog.file)
+        persistSession()
     }
 
     func closeTab(_ tabID: UUID) {
@@ -308,6 +426,12 @@ final class AppState {
         // Pair the beginAccessing call from openFile.
         endAccessing(closingURL)
 
+        // Push onto recently-closed stack for ⌘⇧T (reopen).
+        recentlyClosedURLs.append(closingURL)
+        if recentlyClosedURLs.count > Self.recentlyClosedLimit {
+            recentlyClosedURLs.removeFirst()
+        }
+
         if selectedTabID == tabID {
             if idx < openTabs.count {
                 selectedTabID = openTabs[idx].id
@@ -322,8 +446,13 @@ final class AppState {
         }
 
         if let newTab = selectedTab {
+            syncSidebarSelectionToTab(newTab)
             syncPreviewContent(from: newTab)
+        } else {
+            selectedFileID = nil
         }
+
+        persistSession()
     }
 
     func updateTabContent(_ tabID: UUID, content: String) {
@@ -343,7 +472,7 @@ final class AppState {
                 }
             }
         } catch {
-            setError("Failed to save “\(tab.name)”: \(error.localizedDescription)")
+            report(.fileWrite(tab.url, underlying: error), logger: AppLog.file)
         }
     }
 
@@ -355,8 +484,46 @@ final class AppState {
     func selectTab(_ id: UUID) {
         selectedTabID = id
         if let tab = selectedTab {
+            syncSidebarSelectionToTab(tab)
             syncPreviewContent(from: tab)
         }
+        persistSession()
+    }
+
+    /// Highlight the sidebar row for the given tab's URL, so clicking through
+    /// the tab bar keeps the file tree in sync.
+    private func syncSidebarSelectionToTab(_ tab: EditorTab) {
+        if let item = fileItemMap.values.first(where: { $0.url == tab.url }) {
+            selectedFileID = item.id
+        }
+    }
+
+    /// Reopen the most recently closed tab. No-op if the stack is empty
+    /// or if the file no longer exists on disk.
+    func reopenLastClosedTab() {
+        while let url = recentlyClosedURLs.popLast() {
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            // Don't reopen if it's already open.
+            if openTabs.contains(where: { $0.url == url }) { continue }
+            openFile(FileItem(url: url, isDirectory: false))
+            return
+        }
+    }
+
+    /// Switch to the next tab, wrapping around at the end. No-op if 0 or 1 tabs.
+    func selectNextTab() {
+        guard openTabs.count > 1, let id = selectedTabID,
+              let idx = openTabs.firstIndex(where: { $0.id == id }) else { return }
+        let nextIdx = (idx + 1) % openTabs.count
+        selectTab(openTabs[nextIdx].id)
+    }
+
+    /// Switch to the previous tab, wrapping around at the start.
+    func selectPreviousTab() {
+        guard openTabs.count > 1, let id = selectedTabID,
+              let idx = openTabs.firstIndex(where: { $0.id == id }) else { return }
+        let prevIdx = (idx - 1 + openTabs.count) % openTabs.count
+        selectTab(openTabs[prevIdx].id)
     }
 
     func moveTab(from sourceIndex: Int, to destIndex: Int) {
@@ -364,6 +531,7 @@ final class AppState {
               destIndex >= 0, destIndex < openTabs.count else { return }
         let tab = openTabs.remove(at: sourceIndex)
         openTabs.insert(tab, at: destIndex)
+        persistSession()
     }
 
     // MARK: - Private

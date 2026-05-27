@@ -9,8 +9,11 @@ import WebKit
 struct MarkdownWebPreview: View {
     let content: String
     var theme: PreviewTheme = .github
-    var scrollPercentage: Double = 0
-    var onScrollChange: ((Double) -> Void)? = nil
+    /// Source line to scroll the preview to (editor→preview sync). -1 = none.
+    var scrollToLine: Int = -1
+    /// Reports the data-source-line of the topmost visible anchor when the
+    /// user scrolls inside the preview (preview→editor sync).
+    var onVisibleLineChange: ((Int) -> Void)? = nil
     var exporter: PreviewExporter? = nil
     /// Source file URL — used to set <base href> so relative resources
     /// (images, links) in markdown resolve against the source directory.
@@ -20,8 +23,8 @@ struct MarkdownWebPreview: View {
         MarkdownWebView(
             content: content,
             theme: theme,
-            scrollPercentage: scrollPercentage,
-            onScrollChange: onScrollChange,
+            scrollToLine: scrollToLine,
+            onVisibleLineChange: onVisibleLineChange,
             exporter: exporter,
             sourceURL: sourceURL
         )
@@ -33,21 +36,23 @@ struct MarkdownWebPreview: View {
 private struct MarkdownWebView: NSViewRepresentable {
     let content: String
     let theme: PreviewTheme
-    let scrollPercentage: Double
-    let onScrollChange: ((Double) -> Void)?
+    let scrollToLine: Int
+    let onVisibleLineChange: ((Int) -> Void)?
     let exporter: PreviewExporter?
     let sourceURL: URL?
 
     static let scrollHandlerName = "scrollHandler"
+    static let copyHandlerName = "copyHandler"
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onScrollChange: onScrollChange, exporter: exporter)
+        Coordinator(onVisibleLineChange: onVisibleLineChange, exporter: exporter)
     }
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         let userContent = WKUserContentController()
         userContent.add(context.coordinator, name: Self.scrollHandlerName)
+        userContent.add(context.coordinator, name: Self.copyHandlerName)
         config.userContentController = userContent
 
         let webView = WKWebView(frame: .zero, configuration: config)
@@ -64,7 +69,7 @@ private struct MarkdownWebView: NSViewRepresentable {
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         let coordinator = context.coordinator
-        coordinator.onScrollChange = onScrollChange
+        coordinator.onVisibleLineChange = onVisibleLineChange
 
         // Theme changed: swap stylesheet via JS; re-render handled by bridge.
         if theme != coordinator.lastTheme {
@@ -86,15 +91,14 @@ private struct MarkdownWebView: NSViewRepresentable {
             coordinator.scheduleContentUpdate(content)
         }
 
-        // Scroll sync from editor → preview (skip while preview is the source).
-        if abs(scrollPercentage - coordinator.lastAppliedScroll) > 0.005,
-           !coordinator.isProgrammaticScroll {
-            coordinator.lastAppliedScroll = scrollPercentage
+        // Scroll sync editor → preview using source line.
+        if scrollToLine >= 0 && scrollToLine != coordinator.lastAppliedTargetLine {
+            coordinator.lastAppliedTargetLine = scrollToLine
             coordinator.isProgrammaticScroll = true
             coordinator.evaluateWhenReady(
-                "window.MEditor && window.MEditor.scrollToPercent(\(scrollPercentage));"
+                "window.MEditor && window.MEditor.scrollToLine(\(scrollToLine));"
             )
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                 coordinator.isProgrammaticScroll = false
             }
         }
@@ -107,6 +111,7 @@ private struct MarkdownWebView: NSViewRepresentable {
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
         webView.configuration.userContentController.removeScriptMessageHandler(forName: scrollHandlerName)
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: copyHandlerName)
         if coordinator.exporter?.webView === webView {
             coordinator.exporter?.webView = nil
         }
@@ -197,13 +202,14 @@ private struct MarkdownWebView: NSViewRepresentable {
 extension MarkdownWebView {
     final class Coordinator: NSObject {
         weak var webView: WKWebView?
-        var onScrollChange: ((Double) -> Void)?
+        var onVisibleLineChange: ((Int) -> Void)?
         weak var exporter: PreviewExporter?
 
         var lastContent: String = ""
         var lastTheme: PreviewTheme = .github
         var lastSourceURL: URL?
-        var lastAppliedScroll: Double = -1
+        var lastAppliedTargetLine: Int = -1
+        var lastReportedLine: Int = -1
         var isProgrammaticScroll = false
         var isReady = false
 
@@ -244,8 +250,8 @@ extension MarkdownWebView {
         // Pending JS to run once the page finishes loading.
         private var pendingScripts: [String] = []
 
-        init(onScrollChange: ((Double) -> Void)? = nil, exporter: PreviewExporter? = nil) {
-            self.onScrollChange = onScrollChange
+        init(onVisibleLineChange: ((Int) -> Void)? = nil, exporter: PreviewExporter? = nil) {
+            self.onVisibleLineChange = onVisibleLineChange
             self.exporter = exporter
         }
 
@@ -318,12 +324,30 @@ extension MarkdownWebView.Coordinator: WKNavigationDelegate {
 extension MarkdownWebView.Coordinator: WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController,
                                didReceive message: WKScriptMessage) {
-        guard message.name == MarkdownWebView.scrollHandlerName,
-              let body = message.body as? [String: Any],
-              let percent = body["percent"] as? Double else { return }
+        switch message.name {
+        case MarkdownWebView.scrollHandlerName:
+            handleScrollMessage(message)
+        case MarkdownWebView.copyHandlerName:
+            handleCopyMessage(message)
+        default:
+            break
+        }
+    }
 
-        // Suppress events triggered by our own programmatic scrollTo.
+    private func handleScrollMessage(_ message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any] else { return }
         if isProgrammaticScroll { return }
-        onScrollChange?(percent)
+        if let line = body["line"] as? Int, line >= 0, line != lastReportedLine {
+            lastReportedLine = line
+            onVisibleLineChange?(line)
+        }
+    }
+
+    private func handleCopyMessage(_ message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any],
+              let text = body["text"] as? String else { return }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
     }
 }
