@@ -11,9 +11,12 @@ struct PreviewPanel: View {
             MarkdownWebPreview(
                 content: showsMarkdown ? state.previewContent : "",
                 theme: state.themeStore.current,
-                // Scroll sync disabled — see EditorView for rationale.
-                scrollPercentage: 0,
-                onScrollChange: nil,
+                // Editor → preview: scroll to line reported by editor.
+                scrollToLine: showsMarkdown ? state.editorVisibleLine : -1,
+                // Preview → editor: report visible top line.
+                onVisibleLineChange: { line in
+                    state.previewVisibleLine = line
+                },
                 exporter: state.previewExporter,
                 sourceURL: showsMarkdown ? state.selectedTab?.url : nil
             )

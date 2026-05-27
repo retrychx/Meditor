@@ -14,13 +14,12 @@ struct EditorView: View {
                 onCursorChange: { line, col in
                     state.updateCursorPosition(line: line, column: col)
                 },
-                // Scroll sync intentionally disabled. Source-view height
-                // (compact code) and rendered-view height (large headings,
-                // expanded blocks) diverge enough that percentage-based sync
-                // is misleading. A future enhancement can use source-line
-                // anchors emitted by marked.js for accurate sync.
-                onScrollChange: nil,
-                previewScrollPercent: 0,
+                // Editor → preview: report visible top line.
+                onVisibleTopLineChange: { line in
+                    state.editorVisibleLine = line
+                },
+                // Preview → editor: scroll to line set by preview.
+                scrollToLine: state.previewVisibleLine,
                 theme: state.themeStore.current
             )
         } else {

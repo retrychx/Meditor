@@ -99,3 +99,26 @@ img { max-width: 100%; border-radius: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--blockquote-border); }
+
+/* ===== Code-block copy button ===== */
+.meditor-codeblock { position: relative; }
+.meditor-copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', sans-serif;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+  user-select: none;
+}
+.meditor-codeblock:hover .meditor-copy-btn { opacity: 0.9; }
+.meditor-copy-btn:hover { opacity: 1 !important; background: var(--code-bg); }
+.meditor-copy-btn--copied { opacity: 1 !important; color: var(--link); }
