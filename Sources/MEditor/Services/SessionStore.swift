@@ -48,18 +48,21 @@ final class SessionStore {
     }
 
     /// Force an immediate synchronous save. Call before app quit so nothing is lost.
+    /// Thread-safe: serializes through `queue` to avoid racing with debounced saves.
     func saveNow(rootURL: URL?, openTabURLs: [URL], selectedIndex: Int?) {
-        pendingSave?.cancel()
-        pendingSave = nil
+        queue.sync {
+            pendingSave?.cancel()
+            pendingSave = nil
 
-        let session = PersistedSession(
-            rootBookmark: rootURL.flatMap { Self.bookmarkData(for: $0) },
-            tabs: openTabURLs.compactMap { Self.bookmarkData(for: $0) },
-            selectedTabIndex: selectedIndex
-        )
+            let session = PersistedSession(
+                rootBookmark: rootURL.flatMap { Self.bookmarkData(for: $0) },
+                tabs: openTabURLs.compactMap { Self.bookmarkData(for: $0) },
+                selectedTabIndex: selectedIndex
+            )
 
-        guard let encoded = try? JSONEncoder().encode(session) else { return }
-        userDefaults.set(encoded, forKey: Self.userDefaultsKey)
+            guard let encoded = try? JSONEncoder().encode(session) else { return }
+            self.userDefaults.set(encoded, forKey: Self.userDefaultsKey)
+        }
     }
 
     // MARK: - Load
