@@ -87,7 +87,10 @@ struct ToolbarIconMenuButton: NSViewRepresentable {
 
     class Coordinator: NSObject {
         var items: [(title: String, action: () -> Void)]
-        init(menuItems: [(title: String, action: () -> Void)]) { self.items = menuItems }
+
+        init(menuItems: [(title: String, action: () -> Void)]) {
+            items = menuItems
+        }
 
         @objc func menuAction(_ sender: NSMenuItem) {
             let idx = sender.tag
