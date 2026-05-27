@@ -13,7 +13,7 @@ private let fileWatcherCallback: FSEventStreamCallback = { _, info, _, _, _, _ i
     }
 }
 
-final class FileWatcherService {
+final class FileWatcherService: FileWatcherServiceProtocol {
     private var streamRef: FSEventStreamRef?
     private let queue = DispatchQueue(label: "com.meditor.filewatcher")
     /// Protected by `lock` — accessed from both `queue` (callback) and main thread.

@@ -8,7 +8,7 @@ import Foundation
 /// Uses macOS security-scoped bookmarks rather than raw paths so the user
 /// doesn't need to re-grant access via Open Panel after every launch — and
 /// so the URL keeps working even if the file is renamed/moved.
-final class SessionStore {
+final class SessionStore: SessionStoreProtocol {
 
     // MARK: - Persisted shape
 
