@@ -1,6 +1,6 @@
 import AppKit
 
-final class HighlightService {
+final class HighlightService: HighlightServiceProtocol {
     static let shared = HighlightService()
 
     private var engines: [EditorLanguage: SyntaxHighlightEngine] = [:]
