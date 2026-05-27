@@ -17,8 +17,6 @@ struct ContentView: View {
                 mainLayout
             }
         }
-        // Make the entire window (sidebar, toolbar, editor, status bar) follow
-        // the chosen preview theme. GitHub → light, Nord / Dracula → dark.
         .preferredColorScheme(state.themeStore.current.isDark ? .dark : .light)
         .sheet(isPresented: Binding(
             get: { state.showingQuickOpen },
@@ -49,8 +47,6 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Welcome Screen
-
     private var welcomeScreen: some View {
         VStack(spacing: 14) {
             Image(systemName: "doc.text.magnifyingglass")
@@ -77,8 +73,6 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Main Layout
-
     private var mainLayout: some View {
         let theme = state.themeStore.current
         return VStack(spacing: 0) {
@@ -89,8 +83,6 @@ struct ContentView: View {
                     draggableDivider(width: $sidebarWidth, minValue: 160, maxValue: 360)
                 }
 
-                // Right side: shared tab bar above editor + preview so their
-                // content starts at the same Y position.
                 VStack(spacing: 0) {
                     if !state.openTabs.isEmpty {
                         EditorTabBar()
@@ -137,8 +129,6 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Columns
-
     private var sidebarColumn: some View {
         FileSidebar()
             .background(state.themeStore.current.chromeBackground)
@@ -153,8 +143,6 @@ struct ContentView: View {
         PreviewPanel()
             .background(state.themeStore.current.editorBackground)
     }
-
-    // MARK: - Toolbar Buttons
 
     private var sidebarToggleBtn: some View {
         Button {
