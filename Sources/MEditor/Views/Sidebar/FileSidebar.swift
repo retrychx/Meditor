@@ -14,6 +14,11 @@ struct FileSidebar: View {
     @Environment(AppState.self) private var state
 
     @State private var searchText = ""
+    /// Persisted set of expanded directory paths (URL.path strings).
+    @State private var expandedPaths: Set<String> = {
+        let saved = UserDefaults.standard.stringArray(forKey: "sidebar.expandedPaths") ?? []
+        return Set(saved)
+    }()
 
     // Create file/folder
     @State private var showCreateAlert = false
@@ -80,10 +85,10 @@ struct FileSidebar: View {
 
             Group {
                 if searchText.isEmpty {
-                    List(state.fileTree, id: \.id, children: \.children, selection: fileSelectionBinding) { item in
-                        FileRow(item: item, isSelected: item.id == state.selectedFileID, onAction: handleFileAction)
-                            .help(item.url.path)
-                            .listRowSeparator(.hidden)
+                    List(selection: fileSelectionBinding) {
+                        ForEach(state.fileTree) { item in
+                            fileRow(item, depth: 0)
+                        }
                     }
                 } else if displayedTree.isEmpty {
                     VStack(spacing: 6) {
@@ -260,7 +265,7 @@ struct FileSidebar: View {
 
     /// Shared selection binding for file rows.
     /// On selecting a file, opens it; on selecting a directory, just records selection.
-    private var fileSelectionBinding: Binding<UUID?> {
+    private var fileSelectionBinding: Binding<URL?> {
         Binding(
             get: { state.selectedFileID },
             set: { newID in
@@ -275,7 +280,7 @@ struct FileSidebar: View {
         )
     }
 
-    private func findItem(by id: UUID, in items: [FileItem]) -> FileItem? {
+    private func findItem(by id: URL, in items: [FileItem]) -> FileItem? {
         for item in items {
             if item.id == id { return item }
             if let children = item.children, let found = findItem(by: id, in: children) {
@@ -283,5 +288,42 @@ struct FileSidebar: View {
             }
         }
         return nil
+    }
+
+    // MARK: - Recursive row renderer
+
+    private func fileRow(_ item: FileItem, depth: Int) -> AnyView {
+        if item.isDirectory, let children = item.children {
+            return AnyView(
+                DisclosureGroup(
+                    isExpanded: Binding(
+                        get: { expandedPaths.contains(item.url.path) },
+                        set: { expanded in
+                            if expanded { expandedPaths.insert(item.url.path) }
+                            else { expandedPaths.remove(item.url.path) }
+                            persistExpandedPaths()
+                        }
+                    )
+                ) {
+                    ForEach(children) { child in
+                        fileRow(child, depth: depth + 1)
+                    }
+                } label: {
+                    FileRow(item: item, isSelected: item.id == state.selectedFileID, onAction: handleFileAction)
+                        .help(item.url.path)
+                }
+                .listRowSeparator(.hidden)
+            )
+        } else {
+            return AnyView(
+                FileRow(item: item, isSelected: item.id == state.selectedFileID, onAction: handleFileAction)
+                    .help(item.url.path)
+                    .listRowSeparator(.hidden)
+            )
+        }
+    }
+
+    private func persistExpandedPaths() {
+        UserDefaults.standard.set(Array(expandedPaths), forKey: "sidebar.expandedPaths")
     }
 }

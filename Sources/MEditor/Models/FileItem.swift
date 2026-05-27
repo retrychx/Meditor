@@ -3,7 +3,13 @@ import Observation
 
 @Observable
 final class FileItem: Identifiable, Hashable {
-    let id = UUID()
+    /// Stable identity based on URL. Using the URL (not a per-instance UUID)
+    /// is critical so that SwiftUI's List preserves expansion state when
+    /// `reloadFileTree()` rebuilds the entire tree (e.g. after a file watcher
+    /// event). Without a stable id, every reload would collapse all expanded
+    /// folders.
+    var id: URL { url }
+
     let url: URL
     let isDirectory: Bool
     var children: [FileItem]?
@@ -23,10 +29,10 @@ final class FileItem: Identifiable, Hashable {
     }
 
     static func == (lhs: FileItem, rhs: FileItem) -> Bool {
-        lhs.id == rhs.id
+        lhs.url == rhs.url
     }
 
     func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
+        hasher.combine(url)
     }
 }

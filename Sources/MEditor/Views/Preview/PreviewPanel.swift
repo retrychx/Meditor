@@ -29,7 +29,8 @@ struct PreviewPanel: View {
             // Swift-side file read.
             WebPreviewView(
                 fileURL: showsHTML ? state.previewHTMLFileURL : nil,
-                reloadToken: state.previewReloadToken
+                reloadToken: state.previewReloadToken,
+                exporter: state.previewExporter
             )
             .opacity(showsHTML ? 1 : 0)
             .allowsHitTesting(showsHTML)
