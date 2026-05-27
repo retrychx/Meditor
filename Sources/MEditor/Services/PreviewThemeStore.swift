@@ -5,7 +5,7 @@ import Observation
 ///
 /// Wrapped as `@Observable` so SwiftUI views can react automatically to changes.
 @Observable
-final class PreviewThemeStore {
+final class PreviewThemeStore: PreviewThemeStoreProtocol {
     private static let userDefaultsKey = "MEditor.previewTheme"
 
     /// The theme currently in use. Setter persists the value to UserDefaults.
