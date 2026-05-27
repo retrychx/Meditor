@@ -90,6 +90,7 @@ struct NativeEditorView: NSViewRepresentable {
         if !content.isEmpty {
             textView.string = content
             context.coordinator.lastAcknowledgedContent = content
+            context.coordinator.rebuildLineOffsets(for: content)
             context.coordinator.scheduleHighlight()
         }
 
@@ -121,6 +122,7 @@ struct NativeEditorView: NSViewRepresentable {
             context.coordinator.isProgrammaticChange = true
             textView.string = content
             context.coordinator.lastAcknowledgedContent = content
+            context.coordinator.rebuildLineOffsets(for: content)
             context.coordinator.isProgrammaticChange = false
             context.coordinator.scheduleHighlight()
         }
@@ -151,6 +153,10 @@ struct NativeEditorView: NSViewRepresentable {
         private var highlightTimer: Timer?
         fileprivate var isProgrammaticChange = false
 
+        /// Cached line offset table: lineOffsets[i] = character index of line i's start.
+        /// Invalidated on every content change for O(1) line lookups during scroll.
+        private var lineOffsets: [Int] = [0]
+
         init(onContentChange: @escaping (String) -> Void,
              onCursorChange: ((Int, Int) -> Void)?,
              onVisibleTopLineChange: ((Int) -> Void)?) {
@@ -165,11 +171,25 @@ struct NativeEditorView: NSViewRepresentable {
             }
         }
 
+        /// Rebuild the line offset cache from the current text content.
+        func rebuildLineOffsets(for text: String) {
+            let ns = text as NSString
+            var offsets: [Int] = [0]
+            offsets.reserveCapacity(ns.length / 40) // rough estimate
+            for i in 0..<ns.length {
+                if ns.character(at: i) == 0x0A {
+                    offsets.append(i + 1)
+                }
+            }
+            lineOffsets = offsets
+        }
+
         func textDidChange(_ notification: Notification) {
             guard let textView = textView, !isProgrammaticChange else { return }
 
             let newContent = textView.string
             lastAcknowledgedContent = newContent
+            rebuildLineOffsets(for: newContent)
 
             // Content update debounce (50ms) - keeps preview reactive during typing
             debounceTimer?.invalidate()
@@ -201,17 +221,14 @@ struct NativeEditorView: NSViewRepresentable {
             onCursorChange(line, column)
         }
 
-        /// Apply syntax highlighting on the next runloop tick, debounced.
-        /// Lets the text view paint plain text first for snappy file switching.
         /// Compute the 0-based line index of the first visible character at
-        /// the top of the editor's viewport. Used for editor→preview sync.
+        /// the top of the editor's viewport. Uses cached line offsets for O(log n).
         func computeVisibleTopLine(textView: NSTextView) -> Int {
             guard let scrollView = textView.enclosingScrollView,
                   let layoutManager = textView.layoutManager,
                   let textContainer = textView.textContainer else { return 0 }
 
             let visibleRect = scrollView.contentView.bounds
-            // Offset for textContainerInset
             let pointInTextContainer = NSPoint(
                 x: 0,
                 y: visibleRect.origin.y - textView.textContainerInset.height
@@ -219,16 +236,17 @@ struct NativeEditorView: NSViewRepresentable {
             let glyphIndex = layoutManager.glyphIndex(for: pointInTextContainer, in: textContainer)
             let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
 
-            // Count newlines from start to charIndex.
-            let nsText = textView.string as NSString
-            guard charIndex <= nsText.length else { return 0 }
-            var line = 0
-            var i = 0
-            while i < charIndex {
-                if nsText.character(at: i) == 0x0A { line += 1 }
-                i += 1
+            // Binary search on cached line offsets: O(log n) instead of O(n).
+            var lo = 0, hi = lineOffsets.count
+            while lo < hi {
+                let mid = (lo + hi) / 2
+                if lineOffsets[mid] <= charIndex {
+                    lo = mid + 1
+                } else {
+                    hi = mid
+                }
             }
-            return line
+            return max(0, lo - 1)
         }
 
         /// Scroll the editor so the given 0-based source line is at the top.

@@ -15,6 +15,7 @@ enum PreviewMode: Equatable {
     case html
 }
 
+@MainActor
 @Observable
 final class AppState {
     var fileTree: [FileItem] = []
@@ -152,32 +153,33 @@ final class AppState {
 
     // MARK: - Session persistence
 
-    /// Schedule a debounced save of the current session shape (root folder,
-    /// open tabs, selected tab). Safe to call from any state-change site.
-    private func persistSession() {
+    private var sessionSnapshot: (urls: [URL], selectedIndex: Int?) {
         let urls = openTabs.map { $0.url }
         let selectedIdx: Int? = {
             guard let id = selectedTabID else { return nil }
             return openTabs.firstIndex(where: { $0.id == id })
         }()
+        return (urls, selectedIdx)
+    }
+
+    /// Schedule a debounced save of the current session shape (root folder,
+    /// open tabs, selected tab). Safe to call from any state-change site.
+    private func persistSession() {
+        let snapshot = sessionSnapshot
         sessionStore.scheduleSave(
             rootURL: rootURL,
-            openTabURLs: urls,
-            selectedIndex: selectedIdx
+            openTabURLs: snapshot.urls,
+            selectedIndex: snapshot.selectedIndex
         )
     }
 
     /// Force an immediate synchronous save — call before the app quits.
     func flushSession() {
-        let urls = openTabs.map { $0.url }
-        let selectedIdx: Int? = {
-            guard let id = selectedTabID else { return nil }
-            return openTabs.firstIndex(where: { $0.id == id })
-        }()
+        let snapshot = sessionSnapshot
         sessionStore.saveNow(
             rootURL: rootURL,
-            openTabURLs: urls,
-            selectedIndex: selectedIdx
+            openTabURLs: snapshot.urls,
+            selectedIndex: snapshot.selectedIndex
         )
     }
 
@@ -238,16 +240,12 @@ final class AppState {
         for (tab, url) in restoredTabs {
             let tabID = tab.id
             let service = fileService
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            Task.detached(priority: .userInitiated) { [weak self] in
                 do {
                     let content = try service.readFile(at: url)
-                    DispatchQueue.main.async {
-                        self?.applyLoadedContent(tabID: tabID, content: content)
-                    }
+                    await self?.applyLoadedContent(tabID: tabID, content: content)
                 } catch {
-                    DispatchQueue.main.async {
-                        self?.failLoadingTab(tabID: tabID, url: url, error: error)
-                    }
+                    await self?.failLoadingTab(tabID: tabID, url: url, error: error)
                 }
             }
         }
@@ -363,16 +361,12 @@ final class AppState {
         let url = item.url
         let service = fileService
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        Task.detached(priority: .userInitiated) { [weak self] in
             do {
                 let content = try service.readFile(at: url)
-                DispatchQueue.main.async {
-                    self?.applyLoadedContent(tabID: tabID, content: content)
-                }
+                await self?.applyLoadedContent(tabID: tabID, content: content)
             } catch {
-                DispatchQueue.main.async {
-                    self?.failLoadingTab(tabID: tabID, url: url, error: error)
-                }
+                await self?.failLoadingTab(tabID: tabID, url: url, error: error)
             }
         }
 
