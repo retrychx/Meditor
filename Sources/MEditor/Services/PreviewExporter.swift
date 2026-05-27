@@ -8,7 +8,7 @@ import Observation
 /// so the toolbar (which lives outside the preview hierarchy) can trigger
 /// exports without holding a direct reference to the webview.
 @Observable
-final class PreviewExporter {
+final class PreviewExporter: PreviewExporterProtocol {
     /// Set by `MarkdownWebPreview` when the webview is created. Cleared on dismantle.
     @ObservationIgnored
     weak var webView: WKWebView?
