@@ -262,8 +262,6 @@ private final class OneShotNavDelegate: NSObject, WKNavigationDelegate {
     }
 }
 
-private enum _Unused { static var key: UInt8 = 0 }
-
 private func rasterizePDF(_ data: Data, size: CGSize, scale: CGFloat) -> NSImage? {
         guard let provider = CGDataProvider(data: data as CFData),
               let pdf = CGPDFDocument(provider),
