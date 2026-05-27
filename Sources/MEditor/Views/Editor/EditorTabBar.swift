@@ -9,7 +9,7 @@ struct EditorTabBar: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 0) {
                 ForEach(state.openTabs) { tab in
-                    tabButton(tab)
+                    TabButton(tab: tab, onClose: { state.closeTab(tab.id) })
                         .onDrag {
                             draggedTabID = tab.id
                             return NSItemProvider(object: tab.id.uuidString as NSString)
@@ -22,17 +22,41 @@ struct EditorTabBar: View {
                                 state: state
                             )
                         )
+                        .contextMenu {
+                            Button("Close") { state.closeTab(tab.id) }
+                            Button("Close Others") {
+                                state.openTabs.filter { $0.id != tab.id }
+                                    .forEach { state.closeTab($0.id) }
+                            }
+                            Button("Close All") {
+                                state.openTabs.forEach { state.closeTab($0.id) }
+                            }
+                            Divider()
+                            Button("Show in Finder") {
+                                NSWorkspace.shared.activateFileViewerSelecting([tab.url])
+                            }
+                        }
                 }
             }
         }
         .frame(height: 26)
         .background(Color(nsColor: .windowBackgroundColor))
     }
+}
 
-    private func tabButton(_ tab: EditorTab) -> some View {
-        let isSelected = tab.id == state.selectedTabID
+// MARK: - Tab Button
 
-        return HStack(spacing: 4) {
+private struct TabButton: View {
+    @Environment(AppState.self) private var state
+    let tab: EditorTab
+    let onClose: () -> Void
+
+    @State private var isHovered = false
+
+    var isSelected: Bool { tab.id == state.selectedTabID }
+
+    var body: some View {
+        HStack(spacing: 4) {
             Image(systemName: FileTypeConfiguration.shared.icon(for: tab.url.pathExtension))
                 .font(.system(size: 9.5))
                 .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
@@ -41,34 +65,41 @@ struct EditorTabBar: View {
                 .font(.system(size: 11, weight: isSelected ? .medium : .regular))
                 .foregroundStyle(isSelected ? .primary : .secondary)
                 .lineLimit(1)
+                .truncationMode(.tail)
 
-            if tab.isModified {
-                Circle()
-                    .fill(Color.orange)
-                    .frame(width: 5, height: 5)
+            // Close / modified indicator area (fixed width to prevent layout shift)
+            ZStack {
+                if isHovered {
+                    Button(action: onClose) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                } else if tab.isModified {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 5, height: 5)
+                } else {
+                    // Invisible placeholder to keep width stable
+                    Image(systemName: "xmark")
+                        .font(.system(size: 7, weight: .bold))
+                        .hidden()
+                }
             }
-
-            Button {
-                state.closeTab(tab.id)
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 7, weight: .bold))
-                    .foregroundStyle(.tertiary)
-            }
-            .buttonStyle(.plain)
+            .frame(width: 12, height: 12)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 3)
+        .frame(minWidth: 80, maxWidth: 160)
         .background(isSelected ? Color(nsColor: .textBackgroundColor) : Color.clear)
         .overlay(alignment: .bottom) {
-            if isSelected {
-                Color.accentColor.frame(height: 2)
-            }
+            if isSelected { Color.accentColor.frame(height: 2) }
         }
         .contentShape(Rectangle())
-        .onTapGesture {
-            state.selectTab(tab.id)
-        }
+        .onHover { isHovered = $0 }
+        .onTapGesture { state.selectTab(tab.id) }
+        .help(tab.url.path)
     }
 }
 

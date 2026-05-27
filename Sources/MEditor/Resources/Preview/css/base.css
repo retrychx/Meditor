@@ -19,14 +19,25 @@ body {
 
 h1, h2, h3, h4, h5, h6 {
   color: var(--heading);
-  margin-top: 24px;
-  margin-bottom: 16px;
+  margin-top: 32px;
+  margin-bottom: 12px;
   font-weight: 600;
   line-height: 1.25;
+  letter-spacing: -0.01em;
 }
-h1 { font-size: 2em; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
-h2 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
-h3 { font-size: 1.25em; }
+h1 {
+  font-size: 1.75em;
+  font-weight: 700;
+  margin-top: 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+h2 {
+  font-size: 1.3em;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+h3 { font-size: 1.1em; }
 h4 { font-size: 1em; }
 
 p { margin-bottom: 16px; }
@@ -71,12 +82,14 @@ pre code {
 hr {
   height: 1px;
   border: none;
-  background: var(--hr);
-  margin: 24px 0;
+  background: var(--border);
+  margin: 28px 0;
+  opacity: 0.6;
 }
 
-table { border-collapse: collapse; width: 100%; margin-bottom: 16px; }
-th, td { border: 1px solid var(--table-border); padding: 8px 12px; text-align: left; }
+.table-wrapper { overflow-x: auto; margin-bottom: 16px; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border: 1px solid var(--table-border); padding: 8px 12px; text-align: left; white-space: nowrap; }
 th { background: var(--table-bg); font-weight: 600; }
 tr:nth-child(even) { background: var(--table-bg); }
 
@@ -110,15 +123,15 @@ img { max-width: 100%; border-radius: 6px; }
   font-size: 11px;
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', sans-serif;
   font-weight: 500;
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border);
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 4px;
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.15s ease, background 0.15s ease;
   user-select: none;
 }
-.meditor-codeblock:hover .meditor-copy-btn { opacity: 0.9; }
-.meditor-copy-btn:hover { opacity: 1 !important; background: var(--code-bg); }
-.meditor-copy-btn--copied { opacity: 1 !important; color: var(--link); }
+.meditor-codeblock:hover .meditor-copy-btn { opacity: 1; }
+.meditor-copy-btn:hover { opacity: 1 !important; background: rgba(255, 255, 255, 0.22); }
+.meditor-copy-btn--copied { opacity: 1 !important; color: #7ee787; }

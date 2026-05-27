@@ -187,40 +187,31 @@ struct ContentView: View {
     }
 
     private var themeMenu: some View {
-        Menu {
-            ForEach(Array(PreviewTheme.allCases.enumerated()), id: \.element.id) { idx, theme in
-                Button {
-                    state.themeStore.current = theme
-                } label: {
-                    if state.themeStore.current == theme {
-                        Label(theme.displayName, systemImage: "checkmark")
-                    } else {
-                        Text(theme.displayName)
-                    }
-                }
-                .keyboardShortcut(KeyEquivalent(Character("\(idx + 1)")), modifiers: .command)
+        ToolbarIconMenuButton(
+            systemName: "paintpalette",
+            size: 13,
+            items: PreviewTheme.allCases.enumerated().map { idx, theme in
+                (title: (state.themeStore.current == theme ? "✓ " : "  ") + theme.displayName,
+                 action: { state.themeStore.current = theme })
             }
-        } label: {
-            Image(systemName: "paintpalette")
-        }
-        .help("Preview Theme (⌘1/2/3)")
-        .menuIndicator(.hidden)
+        )
+        .frame(width: 24, height: 22)
+        .help("Preview Theme")
     }
 
     private var exportMenu: some View {
-        Menu {
-            Button("Export as HTML\u{2026}") { performExport(.html) }
-                .disabled(!state.previewExporter.isExportAvailable)
-                .keyboardShortcut("e", modifiers: [.command, .option])
-            Button("Export as PDF\u{2026}") { performExport(.pdf) }
-                .disabled(!state.previewExporter.isExportAvailable)
-                .keyboardShortcut("e", modifiers: [.command, .shift])
-        } label: {
-            Image(systemName: "square.and.arrow.up")
-        }
+        ToolbarIconMenuButton(
+            systemName: "square.and.arrow.up",
+            size: 13,
+            items: [
+                ("Export as HTML\u{2026}", { performExport(.html) }),
+                ("Export as PDF\u{2026}", { performExport(.pdf) }),
+                ("Export as Image\u{2026}", { performExport(.image) })
+            ],
+            isDisabled: !state.previewExporter.isExportAvailable
+        )
+        .frame(width: 24, height: 22)
         .help("Export Preview")
-        .menuIndicator(.hidden)
-        .disabled(state.previewMode != .markdown)
     }
 
     private func performExport(_ format: PreviewExporter.ExportFormat) {

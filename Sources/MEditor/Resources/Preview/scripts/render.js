@@ -45,22 +45,83 @@
     return { processed: processed, diagrams: diagrams };
   }
 
-  /** Render markdown content to HTML string (without code-block highlighting). */
+  /** Render markdown content to HTML string (without code-block highlighting).
+   *  Uses marked's default renderer to keep GFM features (tables, task lists,
+   *  strikethrough) working correctly. Heading source-line attributes are
+   *  added in a post-pass via stampHeadingLines. */
   function renderMarkdown(content) {
-    // Pre-compute heading source lines so we can stamp each <h*> with a
-    // data-source-line attribute. This is what powers Swift→JS scroll sync.
-    var headingLines = collectHeadingLines(content);
-    var idx = 0;
-    var renderer = new marked.Renderer();
-    var defaultHeading = renderer.heading.bind(renderer);
-    renderer.heading = function (text, level, raw, slugger) {
-      var html = defaultHeading(text, level, raw, slugger);
-      var line = headingLines[idx++];
-      if (line === undefined) return html;
-      // Inject data-source-line into the opening <h*> tag.
-      return html.replace(/^<h(\d)/, '<h$1 data-source-line="' + line + '"');
-    };
-    return marked.parse(content, { breaks: true, gfm: true, renderer: renderer });
+    // Force a blank line after ATX headings and HR so a directly-following
+    // GFM table is recognized. marked 12's table parser (per GFM spec)
+    // requires a blank-line separator from preceding prose. Without this,
+    // common patterns like `## Heading\n| col | col |` get rendered as
+    // a paragraph of literal pipes.
+    var processed = content
+      .replace(/^(#{1,6}\s+[^\n]+)\n(?!\n)/gm, '$1\n\n')
+      .replace(/^(---+|\*\*\*+|___+)\s*\n(?!\n)/gm, '$1\n\n');
+
+    // Fix GFM table separator row: marked v12 requires separator column count
+    // to match header column count exactly. Pad or trim separator columns.
+    processed = fixTableSeparators(processed);
+
+    var html = marked.parse(processed, { gfm: true, breaks: false });
+    return html;
+  }
+
+  /** Ensure GFM table separator rows have the same column count as their
+   *  header rows. marked v12 rejects tables where counts differ. */
+  function fixTableSeparators(text) {
+    var lines = text.split('\n');
+    var result = [];
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      // Detect separator line: contains only |, -, :, and spaces
+      if (i > 0 && /^\|?[\s|:\-]+\|?$/.test(line) && line.indexOf('-') !== -1) {
+        var prev = lines[i - 1];
+        // Previous line must look like a table header (contains |)
+        if (prev && prev.indexOf('|') !== -1) {
+          var headerCols = countPipeCols(prev);
+          var sepCols = countPipeCols(line);
+          if (headerCols > 0 && sepCols > 0 && sepCols !== headerCols) {
+            // Rebuild separator with correct column count
+            var parts = splitPipeCols(line);
+            var defaultSep = '---';
+            while (parts.length < headerCols) parts.push(defaultSep);
+            if (parts.length > headerCols) parts = parts.slice(0, headerCols);
+            line = '| ' + parts.join(' | ') + ' |';
+          }
+        }
+      }
+      result.push(line);
+    }
+    return result.join('\n');
+  }
+
+  function countPipeCols(line) {
+    var trimmed = line.trim();
+    if (trimmed.charAt(0) === '|') trimmed = trimmed.substring(1);
+    if (trimmed.charAt(trimmed.length - 1) === '|') trimmed = trimmed.substring(0, trimmed.length - 1);
+    if (trimmed.length === 0) return 0;
+    return trimmed.split('|').length;
+  }
+
+  function splitPipeCols(line) {
+    var trimmed = line.trim();
+    if (trimmed.charAt(0) === '|') trimmed = trimmed.substring(1);
+    if (trimmed.charAt(trimmed.length - 1) === '|') trimmed = trimmed.substring(0, trimmed.length - 1);
+    return trimmed.split('|').map(function(s) { return s.trim(); });
+  }
+
+  /// Walk rendered headings inside the root element and tag each one with a
+  /// data-source-line attribute matching the source markdown. This drives
+  /// editor↔preview scroll sync.
+  function stampHeadingLines(rootEl, sourceText) {
+    var lines = collectHeadingLines(sourceText);
+    if (lines.length === 0) return;
+    var headings = rootEl.querySelectorAll('h1, h2, h3, h4, h5, h6');
+    var n = Math.min(headings.length, lines.length);
+    for (var i = 0; i < n; i++) {
+      headings[i].setAttribute('data-source-line', String(lines[i]));
+    }
   }
 
   /// Walk the raw markdown text and record the 0-based line index of every
@@ -272,6 +333,17 @@
       var extracted = extractMermaid(content || '');
       var html = renderMarkdown(extracted.processed);
       targetEl.innerHTML = html;
+      // Wrap tables in a scrollable container for wide tables.
+      var tables = targetEl.querySelectorAll('table');
+      for (var t = 0; t < tables.length; t++) {
+        var wrapper = document.createElement('div');
+        wrapper.className = 'table-wrapper';
+        tables[t].parentNode.insertBefore(wrapper, tables[t]);
+        wrapper.appendChild(tables[t]);
+      }
+      // Use the original (unprocessed) content for line numbers, since
+      // mermaid extraction doesn't add or remove lines.
+      stampHeadingLines(targetEl, content || '');
       highlightCodeBlocks(targetEl);
       renderMermaidDiagrams(extracted.diagrams);
     } catch (e) {

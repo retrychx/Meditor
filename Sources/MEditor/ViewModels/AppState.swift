@@ -18,11 +18,17 @@ enum PreviewMode: Equatable {
 @Observable
 final class AppState {
     var fileTree: [FileItem] = []
-    var fileItemMap: [UUID: FileItem] = [:]
-    var selectedFileID: UUID?
-    var rootURL: URL?
-    var openTabs: [EditorTab] = []
-    var selectedTabID: UUID?
+    var fileItemMap: [URL: FileItem] = [:]
+    var selectedFileID: URL?
+    var rootURL: URL? {
+        didSet { if !isRestoringSession { persistSession() } }
+    }
+    var openTabs: [EditorTab] = [] {
+        didSet { if !isRestoringSession { persistSession() } }
+    }
+    var selectedTabID: UUID? {
+        didSet { if !isRestoringSession { persistSession() } }
+    }
     var previewContent: String = ""
     var previewLanguage: EditorLanguage = .markdown
     /// What the preview is currently showing. Replaces the previous
@@ -72,6 +78,10 @@ final class AppState {
 
     @ObservationIgnored
     private var accessRefCounts: [URL: Int] = [:]
+
+    /// Suppresses automatic `persistSession()` calls during `restoreSession()`.
+    @ObservationIgnored
+    private var isRestoringSession = false
 
     func beginAccessing(_ url: URL) {
         if let count = accessRefCounts[url] {
@@ -176,6 +186,8 @@ final class AppState {
     /// Should be called once at app startup, after `AppState` is built.
     func restoreSession() {
         guard let session = sessionStore.load() else { return }
+        isRestoringSession = true
+        defer { isRestoringSession = false }
 
         // 1. Restore root folder
         if let rootData = session.rootBookmark,
@@ -185,13 +197,18 @@ final class AppState {
             openFolder(resolved.url)
         }
 
-        // 2. Restore tabs (skip ones whose files vanished)
+        // 2. Restore tabs (skip ones whose files vanished or are already
+        //    open from this launch — e.g. the user double-clicked a .md file
+        //    which fired `onOpenURL` before `onAppear`/restoreSession).
+        let alreadyOpenURLs = Set(openTabs.map { $0.url })
         var restoredTabs: [(EditorTab, URL)] = []
         for tabBookmark in session.tabs {
             guard let resolved = SessionStore.resolveBookmark(tabBookmark) else { continue }
             let url = resolved.url
             guard FileManager.default.fileExists(atPath: url.path) else { continue }
             guard !url.hasDirectoryPath else { continue }
+            // Dedup: skip URLs already added by an earlier code path.
+            if alreadyOpenURLs.contains(url) { continue }
 
             beginAccessing(url)
             let lang = FileTypeConfiguration.shared
@@ -199,14 +216,22 @@ final class AppState {
             let tab = EditorTab(url: url, content: "", language: lang)
             restoredTabs.append((tab, url))
         }
+        // Restored tabs go AFTER any newly-opened tabs in this launch.
+        // Newest-left ordering: the file the user just double-clicked
+        // (already in openTabs from onOpenURL) stays at index 0;
+        // previously-open tabs follow on the right in their saved order.
         openTabs.append(contentsOf: restoredTabs.map { $0.0 })
 
-        // 3. Restore selected tab (clamp index to bounds)
-        if let idx = session.selectedTabIndex,
-           idx >= 0, idx < openTabs.count {
-            selectedTabID = openTabs[idx].id
-            syncSidebarSelectionToTab(openTabs[idx])
-            syncPreviewContent(from: openTabs[idx])
+        // 3. Restore selected tab (clamp index to bounds). If the user
+        //    already has a tab selected (e.g. opened from `onOpenURL`),
+        //    keep their selection — don't override.
+        if selectedTabID == nil,
+           let idx = session.selectedTabIndex,
+           idx >= 0, idx < restoredTabs.count {
+            let restoredTab = restoredTabs[idx].0
+            selectedTabID = restoredTab.id
+            syncSidebarSelectionToTab(restoredTab)
+            syncPreviewContent(from: restoredTab)
         }
 
         // 4. Read each restored tab's contents asynchronously.
@@ -243,11 +268,15 @@ final class AppState {
 
     func openFolder(_ url: URL) {
         rootURL = url
+        // Clear tabs from the previous folder.
+        openTabs.forEach { endAccessing($0.url) }
+        openTabs.removeAll()
+        selectedTabID = nil
+        previewMode = .empty
         reloadFileTree()
         fileWatcher.startWatching(urls: [url]) { [weak self] in
             self?.reloadFileTree()
         }
-        persistSession()
     }
 
     func reloadFileTree() {
@@ -305,7 +334,6 @@ final class AppState {
             endAccessing(item.url)
             selectedTabID = existing.id
             syncPreviewContent(from: existing)
-            persistSession()
             return
         }
 
@@ -314,7 +342,8 @@ final class AppState {
         // file body arrives asynchronously below.
         let lang = FileTypeConfiguration.shared.editorLanguage(for: item.fileExtension) ?? .markdown
         let tab = EditorTab(url: item.url, content: "", language: lang)
-        openTabs.append(tab)
+        // Newest tabs go to the left (index 0). Pre-existing tabs shift right.
+        openTabs.insert(tab, at: 0)
         selectedTabID = tab.id
 
         // For HTML files, kick off WKWebView.loadFileURL immediately by
@@ -347,7 +376,6 @@ final class AppState {
             }
         }
 
-        persistSession()
     }
 
     private func applyLoadedContent(tabID: UUID, content: String) {
@@ -394,7 +422,6 @@ final class AppState {
         }
 
         report(.fileRead(url, underlying: error), logger: AppLog.file)
-        persistSession()
     }
 
     func closeTab(_ tabID: UUID) {
@@ -452,7 +479,6 @@ final class AppState {
             selectedFileID = nil
         }
 
-        persistSession()
     }
 
     func updateTabContent(_ tabID: UUID, content: String) {
@@ -487,14 +513,14 @@ final class AppState {
             syncSidebarSelectionToTab(tab)
             syncPreviewContent(from: tab)
         }
-        persistSession()
     }
 
     /// Highlight the sidebar row for the given tab's URL, so clicking through
     /// the tab bar keeps the file tree in sync.
     private func syncSidebarSelectionToTab(_ tab: EditorTab) {
-        if let item = fileItemMap.values.first(where: { $0.url == tab.url }) {
-            selectedFileID = item.id
+        // FileItem.id is now URL, so this is a direct lookup — no scan.
+        if fileItemMap[tab.url] != nil {
+            selectedFileID = tab.url
         }
     }
 
@@ -531,7 +557,6 @@ final class AppState {
               destIndex >= 0, destIndex < openTabs.count else { return }
         let tab = openTabs.remove(at: sourceIndex)
         openTabs.insert(tab, at: destIndex)
-        persistSession()
     }
 
     // MARK: - Private

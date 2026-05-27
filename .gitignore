@@ -2,3 +2,7 @@
 .claude
 .swiftpm
 .vscode
+
+# Dev-flow workspace artifacts (auto-generated)
+workspaces/current-workspace
+workspaces/*/session/conversations/
