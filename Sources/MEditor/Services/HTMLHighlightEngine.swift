@@ -1,69 +1,60 @@
 import AppKit
 
 final class HTMLHighlightEngine: SyntaxHighlightEngine {
-    private static let tagPattern         = try! NSRegularExpression(pattern: "</?([a-zA-Z][a-zA-Z0-9]*)\\b[^>]*/?>")
-    private static let attrNamePattern    = try! NSRegularExpression(pattern: "\\b([a-zA-Z][a-zA-Z0-9-]*)\\s*=")
-    private static let attrValuePattern   = try! NSRegularExpression(pattern: "\"[^\"]*\"")
-    private static let commentPattern     = try! NSRegularExpression(pattern: "<!--.*?-->", options: .dotMatchesLineSeparators)
-    private static let entityPattern      = try! NSRegularExpression(pattern: "&[a-zA-Z0-9#]+;")
-    private static let doctypePattern     = try! NSRegularExpression(pattern: "<!DOCTYPE[^>]*>", options: .caseInsensitive)
-    private static let styleBlockPattern  = try! NSRegularExpression(pattern: "<style[^>]*>([\\s\\S]*?)</style>", options: .caseInsensitive)
-    private static let scriptBlockPattern = try! NSRegularExpression(pattern: "<script[^>]*>([\\s\\S]*?)</script>", options: .caseInsensitive)
-    private static let cssSelectorPattern = try! NSRegularExpression(pattern: "[.#:@]?[a-zA-Z][a-zA-Z0-9_-]*(?=\\s*[{,])")
-    private static let cssPropPattern     = try! NSRegularExpression(pattern: "([a-z-]{2,})\\s*:")
-    private static let cssValuePattern    = try! NSRegularExpression(pattern: ":\\s*([^;{}\\n]+)")
-    private static let cssCommentPattern  = try! NSRegularExpression(pattern: "/\\*.*?\\*/", options: .dotMatchesLineSeparators)
-    private static let cssVarPattern      = try! NSRegularExpression(pattern: "var\\(--[^)]+\\)|#[0-9a-fA-F]{3,8}\\b|\\b\\d+(\\.\\d+)?(px|em|rem|%|vh|vw|s|ms)?\\b")
-    // JS inside <script>
-    private static let jsStringPattern    = try! NSRegularExpression(pattern: "\"[^\"\\n]*\"|'[^'\\n]*'|`[^`]*`")
-    private static let jsKeywordPattern   = try! NSRegularExpression(pattern: "\\b(const|let|var|function|return|if|else|for|while|class|import|export|default|new|this|typeof|async|await|=>)\\b")
-    private static let jsCommentPattern   = try! NSRegularExpression(pattern: "//[^\\n]*|/\\*[\\s\\S]*?\\*/")
-    private static let jsNumberPattern    = try! NSRegularExpression(pattern: "\\b\\d+(\\.\\d+)?\\b")
+    private static let tagPattern         = regex("</?([a-zA-Z][a-zA-Z0-9]*)\\b[^>]*/?>")
+    private static let attrNamePattern    = regex("\\b([a-zA-Z][a-zA-Z0-9-]*)\\s*=")
+    private static let attrValuePattern   = regex("\"[^\"]*\"")
+    private static let commentPattern     = regex("<!--.*?-->", options: .dotMatchesLineSeparators)
+    private static let entityPattern      = regex("&[a-zA-Z0-9#]+;")
+    private static let doctypePattern     = regex("<!DOCTYPE[^>]*>", options: .caseInsensitive)
+    private static let styleBlockPattern  = regex("<style[^>]*>([\\s\\S]*?)</style>", options: .caseInsensitive)
+    private static let scriptBlockPattern = regex("<script[^>]*>([\\s\\S]*?)</script>", options: .caseInsensitive)
+    private static let cssSelectorPattern = regex("[.#:@]?[a-zA-Z][a-zA-Z0-9_-]*(?=\\s*[{,])")
+    private static let cssPropPattern     = regex("([a-z-]{2,})\\s*:")
+    private static let cssValuePattern    = regex(":\\s*([^;{}\\n]+)")
+    private static let cssCommentPattern  = regex("/\\*.*?\\*/", options: .dotMatchesLineSeparators)
+    private static let cssVarPattern      = regex("var\\(--[^)]+\\)|#[0-9a-fA-F]{3,8}\\b|\\b\\d+(\\.\\d+)?(px|em|rem|%|vh|vw|s|ms)?\\b")
+    private static let jsStringPattern    = regex("\"[^\"\\n]*\"|'[^'\\n]*'|`[^`]*`")
+    private static let jsKeywordPattern   = regex("\\b(const|let|var|function|return|if|else|for|while|class|import|export|default|new|this|typeof|async|await|=>)\\b")
+    private static let jsCommentPattern   = regex("//[^\\n]*|/\\*[\\s\\S]*?\\*/")
+    private static let jsNumberPattern    = regex("\\b\\d+(\\.\\d+)?\\b")
 
     func highlight(text: String, into storage: NSTextStorage, range fullRange: NSRange, baseFont: NSFont) {
-        // Detect dark mode via the effective appearance of the key window.
         let isDark: Bool = {
             let appearance = NSApp.keyWindow?.effectiveAppearance ?? NSAppearance(named: .aqua)!
             return appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         }()
 
-        // Palette — light vs dark
-        let tagBracketColor  = isDark ? NSColor(hex: "#89DDFF") : NSColor(hex: "#0550AE")  // angle brackets
-        let tagNameColor     = isDark ? NSColor(hex: "#F07178") : NSColor(hex: "#116329")  // element names
-        let attrNameColor    = isDark ? NSColor(hex: "#FFCB6B") : NSColor(hex: "#953800")  // attr names
-        let attrValueColor   = isDark ? NSColor(hex: "#C3E88D") : NSColor(hex: "#0A3069")  // attr values
-        let commentColor     = isDark ? NSColor(hex: "#546E7A") : NSColor(hex: "#8B949E")  // comments
-        let entityColor      = isDark ? NSColor(hex: "#F78C6C") : NSColor(hex: "#CF222E")  // &amp;
+        let tagBracketColor  = isDark ? NSColor(hex: "#89DDFF") : NSColor(hex: "#0550AE")
+        let tagNameColor     = isDark ? NSColor(hex: "#F07178") : NSColor(hex: "#116329")
+        let attrNameColor    = isDark ? NSColor(hex: "#FFCB6B") : NSColor(hex: "#953800")
+        let attrValueColor   = isDark ? NSColor(hex: "#C3E88D") : NSColor(hex: "#0A3069")
+        let commentColor     = isDark ? NSColor(hex: "#546E7A") : NSColor(hex: "#8B949E")
+        let entityColor      = isDark ? NSColor(hex: "#F78C6C") : NSColor(hex: "#CF222E")
         let doctypeColor     = isDark ? NSColor(hex: "#546E7A") : NSColor(hex: "#8B949E")
 
-        // CSS palette
         let cssSelectorColor = isDark ? NSColor(hex: "#82AAFF") : NSColor(hex: "#8250DF")
         let cssPropColor     = isDark ? NSColor(hex: "#89DDFF") : NSColor(hex: "#0550AE")
         let cssValueColor    = isDark ? NSColor(hex: "#C3E88D") : NSColor(hex: "#116329")
         let cssSpecialColor  = isDark ? NSColor(hex: "#F78C6C") : NSColor(hex: "#CF222E")
         let cssCommentColor  = isDark ? NSColor(hex: "#546E7A") : NSColor(hex: "#8B949E")
 
-        // JS palette
         let jsKeywordColor   = isDark ? NSColor(hex: "#C792EA") : NSColor(hex: "#8250DF")
         let jsStringColor    = isDark ? NSColor(hex: "#C3E88D") : NSColor(hex: "#0A3069")
         let jsNumberColor    = isDark ? NSColor(hex: "#F78C6C") : NSColor(hex: "#CF222E")
         let jsCommentColor   = isDark ? NSColor(hex: "#546E7A") : NSColor(hex: "#8B949E")
 
-        // Bold font for tag names
         let boldFont = NSFont(descriptor: baseFont.fontDescriptor.withSymbolicTraits(.bold),
                               size: baseFont.pointSize) ?? baseFont
 
-        // HTML comments
         Self.commentPattern.enumerateMatches(in: text, range: fullRange) { m, _, _ in
             guard let m = m else { return }
             storage.addAttribute(.foregroundColor, value: commentColor, range: m.range)
         }
-        // DOCTYPE
         Self.doctypePattern.enumerateMatches(in: text, range: fullRange) { m, _, _ in
             guard let m = m else { return }
             storage.addAttribute(.foregroundColor, value: doctypeColor, range: m.range)
         }
-        // Tags
         Self.tagPattern.enumerateMatches(in: text, range: fullRange) { m, _, _ in
             guard let m = m else { return }
             storage.addAttribute(.foregroundColor, value: tagBracketColor, range: m.range)
@@ -72,23 +63,19 @@ final class HTMLHighlightEngine: SyntaxHighlightEngine {
                 storage.addAttribute(.font, value: boldFont, range: m.range(at: 1))
             }
         }
-        // Attr names
         Self.attrNamePattern.enumerateMatches(in: text, range: fullRange) { m, _, _ in
             guard let m = m, m.numberOfRanges >= 2 else { return }
             storage.addAttribute(.foregroundColor, value: attrNameColor, range: m.range(at: 1))
         }
-        // Attr values
         Self.attrValuePattern.enumerateMatches(in: text, range: fullRange) { m, _, _ in
             guard let m = m else { return }
             storage.addAttribute(.foregroundColor, value: attrValueColor, range: m.range)
         }
-        // Entities
         Self.entityPattern.enumerateMatches(in: text, range: fullRange) { m, _, _ in
             guard let m = m else { return }
             storage.addAttribute(.foregroundColor, value: entityColor, range: m.range)
         }
 
-        // CSS inside <style>
         Self.styleBlockPattern.enumerateMatches(in: text, range: fullRange) { m, _, _ in
             guard let m = m, m.numberOfRanges >= 2 else { return }
             let r = m.range(at: 1)
@@ -114,7 +101,6 @@ final class HTMLHighlightEngine: SyntaxHighlightEngine {
             }
         }
 
-        // JS inside <script>
         Self.scriptBlockPattern.enumerateMatches(in: text, range: fullRange) { m, _, _ in
             guard let m = m, m.numberOfRanges >= 2 else { return }
             let r = m.range(at: 1)

@@ -31,7 +31,7 @@ struct NativeEditorView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollablePlainDocumentContentTextView()
-        let textView = scrollView.documentView as! NSTextView
+        guard let textView = scrollView.documentView as? NSTextView else { return scrollView }
 
         textView.isRichText = false
         textView.allowsUndo = true
