@@ -20,6 +20,7 @@ final class PreviewExporter: PreviewExporterProtocol {
         case html
         case pdf
         case image
+        case markdown
     }
 
     enum ExportError: LocalizedError {
@@ -66,6 +67,10 @@ final class PreviewExporter: PreviewExporterProtocol {
             savePanel.title = "Export as Image"
             savePanel.nameFieldStringValue = suggestedName + ".png"
             savePanel.allowedContentTypes = [.png]
+        case .markdown:
+            savePanel.title = "Export as Markdown"
+            savePanel.nameFieldStringValue = suggestedName + ".md"
+            savePanel.allowedContentTypes = [.plainText]
         }
 
         savePanel.begin { response in
@@ -77,6 +82,8 @@ final class PreviewExporter: PreviewExporterProtocol {
                 Self.exportPDF(webView: webView, to: url, completion: completion)
             case .image:
                 Self.exportImage(webView: webView, to: url, completion: completion)
+            case .markdown:
+                Self.exportMarkdown(webView: webView, to: url, completion: completion)
             }
         }
     }
@@ -102,6 +109,137 @@ final class PreviewExporter: PreviewExporterProtocol {
                 }
                 do {
                     try html.write(to: url, atomically: true, encoding: .utf8)
+                    completion(.success(url))
+                } catch {
+                    completion(.failure(.javaScriptFailed(error.localizedDescription)))
+                }
+            }
+        }
+    }
+
+    // MARK: - Markdown export (HTML → Markdown via turndown-style JS)
+
+    private static func exportMarkdown(webView: WKWebView,
+                                       to url: URL,
+                                       completion: @escaping (Result<URL, ExportError>) -> Void) {
+        // Extract the HTML body content, then do a basic HTML→Markdown conversion in JS.
+        // Elements with inline style attributes are preserved as raw HTML in the output.
+        let js = """
+        (function() {
+            function h2m(el, indent) {
+                indent = indent || '';
+                var md = '';
+                el.childNodes.forEach(function(node) {
+                    if (node.nodeType === 3) { md += node.textContent; return; }
+                    if (node.nodeType !== 1) return;
+                    var tag = node.tagName.toLowerCase();
+                    // Preserve elements with style attribute as raw HTML
+                    if (node.getAttribute('style')) {
+                        md += node.outerHTML;
+                        return;
+                    }
+                    if (tag === 'h1') md += '# ' + h2m(node, indent).trim() + '\\n\\n';
+                    else if (tag === 'h2') md += '## ' + h2m(node, indent).trim() + '\\n\\n';
+                    else if (tag === 'h3') md += '### ' + h2m(node, indent).trim() + '\\n\\n';
+                    else if (tag === 'h4') md += '#### ' + h2m(node, indent).trim() + '\\n\\n';
+                    else if (tag === 'h5') md += '##### ' + h2m(node, indent).trim() + '\\n\\n';
+                    else if (tag === 'h6') md += '###### ' + h2m(node, indent).trim() + '\\n\\n';
+                    else if (tag === 'p') md += h2m(node, indent).trim() + '\\n\\n';
+                    else if (tag === 'br') md += '\\n';
+                    else if (tag === 'strong' || tag === 'b') md += '**' + h2m(node, indent) + '**';
+                    else if (tag === 'em' || tag === 'i') md += '*' + h2m(node, indent) + '*';
+                    else if (tag === 'code' && node.parentElement && node.parentElement.tagName === 'PRE') md += h2m(node, indent);
+                    else if (tag === 'code') md += '`' + h2m(node, indent) + '`';
+                    else if (tag === 'pre') {
+                        var code = node.querySelector('code');
+                        var lang = '';
+                        if (code) { var cls = code.className.match(/language-(\\w+)/); if (cls) lang = cls[1]; }
+                        md += '```' + lang + '\\n' + (code || node).textContent + '\\n```\\n\\n';
+                    }
+                    else if (tag === 'a') md += '[' + h2m(node, indent) + '](' + (node.getAttribute('href') || '') + ')';
+                    else if (tag === 'img') md += '![' + (node.getAttribute('alt') || '') + '](' + (node.getAttribute('src') || '') + ')';
+                    else if (tag === 'ul') {
+                        var lis = node.querySelectorAll(':scope > li');
+                        lis.forEach(function(li) {
+                            var liText = '';
+                            var subList = '';
+                            li.childNodes.forEach(function(c) {
+                                if (c.nodeType === 1 && (c.tagName === 'UL' || c.tagName === 'OL')) {
+                                    subList += h2m(c, indent + '  ');
+                                } else if (c.nodeType === 1) {
+                                    liText += h2m(c, indent);
+                                } else if (c.nodeType === 3) {
+                                    liText += c.textContent;
+                                }
+                            });
+                            md += indent + '- ' + liText.trim() + '\\n';
+                            if (subList) md += subList;
+                        });
+                        if (!indent) md += '\\n';
+                    }
+                    else if (tag === 'ol') {
+                        var i = 1;
+                        var olis = node.querySelectorAll(':scope > li');
+                        olis.forEach(function(li) {
+                            var liText = '';
+                            var subList = '';
+                            li.childNodes.forEach(function(c) {
+                                if (c.nodeType === 1 && (c.tagName === 'UL' || c.tagName === 'OL')) {
+                                    subList += h2m(c, indent + '  ');
+                                } else if (c.nodeType === 1) {
+                                    liText += h2m(c, indent);
+                                } else if (c.nodeType === 3) {
+                                    liText += c.textContent;
+                                }
+                            });
+                            md += indent + i + '. ' + liText.trim() + '\\n';
+                            if (subList) md += subList;
+                            i++;
+                        });
+                        if (!indent) md += '\\n';
+                    }
+                    else if (tag === 'blockquote') {
+                        var inner = h2m(node, indent).trim();
+                        inner.split('\\n').forEach(function(line) {
+                            md += '> ' + line + '\\n';
+                        });
+                        md += '\\n';
+                    }
+                    else if (tag === 'hr') md += '---\\n\\n';
+                    else if (tag === 'table') {
+                        var rows = node.querySelectorAll('tr');
+                        rows.forEach(function(row, ri) {
+                            var cells = row.querySelectorAll('th, td');
+                            var line = '|';
+                            cells.forEach(function(c) { line += ' ' + h2m(c, indent).trim() + ' |'; });
+                            md += line + '\\n';
+                            if (ri === 0) {
+                                md += '|';
+                                cells.forEach(function() { md += ' --- |'; });
+                                md += '\\n';
+                            }
+                        });
+                        md += '\\n';
+                    }
+                    else md += h2m(node, indent);
+                });
+                return md;
+            }
+            return h2m(document.body, '');
+        })();
+        """
+        webView.evaluateJavaScript(js) { result, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    completion(.failure(.javaScriptFailed(error.localizedDescription)))
+                    return
+                }
+                guard let markdown = result as? String, !markdown.isEmpty else {
+                    completion(.failure(.javaScriptFailed("empty result")))
+                    return
+                }
+                do {
+                    try markdown.write(to: url, atomically: true, encoding: .utf8)
                     completion(.success(url))
                 } catch {
                     completion(.failure(.javaScriptFailed(error.localizedDescription)))

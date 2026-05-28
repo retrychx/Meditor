@@ -17,6 +17,7 @@ struct WebPreviewView: NSViewRepresentable {
     let fileURL: URL?
     let reloadToken: Int
     var exporter: PreviewExporter? = nil
+    var rootURL: URL? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -33,6 +34,7 @@ struct WebPreviewView: NSViewRepresentable {
         webView.navigationDelegate = context.coordinator
 
         context.coordinator.webView = webView
+        context.coordinator.rootURL = rootURL
         context.coordinator.applyLoad(fileURL: fileURL, reloadToken: reloadToken)
         return webView
     }
@@ -42,6 +44,7 @@ struct WebPreviewView: NSViewRepresentable {
         if fileURL != nil {
             exporter?.webView = webView
         }
+        context.coordinator.rootURL = rootURL
         context.coordinator.applyLoad(fileURL: fileURL, reloadToken: reloadToken)
     }
 
@@ -57,6 +60,7 @@ struct WebPreviewView: NSViewRepresentable {
 extension WebPreviewView {
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         weak var webView: WKWebView?
+        var rootURL: URL?
         private var lastFileURL: URL?
         private var lastReloadToken: Int = -1
 
@@ -77,10 +81,10 @@ extension WebPreviewView {
                 return
             }
 
-            // Grant read access to the file's parent directory so that
+            // Grant read access to the project root (or file's parent) so that
             // relative resources (images, css, js) referenced in the HTML
-            // resolve correctly.
-            let readAccess = fileURL.deletingLastPathComponent()
+            // resolve correctly — even when paths traverse up to sibling dirs.
+            let readAccess = rootURL ?? fileURL.deletingLastPathComponent()
             webView.loadFileURL(fileURL, allowingReadAccessTo: readAccess)
         }
     }

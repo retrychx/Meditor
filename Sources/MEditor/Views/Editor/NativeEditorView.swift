@@ -308,6 +308,7 @@ struct NativeEditorView: NSViewRepresentable {
             let baseFont = NSFont.systemFont(ofSize: 14)
 
             // Reset to base style
+            storage.beginEditing()
             storage.removeAttribute(.foregroundColor, range: fullRange)
             storage.removeAttribute(.font, range: fullRange)
             storage.removeAttribute(.backgroundColor, range: fullRange)
@@ -321,8 +322,12 @@ struct NativeEditorView: NSViewRepresentable {
             para.paragraphSpacing = 4
             storage.addAttribute(.paragraphStyle, value: para, range: fullRange)
 
-            guard let engine = HighlightService.shared.engine(for: currentLanguage) else { return }
+            guard let engine = HighlightService.shared.engine(for: currentLanguage) else {
+                storage.endEditing()
+                return
+            }
             engine.highlight(text: text, into: storage, range: fullRange, baseFont: baseFont)
+            storage.endEditing()
         }
     }
 }
