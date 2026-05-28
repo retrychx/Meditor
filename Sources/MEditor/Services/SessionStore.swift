@@ -41,28 +41,30 @@ final class SessionStore: SessionStoreProtocol {
     func scheduleSave(rootURL: URL?, openTabURLs: [URL], selectedIndex: Int?) {
         pendingSave?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            self?.saveNow(rootURL: rootURL, openTabURLs: openTabURLs, selectedIndex: selectedIndex)
+            self?._saveNow(rootURL: rootURL, openTabURLs: openTabURLs, selectedIndex: selectedIndex)
         }
         pendingSave = work
         queue.asyncAfter(deadline: .now() + .milliseconds(250), execute: work)
     }
 
-    /// Force an immediate synchronous save. Call before app quit so nothing is lost.
-    /// Thread-safe: serializes through `queue` to avoid racing with debounced saves.
     func saveNow(rootURL: URL?, openTabURLs: [URL], selectedIndex: Int?) {
         queue.sync {
-            pendingSave?.cancel()
-            pendingSave = nil
-
-            let session = PersistedSession(
-                rootBookmark: rootURL.flatMap { Self.bookmarkData(for: $0) },
-                tabs: openTabURLs.compactMap { Self.bookmarkData(for: $0) },
-                selectedTabIndex: selectedIndex
-            )
-
-            guard let encoded = try? JSONEncoder().encode(session) else { return }
-            self.userDefaults.set(encoded, forKey: Self.userDefaultsKey)
+            self._saveNow(rootURL: rootURL, openTabURLs: openTabURLs, selectedIndex: selectedIndex)
         }
+    }
+
+    private func _saveNow(rootURL: URL?, openTabURLs: [URL], selectedIndex: Int?) {
+        pendingSave?.cancel()
+        pendingSave = nil
+
+        let session = PersistedSession(
+            rootBookmark: rootURL.flatMap { Self.bookmarkData(for: $0) },
+            tabs: openTabURLs.compactMap { Self.bookmarkData(for: $0) },
+            selectedTabIndex: selectedIndex
+        )
+
+        guard let encoded = try? JSONEncoder().encode(session) else { return }
+        self.userDefaults.set(encoded, forKey: Self.userDefaultsKey)
     }
 
     // MARK: - Load

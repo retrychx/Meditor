@@ -106,6 +106,7 @@ final class AppState {
     let themeStore: PreviewThemeStore
     let previewExporter = PreviewExporter()
     let sessionStore: SessionStore
+    let shareServer = LocalShareServer()
 
     init(fileService: FileServiceProtocol = FileService(),
          themeStore: PreviewThemeStore = PreviewThemeStore(),

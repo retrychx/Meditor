@@ -8,11 +8,16 @@ html, body {
   color: var(--text);
 }
 
+html {
+  overflow-x: hidden;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', 'Segoe UI', Helvetica, Arial, sans-serif;
   font-size: 15px;
   line-height: 1.7;
-  /* Padding scales with viewport: 18px on narrow panes, up to 36px on wide. */
+  max-width: 860px;
+  margin: 0 auto;
   padding: 24px clamp(18px, 3vw, 36px);
   -webkit-font-smoothing: antialiased;
 }

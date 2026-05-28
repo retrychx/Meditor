@@ -3,7 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @Environment(AppState.self) private var state
     @State private var showSidebar = true
-    @State private var showEditor = true
+    @State private var showEditor = false
     @State private var showPreview = true
 
     // Panel widths
@@ -121,6 +121,7 @@ struct ContentView: View {
                 sidebarToggleBtn
             }
             ToolbarItemGroup(placement: .primaryAction) {
+                shareButton
                 exportMenu
                 themeMenu
                 editorToggleBtn
@@ -174,6 +175,59 @@ struct ContentView: View {
         .keyboardShortcut("m", modifiers: [.command, .shift])
     }
 
+    @State private var showSharePopover = false
+
+    private var shareButton: some View {
+        Button {
+            let server = state.shareServer
+            if server.isRunning {
+                server.stop()
+            } else {
+                server.rootURL = state.rootURL
+                server.allowedFiles = state.openTabs.map(\.url)
+                server.start()
+            }
+        } label: {
+            Image(systemName: state.shareServer.isRunning ? "wifi" : "wifi.slash")
+        }
+        .help(state.shareServer.isRunning ? "Stop Sharing (\(state.shareServer.shareURL))" : "Share via LAN")
+        .popover(isPresented: Binding(
+            get: { state.shareServer.isRunning && showSharePopover },
+            set: { showSharePopover = $0 }
+        )) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("LAN Share Active")
+                    .font(.system(size: 12, weight: .semibold))
+                if let tab = state.selectedTab,
+                   let url = state.shareServer.shareURLForFile(tab.url) {
+                    Text("Current file:")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    Text(url)
+                        .font(.system(size: 11, design: .monospaced))
+                        .textSelection(.enabled)
+                    Button("Copy URL") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(url, forType: .string)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+                Divider()
+                Button("Stop Sharing") {
+                    state.shareServer.stop()
+                    showSharePopover = false
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+            .padding(12)
+        }
+        .onChange(of: state.shareServer.isRunning) { _, isRunning in
+            showSharePopover = isRunning
+        }
+    }
+
     private var themeMenu: some View {
         ToolbarIconMenuButton(
             systemName: "paintpalette",
@@ -188,14 +242,22 @@ struct ContentView: View {
     }
 
     private var exportMenu: some View {
-        ToolbarIconMenuButton(
-            systemName: "square.and.arrow.up",
-            size: 13,
-            items: [
+        let isHTML = state.previewMode == .html
+        let items: [(String, () -> Void)] = isHTML
+            ? [
+                ("Export as Markdown\u{2026}", { performExport(.markdown) }),
+                ("Export as PDF\u{2026}", { performExport(.pdf) }),
+                ("Export as Image\u{2026}", { performExport(.image) })
+            ]
+            : [
                 ("Export as HTML\u{2026}", { performExport(.html) }),
                 ("Export as PDF\u{2026}", { performExport(.pdf) }),
                 ("Export as Image\u{2026}", { performExport(.image) })
-            ],
+            ]
+        return ToolbarIconMenuButton(
+            systemName: "square.and.arrow.up",
+            size: 13,
+            items: items,
             isDisabled: !state.previewExporter.isExportAvailable
         )
         .frame(width: 24, height: 22)

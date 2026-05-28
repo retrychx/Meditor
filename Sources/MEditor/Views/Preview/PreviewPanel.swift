@@ -30,7 +30,8 @@ struct PreviewPanel: View {
             WebPreviewView(
                 fileURL: showsHTML ? state.previewHTMLFileURL : nil,
                 reloadToken: state.previewReloadToken,
-                exporter: state.previewExporter
+                exporter: state.previewExporter,
+                rootURL: state.rootURL
             )
             .opacity(showsHTML ? 1 : 0)
             .allowsHitTesting(showsHTML)
