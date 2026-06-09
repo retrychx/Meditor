@@ -11,6 +11,8 @@ struct MarkdownWebPreview: View {
     var theme: PreviewTheme = .github
     /// Source line to scroll the preview to (editor→preview sync). -1 = none.
     var scrollToLine: Int = -1
+    /// Monotonic token so the same target line can be requested more than once.
+    var scrollRequestID: Int = 0
     /// Reports the data-source-line of the topmost visible anchor when the
     /// user scrolls inside the preview (preview→editor sync).
     var onVisibleLineChange: ((Int) -> Void)? = nil
@@ -28,6 +30,7 @@ struct MarkdownWebPreview: View {
             content: content,
             theme: theme,
             scrollToLine: scrollToLine,
+            scrollRequestID: scrollRequestID,
             onVisibleLineChange: onVisibleLineChange,
             onTOCUpdate: onTOCUpdate,
             exporter: exporter,
@@ -51,6 +54,7 @@ private struct MarkdownWebView: NSViewRepresentable {
     let content: String
     let theme: PreviewTheme
     let scrollToLine: Int
+    let scrollRequestID: Int
     let onVisibleLineChange: ((Int) -> Void)?
     let onTOCUpdate: (([TOCItem]) -> Void)?
     let exporter: PreviewExporter?
@@ -117,9 +121,9 @@ private struct MarkdownWebView: NSViewRepresentable {
         }
 
         // Scroll sync editor → preview using source line.
-        if scrollToLine >= 0, scrollToLine != coordinator.lastAppliedTargetLine || coordinator.canRetriggerScroll {
+        if scrollToLine >= 0, scrollRequestID != coordinator.lastAppliedRequestID {
             coordinator.lastAppliedTargetLine = scrollToLine
-            coordinator.lastScrollTime = CFAbsoluteTimeGetCurrent()
+            coordinator.lastAppliedRequestID = scrollRequestID
             coordinator.isProgrammaticScroll = true
             coordinator.evaluateWhenReady(
                 "window.MEditor && window.MEditor.scrollToLine(\(scrollToLine));"
@@ -238,10 +242,7 @@ extension MarkdownWebView {
         var lastSourceURL: URL?
         var lastFontSize: Int = 15
         var lastAppliedTargetLine: Int = -1
-        var lastScrollTime: CFAbsoluteTime = 0
-        var canRetriggerScroll: Bool {
-            CFAbsoluteTimeGetCurrent() - lastScrollTime > 0.3
-        }
+        var lastAppliedRequestID: Int = -1
         var lastReportedLine: Int = -1
         var isProgrammaticScroll = false
         var isReady = false

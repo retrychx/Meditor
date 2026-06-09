@@ -19,7 +19,8 @@ struct EditorView: View {
                     state.editorVisibleLine = line
                 },
                 // Preview → editor: scroll to line set by preview.
-                scrollToLine: state.previewVisibleLine,
+                scrollToLine: state.editorScrollCommand.line,
+                scrollRequestID: state.editorScrollCommand.nonce,
                 theme: state.themeStore.current
             )
         } else {
