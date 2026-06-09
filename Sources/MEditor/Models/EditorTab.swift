@@ -2,7 +2,7 @@ import Foundation
 
 struct EditorTab: Identifiable {
     let id = UUID()
-    let url: URL
+    var url: URL
     var content: String
     var language: EditorLanguage
     var isModified = false

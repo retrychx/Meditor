@@ -63,7 +63,7 @@ struct FileSidebar: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.tertiary)
                     .font(.system(size: 10))
-                TextField("Search", text: $searchText)
+                TextField(L("sidebar.search"), text: $searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 11.5))
                 if !searchText.isEmpty {
@@ -95,7 +95,7 @@ struct FileSidebar: View {
                         Image(systemName: "doc.text.magnifyingglass")
                             .font(.system(size: 20, weight: .light))
                             .foregroundStyle(.tertiary)
-                        Text("No matches")
+                        Text(L("common.noMatches"))
                             .font(.system(size: 11))
                             .foregroundStyle(.tertiary)
                     }
@@ -113,44 +113,44 @@ struct FileSidebar: View {
             .frame(minWidth: 200)
         }
         // MARK: - Create alert
-        .alert("New \(createIsFolder ? "Folder" : "File")", isPresented: $showCreateAlert) {
-            TextField(createIsFolder ? "Folder name" : "File name", text: $createName)
-            Button("Cancel", role: .cancel) {
+        .alert(L(createIsFolder ? "menu.newFolder" : "menu.newFile"), isPresented: $showCreateAlert) {
+            TextField(L(createIsFolder ? "create.folderName" : "create.fileName"), text: $createName)
+            Button(L("common.cancel"), role: .cancel) {
                 resetCreateState()
             }
-            Button("Create") {
+            Button(L("common.create")) {
                 createItem()
             }
         } message: {
-            Text("Enter a name for the new \(createIsFolder ? "folder" : "file").")
+            Text(L(createIsFolder ? "create.messageFolder" : "create.messageFile"))
         }
         // MARK: - Rename alert
-        .alert("Rename", isPresented: $showRenameAlert) {
-            TextField("New name", text: $renameName)
-            Button("Cancel", role: .cancel) {
+        .alert(L("rename.title"), isPresented: $showRenameAlert) {
+            TextField(L("rename.newName"), text: $renameName)
+            Button(L("common.cancel"), role: .cancel) {
                 resetRenameState()
             }
-            Button("Rename") {
+            Button(L("rename.title")) {
                 renameItem()
             }
         } message: {
             if let target = renameTarget {
-                Text("Rename “\(target.name)” to:")
+                Text(L("rename.messageFormat", target.name))
             }
         }
         // MARK: - Delete confirmation
         .confirmationDialog(
-            "Are you sure you want to delete “\(itemToDelete?.name ?? "")”?",
+            L("delete.confirmFormat", itemToDelete?.name ?? ""),
             isPresented: $showDeleteConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Delete", role: .destructive) {
+            Button(L("common.delete"), role: .destructive) {
                 if let item = itemToDelete {
                     deleteItem(item)
                 }
                 itemToDelete = nil
             }
-            Button("Cancel", role: .cancel) {
+            Button(L("common.cancel"), role: .cancel) {
                 itemToDelete = nil
             }
         }
@@ -210,7 +210,7 @@ struct FileSidebar: View {
             }
             refresh()
         } catch {
-            state.setError("Failed to create \(createIsFolder ? "folder" : "file"): \(error.localizedDescription)")
+            state.setError(L(createIsFolder ? "error.createFolderFailed" : "error.createFileFailed", error.localizedDescription))
         }
 
         resetCreateState()
@@ -233,9 +233,10 @@ struct FileSidebar: View {
 
         do {
             try FileManager.default.moveItem(at: target.url, to: newURL)
+            state.handleItemRenamed(from: target.url, to: newURL)
             refresh()
         } catch {
-            state.setError("Failed to rename: \(error.localizedDescription)")
+            state.setError(L("error.renameFailed", error.localizedDescription))
         }
 
         resetRenameState()
@@ -251,9 +252,10 @@ struct FileSidebar: View {
     private func deleteItem(_ item: FileItem) {
         do {
             try FileManager.default.removeItem(at: item.url)
+            state.handleItemDeleted(at: item.url)
             refresh()
         } catch {
-            state.setError("Failed to delete: \(error.localizedDescription)")
+            state.setError(L("error.deleteFailed", error.localizedDescription))
         }
     }
 

@@ -31,6 +31,7 @@ final class MockFileService: FileServiceProtocol {
 
 // MARK: - Tests
 
+@MainActor
 final class AppStateTests: XCTestCase {
 
     var state: AppState!
@@ -365,5 +366,77 @@ final class AppStateTests: XCTestCase {
     func test_setError() {
         state.setError("Something went wrong")
         XCTAssertEqual(state.errorMessage, "Something went wrong")
+    }
+
+    func test_handleItemRenamed_updatesOpenTabsAndSelection() {
+        let root = URL(fileURLWithPath: "/tmp/project")
+        let original = root.appendingPathComponent("docs/readme.md")
+        let renamed = root.appendingPathComponent("guides/intro.md")
+
+        state.rootURL = root
+        state.openTabs = [EditorTab(url: original, content: "# Readme", language: .markdown)]
+        state.selectedTabID = state.openTabs[0].id
+        state.selectedFileID = original
+        state.previewContent = "# Readme"
+
+        state.handleItemRenamed(from: original, to: renamed)
+
+        XCTAssertEqual(state.openTabs[0].url, renamed)
+        XCTAssertEqual(state.selectedFileID, renamed)
+        XCTAssertEqual(state.selectedTab?.url, renamed)
+    }
+
+    func test_handleItemDeleted_closesMatchingTabsAndClearsPreview() {
+        let root = URL(fileURLWithPath: "/tmp/project")
+        let deleted = root.appendingPathComponent("docs/readme.md")
+
+        state.rootURL = root
+        state.openTabs = [EditorTab(url: deleted, content: "# Readme", language: .markdown)]
+        state.selectedTabID = state.openTabs[0].id
+        state.selectedFileID = deleted
+        state.previewContent = "# Readme"
+        state.previewMode = .markdown
+
+        state.handleItemDeleted(at: deleted)
+
+        XCTAssertTrue(state.openTabs.isEmpty)
+        XCTAssertNil(state.selectedTabID)
+        XCTAssertNil(state.selectedFileID)
+        XCTAssertEqual(state.previewContent, "")
+        XCTAssertEqual(state.previewMode, .empty)
+    }
+
+    func test_restoreSession_keepsSelectedTabWhenEarlierBookmarksDisappear() throws {
+        let suiteName = "AppStateRestoreSessionTests"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let sessionStore = SessionStore(userDefaults: defaults)
+        defer {
+            sessionStore.clear()
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MEditorRestoreSession_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let missingURL = tempDir.appendingPathComponent("missing.md")
+        let selectedURL = tempDir.appendingPathComponent("selected.md")
+        try "# Selected".write(to: selectedURL, atomically: true, encoding: .utf8)
+
+        sessionStore.saveNow(
+            rootURL: tempDir,
+            openTabURLs: [missingURL, selectedURL],
+            selectedIndex: 1
+        )
+
+        let restoreState = AppState(fileService: mockService, sessionStore: sessionStore)
+        mockService.files[selectedURL] = "# Selected"
+
+        restoreState.restoreSession()
+
+        XCTAssertEqual(restoreState.openTabs.count, 1)
+        XCTAssertEqual(restoreState.selectedTab?.url.standardizedFileURL, selectedURL.standardizedFileURL)
     }
 }

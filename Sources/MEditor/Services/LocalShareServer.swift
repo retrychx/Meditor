@@ -24,18 +24,35 @@ final class LocalShareServer {
 
     /// The root URL of the project.
     @ObservationIgnored
-    var rootURL: URL?
+    var rootURL: URL? {
+        didSet { refreshAllowLists() }
+    }
 
     /// Only these files are accessible via the share server.
     @ObservationIgnored
-    var allowedFiles: [URL] = []
+    var allowedFiles: [URL] = [] {
+        didSet { refreshAllowLists() }
+    }
+
+    @ObservationIgnored
+    private var allowedDocumentPaths: Set<String> = []
+    @ObservationIgnored
+    private var allowedAssetPaths: Set<String> = []
+
+    /// One-time access token, regenerated on every `start()`. Required as the
+    /// first path segment (`/meditor/<token>/...`) so only holders of the
+    /// freshly-shared URL can read documents over the LAN.
+    @ObservationIgnored
+    private(set) var accessToken: String = ""
 
     func start(preferredPort: UInt16 = 8899) {
         guard !isRunning else { return }
+        guard let nwPort = NWEndpoint.Port(rawValue: preferredPort) else { return }
+        accessToken = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
         do {
             let params = NWParameters.tcp
             params.allowLocalEndpointReuse = true
-            listener = try NWListener(using: params, on: NWEndpoint.Port(rawValue: preferredPort)!)
+            listener = try NWListener(using: params, on: nwPort)
         } catch {
             return
         }
@@ -74,6 +91,7 @@ final class LocalShareServer {
         connections.removeAll()
         isRunning = false
         port = 0
+        accessToken = ""
     }
 
     var shareURL: String {
@@ -106,26 +124,37 @@ final class LocalShareServer {
         }
 
         let path = parseRequestPath(request)
-        let decodedPath = path.removingPercentEncoding ?? path
+        // Drop any query string before decoding / route matching.
+        let pathOnly = path.split(separator: "?", maxSplits: 1).first.map(String.init) ?? path
+        let decodedPath = pathOnly.removingPercentEncoding ?? pathOnly
 
-        // All document routes must start with /meditor/
+        // All document routes must start with /meditor/<token>/
         guard decodedPath.hasPrefix(Self.pathPrefix) else {
             send(build404Response(), on: connection)
             return
         }
 
-        let relativePath = String(decodedPath.dropFirst(Self.pathPrefix.count))
-        let cleaned = relativePath.replacingOccurrences(of: "..", with: "")
-        let fileURL = rootURL.appendingPathComponent(cleaned)
+        // First path segment after the prefix is the one-time access token.
+        let afterPrefix = String(decodedPath.dropFirst(Self.pathPrefix.count))
+        let segments = afterPrefix.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false)
+        guard let token = segments.first.map(String.init),
+              !accessToken.isEmpty, token == accessToken else {
+            send(build404Response(), on: connection)
+            return
+        }
+        let relativePath = segments.count > 1 ? String(segments[1]) : ""
+
+        // Resolve + confine to the project root (defeats ../ traversal).
+        guard let fileURL = resolvedFileURL(relativePath, rootURL: rootURL) else {
+            send(build404Response(), on: connection)
+            return
+        }
 
         // Only serve files explicitly in the allowlist
-        let isAllowed = allowedFiles.contains(where: { $0.path == fileURL.path })
+        let isAllowed = isAllowedDocument(fileURL)
         guard isAllowed else {
-            // Allow static assets (images, css, js) referenced by allowed docs
-            let ext = fileURL.pathExtension.lowercased()
-            let isAsset = !["md", "html", "htm"].contains(ext) && !ext.isEmpty
-            if isAsset, fileURL.path.hasPrefix(rootURL.path) {
-                send(serveStaticFile(path: "/" + cleaned, rootURL: rootURL) ?? build404Response(), on: connection)
+            if isAllowedAsset(fileURL) {
+                send(serveStaticFile(fileURL: fileURL) ?? build404Response(), on: connection)
             } else {
                 send(build404Response(), on: connection)
             }
@@ -133,13 +162,22 @@ final class LocalShareServer {
         }
 
         let responseData: Data
-        if cleaned.hasSuffix(".md") {
-            responseData = renderMarkdown(path: "/" + cleaned, rootURL: rootURL)
+        if fileURL.pathExtension.lowercased() == "md" {
+            responseData = renderMarkdown(fileURL: fileURL)
         } else {
-            responseData = serveStaticFile(path: "/" + cleaned, rootURL: rootURL) ?? build404Response()
+            responseData = serveStaticFile(fileURL: fileURL) ?? build404Response()
         }
 
         send(responseData, on: connection)
+    }
+
+    /// Resolve a relative request path against the project root and verify the
+    /// result stays inside it. Returns nil for anything that escapes (e.g. `../`).
+    private func resolvedFileURL(_ relativePath: String, rootURL: URL) -> URL? {
+        let fileURL = rootURL.appendingPathComponent(relativePath).standardizedFileURL
+        let root = rootURL.standardizedFileURL
+        guard fileURL.path == root.path || fileURL.path.hasPrefix(root.path + "/") else { return nil }
+        return fileURL
     }
 
     private func send(_ data: Data, on connection: NWConnection) {
@@ -159,26 +197,26 @@ final class LocalShareServer {
 
     /// Generate the share URL for a specific file.
     func shareURLForFile(_ fileURL: URL) -> String? {
-        guard let rootURL, fileURL.path.hasPrefix(rootURL.path) else { return nil }
-        let relative = fileURL.path.replacingOccurrences(of: rootURL.path + "/", with: "")
+        guard let rootURL, !accessToken.isEmpty,
+              isSameOrDescendant(fileURL, of: rootURL) else { return nil }
+        let rootPath = rootURL.standardizedFileURL.path
+        let filePath = fileURL.standardizedFileURL.path
+        let relative = filePath == rootPath
+            ? ""
+            : String(filePath.dropFirst(rootPath.count + 1))
         let encoded = relative.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? relative
-        return "\(shareURL)\(Self.pathPrefix)\(encoded)"
+        return "\(shareURL)\(Self.pathPrefix)\(accessToken)/\(encoded)"
     }
 
     // MARK: - Markdown rendering
 
-    private func renderMarkdown(path: String, rootURL: URL) -> Data {
-        let cleaned = path.replacingOccurrences(of: "..", with: "")
-        let fileURL = rootURL.appendingPathComponent(cleaned)
-        guard fileURL.path.hasPrefix(rootURL.path),
-              let content = try? String(contentsOf: fileURL, encoding: .utf8) else {
+    private func renderMarkdown(fileURL: URL) -> Data {
+        guard let content = try? String(contentsOf: fileURL, encoding: .utf8) else {
             return build404Response()
         }
-
-        let escapedContent = content
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "`", with: "\\`")
-            .replacingOccurrences(of: "$", with: "\\$")
+        guard let encodedMarkdown = Self.inlineJavaScriptStringLiteral(content) else {
+            return build404Response()
+        }
 
         let title = fileURL.deletingPathExtension().lastPathComponent
 
@@ -238,13 +276,133 @@ final class LocalShareServer {
                 return hljs.highlightAuto(code).value;
             }
         });
-        var md = `\(escapedContent)`;
+        var md = \(encodedMarkdown);
         document.getElementById('content').innerHTML = marked.parse(md);
         </script>
         </body>
         </html>
         """
         return buildHTMLResponse(html)
+    }
+
+    private func refreshAllowLists() {
+        allowedDocumentPaths.removeAll()
+        allowedAssetPaths.removeAll()
+
+        guard let rootURL else { return }
+        for fileURL in allowedFiles {
+            guard isSameOrDescendant(fileURL, of: rootURL) else { continue }
+            let standardized = fileURL.standardizedFileURL
+            allowedDocumentPaths.insert(standardized.path)
+            allowedAssetPaths.formUnion(referencedAssetPaths(in: standardized, rootURL: rootURL))
+        }
+    }
+
+    func isAllowedDocument(_ fileURL: URL) -> Bool {
+        allowedDocumentPaths.contains(fileURL.standardizedFileURL.path)
+    }
+
+    func isAllowedAsset(_ fileURL: URL) -> Bool {
+        allowedAssetPaths.contains(fileURL.standardizedFileURL.path)
+    }
+
+    private func referencedAssetPaths(in fileURL: URL, rootURL: URL) -> Set<String> {
+        guard let content = try? String(contentsOf: fileURL, encoding: .utf8) else {
+            return []
+        }
+
+        let candidates: [String]
+        switch fileURL.pathExtension.lowercased() {
+        case "html", "htm":
+            candidates = Self.extractHTMLReferences(from: content)
+        case "md":
+            candidates = Self.extractMarkdownReferences(from: content) + Self.extractHTMLReferences(from: content)
+        default:
+            candidates = []
+        }
+
+        return Set(candidates.compactMap { raw in
+            guard let resolved = resolveAssetReference(raw, relativeTo: fileURL, rootURL: rootURL) else {
+                return nil
+            }
+            return resolved.path
+        })
+    }
+
+    private func resolveAssetReference(_ rawReference: String, relativeTo fileURL: URL, rootURL: URL) -> URL? {
+        var reference = rawReference.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !reference.isEmpty else { return nil }
+
+        if reference.hasPrefix("<"), reference.hasSuffix(">") {
+            reference.removeFirst()
+            reference.removeLast()
+        }
+        if let whitespace = reference.firstIndex(where: \.isWhitespace) {
+            reference = String(reference[..<whitespace])
+        }
+
+        let lowered = reference.lowercased()
+        guard !lowered.hasPrefix("#"),
+              !lowered.hasPrefix("data:"),
+              !lowered.hasPrefix("mailto:"),
+              !lowered.hasPrefix("javascript:"),
+              !lowered.hasPrefix("tel:"),
+              URL(string: reference)?.scheme == nil else {
+            return nil
+        }
+
+        let resolved = fileURL.deletingLastPathComponent()
+            .appendingPathComponent(reference)
+            .standardizedFileURL
+        guard isSameOrDescendant(resolved, of: rootURL) else { return nil }
+
+        let ext = resolved.pathExtension.lowercased()
+        guard !ext.isEmpty, !["md", "html", "htm"].contains(ext) else { return nil }
+        return resolved
+    }
+
+    private func isSameOrDescendant(_ url: URL, of rootURL: URL) -> Bool {
+        let path = url.standardizedFileURL.path
+        let rootPath = rootURL.standardizedFileURL.path
+        return path == rootPath || path.hasPrefix(rootPath + "/")
+    }
+
+    static func inlineJavaScriptStringLiteral(_ string: String) -> String? {
+        guard let data = try? JSONEncoder().encode(string),
+              var encoded = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        encoded = encoded.replacingOccurrences(of: "</", with: "<\\/")
+        return encoded
+    }
+
+    static func extractHTMLReferences(from content: String) -> [String] {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"(?:src|href)\s*=\s*["']([^"']+)["']"#,
+            options: [.caseInsensitive]
+        ) else {
+            return []
+        }
+
+        let range = NSRange(content.startIndex..., in: content)
+        return regex.matches(in: content, range: range).compactMap { match in
+            guard let capture = Range(match.range(at: 1), in: content) else { return nil }
+            return String(content[capture])
+        }
+    }
+
+    static func extractMarkdownReferences(from content: String) -> [String] {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"!?\[[^\]]*]\(([^)]+)\)"#
+        ) else {
+            return []
+        }
+
+        let range = NSRange(content.startIndex..., in: content)
+        return regex.matches(in: content, range: range).compactMap { match in
+            guard let capture = Range(match.range(at: 1), in: content) else { return nil }
+            return String(content[capture])
+        }
     }
 
     private func loadBundledJS(_ filename: String) -> String {
@@ -255,10 +413,7 @@ final class LocalShareServer {
 
     // MARK: - Static file serving
 
-    private func serveStaticFile(path: String, rootURL: URL) -> Data? {
-        let cleaned = path.replacingOccurrences(of: "..", with: "")
-        let fileURL = rootURL.appendingPathComponent(cleaned)
-        guard fileURL.path.hasPrefix(rootURL.path) else { return nil }
+    private func serveStaticFile(fileURL: URL) -> Data? {
         guard let data = try? Data(contentsOf: fileURL) else { return nil }
 
         let mime = mimeType(for: fileURL.pathExtension)

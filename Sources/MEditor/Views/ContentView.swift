@@ -2,9 +2,9 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(AppState.self) private var state
-    @State private var showSidebar = true
-    @State private var showEditor = false
-    @State private var showPreview = true
+    @State private var showSidebar = AppSettings.shared.showSidebarOnLaunch
+    @State private var showEditor = AppSettings.shared.showEditorOnLaunch
+    @State private var showPreview = AppSettings.shared.showPreviewOnLaunch
 
     // Panel widths
     @State private var sidebarWidth: CGFloat = 220
@@ -25,24 +25,24 @@ struct ContentView: View {
             QuickOpenSheet()
                 .environment(state)
         }
-        .alert("Error", isPresented: Binding(
+        .alert(L("alert.errorTitle"), isPresented: Binding(
             get: { state.errorMessage != nil },
             set: { if !$0 { state.errorMessage = nil } }
         )) {
-            Button("OK") { state.errorMessage = nil }
+            Button(L("common.ok")) { state.errorMessage = nil }
         } message: {
             Text(state.errorMessage ?? "")
         }
-        .alert("Save changes?", isPresented: Binding(
+        .alert(L("alert.saveChangesTitle"), isPresented: Binding(
             get: { state.showingCloseConfirmation },
             set: { if !$0 { state.showingCloseConfirmation = false; state.pendingCloseTab = nil } }
         )) {
-            Button("Save", role: .none) { state.confirmCloseTab(save: true) }
-            Button("Don't Save", role: .destructive) { state.confirmCloseTab(save: false) }
-            Button("Cancel", role: .cancel) { state.showingCloseConfirmation = false; state.pendingCloseTab = nil }
+            Button(L("common.save"), role: .none) { state.confirmCloseTab(save: true) }
+            Button(L("alert.dontSave"), role: .destructive) { state.confirmCloseTab(save: false) }
+            Button(L("common.cancel"), role: .cancel) { state.showingCloseConfirmation = false; state.pendingCloseTab = nil }
         } message: {
             if let tab = state.pendingCloseTab {
-                Text("Save changes to \"\(tab.name)\" before closing?")
+                Text(L("alert.saveChangesMessage", tab.name))
             }
         }
     }
@@ -54,11 +54,11 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
             Text("MEditor")
                 .font(.system(size: 22, weight: .semibold))
-            Text("Markdown & HTML Editor")
+            Text(L("welcome.subtitle"))
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
             Button(action: openFolder) {
-                Text("Open Folder\u{2026}")
+                Text(L("menu.openFolder"))
                     .font(.system(size: 13, weight: .medium))
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
@@ -151,7 +151,7 @@ struct ContentView: View {
         } label: {
             Image(systemName: "sidebar.left")
         }
-        .help(showSidebar ? "Hide Sidebar (⌘B)" : "Show Sidebar (⌘B)")
+        .help(showSidebar ? L("tooltip.hideSidebar") : L("tooltip.showSidebar"))
         .keyboardShortcut("b", modifiers: .command)
     }
 
@@ -161,7 +161,7 @@ struct ContentView: View {
         } label: {
             Image(systemName: "sidebar.right")
         }
-        .help(showPreview ? "Hide Preview (⌘⇧V)" : "Show Preview (⌘⇧V)")
+        .help(showPreview ? L("tooltip.hidePreview") : L("tooltip.showPreview"))
         .keyboardShortcut("v", modifiers: [.command, .shift])
     }
 
@@ -171,7 +171,7 @@ struct ContentView: View {
         } label: {
             Image(systemName: "doc.text")
         }
-        .help(showEditor ? "Hide Editor (⌘⇧M)" : "Show Editor (⌘⇧M)")
+        .help(showEditor ? L("tooltip.hideEditor") : L("tooltip.showEditor"))
         .keyboardShortcut("m", modifiers: [.command, .shift])
     }
 
@@ -185,28 +185,28 @@ struct ContentView: View {
             } else {
                 server.rootURL = state.rootURL
                 server.allowedFiles = state.openTabs.map(\.url)
-                server.start()
+                server.start(preferredPort: AppSettings.shared.sharePort)
             }
         } label: {
             Image(systemName: state.shareServer.isRunning ? "wifi" : "wifi.slash")
         }
-        .help(state.shareServer.isRunning ? "Stop Sharing (\(state.shareServer.shareURL))" : "Share via LAN")
+        .help(state.shareServer.isRunning ? L("share.stopWithURL", state.shareServer.shareURL) : L("share.viaLAN"))
         .popover(isPresented: Binding(
             get: { state.shareServer.isRunning && showSharePopover },
             set: { showSharePopover = $0 }
         )) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("LAN Share Active")
+                Text(L("share.active"))
                     .font(.system(size: 12, weight: .semibold))
                 if let tab = state.selectedTab,
                    let url = state.shareServer.shareURLForFile(tab.url) {
-                    Text("Current file:")
+                    Text(L("share.currentFile"))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                     Text(url)
                         .font(.system(size: 11, design: .monospaced))
                         .textSelection(.enabled)
-                    Button("Copy URL") {
+                    Button(L("share.copyURL")) {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(url, forType: .string)
                     }
@@ -214,7 +214,7 @@ struct ContentView: View {
                     .controlSize(.small)
                 }
                 Divider()
-                Button("Stop Sharing") {
+                Button(L("share.stop")) {
                     state.shareServer.stop()
                     showSharePopover = false
                 }
@@ -238,21 +238,21 @@ struct ContentView: View {
             }
         )
         .frame(width: 24, height: 22)
-        .help("Preview Theme")
+        .help(L("theme.title"))
     }
 
     private var exportMenu: some View {
         let isHTML = state.previewMode == .html
         let items: [(String, () -> Void)] = isHTML
             ? [
-                ("Export as Markdown\u{2026}", { performExport(.markdown) }),
-                ("Export as PDF\u{2026}", { performExport(.pdf) }),
-                ("Export as Image\u{2026}", { performExport(.image) })
+                (L("export.markdown"), { performExport(.markdown) }),
+                (L("export.pdf"), { performExport(.pdf) }),
+                (L("export.image"), { performExport(.image) })
             ]
             : [
-                ("Export as HTML\u{2026}", { performExport(.html) }),
-                ("Export as PDF\u{2026}", { performExport(.pdf) }),
-                ("Export as Image\u{2026}", { performExport(.image) })
+                (L("export.html"), { performExport(.html) }),
+                (L("export.pdf"), { performExport(.pdf) }),
+                (L("export.image"), { performExport(.image) })
             ]
         return ToolbarIconMenuButton(
             systemName: "square.and.arrow.up",
@@ -261,7 +261,7 @@ struct ContentView: View {
             isDisabled: !state.previewExporter.isExportAvailable
         )
         .frame(width: 24, height: 22)
-        .help("Export Preview")
+        .help(L("export.title"))
     }
 
     private func performExport(_ format: PreviewExporter.ExportFormat) {
@@ -330,9 +330,8 @@ struct ContentView: View {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.message = "Choose a project folder"
+        panel.message = L("panel.chooseFolder")
         if panel.runModal() == .OK, let url = panel.url {
-            state.beginAccessing(url)
             state.openFolder(url)
         }
     }

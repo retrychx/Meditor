@@ -39,31 +39,36 @@ extension AppState {
         if let rootData = session.rootBookmark,
            let resolved = SessionStore.resolveBookmark(rootData),
            FileManager.default.fileExists(atPath: resolved.url.path) {
-            beginAccessing(resolved.url)
             openFolder(resolved.url)
         }
 
-        let alreadyOpenURLs = Set(openTabs.map { $0.url })
-        var restoredTabs: [(EditorTab, URL)] = []
-        for tabBookmark in session.tabs {
+        var alreadyOpenURLs = Set(openTabs.map { $0.url.standardizedFileURL })
+        var restoredTabs: [(tab: EditorTab, url: URL)] = []
+        var restoredSelectedTabID: UUID?
+        for (originalIndex, tabBookmark) in session.tabs.enumerated() {
             guard let resolved = SessionStore.resolveBookmark(tabBookmark) else { continue }
             let url = resolved.url
             guard FileManager.default.fileExists(atPath: url.path) else { continue }
             guard !url.hasDirectoryPath else { continue }
-            if alreadyOpenURLs.contains(url) { continue }
+            if alreadyOpenURLs.contains(url.standardizedFileURL) { continue }
 
-            beginAccessing(url)
+            if requiresDirectFileAccess(url) {
+                beginAccessing(url)
+            }
             let lang = FileTypeConfiguration.shared
                 .editorLanguage(for: url.pathExtension.lowercased()) ?? .markdown
             let tab = EditorTab(url: url, content: "", language: lang)
+            alreadyOpenURLs.insert(url.standardizedFileURL)
+            if session.selectedTabIndex == originalIndex {
+                restoredSelectedTabID = tab.id
+            }
             restoredTabs.append((tab, url))
         }
-        openTabs.append(contentsOf: restoredTabs.map { $0.0 })
+        openTabs.append(contentsOf: restoredTabs.map(\.tab))
 
         if selectedTabID == nil,
-           let idx = session.selectedTabIndex,
-           idx >= 0, idx < restoredTabs.count {
-            let restoredTab = restoredTabs[idx].0
+           let restoredSelectedTabID,
+           let restoredTab = openTabs.first(where: { $0.id == restoredSelectedTabID }) {
             selectedTabID = restoredTab.id
             syncSidebarSelectionToTab(restoredTab)
             syncPreviewContent(from: restoredTab)
