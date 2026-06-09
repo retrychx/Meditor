@@ -126,7 +126,7 @@ final class AppState {
     var showingQuickOpen = false
 
     let fileService: FileServiceProtocol
-    let fileWatcher = FileWatcherService()
+    let fileWatcher: any FileWatcherServiceProtocol
     let themeStore: PreviewThemeStore
     let previewExporter = PreviewExporter()
     let sessionStore: SessionStore
@@ -136,9 +136,11 @@ final class AppState {
     private var autoSaveTimer: Timer?
 
     init(fileService: FileServiceProtocol = FileService(),
+         fileWatcher: any FileWatcherServiceProtocol = FileWatcherService(),
          themeStore: PreviewThemeStore = PreviewThemeStore(),
          sessionStore: SessionStore = SessionStore()) {
         self.fileService = fileService
+        self.fileWatcher = fileWatcher
         self.themeStore = themeStore
         self.sessionStore = sessionStore
         setupAutoSaveTimer()

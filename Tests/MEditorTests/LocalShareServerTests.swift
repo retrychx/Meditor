@@ -30,6 +30,15 @@ final class LocalShareServerTests: XCTestCase {
         XCTAssertEqual(refs, ["./styles/site.css", "./images/cover.png"])
     }
 
+    func test_headerTerminatorRange_findsCompleteRequestHeader() {
+        let data = Data("GET / HTTP/1.1\r\nHost: localhost\r\n\r\nbody".utf8)
+
+        let range = LocalShareServer.headerTerminatorRange(in: data)
+
+        XCTAssertNotNil(range)
+        XCTAssertEqual(range?.lowerBound, Data("GET / HTTP/1.1\r\nHost: localhost".utf8).count)
+    }
+
     func test_allowedFiles_onlyExposeReferencedAssets() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("MEditorShareTests_\(UUID().uuidString)")

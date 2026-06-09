@@ -22,7 +22,12 @@ extension AppState {
         }
 
         let lang = FileTypeConfiguration.shared.editorLanguage(for: item.fileExtension) ?? .markdown
-        let tab = EditorTab(url: item.url, content: "", language: lang)
+        let tab = EditorTab(
+            url: item.url,
+            content: "",
+            language: lang,
+            awaitingInitialContent: true
+        )
         openTabs.insert(tab, at: 0)
         selectedTabID = tab.id
 
@@ -52,14 +57,20 @@ extension AppState {
 
     func applyLoadedContent(tabID: UUID, content: String) {
         guard let idx = openTabs.firstIndex(where: { $0.id == tabID }) else { return }
+        guard openTabs[idx].awaitingInitialContent else { return }
         openTabs[idx].content = content
-        if selectedTabID == tabID {
+        openTabs[idx].awaitingInitialContent = false
+        if selectedTabID == tabID, openTabs[idx].language == .markdown {
             syncPreviewContent(from: openTabs[idx])
         }
     }
 
     func failLoadingTab(tabID: UUID, url: URL, error: Error) {
         guard let idx = openTabs.firstIndex(where: { $0.id == tabID }) else {
+            report(.fileRead(url, underlying: error), logger: AppLog.file)
+            return
+        }
+        guard openTabs[idx].awaitingInitialContent else {
             report(.fileRead(url, underlying: error), logger: AppLog.file)
             return
         }
@@ -147,6 +158,10 @@ extension AppState {
         guard let idx = openTabs.firstIndex(where: { $0.id == tabID }) else { return }
         openTabs[idx].content = content
         openTabs[idx].isModified = true
+        openTabs[idx].awaitingInitialContent = false
+        if selectedTabID == tabID {
+            syncPreviewContent(from: openTabs[idx])
+        }
     }
 
     func saveTab(_ tab: EditorTab) {

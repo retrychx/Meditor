@@ -6,6 +6,7 @@ struct EditorTab: Identifiable {
     var content: String
     var language: EditorLanguage
     var isModified = false
+    var awaitingInitialContent = false
 
     var name: String { url.lastPathComponent }
     var iconName: String {

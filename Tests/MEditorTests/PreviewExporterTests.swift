@@ -23,7 +23,10 @@ final class PreviewExporterTests: XCTestCase {
         exporter.export(format: .html, suggestedName: "test") { result in
             switch result {
             case .failure(let error):
-                XCTAssertEqual(error.errorDescription, "Preview is not available.")
+                if case .noWebView = error {
+                } else {
+                    XCTFail("Expected noWebView error")
+                }
             case .success:
                 XCTFail("Should have failed without webview")
             }
@@ -39,7 +42,10 @@ final class PreviewExporterTests: XCTestCase {
         exporter.export(format: .pdf, suggestedName: "test") { result in
             switch result {
             case .failure(let error):
-                XCTAssertEqual(error.errorDescription, "Preview is not available.")
+                if case .noWebView = error {
+                } else {
+                    XCTFail("Expected noWebView error")
+                }
             case .success:
                 XCTFail("Should have failed without webview")
             }
@@ -55,7 +61,10 @@ final class PreviewExporterTests: XCTestCase {
         exporter.export(format: .image, suggestedName: "test") { result in
             switch result {
             case .failure(let error):
-                XCTAssertEqual(error.errorDescription, "Preview is not available.")
+                if case .noWebView = error {
+                } else {
+                    XCTFail("Expected noWebView error")
+                }
             case .success:
                 XCTFail("Should have failed without webview")
             }
@@ -75,15 +84,15 @@ final class PreviewExporterTests: XCTestCase {
 
     func test_exportError_descriptions() {
         let noWebView = PreviewExporter.ExportError.noWebView
-        XCTAssertEqual(noWebView.errorDescription, "Preview is not available.")
+        XCTAssertEqual(noWebView.errorDescription, L("export.err.noWebView"))
 
         let jsFailed = PreviewExporter.ExportError.javaScriptFailed("timeout")
-        XCTAssertEqual(jsFailed.errorDescription, "Export failed (JS): timeout")
+        XCTAssertEqual(jsFailed.errorDescription, L("export.err.js", "timeout"))
 
         let pdfFailed = PreviewExporter.ExportError.pdfGenerationFailed("no data")
-        XCTAssertEqual(pdfFailed.errorDescription, "PDF export failed: no data")
+        XCTAssertEqual(pdfFailed.errorDescription, L("export.err.pdf", "no data"))
 
         let snapFailed = PreviewExporter.ExportError.snapshotFailed("render error")
-        XCTAssertEqual(snapFailed.errorDescription, "Image export failed: render error")
+        XCTAssertEqual(snapFailed.errorDescription, L("export.err.image", "render error"))
     }
 }

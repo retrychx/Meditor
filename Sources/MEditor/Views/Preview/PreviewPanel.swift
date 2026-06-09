@@ -24,7 +24,7 @@ struct PreviewPanel: View {
                         state.requestPreviewScroll(to: item.line)
                     }
                 )
-                .frame(width: 170)
+                .frame(width: 150)
                 .background(state.themeStore.current.chromeBackground.opacity(0.5))
 
                 state.themeStore.current.separator

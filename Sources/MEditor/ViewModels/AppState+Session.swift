@@ -57,7 +57,12 @@ extension AppState {
             }
             let lang = FileTypeConfiguration.shared
                 .editorLanguage(for: url.pathExtension.lowercased()) ?? .markdown
-            let tab = EditorTab(url: url, content: "", language: lang)
+            let tab = EditorTab(
+                url: url,
+                content: "",
+                language: lang,
+                awaitingInitialContent: true
+            )
             alreadyOpenURLs.insert(url.standardizedFileURL)
             if session.selectedTabIndex == originalIndex {
                 restoredSelectedTabID = tab.id
