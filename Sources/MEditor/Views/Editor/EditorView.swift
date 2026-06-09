@@ -27,7 +27,7 @@ struct EditorView: View {
                 Image(systemName: "doc.text")
                     .font(.system(size: 28, weight: .light))
                     .foregroundStyle(.quaternary)
-                Text("Select a file to edit")
+                Text(L("editor.selectFile"))
                     .foregroundStyle(.tertiary)
                     .font(.system(size: 12))
             }

@@ -23,16 +23,29 @@
 
 ## ✨ Features
 
+### Editing & Preview
 - **📝 Live Preview** — Real-time Markdown rendering with marked.js, code highlighting via highlight.js, and diagram support via Mermaid.js
 - **🎨 Syntax Highlighting** — 40+ languages supported in the editor (native `NSTextView`) and preview (highlight.js with full alias mapping)
 - **🔀 Bidirectional Scroll Sync** — Scrolling in the editor syncs the preview and vice versa, with anti-loop protection
-- **📂 File Browser** — Sidebar with search, context menus (new file/folder, rename, delete, reveal in Finder)
+- **🔍 Find & Replace** — Native find panel: Find, Find Next/Previous, Use Selection for Find, Jump to Line, Replace
+- **🖥 HTML Preview** — `.html`/`.htm` files render directly as web pages
+
+### Files & Tabs
+- **📂 File Browser** — Sidebar with search, context menus (new file/folder, rename, delete, reveal in Finder), persisted expansion state
 - **📁 File Tree Auto-Refresh** — FSEvents-based file watcher that detects external changes instantly
-- **📑 Tab Management** — Drag-to-reorder tabs, close confirmation with save/discard/cancel
-- **🔄 Drag-to-Resize Panels** — Sidebar, editor, and preview panels with 1px visual dividers and 6px hit targets
+- **📑 Tab Management** — Drag-to-reorder tabs, close confirmation (save/discard/cancel), reopen closed tab (⌘⇧T), next/previous tab
+- **⚡️ Quick Open** — Fuzzy file finder (⌘P) with keyboard navigation
+
+### Workspace
+- **🎨 Preview Themes** — GitHub (light), Nord, Dracula (dark); the whole window chrome adapts and the choice is persisted
+- **📤 Export** — Export the preview to HTML / PDF / Image (2× PNG); HTML files can also export to Markdown
+- **🌐 LAN Sharing** — Built-in HTTP server (NWListener) shares open documents over the local network; access is gated by a one-time token and an allowlist limited to currently open files
+- **💾 Session Restore** — Remembers the root folder, open tabs (order), and selection across launches via security-scoped bookmarks
+- **⏱ Auto-Save** — Optional timed auto-save (configurable interval); modified tabs are also saved on quit
+- **⚙️ Settings** — Preview font size, auto-save, default launch layout, LAN share port (⌘,)
+- **🔄 Drag-to-Resize Panels** — Toggle and resize sidebar, editor, and preview panels independently
 - **📊 Status Bar** — Cursor position (Ln/Col), file size, UTF-8 indicator
-- **🌙 Dark Mode** — Full dark mode support, preview adapts to system appearance
-- **💻 macOS Native** — Pure SwiftUI + AppKit, no Electron, no web wrappers
+- **💻 macOS Native** — Pure SwiftUI + AppKit, no Electron, no web wrappers; bundled JS libraries work fully offline
 
 ## 📸 Screenshots
 
@@ -146,10 +159,11 @@ Highlights from the review:
 |------|--------|
 | **Architecture** | ⭐ Protocol-oriented with clean Service layer |
 | **Performance** | ⭐ Large file threshold (500KB), debounced updates |
-| **Security** | ⭐ JSON encoding for preview, CSP headers |
+| **Security** | ⭐ Per-session token + allowlist for LAN share, standardized-path traversal guard, JSON encoding for preview |
 | **Needs Work** | 🔧 HTML templates embedded in Swift strings |
 | **Needs Work** | 🔧 Resource copy logic duplication |
-| **Next Up** | Preferences window, font settings, session restore |
+| **Shipped** | ✅ Preferences window, session restore, export (PDF/HTML/image), LAN share, themes |
+| **Next Up** | Editor font settings, Git status indicators, global search (⌘⇧F) |
 
 ---
 

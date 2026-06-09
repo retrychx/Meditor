@@ -31,10 +31,10 @@ final class PreviewExporter: PreviewExporterProtocol {
 
         var errorDescription: String? {
             switch self {
-            case .noWebView: return "Preview is not available."
-            case .javaScriptFailed(let m): return "Export failed (JS): \(m)"
-            case .pdfGenerationFailed(let m): return "PDF export failed: \(m)"
-            case .snapshotFailed(let m): return "Image export failed: \(m)"
+            case .noWebView: return L("export.err.noWebView")
+            case .javaScriptFailed(let m): return L("export.err.js", m)
+            case .pdfGenerationFailed(let m): return L("export.err.pdf", m)
+            case .snapshotFailed(let m): return L("export.err.image", m)
             }
         }
     }

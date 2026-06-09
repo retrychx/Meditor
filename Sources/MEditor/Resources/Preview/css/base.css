@@ -14,7 +14,7 @@ html {
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', 'Segoe UI', Helvetica, Arial, sans-serif;
-  font-size: 15px;
+  font-size: var(--preview-font-size, 15px);
   line-height: 1.7;
   max-width: 860px;
   margin: 0 auto;

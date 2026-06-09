@@ -302,7 +302,7 @@ struct NativeEditorView: NSViewRepresentable {
                 return
             }
 
-            let storage = textView.textStorage!
+            guard let storage = textView.textStorage else { return }
             let fullRange = NSRange(location: 0, length: (text as NSString).length)
             let baseColor = lastTheme.foregroundNSColor
             let baseFont = NSFont.systemFont(ofSize: 14)

@@ -19,23 +19,23 @@ enum AppError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .fileRead(let url, let e):
-            return "Couldn't open “\(url.lastPathComponent)”: \(e.localizedDescription)"
+            return L("error.openFailed", url.lastPathComponent, e.localizedDescription)
         case .fileWrite(let url, let e):
-            return "Couldn't save “\(url.lastPathComponent)”: \(e.localizedDescription)"
+            return L("error.saveFailed", url.lastPathComponent, e.localizedDescription)
         case .fileDelete(let url, let e):
-            return "Couldn't delete “\(url.lastPathComponent)”: \(e.localizedDescription)"
+            return L("error.deleteFailed2", url.lastPathComponent, e.localizedDescription)
         case .fileRename(let url, _, let e):
-            return "Couldn't rename “\(url.lastPathComponent)”: \(e.localizedDescription)"
+            return L("error.renameFailed2", url.lastPathComponent, e.localizedDescription)
         case .fileCreate(let url, let e):
-            return "Couldn't create “\(url.lastPathComponent)”: \(e.localizedDescription)"
+            return L("error.createFailed", url.lastPathComponent, e.localizedDescription)
         case .sandboxAccessDenied(let url):
-            return "Access denied to “\(url.lastPathComponent)”."
+            return L("error.accessDenied", url.lastPathComponent)
         case .previewResourceMissing(let name):
-            return "Preview resource missing: \(name)."
+            return L("error.previewResourceMissing", name)
         case .exportFailed(let format, let e):
-            return "Export to \(format) failed: \(e?.localizedDescription ?? "unknown error")."
+            return L("error.exportFailed", format, e?.localizedDescription ?? L("error.unknown"))
         case .sessionRestoreFailed(let detail):
-            return "Couldn't restore previous session: \(detail)."
+            return L("error.sessionRestoreFailed", detail)
         }
     }
 
