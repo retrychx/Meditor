@@ -3,29 +3,83 @@ import XCTest
 
 // MARK: - Mock
 
-final class MockFileService: FileServiceProtocol {
-    var files: [URL: String] = [:]
-    var children: [URL: [FileItem]] = [:]
+class MockFileService: FileServiceProtocol {
+    private var files: [URL: String] = [:]
+    private var children: [URL: [FileItem]] = [:]
+    private let lock = NSLock()
+
+    func setFile(_ url: URL, content: String) {
+        lock.lock()
+        files[url] = content
+        lock.unlock()
+    }
+
+    func fileContent(at url: URL) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return files[url]
+    }
+
+    func setChildren(_ items: [FileItem], for directory: URL) {
+        lock.lock()
+        children[directory] = items
+        lock.unlock()
+    }
 
     func loadImmediateChildren(of directory: URL) -> [FileItem] {
-        children[directory] ?? []
+        lock.lock()
+        defer { lock.unlock() }
+        return children[directory] ?? []
     }
 
     func loadChildren(for item: FileItem) -> [FileItem] {
+        lock.lock()
         let childs = children[item.url] ?? []
+        lock.unlock()
         item.children = childs
         return childs
     }
 
     func readFile(at url: URL) throws -> String {
-        guard let content = files[url] else {
+        guard let content = fileContent(at: url) else {
             throw NSError(domain: "mock", code: 1, userInfo: [NSLocalizedDescriptionKey: "File not found"])
         }
         return content
     }
 
     func writeFile(at url: URL, content: String) throws {
-        files[url] = content
+        setFile(url, content: content)
+    }
+}
+
+final class MockFileWatcher: FileWatcherServiceProtocol {
+    private(set) var watchedURLs: [URL] = []
+    private(set) var startCallCount = 0
+    private(set) var stopCallCount = 0
+    private var onChange: (() -> Void)?
+
+    func startWatching(urls: [URL], onChange: @escaping () -> Void) {
+        watchedURLs = urls
+        startCallCount += 1
+        self.onChange = onChange
+    }
+
+    func stopWatching() {
+        stopCallCount += 1
+        onChange = nil
+    }
+}
+
+final class DelayedFileService: MockFileService {
+    var readDelay: TimeInterval = 0.15
+    var readError: Error?
+
+    override func readFile(at url: URL) throws -> String {
+        Thread.sleep(forTimeInterval: readDelay)
+        if let readError {
+            throw readError
+        }
+        return try super.readFile(at: url)
     }
 }
 
@@ -36,16 +90,19 @@ final class AppStateTests: XCTestCase {
 
     var state: AppState!
     var mockService: MockFileService!
+    var mockWatcher: MockFileWatcher!
 
     override func setUp() {
         super.setUp()
         mockService = MockFileService()
-        state = AppState(fileService: mockService)
+        mockWatcher = MockFileWatcher()
+        state = AppState(fileService: mockService, fileWatcher: mockWatcher)
     }
 
     override func tearDown() {
         state = nil
         mockService = nil
+        mockWatcher = nil
         super.tearDown()
     }
 
@@ -58,20 +115,35 @@ final class AppStateTests: XCTestCase {
 
     func setupTab(_ name: String, content: String = "", language: EditorLanguage = .markdown) -> EditorTab {
         let url = URL(fileURLWithPath: "/tmp/\(name)")
-        mockService.files[url] = content
+        mockService.setFile(url, content: content)
         let item = FileItem(url: url, isDirectory: false)
         state.openFile(item)
+        waitForCondition {
+            self.state.selectedTab?.url == url && self.state.selectedTab?.content == content
+        }
         return state.selectedTab!
+    }
+
+    func waitForCondition(timeout: TimeInterval = 1.0,
+                          file: StaticString = #filePath,
+                          line: UInt = #line,
+                          _ condition: () -> Bool) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+        XCTFail("Timed out waiting for condition", file: file, line: line)
     }
 
     // MARK: - File Tree
 
     func test_openFolder_setsRootURLAndReloadsTree() {
         let root = URL(fileURLWithPath: "/tmp/project")
-        mockService.children[root] = [
+        mockService.setChildren([
             makeItem("readme.md"),
             makeItem("src", isDir: true),
-        ]
+        ], for: root)
 
         state.openFolder(root)
 
@@ -81,12 +153,13 @@ final class AppStateTests: XCTestCase {
 
     func test_reloadFileTree_clearsMapAndReloads() {
         let root = URL(fileURLWithPath: "/tmp/project")
-        mockService.children[root] = [
+        mockService.setChildren([
             makeItem("a.md"),
             makeItem("b.md"),
-        ]
+        ], for: root)
         state.openFolder(root)
-        state.fileItemMap[UUID()] = makeItem("c.md") // add stale entry
+        let staleURL = URL(fileURLWithPath: "/tmp/c.md")
+        state.fileItemMap[staleURL] = makeItem("c.md") // add stale entry
 
         state.reloadFileTree()
 
@@ -99,9 +172,10 @@ final class AppStateTests: XCTestCase {
     func test_openFile_createsTab() {
         let url = URL(fileURLWithPath: "/tmp/hello.md")
         let item = FileItem(url: url, isDirectory: false)
-        mockService.files[url] = "# Hello"
+        mockService.setFile(url, content: "# Hello")
 
         state.openFile(item)
+        waitForCondition { self.state.selectedTab?.content == "# Hello" }
 
         XCTAssertEqual(state.openTabs.count, 1)
         XCTAssertEqual(state.selectedTab?.name, "hello.md")
@@ -131,10 +205,11 @@ final class AppStateTests: XCTestCase {
 
     func test_openFile_setsEditorLanguageForHTML() {
         let url = URL(fileURLWithPath: "/tmp/page.html")
-        mockService.files[url] = "<h1>Hi</h1>"
+        mockService.setFile(url, content: "<h1>Hi</h1>")
         let item = FileItem(url: url, isDirectory: false)
 
         state.openFile(item)
+        waitForCondition { self.state.selectedTab?.content == "<h1>Hi</h1>" }
 
         XCTAssertEqual(state.selectedTab?.language, .html)
     }
@@ -180,7 +255,7 @@ final class AppStateTests: XCTestCase {
         state.confirmCloseTab(save: true)
 
         // Should have saved (written via mock)
-        XCTAssertEqual(mockService.files[tab.url], "modified")
+        XCTAssertEqual(mockService.fileContent(at: tab.url), "modified")
         XCTAssertTrue(state.openTabs.isEmpty)
         XCTAssertFalse(state.showingCloseConfirmation)
     }
@@ -193,7 +268,7 @@ final class AppStateTests: XCTestCase {
         state.confirmCloseTab(save: false)
 
         // Should NOT have saved
-        XCTAssertEqual(mockService.files[tab.url], "original")
+        XCTAssertEqual(mockService.fileContent(at: tab.url), "original")
         XCTAssertTrue(state.openTabs.isEmpty)
     }
 
@@ -228,7 +303,7 @@ final class AppStateTests: XCTestCase {
 
     func test_selectTab_switchesPreview() {
         let tab1 = setupTab("a.md", content: "# A")
-        setupTab("b.md", content: "# B")
+        _ = setupTab("b.md", content: "# B")
 
         state.selectTab(tab1.id)
 
@@ -257,7 +332,7 @@ final class AppStateTests: XCTestCase {
 
     func test_updateTabContent_nonSelectedTabDoesNotTriggerPreview() {
         let tab1 = setupTab("a.md", content: "# A")
-        let tab2 = setupTab("b.md", content: "# B")
+        _ = setupTab("b.md", content: "# B")
 
         // Update the non-selected tab (tab1, since tab2 is selected)
         state.updateTabContent(tab1.id, content: "# A modified")
@@ -275,7 +350,7 @@ final class AppStateTests: XCTestCase {
         state.saveTab(state.openTabs[0])
 
         XCTAssertFalse(state.openTabs[0].isModified)
-        XCTAssertEqual(mockService.files[tab.url], "updated")
+        XCTAssertEqual(mockService.fileContent(at: tab.url), "updated")
     }
 
     func test_saveTab_unmodifiedDoesNothing() {
@@ -284,7 +359,7 @@ final class AppStateTests: XCTestCase {
         state.saveTab(state.openTabs[0])
 
         // Original file content unchanged (since we never modified)
-        XCTAssertEqual(mockService.files[tab.url], "hello")
+        XCTAssertEqual(mockService.fileContent(at: tab.url), "hello")
     }
 
     func test_saveCurrentTab_noSelectedTabDoesNothing() {
@@ -296,43 +371,53 @@ final class AppStateTests: XCTestCase {
     // MARK: - Tab Move
 
     func test_moveTab_reorders() {
-        setupTab("a.md")
-        setupTab("b.md")
-        setupTab("c.md")
+        _ = setupTab("a.md")
+        _ = setupTab("b.md")
+        _ = setupTab("c.md")
 
-        // Move "c.md" from index 2 to index 0
+        // Tabs are inserted at the front, so current order is c, b, a.
+        // Move "a.md" from index 2 to index 0.
         state.moveTab(from: 2, to: 0)
 
-        XCTAssertEqual(state.openTabs[0].name, "c.md")
-        XCTAssertEqual(state.openTabs[1].name, "a.md")
+        XCTAssertEqual(state.openTabs[0].name, "a.md")
+        XCTAssertEqual(state.openTabs[1].name, "c.md")
         XCTAssertEqual(state.openTabs[2].name, "b.md")
     }
 
     func test_moveTab_invalidIndexesDoesNothing() {
-        setupTab("a.md")
-        setupTab("b.md")
+        _ = setupTab("a.md")
+        _ = setupTab("b.md")
 
         state.moveTab(from: 5, to: 0)
 
         XCTAssertEqual(state.openTabs.count, 2)
-        XCTAssertEqual(state.openTabs[0].name, "a.md")
+        XCTAssertEqual(state.openTabs[0].name, "b.md")
     }
 
     // MARK: - Preview
 
     func test_openFile_syncsPreview() {
         let url = URL(fileURLWithPath: "/tmp/preview.md")
-        mockService.files[url] = "# Preview"
+        mockService.setFile(url, content: "# Preview")
         let item = FileItem(url: url, isDirectory: false)
 
         state.openFile(item)
+        waitForCondition { self.state.previewContent == "# Preview" }
 
         XCTAssertEqual(state.previewContent, "# Preview")
         XCTAssertEqual(state.previewLanguage, .markdown)
     }
 
+    func test_updateTabContent_selectedTabSyncsPreviewImmediately() {
+        let tab = setupTab("preview.md", content: "# Before")
+
+        state.updateTabContent(tab.id, content: "# After")
+
+        XCTAssertEqual(state.previewContent, "# After")
+    }
+
     func test_currentFileSize_returnsFormattedSize() {
-        setupTab("a.md", content: "hello")
+        _ = setupTab("a.md", content: "hello")
 
         XCTAssertFalse(state.currentFileSize.isEmpty)
         XCTAssertTrue(state.currentFileSize.contains("5")) // "hello" is 5 bytes
@@ -423,6 +508,7 @@ final class AppStateTests: XCTestCase {
 
         let missingURL = tempDir.appendingPathComponent("missing.md")
         let selectedURL = tempDir.appendingPathComponent("selected.md")
+        try "# Missing".write(to: missingURL, atomically: true, encoding: .utf8)
         try "# Selected".write(to: selectedURL, atomically: true, encoding: .utf8)
 
         sessionStore.saveNow(
@@ -430,13 +516,62 @@ final class AppStateTests: XCTestCase {
             openTabURLs: [missingURL, selectedURL],
             selectedIndex: 1
         )
+        try FileManager.default.removeItem(at: missingURL)
 
-        let restoreState = AppState(fileService: mockService, sessionStore: sessionStore)
-        mockService.files[selectedURL] = "# Selected"
+        let restoreState = AppState(fileService: mockService, fileWatcher: mockWatcher, sessionStore: sessionStore)
+        mockService.setFile(selectedURL, content: "# Selected")
 
         restoreState.restoreSession()
+        waitForCondition {
+            restoreState.selectedTab?.url.standardizedFileURL == selectedURL.standardizedFileURL
+        }
 
         XCTAssertEqual(restoreState.openTabs.count, 1)
         XCTAssertEqual(restoreState.selectedTab?.url.standardizedFileURL, selectedURL.standardizedFileURL)
+    }
+
+    func test_openFile_asyncLoadDoesNotOverwriteUserEdits() {
+        let delayedService = DelayedFileService()
+        let delayedWatcher = MockFileWatcher()
+        let delayedState = AppState(fileService: delayedService, fileWatcher: delayedWatcher)
+        let url = URL(fileURLWithPath: "/tmp/delayed.md")
+        delayedService.setFile(url, content: "# Disk")
+
+        delayedState.openFile(FileItem(url: url, isDirectory: false))
+        guard let tabID = delayedState.selectedTabID else {
+            return XCTFail("Expected tab to open")
+        }
+
+        delayedState.updateTabContent(tabID, content: "# Edited")
+        waitForCondition {
+            delayedState.selectedTab?.content == "# Edited" &&
+            delayedState.selectedTab?.awaitingInitialContent == false
+        }
+
+        XCTAssertEqual(delayedState.selectedTab?.content, "# Edited")
+        XCTAssertTrue(delayedState.selectedTab?.isModified == true)
+    }
+
+    func test_openFile_asyncFailureDoesNotCloseEditedTab() {
+        let delayedService = DelayedFileService()
+        delayedService.readError = NSError(domain: "mock", code: 2, userInfo: nil)
+        let delayedWatcher = MockFileWatcher()
+        let delayedState = AppState(fileService: delayedService, fileWatcher: delayedWatcher)
+        let url = URL(fileURLWithPath: "/tmp/failing.md")
+        delayedService.setFile(url, content: "# Disk")
+
+        delayedState.openFile(FileItem(url: url, isDirectory: false))
+        guard let tabID = delayedState.selectedTabID else {
+            return XCTFail("Expected tab to open")
+        }
+
+        delayedState.updateTabContent(tabID, content: "# Edited")
+        waitForCondition {
+            delayedState.openTabs.count == 1 &&
+            delayedState.selectedTab?.content == "# Edited"
+        }
+
+        XCTAssertEqual(delayedState.openTabs.count, 1)
+        XCTAssertEqual(delayedState.selectedTab?.content, "# Edited")
     }
 }

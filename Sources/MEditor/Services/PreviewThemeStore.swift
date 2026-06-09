@@ -7,15 +7,17 @@ import Observation
 @Observable
 final class PreviewThemeStore: PreviewThemeStoreProtocol {
     private static let userDefaultsKey = "MEditor.previewTheme"
+    private let userDefaults: UserDefaults
 
     /// The theme currently in use. Setter persists the value to UserDefaults.
     var current: PreviewTheme {
         didSet {
-            UserDefaults.standard.set(current.rawValue, forKey: Self.userDefaultsKey)
+            userDefaults.set(current.rawValue, forKey: Self.userDefaultsKey)
         }
     }
 
     init(userDefaults: UserDefaults = .standard) {
+        self.userDefaults = userDefaults
         if let raw = userDefaults.string(forKey: Self.userDefaultsKey),
            let theme = PreviewTheme(rawValue: raw) {
             self.current = theme

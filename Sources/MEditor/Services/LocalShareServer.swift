@@ -45,6 +45,8 @@ final class LocalShareServer {
     @ObservationIgnored
     private(set) var accessToken: String = ""
 
+    private static let maxRequestHeaderBytes = 64 * 1024
+
     func start(preferredPort: UInt16 = 8899) {
         guard !isRunning else { return }
         guard let nwPort = NWEndpoint.Port(rawValue: preferredPort) else { return }
@@ -103,14 +105,38 @@ final class LocalShareServer {
     private func handleConnection(_ connection: NWConnection) {
         connections.append(connection)
         connection.start(queue: .main)
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, _, _ in
+        receiveRequest(on: connection, accumulated: Data())
+    }
+
+    private func receiveRequest(on connection: NWConnection, accumulated: Data) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 16 * 1024) { [weak self] data, _, isComplete, error in
             Task { @MainActor in
-                guard let self, let data else {
+                guard let self else {
                     connection.cancel()
                     return
                 }
-                let request = String(data: data, encoding: .utf8) ?? ""
-                self.respond(to: request, on: connection)
+
+                if error != nil {
+                    self.close(connection)
+                    return
+                }
+
+                var buffer = accumulated
+                if let data {
+                    buffer.append(data)
+                }
+
+                if let request = self.completeRequest(from: buffer) {
+                    self.respond(to: request, on: connection)
+                    return
+                }
+
+                if isComplete || buffer.count > Self.maxRequestHeaderBytes {
+                    self.send(self.build404Response(), on: connection)
+                    return
+                }
+
+                self.receiveRequest(on: connection, accumulated: buffer)
             }
         }
     }
@@ -182,9 +208,20 @@ final class LocalShareServer {
 
     private func send(_ data: Data, on connection: NWConnection) {
         connection.send(content: data, completion: .contentProcessed { _ in
-            connection.cancel()
+            Task { @MainActor in
+                self.close(connection)
+            }
         })
+    }
+
+    private func close(_ connection: NWConnection) {
+        connection.cancel()
         connections.removeAll { $0 === connection }
+    }
+
+    private func completeRequest(from data: Data) -> String? {
+        guard let range = Self.headerTerminatorRange(in: data) else { return nil }
+        return String(data: Data(data[..<range.lowerBound]), encoding: .utf8)
     }
 
     private func parseRequestPath(_ request: String) -> String {
@@ -193,6 +230,10 @@ final class LocalShareServer {
         let parts = firstLine.components(separatedBy: " ")
         guard parts.count >= 2 else { return "/" }
         return parts[1]
+    }
+
+    static func headerTerminatorRange(in data: Data) -> Range<Data.Index>? {
+        data.range(of: Data([0x0D, 0x0A, 0x0D, 0x0A]))
     }
 
     /// Generate the share URL for a specific file.
@@ -211,7 +252,7 @@ final class LocalShareServer {
     // MARK: - Markdown rendering
 
     private func renderMarkdown(fileURL: URL) -> Data {
-        guard let content = try? String(contentsOf: fileURL, encoding: .utf8) else {
+        guard let content = try? TextFileDecoder.decode(contentsOf: fileURL) else {
             return build404Response()
         }
         guard let encodedMarkdown = Self.inlineJavaScriptStringLiteral(content) else {

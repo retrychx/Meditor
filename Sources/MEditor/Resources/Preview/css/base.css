@@ -16,9 +16,9 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', 'Segoe UI', Helvetica, Arial, sans-serif;
   font-size: var(--preview-font-size, 15px);
   line-height: 1.7;
-  max-width: 860px;
+  max-width: 1100px;
   margin: 0 auto;
-  padding: 24px clamp(18px, 3vw, 36px);
+  padding: 2rem 3rem 2rem 2.5rem;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -117,6 +117,12 @@ img { max-width: 100%; border-radius: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--blockquote-border); }
+
+@media (max-width: 900px) {
+  body {
+    padding: 1.5rem 1.25rem;
+  }
+}
 
 /* ===== Code-block copy button ===== */
 .meditor-codeblock { position: relative; }

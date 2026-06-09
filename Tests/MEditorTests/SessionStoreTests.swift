@@ -5,29 +5,42 @@ final class SessionStoreTests: XCTestCase {
 
     var store: SessionStore!
     var defaults: UserDefaults!
+    var tempDir: URL!
 
     override func setUp() {
         super.setUp()
         defaults = UserDefaults(suiteName: "SessionStoreTests")!
         defaults.removePersistentDomain(forName: "SessionStoreTests")
         store = SessionStore(userDefaults: defaults)
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SessionStoreTests_\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
     }
 
     override func tearDown() {
         store.clear()
         defaults.removePersistentDomain(forName: "SessionStoreTests")
+        try? FileManager.default.removeItem(at: tempDir)
+        tempDir = nil
         defaults = nil
         store = nil
         super.tearDown()
     }
 
+    @discardableResult
+    private func createFile(_ name: String, contents: String = "") -> URL {
+        let url = tempDir.appendingPathComponent(name)
+        FileManager.default.createFile(atPath: url.path, contents: Data(contents.utf8))
+        return url
+    }
+
     // MARK: - Save & Load Round-Trip
 
     func test_saveNow_and_load_roundTrip() {
-        let root = URL(fileURLWithPath: "/tmp/project")
+        let root = tempDir!
         let tabs = [
-            URL(fileURLWithPath: "/tmp/project/a.md"),
-            URL(fileURLWithPath: "/tmp/project/b.md"),
+            createFile("a.md"),
+            createFile("b.md"),
         ]
 
         store.saveNow(rootURL: root, openTabURLs: tabs, selectedIndex: 1)
@@ -45,7 +58,7 @@ final class SessionStoreTests: XCTestCase {
     }
 
     func test_clear_removesSession() {
-        let root = URL(fileURLWithPath: "/tmp/project")
+        let root = tempDir!
         store.saveNow(rootURL: root, openTabURLs: [], selectedIndex: nil)
         XCTAssertNotNil(store.load())
 
@@ -64,7 +77,7 @@ final class SessionStoreTests: XCTestCase {
     }
 
     func test_saveNow_withSelectedIndex_nil() {
-        let tabs = [URL(fileURLWithPath: "/tmp/a.md")]
+        let tabs = [createFile("a.md")]
         store.saveNow(rootURL: nil, openTabURLs: tabs, selectedIndex: nil)
 
         let session = store.load()
@@ -72,8 +85,8 @@ final class SessionStoreTests: XCTestCase {
     }
 
     func test_scheduleSave_eventuallyPersists() {
-        let root = URL(fileURLWithPath: "/tmp/project")
-        let tabs = [URL(fileURLWithPath: "/tmp/project/c.md")]
+        let root = tempDir!
+        let tabs = [createFile("c.md")]
 
         store.scheduleSave(rootURL: root, openTabURLs: tabs, selectedIndex: 0)
 
@@ -104,12 +117,12 @@ final class SessionStoreTests: XCTestCase {
     // MARK: - Multiple Saves Coalesce
 
     func test_scheduleSave_coalescesBurstySaves() {
-        let root = URL(fileURLWithPath: "/tmp/project")
+        let root = tempDir!
 
         // Rapid-fire saves — only the last should persist
-        store.scheduleSave(rootURL: root, openTabURLs: [URL(fileURLWithPath: "/tmp/1.md")], selectedIndex: 0)
-        store.scheduleSave(rootURL: root, openTabURLs: [URL(fileURLWithPath: "/tmp/2.md")], selectedIndex: 0)
-        store.scheduleSave(rootURL: root, openTabURLs: [URL(fileURLWithPath: "/tmp/3.md")], selectedIndex: 0)
+        store.scheduleSave(rootURL: root, openTabURLs: [createFile("1.md")], selectedIndex: 0)
+        store.scheduleSave(rootURL: root, openTabURLs: [createFile("2.md")], selectedIndex: 0)
+        store.scheduleSave(rootURL: root, openTabURLs: [createFile("3.md")], selectedIndex: 0)
 
         let expectation = expectation(description: "coalesced save")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {

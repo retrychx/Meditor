@@ -106,7 +106,6 @@ final class FileServiceTests: XCTestCase {
         createDir("aaa")
 
         let items = service.loadImmediateChildren(of: tempDir)
-        let names = items.map(\.name)
 
         // dirs first: aaa, beta
         let dirs = items.filter(\.isDirectory)
@@ -152,6 +151,16 @@ final class FileServiceTests: XCTestCase {
         let url = createFile("hello.md", content: "# Hello")
         let content = try service.readFile(at: url)
         XCTAssertEqual(content, "# Hello")
+    }
+
+    func test_readFile_utf16Fallback() throws {
+        let url = tempDir.appendingPathComponent("utf16.md")
+        let data = "你好，MEditor".data(using: .utf16)
+        try XCTUnwrap(data).write(to: url)
+
+        let content = try service.readFile(at: url)
+
+        XCTAssertEqual(content, "你好，MEditor")
     }
 
     func test_readFile_nonexistent_throws() {
