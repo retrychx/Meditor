@@ -24,7 +24,7 @@ struct PreviewPanel: View {
                         state.requestPreviewScroll(to: item.line)
                     }
                 )
-                .frame(width: 150)
+                .frame(width: 220)
                 .background(state.themeStore.current.chromeBackground.opacity(0.5))
 
                 state.themeStore.current.separator
@@ -51,7 +51,8 @@ struct PreviewPanel: View {
                     },
                     exporter: state.previewExporter,
                     sourceURL: showsMarkdown ? state.selectedTab?.url : nil,
-                    fontSize: fontSize
+                    fontSize: fontSize,
+                    findController: state.previewFindController
                 )
                 .opacity(showsMarkdown ? 1 : 0)
                 .allowsHitTesting(showsMarkdown)
@@ -60,7 +61,8 @@ struct PreviewPanel: View {
                     fileURL: showsHTML ? state.previewHTMLFileURL : nil,
                     reloadToken: state.previewReloadToken,
                     exporter: state.previewExporter,
-                    rootURL: state.rootURL
+                    rootURL: state.rootURL,
+                    findController: state.previewFindController
                 )
                 .opacity(showsHTML ? 1 : 0)
                 .allowsHitTesting(showsHTML)
@@ -69,9 +71,27 @@ struct PreviewPanel: View {
                     emptyState
                         .background(Color(nsColor: .textBackgroundColor))
                 }
+
+                if state.previewFindController.isPresented && state.previewMode != .empty {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            PreviewFindBar(
+                                controller: state.previewFindController,
+                                theme: state.themeStore.current
+                            )
+                        }
+                        Spacer()
+                    }
+                    .padding(.top, 12)
+                    .padding(.horizontal, 12)
+                }
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
+        .onAppear {
+            state.previewFindController.activeMode = state.previewMode
+        }
         .onChange(of: state.editorVisibleLine) { _, newLine in
             if scrollSync.shouldPropagateEditorScroll() {
                 // Editor scroll drives preview scroll (normal editor↔preview sync)
@@ -106,5 +126,82 @@ struct PreviewPanel: View {
                 .font(.system(size: 12))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct PreviewFindBar: View {
+    @Bindable var controller: PreviewFindController
+    let theme: PreviewTheme
+
+    @FocusState private var fieldFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .font(.system(size: 11, weight: .medium))
+
+            TextField(
+                L("preview.findPlaceholder"),
+                text: Binding(
+                    get: { controller.query },
+                    set: { controller.updateQuery($0) }
+                )
+            )
+            .textFieldStyle(.plain)
+            .font(.system(size: 12))
+            .frame(width: 180)
+            .focused($fieldFocused)
+            .onSubmit {
+                controller.findNext()
+            }
+
+            if !controller.hasMatch && !controller.query.isEmpty {
+                Text(L("preview.findNoResults"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
+            Button {
+                controller.findPrevious()
+            } label: {
+                Image(systemName: "chevron.up")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help(L("menu.findPrevious"))
+
+            Button {
+                controller.findNext()
+            } label: {
+                Image(systemName: "chevron.down")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help(L("menu.findNext"))
+
+            Button {
+                controller.close()
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(theme.chromeBackground.opacity(theme.isDark ? 0.96 : 0.98))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(theme.separator.opacity(theme.isDark ? 0.9 : 0.6), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .shadow(color: Color.black.opacity(theme.isDark ? 0.3 : 0.08), radius: 10, y: 4)
+        .onAppear {
+            fieldFocused = true
+        }
+        .onChange(of: controller.focusToken) { _, _ in
+            fieldFocused = true
+        }
     }
 }

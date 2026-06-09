@@ -24,6 +24,7 @@ struct MarkdownWebPreview: View {
     var sourceURL: URL? = nil
     /// Preview font size in px (from settings).
     var fontSize: Int = 15
+    var findController: PreviewFindController? = nil
 
     var body: some View {
         MarkdownWebView(
@@ -35,7 +36,8 @@ struct MarkdownWebPreview: View {
             onTOCUpdate: onTOCUpdate,
             exporter: exporter,
             sourceURL: sourceURL,
-            fontSize: fontSize
+            fontSize: fontSize,
+            findController: findController
         )
     }
 }
@@ -60,13 +62,19 @@ private struct MarkdownWebView: NSViewRepresentable {
     let exporter: PreviewExporter?
     let sourceURL: URL?
     let fontSize: Int
+    let findController: PreviewFindController?
 
     static let scrollHandlerName = "scrollHandler"
     static let copyHandlerName = "copyHandler"
     static let tocHandlerName = "tocHandler"
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onVisibleLineChange: onVisibleLineChange, onTOCUpdate: onTOCUpdate, exporter: exporter)
+        Coordinator(
+            onVisibleLineChange: onVisibleLineChange,
+            onTOCUpdate: onTOCUpdate,
+            exporter: exporter,
+            findController: findController
+        )
     }
 
     func makeNSView(context: Context) -> WKWebView {
@@ -84,6 +92,7 @@ private struct MarkdownWebView: NSViewRepresentable {
         context.coordinator.lastContent = content
         context.coordinator.lastTheme = theme
         exporter?.webView = webView
+        findController?.register(webView: webView, for: .markdown)
 
         loadTemplate(into: webView, initialContent: content, theme: theme, coordinator: context.coordinator)
         return webView
@@ -93,6 +102,8 @@ private struct MarkdownWebView: NSViewRepresentable {
         let coordinator = context.coordinator
         coordinator.onVisibleLineChange = onVisibleLineChange
         coordinator.onTOCUpdate = onTOCUpdate
+        coordinator.findController = findController
+        findController?.register(webView: webView, for: .markdown)
 
         // Theme changed: swap stylesheet via JS; re-render handled by bridge.
         if theme != coordinator.lastTheme {
@@ -146,6 +157,7 @@ private struct MarkdownWebView: NSViewRepresentable {
         if coordinator.exporter?.webView === webView {
             coordinator.exporter?.webView = nil
         }
+        coordinator.findController?.register(webView: nil, for: .markdown)
         coordinator.webView = nil
     }
 
@@ -236,6 +248,7 @@ extension MarkdownWebView {
         var onVisibleLineChange: ((Int) -> Void)?
         var onTOCUpdate: (([TOCItem]) -> Void)?
         weak var exporter: PreviewExporter?
+        var findController: PreviewFindController?
 
         var lastContent: String = ""
         var lastTheme: PreviewTheme = .github
@@ -284,10 +297,14 @@ extension MarkdownWebView {
         // Pending JS to run once the page finishes loading.
         private var pendingScripts: [String] = []
 
-        init(onVisibleLineChange: ((Int) -> Void)? = nil, onTOCUpdate: (([TOCItem]) -> Void)? = nil, exporter: PreviewExporter? = nil) {
+        init(onVisibleLineChange: ((Int) -> Void)? = nil,
+             onTOCUpdate: (([TOCItem]) -> Void)? = nil,
+             exporter: PreviewExporter? = nil,
+             findController: PreviewFindController? = nil) {
             self.onVisibleLineChange = onVisibleLineChange
             self.onTOCUpdate = onTOCUpdate
             self.exporter = exporter
+            self.findController = findController
         }
 
         deinit {

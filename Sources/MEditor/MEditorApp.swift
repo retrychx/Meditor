@@ -71,23 +71,17 @@ struct MEditorApp: App {
 
             CommandGroup(replacing: .textFormatting) {
                 Button(L("menu.find")) {
-                    let menuItem = NSMenuItem()
-                    menuItem.tag = 1
-                    NSApp.sendAction(#selector(NSTextView.performFindPanelAction(_:)), to: nil, from: menuItem)
+                    performFindCommand(tag: 1)
                 }
                 .keyboardShortcut("f", modifiers: .command)
 
                 Button(L("menu.findNext")) {
-                    let menuItem = NSMenuItem()
-                    menuItem.tag = 2
-                    NSApp.sendAction(#selector(NSTextView.performFindPanelAction(_:)), to: nil, from: menuItem)
+                    performFindCommand(tag: 2)
                 }
                 .keyboardShortcut("g", modifiers: .command)
 
                 Button(L("menu.findPrevious")) {
-                    let menuItem = NSMenuItem()
-                    menuItem.tag = 3
-                    NSApp.sendAction(#selector(NSTextView.performFindPanelAction(_:)), to: nil, from: menuItem)
+                    performFindCommand(tag: 3)
                 }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
 
@@ -165,6 +159,16 @@ struct MEditorApp: App {
             let item = FileItem(url: url, isDirectory: false)
             appState.openFile(item)
         }
+    }
+
+    private func performFindCommand(tag: Int) {
+        if appState.previewFindController.handleCommand(tag: tag) {
+            return
+        }
+
+        let menuItem = NSMenuItem()
+        menuItem.tag = tag
+        NSApp.sendAction(#selector(NSTextView.performFindPanelAction(_:)), to: nil, from: menuItem)
     }
 
     private func openFolder() {
