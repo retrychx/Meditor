@@ -23,16 +23,16 @@ struct EditorTabBar: View {
                             )
                         )
                         .contextMenu {
-                            Button("Close") { state.closeTab(tab.id) }
-                            Button("Close Others") {
+                            Button(L("tab.close")) { state.closeTab(tab.id) }
+                            Button(L("tab.closeOthers")) {
                                 state.openTabs.filter { $0.id != tab.id }
                                     .forEach { state.closeTab($0.id) }
                             }
-                            Button("Close All") {
+                            Button(L("tab.closeAll")) {
                                 state.openTabs.forEach { state.closeTab($0.id) }
                             }
                             Divider()
-                            Button("Show in Finder") {
+                            Button(L("tab.showInFinder")) {
                                 NSWorkspace.shared.activateFileViewerSelecting([tab.url])
                             }
                         }

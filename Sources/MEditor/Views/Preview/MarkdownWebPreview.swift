@@ -14,10 +14,14 @@ struct MarkdownWebPreview: View {
     /// Reports the data-source-line of the topmost visible anchor when the
     /// user scrolls inside the preview (preview→editor sync).
     var onVisibleLineChange: ((Int) -> Void)? = nil
+    /// Reports extracted TOC items after each render.
+    var onTOCUpdate: (([TOCItem]) -> Void)? = nil
     var exporter: PreviewExporter? = nil
     /// Source file URL — used to set <base href> so relative resources
     /// (images, links) in markdown resolve against the source directory.
     var sourceURL: URL? = nil
+    /// Preview font size in px (from settings).
+    var fontSize: Int = 15
 
     var body: some View {
         MarkdownWebView(
@@ -25,10 +29,20 @@ struct MarkdownWebPreview: View {
             theme: theme,
             scrollToLine: scrollToLine,
             onVisibleLineChange: onVisibleLineChange,
+            onTOCUpdate: onTOCUpdate,
             exporter: exporter,
-            sourceURL: sourceURL
+            sourceURL: sourceURL,
+            fontSize: fontSize
         )
     }
+}
+
+/// A single heading entry extracted from the rendered preview.
+struct TOCItem: Identifiable, Equatable {
+    let id = UUID()
+    let level: Int
+    let title: String
+    let line: Int
 }
 
 // MARK: - WKWebView wrapper
@@ -38,14 +52,17 @@ private struct MarkdownWebView: NSViewRepresentable {
     let theme: PreviewTheme
     let scrollToLine: Int
     let onVisibleLineChange: ((Int) -> Void)?
+    let onTOCUpdate: (([TOCItem]) -> Void)?
     let exporter: PreviewExporter?
     let sourceURL: URL?
+    let fontSize: Int
 
     static let scrollHandlerName = "scrollHandler"
     static let copyHandlerName = "copyHandler"
+    static let tocHandlerName = "tocHandler"
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onVisibleLineChange: onVisibleLineChange, exporter: exporter)
+        Coordinator(onVisibleLineChange: onVisibleLineChange, onTOCUpdate: onTOCUpdate, exporter: exporter)
     }
 
     func makeNSView(context: Context) -> WKWebView {
@@ -53,6 +70,7 @@ private struct MarkdownWebView: NSViewRepresentable {
         let userContent = WKUserContentController()
         userContent.add(context.coordinator, name: Self.scrollHandlerName)
         userContent.add(context.coordinator, name: Self.copyHandlerName)
+        userContent.add(context.coordinator, name: Self.tocHandlerName)
         config.userContentController = userContent
 
         let webView = WKWebView(frame: .zero, configuration: config)
@@ -70,6 +88,7 @@ private struct MarkdownWebView: NSViewRepresentable {
     func updateNSView(_ webView: WKWebView, context: Context) {
         let coordinator = context.coordinator
         coordinator.onVisibleLineChange = onVisibleLineChange
+        coordinator.onTOCUpdate = onTOCUpdate
 
         // Theme changed: swap stylesheet via JS; re-render handled by bridge.
         if theme != coordinator.lastTheme {
@@ -85,6 +104,12 @@ private struct MarkdownWebView: NSViewRepresentable {
             coordinator.evaluateWhenReady("window.MEditor && window.MEditor.setBaseURL('\(escaped)');")
         }
 
+        // Font size changed: update CSS variable.
+        if fontSize != coordinator.lastFontSize {
+            coordinator.lastFontSize = fontSize
+            coordinator.evaluateWhenReady("document.documentElement.style.setProperty('--preview-font-size','\(fontSize)px');")
+        }
+
         // Content changed: incremental update via JS.
         if content != coordinator.lastContent {
             coordinator.lastContent = content
@@ -92,8 +117,9 @@ private struct MarkdownWebView: NSViewRepresentable {
         }
 
         // Scroll sync editor → preview using source line.
-        if scrollToLine >= 0 && scrollToLine != coordinator.lastAppliedTargetLine {
+        if scrollToLine >= 0, scrollToLine != coordinator.lastAppliedTargetLine || coordinator.canRetriggerScroll {
             coordinator.lastAppliedTargetLine = scrollToLine
+            coordinator.lastScrollTime = CFAbsoluteTimeGetCurrent()
             coordinator.isProgrammaticScroll = true
             coordinator.evaluateWhenReady(
                 "window.MEditor && window.MEditor.scrollToLine(\(scrollToLine));"
@@ -112,6 +138,7 @@ private struct MarkdownWebView: NSViewRepresentable {
         webView.uiDelegate = nil
         webView.configuration.userContentController.removeScriptMessageHandler(forName: scrollHandlerName)
         webView.configuration.userContentController.removeScriptMessageHandler(forName: copyHandlerName)
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: tocHandlerName)
         if coordinator.exporter?.webView === webView {
             coordinator.exporter?.webView = nil
         }
@@ -203,12 +230,18 @@ extension MarkdownWebView {
     final class Coordinator: NSObject {
         weak var webView: WKWebView?
         var onVisibleLineChange: ((Int) -> Void)?
+        var onTOCUpdate: (([TOCItem]) -> Void)?
         weak var exporter: PreviewExporter?
 
         var lastContent: String = ""
         var lastTheme: PreviewTheme = .github
         var lastSourceURL: URL?
+        var lastFontSize: Int = 15
         var lastAppliedTargetLine: Int = -1
+        var lastScrollTime: CFAbsoluteTime = 0
+        var canRetriggerScroll: Bool {
+            CFAbsoluteTimeGetCurrent() - lastScrollTime > 0.3
+        }
         var lastReportedLine: Int = -1
         var isProgrammaticScroll = false
         var isReady = false
@@ -250,8 +283,9 @@ extension MarkdownWebView {
         // Pending JS to run once the page finishes loading.
         private var pendingScripts: [String] = []
 
-        init(onVisibleLineChange: ((Int) -> Void)? = nil, exporter: PreviewExporter? = nil) {
+        init(onVisibleLineChange: ((Int) -> Void)? = nil, onTOCUpdate: (([TOCItem]) -> Void)? = nil, exporter: PreviewExporter? = nil) {
             self.onVisibleLineChange = onVisibleLineChange
+            self.onTOCUpdate = onTOCUpdate
             self.exporter = exporter
         }
 
@@ -308,6 +342,11 @@ extension MarkdownWebView {
 extension MarkdownWebView.Coordinator: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         isReady = true
+        // Apply configured font size on initial load.
+        let fs = lastFontSize
+        if fs != 15 {
+            webView.evaluateJavaScript("document.documentElement.style.setProperty('--preview-font-size','\(fs)px');", completionHandler: nil)
+        }
         flushPendingScripts()
     }
 
@@ -329,6 +368,8 @@ extension MarkdownWebView.Coordinator: WKScriptMessageHandler {
             handleScrollMessage(message)
         case MarkdownWebView.copyHandlerName:
             handleCopyMessage(message)
+        case MarkdownWebView.tocHandlerName:
+            handleTOCMessage(message)
         default:
             break
         }
@@ -349,5 +390,17 @@ extension MarkdownWebView.Coordinator: WKScriptMessageHandler {
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(text, forType: .string)
+    }
+
+    private func handleTOCMessage(_ message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any],
+              let items = body["items"] as? [[String: Any]] else { return }
+        let tocItems = items.compactMap { dict -> TOCItem? in
+            guard let level = dict["level"] as? Int,
+                  let title = dict["title"] as? String,
+                  let line = dict["line"] as? Int else { return nil }
+            return TOCItem(level: level, title: title, line: line)
+        }
+        onTOCUpdate?(tocItems)
     }
 }

@@ -24,7 +24,7 @@ struct QuickOpenSheet: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
                     .font(.system(size: 13))
-                TextField("Open file by name…", text: $query)
+                TextField(L("quickOpen.placeholder"), text: $query)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .focused($searchFocused)
@@ -148,7 +148,7 @@ struct QuickOpenSheet: View {
             Image(systemName: "doc.text.magnifyingglass")
                 .font(.system(size: 22, weight: .light))
                 .foregroundStyle(.tertiary)
-            Text(query.isEmpty ? "Type to search files" : "No matches")
+            Text(query.isEmpty ? L("quickOpen.typeToSearch") : L("common.noMatches"))
                 .font(.system(size: 12))
                 .foregroundStyle(.tertiary)
         }

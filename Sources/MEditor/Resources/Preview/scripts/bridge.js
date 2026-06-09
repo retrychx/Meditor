@@ -52,6 +52,7 @@
       window.MEditorRender.renderInto(contentEl, initial);
     }
     attachScrollListener();
+    sendTOC();
   }
 
   /** Re-render with new markdown content (no full page reload). */
@@ -67,6 +68,7 @@
       contentEl.innerHTML = renderCache.get(key);
       lruTouch(key, renderCache.get(key));
       pendingCacheKey = null;
+      sendTOC();
       return;
     }
 
@@ -77,6 +79,7 @@
       window.MEditorRender.renderInto(contentEl, content);
     }
     scheduleCacheSnapshot(key, content);
+    sendTOC();
   }
 
   function scheduleCacheSnapshot(key, content) {
@@ -233,6 +236,22 @@
       base.href = safe;
       document.head.insertBefore(base, document.head.firstChild);
     }
+  }
+
+  /** Extract headings from rendered content and send to Swift as TOC. */
+  function sendTOC() {
+    if (!contentEl) return;
+    var headings = contentEl.querySelectorAll('h1, h2, h3, h4, h5, h6');
+    var items = [];
+    for (var i = 0; i < headings.length; i++) {
+      var el = headings[i];
+      var level = parseInt(el.tagName.charAt(1), 10);
+      var line = parseInt(el.getAttribute('data-source-line') || '-1', 10);
+      items.push({ level: level, title: el.textContent || '', line: line });
+    }
+    try {
+      window.webkit.messageHandlers.tocHandler.postMessage({ items: items });
+    } catch (e) { /* handler not registered */ }
   }
 
   global.MEditor = {

@@ -24,22 +24,22 @@ struct FileRow: View {
         }
         .contextMenu {
             if item.isDirectory {
-                Button("New File") {
+                Button(L("menu.newFile")) {
                     onAction?(.newFile(item.url))
                 }
-                Button("New Folder") {
+                Button(L("menu.newFolder")) {
                     onAction?(.newFolder(item.url))
                 }
                 Divider()
             }
-            Button("Rename") {
+            Button(L("rename.title")) {
                 onAction?(.rename(item))
             }
-            Button("Delete") {
+            Button(L("common.delete")) {
                 onAction?(.delete(item))
             }
             Divider()
-            Button("Reveal in Finder") {
+            Button(L("menu.revealInFinder")) {
                 onAction?(.revealInFinder(item))
             }
         }
