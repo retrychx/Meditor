@@ -17,6 +17,8 @@ struct NativeEditorView: NSViewRepresentable {
     let onVisibleTopLineChange: ((Int) -> Void)?
     /// Target line to scroll the editor to (preview→editor sync). -1 = none.
     let scrollToLine: Int
+    /// Monotonic token so the same target line can be requested more than once.
+    let scrollRequestID: Int
     /// Theme drives the text view's background and foreground colors so the
     /// editor pane visually matches the rest of the app.
     var theme: PreviewTheme = .github
@@ -128,8 +130,9 @@ struct NativeEditorView: NSViewRepresentable {
         }
 
         // Sync editor scroll position from preview using source line.
-        if scrollToLine >= 0 && scrollToLine != context.coordinator.lastAppliedTargetLine {
+        if scrollToLine >= 0 && scrollRequestID != context.coordinator.lastAppliedRequestID {
             context.coordinator.lastAppliedTargetLine = scrollToLine
+            context.coordinator.lastAppliedRequestID = scrollRequestID
             context.coordinator.scrollToLine(scrollToLine)
         }
     }
@@ -147,6 +150,7 @@ struct NativeEditorView: NSViewRepresentable {
         var scrollObserver: NSObjectProtocol?
         var lastReportedLine: Int = -1
         var lastAppliedTargetLine: Int = -1
+        var lastAppliedRequestID: Int = -1
         var isProgrammaticScroll = false
 
         private var debounceTimer: Timer?

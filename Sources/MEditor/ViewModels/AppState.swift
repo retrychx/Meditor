@@ -49,10 +49,22 @@ final class AppState {
     var cursorColumn: Int = 1
     var editorVisibleLine: Int = 0
     var previewVisibleLine: Int = 0
+    var editorScrollCommand: ScrollSyncCommand = .idle
+    var previewScrollCommand: ScrollSyncCommand = .idle
 
     func updateCursorPosition(line: Int, column: Int) {
         cursorLine = line
         cursorColumn = column
+    }
+
+    func requestEditorScroll(to line: Int) {
+        guard line >= 0 else { return }
+        editorScrollCommand = editorScrollCommand.advanced(to: line)
+    }
+
+    func requestPreviewScroll(to line: Int) {
+        guard line >= 0 else { return }
+        previewScrollCommand = previewScrollCommand.advanced(to: line)
     }
 
     var currentFileSize: String {

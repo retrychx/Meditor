@@ -6,8 +6,7 @@ struct PreviewPanel: View {
     @State private var fontSize: Int = AppSettings.shared.previewFontSize
     @State private var tocItems: [TOCItem] = []
     @State private var activeTOCIndex: Int = -1
-    /// The line number to scroll the preview to. -1 means "don't scroll".
-    @State private var scrollTarget: Int = -1
+    @State private var scrollSync = ScrollSyncState()
 
     var body: some View {
         HStack(spacing: 0) {
@@ -20,7 +19,9 @@ struct PreviewPanel: View {
                         if let idx = tocItems.firstIndex(where: { $0.id == item.id }) {
                             activeTOCIndex = idx
                         }
-                        scrollTarget = item.line
+                        scrollSync.registerTOCNavigation()
+                        state.requestEditorScroll(to: item.line)
+                        state.requestPreviewScroll(to: item.line)
                     }
                 )
                 .frame(width: 170)
@@ -34,9 +35,14 @@ struct PreviewPanel: View {
                 MarkdownWebPreview(
                     content: showsMarkdown ? state.previewContent : "",
                     theme: state.themeStore.current,
-                    scrollToLine: showsMarkdown ? scrollTarget : -1,
+                    scrollToLine: showsMarkdown ? state.previewScrollCommand.line : -1,
+                    scrollRequestID: state.previewScrollCommand.nonce,
                     onVisibleLineChange: { line in
                         state.previewVisibleLine = line
+                        let shouldPropagate = scrollSync.shouldPropagatePreviewScroll()
+                        if shouldPropagate {
+                            state.requestEditorScroll(to: line)
+                        }
                         updateActiveTOC(visibleLine: line)
                     },
                     onTOCUpdate: { items in
@@ -67,8 +73,10 @@ struct PreviewPanel: View {
         }
         .background(Color(nsColor: .textBackgroundColor))
         .onChange(of: state.editorVisibleLine) { _, newLine in
-            // Editor scroll drives preview scroll (normal editor↔preview sync)
-            scrollTarget = newLine
+            if scrollSync.shouldPropagateEditorScroll() {
+                // Editor scroll drives preview scroll (normal editor↔preview sync)
+                state.requestPreviewScroll(to: newLine)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .previewFontSizeChanged)) { _ in
             fontSize = AppSettings.shared.previewFontSize
