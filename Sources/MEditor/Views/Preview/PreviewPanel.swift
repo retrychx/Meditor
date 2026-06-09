@@ -13,6 +13,7 @@ struct PreviewPanel: View {
             if showsMarkdown && !tocItems.isEmpty {
                 TOCOutlineView(
                     items: tocItems,
+                    theme: state.themeStore.current,
                     activeLineIndex: activeTOCIndex,
                     onSelect: { item in
                         guard item.line >= 0 else { return }
@@ -25,9 +26,10 @@ struct PreviewPanel: View {
                     }
                 )
                 .frame(width: 220)
-                .background(state.themeStore.current.chromeBackground.opacity(0.5))
+                .background(state.themeStore.current.chromeBackground.opacity(state.themeStore.current.isDark ? 0.7 : 0.82))
 
                 state.themeStore.current.separator
+                    .opacity(state.themeStore.current.isDark ? 0.32 : 0.22)
                     .frame(width: 1)
             }
 
