@@ -41,15 +41,10 @@ final class FileItemTests: XCTestCase {
 
     func test_hashable_equality_byId() {
         let url1 = URL(fileURLWithPath: "/test/a.md")
-        let url2 = URL(fileURLWithPath: "/test/b.md")
         let item1 = FileItem(url: url1, isDirectory: false)
-        let item2 = FileItem(url: url1, isDirectory: false)  // same url but different id
+        let item2 = FileItem(url: url1, isDirectory: false)
 
-        // Two items with same URL but different IDs should NOT be equal
-        XCTAssertNotEqual(item1, item2)
-
-        // Same instance should be equal
-        XCTAssertEqual(item1, item1)
+        XCTAssertEqual(item1, item2)
     }
 
     func test_hashable_consistency() {
@@ -57,6 +52,13 @@ final class FileItemTests: XCTestCase {
         let item = FileItem(url: url, isDirectory: false)
         let set: Set<FileItem> = [item]
         XCTAssertTrue(set.contains(item))
+    }
+
+    func test_hashable_distinguishesDifferentURLs() {
+        let item1 = FileItem(url: URL(fileURLWithPath: "/test/a.md"), isDirectory: false)
+        let item2 = FileItem(url: URL(fileURLWithPath: "/test/b.md"), isDirectory: false)
+
+        XCTAssertNotEqual(item1, item2)
     }
 
     func test_fileExtension_fromComplexPath() {

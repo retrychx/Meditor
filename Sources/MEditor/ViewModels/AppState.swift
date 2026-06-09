@@ -22,10 +22,16 @@ final class AppState {
     var fileItemMap: [URL: FileItem] = [:]
     var selectedFileID: URL?
     var rootURL: URL? {
-        didSet { if !isRestoringSession { persistSession() } }
+        didSet {
+            syncShareServerState()
+            if !isRestoringSession { persistSession() }
+        }
     }
     var openTabs: [EditorTab] = [] {
-        didSet { if !isRestoringSession { persistSession() } }
+        didSet {
+            syncShareServerState()
+            if !isRestoringSession { persistSession() }
+        }
     }
     var selectedTabID: UUID? {
         didSet { if !isRestoringSession { persistSession() } }
@@ -65,26 +71,32 @@ final class AppState {
     var isRestoringSession = false
 
     func beginAccessing(_ url: URL) {
-        if let count = accessRefCounts[url] {
-            accessRefCounts[url] = count + 1
+        let scopedURL = url.standardizedFileURL
+        if let count = accessRefCounts[scopedURL] {
+            accessRefCounts[scopedURL] = count + 1
             return
         }
-        if url.startAccessingSecurityScopedResource() {
-            accessRefCounts[url] = 1
+        if scopedURL.startAccessingSecurityScopedResource() {
+            accessRefCounts[scopedURL] = 1
         }
     }
 
     func endAccessing(_ url: URL) {
-        guard let count = accessRefCounts[url] else { return }
+        let scopedURL = url.standardizedFileURL
+        guard let count = accessRefCounts[scopedURL] else { return }
         if count > 1 {
-            accessRefCounts[url] = count - 1
+            accessRefCounts[scopedURL] = count - 1
             return
         }
-        accessRefCounts.removeValue(forKey: url)
-        url.stopAccessingSecurityScopedResource()
+        accessRefCounts.removeValue(forKey: scopedURL)
+        scopedURL.stopAccessingSecurityScopedResource()
     }
 
     deinit {
+        autoSaveTimer?.invalidate()
+        if let autoSaveObserver {
+            NotificationCenter.default.removeObserver(autoSaveObserver)
+        }
         for url in accessRefCounts.keys {
             url.stopAccessingSecurityScopedResource()
         }
@@ -108,12 +120,46 @@ final class AppState {
     let sessionStore: SessionStore
     let shareServer = LocalShareServer()
 
+    @ObservationIgnored
+    private var autoSaveTimer: Timer?
+
     init(fileService: FileServiceProtocol = FileService(),
          themeStore: PreviewThemeStore = PreviewThemeStore(),
          sessionStore: SessionStore = SessionStore()) {
         self.fileService = fileService
         self.themeStore = themeStore
         self.sessionStore = sessionStore
+        setupAutoSaveTimer()
+    }
+
+    // MARK: - Auto Save
+
+    @ObservationIgnored
+    private var autoSaveObserver: Any?
+
+    func setupAutoSaveTimer() {
+        autoSaveTimer?.invalidate()
+        autoSaveTimer = nil
+        let settings = AppSettings.shared
+        guard settings.autoSave else { return }
+        autoSaveTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(settings.autoSaveInterval), repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.autoSaveModifiedTabs()
+            }
+        }
+        if autoSaveObserver == nil {
+            autoSaveObserver = NotificationCenter.default.addObserver(forName: .autoSaveSettingsChanged, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in
+                    self?.setupAutoSaveTimer()
+                }
+            }
+        }
+    }
+
+    private func autoSaveModifiedTabs() {
+        for tab in openTabs where tab.isModified {
+            saveTab(tab)
+        }
     }
 
     func setError(_ message: String) {
@@ -141,10 +187,22 @@ final class AppState {
     // MARK: - File tree
 
     func openFolder(_ url: URL) {
+        let normalizedURL = url.standardizedFileURL
+        let previousRoot = rootURL?.standardizedFileURL
+        if previousRoot != normalizedURL {
+            beginAccessing(normalizedURL)
+        }
+
         rootURL = url
+        if let previousRoot, previousRoot != normalizedURL {
+            endAccessing(previousRoot)
+        }
         openTabs.forEach { endAccessing($0.url) }
         openTabs.removeAll()
         selectedTabID = nil
+        selectedFileID = nil
+        previewContent = ""
+        previewHTMLFileURL = nil
         previewMode = .empty
         reloadFileTree()
         fileWatcher.startWatching(urls: [url]) { [weak self] in
@@ -184,6 +242,101 @@ final class AppState {
     private func addToMap(_ items: [FileItem]) {
         for item in items {
             fileItemMap[item.id] = item
+        }
+    }
+
+    func isSameOrDescendant(_ url: URL, of baseURL: URL) -> Bool {
+        let path = url.standardizedFileURL.path
+        let basePath = baseURL.standardizedFileURL.path
+        return path == basePath || path.hasPrefix(basePath + "/")
+    }
+
+    func replacingDescendantURL(_ url: URL, from oldBaseURL: URL, to newBaseURL: URL) -> URL? {
+        let oldBasePath = oldBaseURL.standardizedFileURL.path
+        let sourcePath = url.standardizedFileURL.path
+        guard sourcePath == oldBasePath || sourcePath.hasPrefix(oldBasePath + "/") else { return nil }
+        let suffix = sourcePath.dropFirst(oldBasePath.count)
+        guard !suffix.isEmpty else { return newBaseURL.standardizedFileURL }
+        return newBaseURL.standardizedFileURL.appendingPathComponent(
+            String(suffix.drop(while: { $0 == "/" }))
+        )
+    }
+
+    func requiresDirectFileAccess(_ url: URL) -> Bool {
+        guard let rootURL else { return true }
+        return !isSameOrDescendant(url, of: rootURL)
+    }
+
+    func syncShareServerState() {
+        guard shareServer.isRunning else { return }
+
+        if shareServer.rootURL?.standardizedFileURL != rootURL?.standardizedFileURL {
+            shareServer.rootURL = rootURL
+        }
+
+        let currentAllowedFiles = openTabs.map(\.url.standardizedFileURL)
+        let existingAllowedFiles = shareServer.allowedFiles.map(\.standardizedFileURL)
+        if currentAllowedFiles != existingAllowedFiles {
+            shareServer.allowedFiles = openTabs.map(\.url)
+        }
+    }
+
+    func handleItemRenamed(from oldURL: URL, to newURL: URL) {
+        let oldURL = oldURL.standardizedFileURL
+        let newURL = newURL.standardizedFileURL
+
+        if let selectedFileID,
+           let replaced = replacingDescendantURL(selectedFileID, from: oldURL, to: newURL) {
+            self.selectedFileID = replaced
+        }
+
+        if let previewHTMLFileURL,
+           let replaced = replacingDescendantURL(previewHTMLFileURL, from: oldURL, to: newURL) {
+            self.previewHTMLFileURL = replaced
+        }
+
+        for idx in openTabs.indices {
+            if let replaced = replacingDescendantURL(openTabs[idx].url, from: oldURL, to: newURL) {
+                openTabs[idx].url = replaced
+            }
+        }
+
+        recentlyClosedURLs = recentlyClosedURLs.compactMap {
+            replacingDescendantURL($0, from: oldURL, to: newURL)
+        }
+
+        if let tab = selectedTab {
+            syncPreviewContent(from: tab)
+        }
+    }
+
+    func handleItemDeleted(at deletedURL: URL) {
+        let deletedURL = deletedURL.standardizedFileURL
+
+        let removedTabs = openTabs.filter { isSameOrDescendant($0.url, of: deletedURL) }
+        for tab in removedTabs {
+            endAccessing(tab.url)
+        }
+        openTabs.removeAll { isSameOrDescendant($0.url, of: deletedURL) }
+        recentlyClosedURLs.removeAll { isSameOrDescendant($0, of: deletedURL) }
+
+        if let selectedFileID, isSameOrDescendant(selectedFileID, of: deletedURL) {
+            self.selectedFileID = nil
+        }
+
+        if let selectedTabID,
+           !openTabs.contains(where: { $0.id == selectedTabID }) {
+            self.selectedTabID = openTabs.first?.id
+        }
+
+        if let tab = selectedTab {
+            syncSidebarSelectionToTab(tab)
+            syncPreviewContent(from: tab)
+        } else {
+            selectedTabID = nil
+            previewContent = ""
+            previewHTMLFileURL = nil
+            previewMode = .empty
         }
     }
 

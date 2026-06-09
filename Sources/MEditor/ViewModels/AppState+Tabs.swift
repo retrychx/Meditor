@@ -6,11 +6,16 @@ extension AppState {
 
     func openFile(_ item: FileItem) {
         guard !item.isDirectory else { return }
-        beginAccessing(item.url)
+        let needsDirectAccess = requiresDirectFileAccess(item.url)
+        if needsDirectAccess {
+            beginAccessing(item.url)
+        }
         selectedFileID = item.id
 
         if let existing = openTabs.first(where: { $0.url == item.url }) {
-            endAccessing(item.url)
+            if needsDirectAccess {
+                endAccessing(item.url)
+            }
             selectedTabID = existing.id
             syncPreviewContent(from: existing)
             return
