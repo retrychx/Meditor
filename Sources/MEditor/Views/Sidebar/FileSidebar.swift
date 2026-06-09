@@ -7,6 +7,8 @@ enum FileAction: Hashable {
     case newFolder(URL)
     case rename(FileItem)
     case delete(FileItem)
+    case copyAbsolutePath(FileItem)
+    case copyRelativePath(FileItem)
     case revealInFinder(FileItem)
 }
 
@@ -181,6 +183,12 @@ struct FileSidebar: View {
             itemToDelete = item
             showDeleteConfirmation = true
 
+        case .copyAbsolutePath(let item):
+            copyToPasteboard(item.url.path)
+
+        case .copyRelativePath(let item):
+            copyToPasteboard(FilePathFormatter.relativePath(for: item.url, rootURL: state.rootURL))
+
         case .revealInFinder(let item):
             NSWorkspace.shared.activateFileViewerSelecting([item.url])
         }
@@ -263,6 +271,12 @@ struct FileSidebar: View {
 
     private func refresh() {
         state.reloadFileTree()
+    }
+
+    private func copyToPasteboard(_ value: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(value, forType: .string)
     }
 
     /// Shared selection binding for file rows.

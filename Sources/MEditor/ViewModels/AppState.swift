@@ -38,7 +38,14 @@ final class AppState {
     }
     var previewContent: String = ""
     var previewLanguage: EditorLanguage = .markdown
-    var previewMode: PreviewMode = .empty
+    var previewMode: PreviewMode = .empty {
+        didSet {
+            previewFindController.activeMode = previewMode
+            if previewMode == .empty {
+                previewFindController.close()
+            }
+        }
+    }
     var previewHTMLFileURL: URL?
     var previewReloadToken: Int = 0
     var errorMessage: String?
@@ -129,6 +136,7 @@ final class AppState {
     let fileWatcher: any FileWatcherServiceProtocol
     let themeStore: PreviewThemeStore
     let previewExporter = PreviewExporter()
+    let previewFindController = PreviewFindController()
     let sessionStore: SessionStore
     let shareServer = LocalShareServer()
 

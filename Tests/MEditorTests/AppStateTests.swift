@@ -149,6 +149,7 @@ final class AppStateTests: XCTestCase {
 
         XCTAssertEqual(state.rootURL, root)
         XCTAssertEqual(state.fileTree.count, 2)
+        XCTAssertEqual(state.previewFindController.activeMode, .empty)
     }
 
     func test_reloadFileTree_clearsMapAndReloads() {
@@ -212,6 +213,16 @@ final class AppStateTests: XCTestCase {
         waitForCondition { self.state.selectedTab?.content == "<h1>Hi</h1>" }
 
         XCTAssertEqual(state.selectedTab?.language, .html)
+        XCTAssertEqual(state.previewFindController.activeMode, .html)
+    }
+
+    func test_syncPreviewContent_hidesPreviewFindWhenPreviewBecomesEmpty() {
+        state.previewFindController.show()
+
+        state.previewMode = .empty
+
+        XCTAssertFalse(state.previewFindController.isPresented)
+        XCTAssertEqual(state.previewFindController.activeMode, .empty)
     }
 
     func test_closeTab_removesTab() {

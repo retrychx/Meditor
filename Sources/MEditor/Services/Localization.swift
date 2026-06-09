@@ -80,6 +80,8 @@ extension LocalizationManager {
         "menu.nextTab": ("Next Tab", "下一个标签"),
         "menu.previousTab": ("Previous Tab", "上一个标签"),
         "menu.quickOpen": ("Quick Open…", "快速打开…"),
+        "menu.copyAbsolutePath": ("Copy Absolute Path", "复制绝对路径"),
+        "menu.copyRelativePath": ("Copy Relative Path", "复制相对路径"),
         "menu.revealInFinder": ("Reveal in Finder", "在 Finder 中显示"),
         "panel.chooseFolder": ("Choose a project folder", "选择一个项目文件夹"),
 
@@ -146,6 +148,8 @@ extension LocalizationManager {
         // Editor / Preview placeholders
         "editor.selectFile": ("Select a file to edit", "选择一个文件进行编辑"),
         "preview.empty": ("Preview", "预览"),
+        "preview.findPlaceholder": ("Find in Preview", "在预览中查找"),
+        "preview.findNoResults": ("No results", "无结果"),
 
         // Settings
         "settings.tab.general": ("General", "通用"),

@@ -18,9 +18,10 @@ struct WebPreviewView: NSViewRepresentable {
     let reloadToken: Int
     var exporter: PreviewExporter? = nil
     var rootURL: URL? = nil
+    var findController: PreviewFindController? = nil
 
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(findController: findController)
     }
 
     func makeNSView(context: Context) -> WKWebView {
@@ -35,6 +36,7 @@ struct WebPreviewView: NSViewRepresentable {
 
         context.coordinator.webView = webView
         context.coordinator.rootURL = rootURL
+        findController?.register(webView: webView, for: .html)
         context.coordinator.applyLoad(fileURL: fileURL, reloadToken: reloadToken)
         return webView
     }
@@ -45,6 +47,8 @@ struct WebPreviewView: NSViewRepresentable {
             exporter?.webView = webView
         }
         context.coordinator.rootURL = rootURL
+        context.coordinator.findController = findController
+        findController?.register(webView: webView, for: .html)
         context.coordinator.applyLoad(fileURL: fileURL, reloadToken: reloadToken)
     }
 
@@ -53,6 +57,7 @@ struct WebPreviewView: NSViewRepresentable {
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "copyHandler")
+        coordinator.findController?.register(webView: nil, for: .html)
         coordinator.webView = nil
     }
 }
@@ -61,8 +66,13 @@ extension WebPreviewView {
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         weak var webView: WKWebView?
         var rootURL: URL?
+        var findController: PreviewFindController?
         private var lastFileURL: URL?
         private var lastReloadToken: Int = -1
+
+        init(findController: PreviewFindController? = nil) {
+            self.findController = findController
+        }
 
         /// Load the file only when something actually changed.
         /// SwiftUI calls `updateNSView` for many unrelated reasons, so dedup here.

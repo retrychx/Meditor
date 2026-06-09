@@ -39,6 +39,13 @@ struct FileRow: View {
                 onAction?(.delete(item))
             }
             Divider()
+            Button(L("menu.copyAbsolutePath")) {
+                onAction?(.copyAbsolutePath(item))
+            }
+            Button(L("menu.copyRelativePath")) {
+                onAction?(.copyRelativePath(item))
+            }
+            Divider()
             Button(L("menu.revealInFinder")) {
                 onAction?(.revealInFinder(item))
             }
