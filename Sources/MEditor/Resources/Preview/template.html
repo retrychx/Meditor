@@ -10,7 +10,10 @@
 <link rel="stylesheet" href="css/themes.css">
 <link rel="stylesheet" href="css/base.css">
 
-<!-- Vendor: marked for Markdown parsing -->
+<!-- Preload hljs so it's in HTTP cache when first code block triggers it -->
+<link rel="preload" href="highlight.min.js" as="script">
+
+<!-- Vendor: marked for Markdown parsing (sync — needed immediately) -->
 <script src="marked.min.js"></script>
 
 <!-- MEditor scripts -->
@@ -22,6 +25,14 @@
 <script>
   document.addEventListener('DOMContentLoaded', function () {
     window.MEditor.boot({{INITIAL_CONTENT_JSON}});
+    // Pre-parse hljs during idle so it's ready before user scrolls to code.
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(function () {
+        var s = document.createElement('script');
+        s.src = 'highlight.min.js';
+        document.head.appendChild(s);
+      }, { timeout: 2000 });
+    }
   });
 </script>
 </body>
