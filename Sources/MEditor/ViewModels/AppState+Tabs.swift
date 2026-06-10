@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 // MARK: - Tab management
 
@@ -6,6 +7,8 @@ extension AppState {
 
     func openFile(_ item: FileItem) {
         guard !item.isDirectory else { return }
+        let sid = PerformanceTracer.begin("OpenFile", log: PerformanceTracer.fileOps)
+
         let needsDirectAccess = requiresDirectFileAccess(item.url)
         if needsDirectAccess {
             beginAccessing(item.url)
@@ -18,6 +21,7 @@ extension AppState {
             }
             selectedTabID = existing.id
             syncPreviewContent(from: existing)
+            PerformanceTracer.end("OpenFile", log: PerformanceTracer.fileOps, id: sid)
             return
         }
 
@@ -32,11 +36,7 @@ extension AppState {
         selectedTabID = tab.id
 
         if lang == .html {
-            previewHTMLFileURL = item.url
-            previewLanguage = .html
-            previewMode = .html
-            previewReloadToken &+= 1
-            previewContent = ""
+            showHTMLPreview(fileURL: item.url)
         } else {
             syncPreviewContent(from: tab)
         }
@@ -52,6 +52,9 @@ extension AppState {
             } catch {
                 await self?.failLoadingTab(tabID: tabID, url: url, error: error)
             }
+            await MainActor.run {
+                PerformanceTracer.end("OpenFile", log: PerformanceTracer.fileOps, id: sid)
+            }
         }
     }
 
@@ -59,6 +62,7 @@ extension AppState {
         guard let idx = openTabs.firstIndex(where: { $0.id == tabID }) else { return }
         guard openTabs[idx].awaitingInitialContent else { return }
         openTabs[idx].content = content
+        openTabs[idx].contentRevision &+= 1
         openTabs[idx].awaitingInitialContent = false
         if selectedTabID == tabID, openTabs[idx].language == .markdown {
             syncPreviewContent(from: openTabs[idx])
@@ -87,9 +91,7 @@ extension AppState {
                 selectedTabID = openTabs[openTabs.count - 1].id
             } else {
                 selectedTabID = nil
-                previewContent = ""
-                previewHTMLFileURL = nil
-                previewMode = .empty
+                clearPreview()
             }
             if let tab = selectedTab {
                 syncSidebarSelectionToTab(tab)
@@ -140,9 +142,7 @@ extension AppState {
                 selectedTabID = openTabs.last?.id
             } else {
                 selectedTabID = nil
-                previewContent = ""
-                previewHTMLFileURL = nil
-                previewMode = .empty
+                clearPreview()
             }
         }
 
@@ -157,6 +157,7 @@ extension AppState {
     func updateTabContent(_ tabID: UUID, content: String) {
         guard let idx = openTabs.firstIndex(where: { $0.id == tabID }) else { return }
         openTabs[idx].content = content
+        openTabs[idx].contentRevision &+= 1
         openTabs[idx].isModified = true
         openTabs[idx].awaitingInitialContent = false
         if selectedTabID == tabID {

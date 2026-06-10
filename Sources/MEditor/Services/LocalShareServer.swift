@@ -309,12 +309,20 @@ final class LocalShareServer {
         <script>\(markedJS)</script>
         <script>\(highlightJS)</script>
         <script>
+        function escapeHtml(text) {
+            return text
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
         marked.setOptions({
             highlight: function(code, lang) {
                 if (lang && hljs.getLanguage(lang)) {
                     return hljs.highlight(code, {language: lang}).value;
                 }
-                return hljs.highlightAuto(code).value;
+                return escapeHtml(code);
             }
         });
         var md = \(encodedMarkdown);

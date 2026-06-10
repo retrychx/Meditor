@@ -7,35 +7,153 @@
   var contentEl = null;
   var ignoreScrollEvent = false;
   var lastReportedScrollPercent = -1;
-  /// We track only the hash of the last content, never the full string.
-  /// String equality on large markdown documents (hundreds of KB) would be
-  /// O(n) on every SwiftUI updateNSView call.
-  var lastContentHash = '';
+  // Monotonic revision provided by Swift. This is the correctness-preserving
+  // O(1) signal for "did content change?".
+  var lastContentRevision = -1;
 
   // LRU cache: content hash → fully-rendered innerHTML.
-  // Skips marked + hljs + mermaid pipeline entirely when revisiting a file.
-  var RENDER_CACHE_LIMIT = 8;
+  // Keep it intentionally small: large cached HTML strings cause noticeable
+  // WebContent memory growth and long JavaScriptCore GC sweeps on idle.
+  var RENDER_CACHE_LIMIT = 3;
+  var RENDER_CACHE_ENTRY_BYTE_LIMIT = 512 * 1024;
+  var RENDER_CACHE_TOTAL_BYTE_LIMIT = 1024 * 1024;
+  var RENDER_CACHE_SOURCE_LIMIT = 120 * 1024;
   var renderCache = new Map();
+  var renderCacheBytes = 0;
   var pendingCacheKey = null;
+  var sourceAnchors = [];
+  var sourceAnchorLines = [];
+  var sourceAnchorOffsets = [];
+  var sourceMetricsDirty = true;
+  var tocItems = [];
+  var scrollFrameRequested = false;
+  var lastSentTOCSignature = null;
+  var codeHighlightObserver = null;
 
-  /** Cheap 32-bit string hash (FNV-1a). Safe for cache keys, not crypto. */
-  function fastHash(s) {
-    var h = 0x811c9dc5;
-    for (var i = 0; i < s.length; i++) {
-      h ^= s.charCodeAt(i);
-      h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  function reportPerf(stage) {
+    try {
+      if (window.webkit && window.webkit.messageHandlers &&
+          window.webkit.messageHandlers.perfHandler) {
+        window.webkit.messageHandlers.perfHandler.postMessage({ stage: stage });
+      }
+    } catch (e) { /* handler not registered */ }
+  }
+
+  function emptyDocumentMetadata() {
+    return {
+      sourceAnchors: [],
+      sourceAnchorLines: [],
+      tocItems: []
+    };
+  }
+
+  function cloneMetadata(metadata) {
+    var next = metadata || emptyDocumentMetadata();
+    return {
+      sourceAnchors: [],
+      sourceAnchorLines: (next.sourceAnchorLines || []).slice(),
+      tocItems: (next.tocItems || []).map(function (item) {
+        return {
+          level: item.level,
+          title: item.title,
+          line: item.line
+        };
+      })
+    };
+  }
+
+  function rehydrateCachedMetadata(metadata) {
+    var hydrated = cloneMetadata(metadata);
+    if (!contentEl) return hydrated;
+
+    var anchors = Array.prototype.slice.call(
+      contentEl.querySelectorAll('[data-source-line]')
+    );
+    hydrated.sourceAnchors = [];
+    hydrated.sourceAnchorLines = [];
+    anchors.forEach(function (anchor) {
+      var line = parseInt(anchor.getAttribute('data-source-line') || '-1', 10);
+      if (isNaN(line) || line < 0) return;
+      hydrated.sourceAnchors.push(anchor);
+      hydrated.sourceAnchorLines.push(line);
+    });
+
+    if (hydrated.tocItems.length === 0 && hydrated.sourceAnchors.length > 0) {
+      hydrated.tocItems = hydrated.sourceAnchors.map(function (anchor, index) {
+        return {
+          level: parseInt(anchor.tagName.charAt(1), 10),
+          title: anchor.textContent || '',
+          line: hydrated.sourceAnchorLines[index]
+        };
+      });
     }
-    return h.toString(36);
+
+    return hydrated;
+  }
+
+  function disconnectCodeHighlightObserver() {
+    if (!codeHighlightObserver) return;
+    codeHighlightObserver.disconnect();
+    codeHighlightObserver = null;
+  }
+
+  function applyDocumentMetadata(metadata) {
+    var next = metadata || emptyDocumentMetadata();
+    sourceAnchors = next.sourceAnchors || [];
+    sourceAnchorLines = next.sourceAnchorLines || [];
+    tocItems = next.tocItems || [];
+    invalidateLayoutMetrics();
+    reportPerf('PreviewJSDocumentCachesRefreshed');
+  }
+
+  function tocSignature(items) {
+    if (!items || items.length === 0) return '';
+    return items.map(function (item) {
+      return [item.level, item.line, item.title].join('\t');
+    }).join('\n');
+  }
+
+  function estimateCacheBytes(value) {
+    return value ? value.length * 2 : 0;
+  }
+
+  function deleteCacheEntry(key) {
+    if (!renderCache.has(key)) return;
+    var entry = renderCache.get(key);
+    renderCache.delete(key);
+    renderCacheBytes = Math.max(0, renderCacheBytes - ((entry && entry.bytes) || 0));
   }
 
   /** LRU touch: re-insert to mark as most-recently used. */
-  function lruTouch(key, value) {
-    if (renderCache.has(key)) renderCache.delete(key);
-    renderCache.set(key, value);
-    while (renderCache.size > RENDER_CACHE_LIMIT) {
-      var firstKey = renderCache.keys().next().value;
-      renderCache.delete(firstKey);
+  function lruTouch(key, value, metadata) {
+    var bytes = estimateCacheBytes(value);
+    if (bytes === 0 || bytes > RENDER_CACHE_ENTRY_BYTE_LIMIT) {
+      deleteCacheEntry(key);
+      return false;
     }
+
+    var previous = renderCache.get(key);
+    if (renderCache.has(key)) deleteCacheEntry(key);
+    renderCache.set(key, {
+      html: value,
+      bytes: bytes,
+      metadata: metadata ? cloneMetadata(metadata) : cloneMetadata(previous && previous.metadata)
+    });
+    renderCacheBytes += bytes;
+
+    while (renderCache.size > RENDER_CACHE_LIMIT || renderCacheBytes > RENDER_CACHE_TOTAL_BYTE_LIMIT) {
+      var firstKey = renderCache.keys().next().value;
+      deleteCacheEntry(firstKey);
+    }
+    return true;
+  }
+
+  function shouldCacheContent(content) {
+    return !!content && content.length <= RENDER_CACHE_SOURCE_LIMIT;
+  }
+
+  function cacheKeyForContent(content) {
+    return shouldCacheContent(content) ? content : null;
   }
 
   /** Initial mount called by Swift after the page loads. */
@@ -46,28 +164,38 @@
       return;
     }
     var initial = initialContent || '';
-    lastContentHash = fastHash(initial);
     if (window.MEditorRender) {
       window.MEditorRender.configureMermaidFromTheme();
-      window.MEditorRender.renderInto(contentEl, initial);
+      applyDocumentMetadata(window.MEditorRender.renderInto(contentEl, initial));
+    } else {
+      applyDocumentMetadata(emptyDocumentMetadata());
     }
+    contentEl.addEventListener('load', invalidateLayoutMetrics, true);
+    window.addEventListener('resize', invalidateLayoutMetrics);
     attachScrollListener();
     sendTOC();
   }
 
   /** Re-render with new markdown content (no full page reload). */
-  function update(newContent) {
+  function update(newContent, revision) {
     if (!contentEl) return;
+    if (typeof revision === 'number' && revision === lastContentRevision) return;
+    if (typeof revision === 'number') {
+      lastContentRevision = revision;
+    }
+    disconnectCodeHighlightObserver();
+    reportPerf('PreviewJSUpdateReceived');
     var content = newContent || '';
-    var key = fastHash(content);
-    if (key === lastContentHash) return;
-    lastContentHash = key;
+    var key = cacheKeyForContent(content);
 
     // Cache hit: paint instantly. No marked / hljs / mermaid work needed.
-    if (renderCache.has(key)) {
-      contentEl.innerHTML = renderCache.get(key);
-      lruTouch(key, renderCache.get(key));
+    if (key && renderCache.has(key)) {
+      var entry = renderCache.get(key);
+      contentEl.innerHTML = entry.html;
+      lruTouch(key, entry.html, entry.metadata);
       pendingCacheKey = null;
+      applyDocumentMetadata(rehydrateCachedMetadata(entry.metadata));
+      reportPerf('PreviewJSCacheHitPaint');
       sendTOC();
       return;
     }
@@ -75,19 +203,24 @@
     // Cache miss: full pipeline. Snapshot the result after idle work completes
     // so the cache reflects the fully-highlighted final HTML, not a half-rendered one.
     pendingCacheKey = key;
+    reportPerf('PreviewJSRenderStart');
     if (window.MEditorRender) {
-      window.MEditorRender.renderInto(contentEl, content);
+      var metadata = window.MEditorRender.renderInto(contentEl, content);
+      applyDocumentMetadata(metadata);
+      if (pendingCacheKey) scheduleCacheSnapshot(key, metadata);
+    } else {
+      applyDocumentMetadata(emptyDocumentMetadata());
     }
-    scheduleCacheSnapshot(key, content);
     sendTOC();
   }
 
-  function scheduleCacheSnapshot(key, content) {
+  function scheduleCacheSnapshot(key, metadata) {
     var snap = function () {
       // Only snapshot if this is still the current content
       // (user may have switched away while highlighting was running).
       if (pendingCacheKey !== key) return;
-      lruTouch(key, contentEl.innerHTML);
+      pendingCacheKey = null;
+      lruTouch(key, contentEl.innerHTML, metadata);
     };
     if (typeof window.requestIdleCallback === 'function') {
       window.requestIdleCallback(snap, { timeout: 1500 });
@@ -128,17 +261,20 @@
    *  greater than) the given line. Used by Swift for editor→preview sync. */
   function scrollToLine(line) {
     if (!contentEl) return;
-    var anchors = contentEl.querySelectorAll('[data-source-line]');
-    if (anchors.length === 0) return;
-    // Find the last anchor whose data-source-line <= target line.
-    var target = null;
-    for (var i = 0; i < anchors.length; i++) {
-      var l = parseInt(anchors[i].getAttribute('data-source-line'), 10);
-      if (isNaN(l)) continue;
-      if (l <= line) target = anchors[i];
-      else break;
+    if (sourceAnchors.length === 0) return;
+    var targetIndex = 0;
+    var lo = 0;
+    var hi = sourceAnchorLines.length;
+    while (lo < hi) {
+      var mid = (lo + hi) >> 1;
+      if (sourceAnchorLines[mid] <= line) {
+        targetIndex = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
     }
-    if (!target) target = anchors[0];
+    var target = sourceAnchors[targetIndex];
     ignoreScrollEvent = true;
     var rect = target.getBoundingClientRect();
     window.scrollTo({ top: window.scrollY + rect.top - 16, behavior: 'auto' });
@@ -185,6 +321,15 @@
   function attachScrollListener() {
     window.addEventListener('scroll', function () {
       if (ignoreScrollEvent) return;
+      if (scrollFrameRequested) return;
+      scrollFrameRequested = true;
+      window.requestAnimationFrame(reportScrollState);
+    }, { passive: true });
+  }
+
+  function reportScrollState() {
+    scrollFrameRequested = false;
+    if (ignoreScrollEvent) return;
       var docHeight = document.documentElement.scrollHeight - window.innerHeight;
       var percent = docHeight > 0 ? window.scrollY / docHeight : 0;
       if (Math.abs(percent - lastReportedScrollPercent) < 0.005) return;
@@ -199,29 +344,27 @@
           line: line
         });
       } catch (e) { /* Swift handler not registered */ }
-    });
   }
 
   /// Return the data-source-line of the topmost anchor currently visible in
   /// the viewport, or -1 if none exists / nothing in view.
   function currentVisibleLine() {
-    if (!contentEl) return -1;
-    var anchors = contentEl.querySelectorAll('[data-source-line]');
-    var topmost = null;
-    var topmostY = Infinity;
-    for (var i = 0; i < anchors.length; i++) {
-      var rect = anchors[i].getBoundingClientRect();
-      // Anchors above viewport (rect.bottom < 0) are skipped; we want the
-      // first one within or just past the top edge.
-      if (rect.bottom < 0) continue;
-      if (rect.top < topmostY) {
-        topmostY = rect.top;
-        topmost = anchors[i];
+    if (!contentEl || sourceAnchors.length === 0) return -1;
+    rebuildSourceMetrics();
+    var targetY = window.scrollY + 20;
+    var lo = 0;
+    var hi = sourceAnchorOffsets.length;
+    var index = 0;
+    while (lo < hi) {
+      var mid = (lo + hi) >> 1;
+      if (sourceAnchorOffsets[mid] <= targetY) {
+        index = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid;
       }
     }
-    if (!topmost) return -1;
-    var l = parseInt(topmost.getAttribute('data-source-line'), 10);
-    return isNaN(l) ? -1 : l;
+    return sourceAnchorLines[index];
   }
 
   /** Set the document base URL so relative image/link/asset paths in
@@ -241,17 +384,47 @@
   /** Extract headings from rendered content and send to Swift as TOC. */
   function sendTOC() {
     if (!contentEl) return;
-    var headings = contentEl.querySelectorAll('h1, h2, h3, h4, h5, h6');
-    var items = [];
-    for (var i = 0; i < headings.length; i++) {
-      var el = headings[i];
-      var level = parseInt(el.tagName.charAt(1), 10);
-      var line = parseInt(el.getAttribute('data-source-line') || '-1', 10);
-      items.push({ level: level, title: el.textContent || '', line: line });
-    }
+    var signature = tocSignature(tocItems);
+    if (signature === lastSentTOCSignature) return;
+    lastSentTOCSignature = signature;
     try {
-      window.webkit.messageHandlers.tocHandler.postMessage({ items: items });
+      window.webkit.messageHandlers.tocHandler.postMessage({ items: tocItems });
+      reportPerf('PreviewJSTOCSent');
     } catch (e) { /* handler not registered */ }
+  }
+
+  function refreshDocumentCaches() {
+    if (!contentEl) return;
+    var headings = contentEl.querySelectorAll('h1, h2, h3, h4, h5, h6');
+    sourceAnchors = [];
+    sourceAnchorLines = [];
+    tocItems = [];
+    Array.prototype.forEach.call(headings, function (el) {
+      var line = parseInt(el.getAttribute('data-source-line') || '-1', 10);
+      tocItems.push({
+        level: parseInt(el.tagName.charAt(1), 10),
+        title: el.textContent || '',
+        line: line
+      });
+      if (!isNaN(line) && line >= 0) {
+        sourceAnchors.push(el);
+        sourceAnchorLines.push(line);
+      }
+    });
+    invalidateLayoutMetrics();
+    reportPerf('PreviewJSDocumentCachesRefreshed');
+  }
+
+  function rebuildSourceMetrics() {
+    if (!sourceMetricsDirty) return;
+    sourceAnchorOffsets = sourceAnchors.map(function (anchor) {
+      return window.scrollY + anchor.getBoundingClientRect().top;
+    });
+    sourceMetricsDirty = false;
+  }
+
+  function invalidateLayoutMetrics() {
+    sourceMetricsDirty = true;
   }
 
   global.MEditor = {
@@ -261,6 +434,13 @@
     setBaseURL: setBaseURL,
     scrollToPercent: scrollToPercent,
     scrollToLine: scrollToLine,
-    getRenderedHTML: getRenderedHTML
+    getRenderedHTML: getRenderedHTML,
+    invalidateLayoutMetrics: invalidateLayoutMetrics,
+    reportPerf: reportPerf,
+    setCodeHighlightObserver: function (observer) {
+      disconnectCodeHighlightObserver();
+      codeHighlightObserver = observer;
+    },
+    disconnectCodeHighlightObserver: disconnectCodeHighlightObserver
   };
 })(window);

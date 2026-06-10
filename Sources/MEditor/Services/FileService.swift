@@ -16,6 +16,7 @@ enum FileServiceError: LocalizedError {
 
 final class FileService: FileServiceProtocol {
     private let fm = FileManager.default
+    private let indexedResourceKeys: [URLResourceKey] = [.isDirectoryKey, .isRegularFileKey]
 
     // MARK: - Directory scanning
 
@@ -44,7 +45,30 @@ final class FileService: FileServiceProtocol {
 
     func loadChildren(for item: FileItem) -> [FileItem] {
         item.children = loadImmediateChildren(of: item.url)
+        item.childrenLoaded = true
         return item.children ?? []
+    }
+
+    func loadAllFiles(under directory: URL) -> [FileItem] {
+        guard let enumerator = fm.enumerator(
+            at: directory,
+            includingPropertiesForKeys: indexedResourceKeys,
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else {
+            return []
+        }
+
+        var files: [FileItem] = []
+        for case let url as URL in enumerator {
+            guard let values = try? url.resourceValues(forKeys: Set(indexedResourceKeys)) else { continue }
+            if values.isDirectory == true { continue }
+            guard values.isRegularFile == true else { continue }
+            guard FileTypeConfiguration.shared.supportedExtensions.contains(url.pathExtension.lowercased()) else {
+                continue
+            }
+            files.append(FileItem(url: url, isDirectory: false, childrenLoaded: true))
+        }
+        return sortItems(files)
     }
 
     // MARK: - File I/O

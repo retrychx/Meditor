@@ -39,20 +39,20 @@ struct FileSidebar: View {
 
     private var displayedTree: [FileItem] {
         guard !searchText.isEmpty else { return state.fileTree }
-        return flattenMatches(state.fileTree, searchText: searchText)
+        if !state.indexedFiles.isEmpty {
+            return state.indexedFiles.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        }
+        return flattenLoadedMatches(state.fileTree, searchText: searchText)
     }
 
-    /// Walk the tree and collect every leaf file whose name matches the query.
-    /// Returns a flat list (no directory hierarchy preserved) — best for search UX
-    /// where users want to see all matches regardless of depth.
-    private func flattenMatches(_ items: [FileItem], searchText: String) -> [FileItem] {
+    private func flattenLoadedMatches(_ items: [FileItem], searchText: String) -> [FileItem] {
         var matches: [FileItem] = []
         for item in items {
             if !item.isDirectory && item.name.localizedCaseInsensitiveContains(searchText) {
                 matches.append(item)
             }
             if let children = item.children {
-                matches.append(contentsOf: flattenMatches(children, searchText: searchText))
+                matches.append(contentsOf: flattenLoadedMatches(children, searchText: searchText))
             }
         }
         return matches
@@ -87,7 +87,7 @@ struct FileSidebar: View {
 
             Group {
                 if searchText.isEmpty {
-                    List(selection: fileSelectionBinding) {
+                    List {
                         ForEach(state.fileTree) { item in
                             fileRow(item, depth: 0)
                         }
@@ -103,9 +103,13 @@ struct FileSidebar: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    List(displayedTree, id: \.id, selection: fileSelectionBinding) { item in
+                    List(displayedTree, id: \.id) { item in
                         FileRow(item: item, isSelected: item.id == state.selectedFileID, onAction: handleFileAction)
                             .help(item.url.path)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                state.openFile(item)
+                            }
                             .listRowSeparator(.hidden)
                     }
                 }
@@ -279,61 +283,64 @@ struct FileSidebar: View {
         pasteboard.setString(value, forType: .string)
     }
 
-    /// Shared selection binding for file rows.
-    /// On selecting a file, opens it; on selecting a directory, just records selection.
-    private var fileSelectionBinding: Binding<URL?> {
-        Binding(
-            get: { state.selectedFileID },
-            set: { newID in
-                if let id = newID,
-                   let item = state.fileItemMap[id] ?? findItem(by: id, in: state.fileTree),
-                   !item.isDirectory {
-                    state.openFile(item)
-                } else {
-                    state.selectedFileID = newID
-                }
-            }
-        )
-    }
-
-    private func findItem(by id: URL, in items: [FileItem]) -> FileItem? {
-        for item in items {
-            if item.id == id { return item }
-            if let children = item.children, let found = findItem(by: id, in: children) {
-                return found
-            }
-        }
-        return nil
+    private func selectSidebarItem(_ item: FileItem) {
+        state.selectFile(item)
     }
 
     // MARK: - Recursive row renderer
 
     private func fileRow(_ item: FileItem, depth: Int) -> AnyView {
-        if item.isDirectory, let children = item.children {
+        if item.isDirectory {
             return AnyView(
                 DisclosureGroup(
                     isExpanded: Binding(
                         get: { expandedPaths.contains(item.url.path) },
                         set: { expanded in
-                            if expanded { expandedPaths.insert(item.url.path) }
-                            else { expandedPaths.remove(item.url.path) }
+                            if expanded {
+                                expandedPaths.insert(item.url.path)
+                                state.loadChildrenIfNeeded(for: item)
+                            } else {
+                                expandedPaths.remove(item.url.path)
+                            }
                             persistExpandedPaths()
                         }
                     )
                 ) {
-                    ForEach(children) { child in
-                        fileRow(child, depth: depth + 1)
+                    if item.isLoadingChildren {
+                        HStack {
+                            ProgressView()
+                                .controlSize(.small)
+                            Spacer()
+                        }
+                        .padding(.vertical, 4)
+                    } else if let children = item.children {
+                        ForEach(children) { child in
+                            fileRow(child, depth: depth + 1)
+                        }
                     }
                 } label: {
                     FileRow(item: item, isSelected: item.id == state.selectedFileID, onAction: handleFileAction)
                         .help(item.url.path)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            selectSidebarItem(item)
+                        }
                 }
                 .listRowSeparator(.hidden)
+                .onAppear {
+                    if expandedPaths.contains(item.url.path) {
+                        state.loadChildrenIfNeeded(for: item)
+                    }
+                }
             )
         } else {
             return AnyView(
                 FileRow(item: item, isSelected: item.id == state.selectedFileID, onAction: handleFileAction)
                     .help(item.url.path)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        selectSidebarItem(item)
+                    }
                     .listRowSeparator(.hidden)
             )
         }

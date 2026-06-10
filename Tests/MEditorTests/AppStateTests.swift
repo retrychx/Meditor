@@ -40,6 +40,12 @@ class MockFileService: FileServiceProtocol {
         return childs
     }
 
+    func loadAllFiles(under directory: URL) -> [FileItem] {
+        lock.lock()
+        defer { lock.unlock() }
+        return children[directory] ?? []
+    }
+
     func readFile(at url: URL) throws -> String {
         guard let content = fileContent(at: url) else {
             throw NSError(domain: "mock", code: 1, userInfo: [NSLocalizedDescriptionKey: "File not found"])
@@ -223,6 +229,36 @@ final class AppStateTests: XCTestCase {
 
         XCTAssertFalse(state.previewFindController.isPresented)
         XCTAssertEqual(state.previewFindController.activeMode, .empty)
+    }
+
+    func test_showMarkdownPreview_emptyContentKeepsMarkdownMode() {
+        state.showMarkdownPreview(content: "")
+
+        XCTAssertEqual(state.previewMode, .markdown)
+        XCTAssertEqual(state.previewContent, "")
+        XCTAssertEqual(state.previewFindController.activeMode, .markdown)
+    }
+
+    func test_openFile_delayedMarkdownLoadDoesNotFlashEmptyPreview() {
+        let delayedService = DelayedFileService()
+        delayedService.readDelay = 0.2
+        let delayedState = AppState(fileService: delayedService, fileWatcher: mockWatcher)
+        let url = URL(fileURLWithPath: "/tmp/delayed.md")
+        delayedService.setFile(url, content: "# Loaded")
+
+        delayedState.openFile(FileItem(url: url, isDirectory: false))
+
+        XCTAssertEqual(delayedState.previewMode, .markdown)
+        XCTAssertEqual(delayedState.previewContent, "")
+        XCTAssertEqual(delayedState.previewFindController.activeMode, .markdown)
+        XCTAssertTrue(delayedState.selectedTab?.awaitingInitialContent == true)
+
+        waitForCondition {
+            delayedState.selectedTab?.content == "# Loaded"
+        }
+
+        XCTAssertEqual(delayedState.previewMode, .markdown)
+        XCTAssertEqual(delayedState.previewContent, "# Loaded")
     }
 
     func test_closeTab_removesTab() {
@@ -425,6 +461,25 @@ final class AppStateTests: XCTestCase {
         state.updateTabContent(tab.id, content: "# After")
 
         XCTAssertEqual(state.previewContent, "# After")
+    }
+
+    func test_syncPreviewContent_noChangeDoesNotIncrementRevision() {
+        _ = setupTab("preview.md", content: "# Stable")
+        let revision = state.previewContentRevision
+
+        state.syncPreviewContent(from: state.openTabs[0])
+
+        XCTAssertEqual(state.previewContentRevision, revision)
+    }
+
+    func test_saveTab_selectedTabDoesNotResyncPreviewWhenContentUnchanged() {
+        let tab = setupTab("preview.md", content: "# Before")
+        state.updateTabContent(tab.id, content: "# After")
+        let revisionAfterEdit = state.previewContentRevision
+
+        state.saveTab(state.openTabs[0])
+
+        XCTAssertEqual(state.previewContentRevision, revisionAfterEdit)
     }
 
     func test_currentFileSize_returnsFormattedSize() {
