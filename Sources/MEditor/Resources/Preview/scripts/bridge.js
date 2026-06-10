@@ -166,10 +166,9 @@
     var initial = initialContent || '';
     if (window.MEditorRender) {
       window.MEditorRender.configureMermaidFromTheme();
-      applyDocumentMetadata(window.MEditorRender.renderInto(contentEl, initial));
-    } else {
-      applyDocumentMetadata(emptyDocumentMetadata());
+      window.MEditorRender.renderInto(contentEl, initial);
     }
+    refreshDocumentCaches();
     contentEl.addEventListener('load', invalidateLayoutMetrics, true);
     window.addEventListener('resize', invalidateLayoutMetrics);
     attachScrollListener();
@@ -188,7 +187,7 @@
     var content = newContent || '';
     var key = cacheKeyForContent(content);
 
-    // Cache hit: paint instantly. No marked / hljs / mermaid work needed.
+    // Cache hit: paint instantly.
     if (key && renderCache.has(key)) {
       var entry = renderCache.get(key);
       contentEl.innerHTML = entry.html;
@@ -200,17 +199,14 @@
       return;
     }
 
-    // Cache miss: full pipeline. Snapshot the result after idle work completes
-    // so the cache reflects the fully-highlighted final HTML, not a half-rendered one.
+    // Cache miss: synchronous render.
     pendingCacheKey = key;
     reportPerf('PreviewJSRenderStart');
     if (window.MEditorRender) {
-      var metadata = window.MEditorRender.renderInto(contentEl, content);
-      applyDocumentMetadata(metadata);
-      if (pendingCacheKey) scheduleCacheSnapshot(key, metadata);
-    } else {
-      applyDocumentMetadata(emptyDocumentMetadata());
+      window.MEditorRender.renderInto(contentEl, content);
     }
+    refreshDocumentCaches();
+    if (pendingCacheKey) scheduleCacheSnapshot(key, { sourceAnchors: sourceAnchors, sourceAnchorLines: sourceAnchorLines, tocItems: tocItems });
     sendTOC();
   }
 
