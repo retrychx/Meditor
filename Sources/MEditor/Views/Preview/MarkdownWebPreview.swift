@@ -82,24 +82,53 @@ private struct MarkdownWebView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        let userContent = WKUserContentController()
-        userContent.add(context.coordinator, name: Self.scrollHandlerName)
-        userContent.add(context.coordinator, name: Self.copyHandlerName)
-        userContent.add(context.coordinator, name: Self.tocHandlerName)
-        userContent.add(context.coordinator, name: Self.perfHandlerName)
-        config.userContentController = userContent
+        let webView: WKWebView
 
-        let webView = WKWebView(frame: .zero, configuration: config)
-        webView.setValue(false, forKey: "drawsBackground")
-        webView.navigationDelegate = context.coordinator
-        context.coordinator.webView = webView
-        context.coordinator.lastContentRevision = contentRevision
-        context.coordinator.lastTheme = theme
-        exporter?.webView = webView
-        findController?.register(webView: webView, for: .markdown)
+        // Try to reuse a pre-warmed webview (template already loaded).
+        if let pooled = WebViewPool.shared.dequeue() {
+            // Re-register message handlers on the pooled webview's config.
+            let uc = pooled.configuration.userContentController
+            uc.removeAllScriptMessageHandlers()
+            uc.add(context.coordinator, name: Self.scrollHandlerName)
+            uc.add(context.coordinator, name: Self.copyHandlerName)
+            uc.add(context.coordinator, name: Self.tocHandlerName)
+            uc.add(context.coordinator, name: Self.perfHandlerName)
+            pooled.navigationDelegate = context.coordinator
+            context.coordinator.webView = pooled
+            context.coordinator.lastContentRevision = contentRevision
+            context.coordinator.lastTheme = theme
+            context.coordinator.isReady = true // template already loaded
+            exporter?.webView = pooled
+            findController?.register(webView: pooled, for: .markdown)
 
-        loadTemplate(into: webView, initialContent: content, theme: theme, coordinator: context.coordinator)
+            // Push initial content + theme immediately (webview is already ready).
+            let themeJS = "window.MEditor && window.MEditor.setTheme('\(theme.rawValue)');"
+            pooled.evaluateJavaScript(themeJS, completionHandler: nil)
+            context.coordinator.scheduleContentUpdate(content, revision: contentRevision, immediately: true)
+            webView = pooled
+        } else {
+            // Cold path: create fresh webview.
+            let config = WKWebViewConfiguration()
+            let userContent = WKUserContentController()
+            userContent.add(context.coordinator, name: Self.scrollHandlerName)
+            userContent.add(context.coordinator, name: Self.copyHandlerName)
+            userContent.add(context.coordinator, name: Self.tocHandlerName)
+            userContent.add(context.coordinator, name: Self.perfHandlerName)
+            config.userContentController = userContent
+
+            let wv = WKWebView(frame: .zero, configuration: config)
+            wv.setValue(false, forKey: "drawsBackground")
+            wv.navigationDelegate = context.coordinator
+            context.coordinator.webView = wv
+            context.coordinator.lastContentRevision = contentRevision
+            context.coordinator.lastTheme = theme
+            exporter?.webView = wv
+            findController?.register(webView: wv, for: .markdown)
+
+            loadTemplate(into: wv, initialContent: content, theme: theme, coordinator: context.coordinator)
+            webView = wv
+        }
+
         return webView
     }
 

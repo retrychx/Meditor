@@ -11,6 +11,8 @@ struct MEditorApp: App {
                 .frame(minWidth: 900, minHeight: 500)
                 .onAppear {
                     NSWindow.allowsAutomaticWindowTabbing = false
+                    // Pre-warm a WKWebView so first file open renders instantly.
+                    WebViewPool.shared.warmUp()
                     // Restore previous session (root folder + open tabs + selection).
                     // No-op on first launch or if every bookmark has gone stale.
                     appState.restoreSession()
