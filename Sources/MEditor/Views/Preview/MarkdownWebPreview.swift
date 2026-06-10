@@ -82,9 +82,34 @@ private struct MarkdownWebView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> WKWebView {
-        // Discard pooled webview (just pre-warms the WebContent process).
-        _ = WebViewPool.shared.dequeue()
+        // Try to reuse pre-warmed webview (same cache dir, template already loaded).
+        if let pooled = WebViewPool.shared.dequeue() {
+            let uc = pooled.configuration.userContentController
+            uc.removeAllScriptMessageHandlers()
+            uc.add(context.coordinator, name: Self.scrollHandlerName)
+            uc.add(context.coordinator, name: Self.copyHandlerName)
+            uc.add(context.coordinator, name: Self.tocHandlerName)
+            uc.add(context.coordinator, name: Self.perfHandlerName)
+            pooled.navigationDelegate = context.coordinator
+            context.coordinator.webView = pooled
+            context.coordinator.lastContentRevision = contentRevision
+            context.coordinator.lastTheme = theme
+            context.coordinator.isReady = true
+            exporter?.webView = pooled
+            findController?.register(webView: pooled, for: .markdown)
 
+            // Apply theme + push content (webview is already loaded and ready)
+            let themeJS = "window.MEditor && window.MEditor.setTheme('\(theme.rawValue)');"
+            pooled.evaluateJavaScript(themeJS, completionHandler: nil)
+            if let baseURL = sourceURL?.deletingLastPathComponent().absoluteString {
+                let escaped = baseURL.replacingOccurrences(of: "'", with: "\\'")
+                pooled.evaluateJavaScript("window.MEditor && window.MEditor.setBaseURL('\(escaped)');", completionHandler: nil)
+            }
+            context.coordinator.scheduleContentUpdate(content, revision: contentRevision, immediately: true)
+            return pooled
+        }
+
+        // Cold path: create fresh webview.
         let config = WKWebViewConfiguration()
         let userContent = WKUserContentController()
         userContent.add(context.coordinator, name: Self.scrollHandlerName)
