@@ -482,9 +482,29 @@ extension MarkdownWebView {
             let dst = cacheDir.appendingPathComponent("mermaid.min.js")
             let fm = FileManager.default
             if fm.fileExists(atPath: dst.path) { mermaidProvisioned = true; return }
-            guard let src = PreviewResourceLocator.resourcesRoot()?.appendingPathComponent("mermaid.min.js"),
-                  fm.fileExists(atPath: src.path) else { return }
-            try? fm.copyItem(at: src, to: dst)
+            guard let root = PreviewResourceLocator.resourcesRoot() else { return }
+            // Bundle stores gzipped (0.9MB vs 3.2MB). Decompress on first use.
+            let gzSrc = root.appendingPathComponent("mermaid.min.js.gz")
+            if fm.fileExists(atPath: gzSrc.path) {
+                let proc = Process()
+                proc.executableURL = URL(fileURLWithPath: "/usr/bin/gunzip")
+                proc.arguments = ["-k", "-c", gzSrc.path]
+                let pipe = Pipe()
+                proc.standardOutput = pipe
+                try? proc.run()
+                proc.waitUntilExit()
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                if !data.isEmpty {
+                    try? data.write(to: dst)
+                    mermaidProvisioned = true
+                    return
+                }
+            }
+            // Fallback: uncompressed copy (dev builds)
+            let plainSrc = root.appendingPathComponent("mermaid.min.js")
+            if fm.fileExists(atPath: plainSrc.path) {
+                try? fm.copyItem(at: plainSrc, to: dst)
+            }
             mermaidProvisioned = true
         }
 
