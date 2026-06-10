@@ -5,7 +5,7 @@ struct MEditorApp: App {
     @State private var appState = AppState()
 
     var body: some Scene {
-        WindowGroup {
+        Window("MEditor", id: "main") {
             ContentView()
                 .environment(appState)
                 .frame(minWidth: 900, minHeight: 500)

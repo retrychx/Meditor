@@ -22,6 +22,13 @@ struct FileRow: View {
                 .foregroundStyle(item.isDirectory ? .orange : .secondary)
                 .font(.system(size: 11))
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected ? Color.accentColor.opacity(0.16) : Color.clear)
+        )
         .contextMenu {
             if item.isDirectory {
                 Button(L("menu.newFile")) {

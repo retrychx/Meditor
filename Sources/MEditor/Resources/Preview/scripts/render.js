@@ -68,32 +68,31 @@
   }
 
   /** Ensure GFM table separator rows have the same column count as their
-   *  header rows. marked v12 rejects tables where counts differ. */
+   *  header rows. marked v12 rejects tables where counts differ.
+   *  Optimization: skip the expensive split/join if no pipe character exists. */
   function fixTableSeparators(text) {
+    // Fast path: no pipe = no table possible. Avoids O(n) split+join.
+    if (text.indexOf('|') === -1) return text;
+
     var lines = text.split('\n');
-    var result = [];
-    for (var i = 0; i < lines.length; i++) {
+    var modified = false;
+    for (var i = 1; i < lines.length; i++) {
       var line = lines[i];
-      // Detect separator line: contains only |, -, :, and spaces
-      if (i > 0 && /^\|?[\s|:\-]+\|?$/.test(line) && line.indexOf('-') !== -1) {
-        var prev = lines[i - 1];
-        // Previous line must look like a table header (contains |)
-        if (prev && prev.indexOf('|') !== -1) {
-          var headerCols = countPipeCols(prev);
-          var sepCols = countPipeCols(line);
-          if (headerCols > 0 && sepCols > 0 && sepCols !== headerCols) {
-            // Rebuild separator with correct column count
-            var parts = splitPipeCols(line);
-            var defaultSep = '---';
-            while (parts.length < headerCols) parts.push(defaultSep);
-            if (parts.length > headerCols) parts = parts.slice(0, headerCols);
-            line = '| ' + parts.join(' | ') + ' |';
-          }
-        }
+      if (!/^\|?[\s|:\-]+\|?$/.test(line) || line.indexOf('-') === -1) continue;
+      var prev = lines[i - 1];
+      if (!prev || prev.indexOf('|') === -1) continue;
+      var headerCols = countPipeCols(prev);
+      var sepCols = countPipeCols(line);
+      if (headerCols > 0 && sepCols > 0 && sepCols !== headerCols) {
+        var parts = splitPipeCols(line);
+        var defaultSep = '---';
+        while (parts.length < headerCols) parts.push(defaultSep);
+        if (parts.length > headerCols) parts = parts.slice(0, headerCols);
+        lines[i] = '| ' + parts.join(' | ') + ' |';
+        modified = true;
       }
-      result.push(line);
     }
-    return result.join('\n');
+    return modified ? lines.join('\n') : text;
   }
 
   function countPipeCols(line) {
@@ -116,12 +115,29 @@
   /// editor↔preview scroll sync.
   function stampHeadingLines(rootEl, sourceText) {
     var lines = collectHeadingLines(sourceText);
-    if (lines.length === 0) return;
     var headings = rootEl.querySelectorAll('h1, h2, h3, h4, h5, h6');
+    var metadata = {
+      sourceAnchors: [],
+      sourceAnchorLines: [],
+      tocItems: []
+    };
     var n = Math.min(headings.length, lines.length);
     for (var i = 0; i < n; i++) {
       headings[i].setAttribute('data-source-line', String(lines[i]));
     }
+    for (var j = 0; j < headings.length; j++) {
+      var line = j < n ? lines[j] : -1;
+      metadata.tocItems.push({
+        level: parseInt(headings[j].tagName.charAt(1), 10),
+        title: headings[j].textContent || '',
+        line: line
+      });
+      if (line >= 0) {
+        metadata.sourceAnchors.push(headings[j]);
+        metadata.sourceAnchorLines.push(line);
+      }
+    }
+    return metadata;
   }
 
   /// Walk the raw markdown text and record the 0-based line index of every
@@ -141,33 +157,107 @@
     return out;
   }
 
+  var highlightLoadPromise = null;
+  function loadHighlightIfNeeded() {
+    if (typeof window.hljs !== 'undefined') return Promise.resolve();
+    if (highlightLoadPromise) return highlightLoadPromise;
+    highlightLoadPromise = new Promise(function (resolve, reject) {
+      var script = document.createElement('script');
+      script.src = 'highlight.min.js';
+      script.async = true;
+      script.onload = function () { resolve(); };
+      script.onerror = function () {
+        highlightLoadPromise = null;
+        reject(new Error('failed to load highlight.min.js'));
+      };
+      document.head.appendChild(script);
+    });
+    return highlightLoadPromise;
+  }
+
   /**
    * Apply highlight.js to all <pre><code> elements within the given root.
    * Performance strategy:
-   *   1. The first BATCH_SIZE blocks (above the fold) are highlighted synchronously
-   *      so users see colored code immediately on the first paint.
-   *   2. Remaining blocks are processed in idle-time chunks, yielding the main
-   *      thread between batches to keep scrolling smooth.
+   *   1. The first 1-2 blocks are highlighted on the next frame so the main
+   *      markdown DOM can paint before syntax work starts.
+   *   2. Remaining blocks are highlighted only when they approach the viewport,
+   *      then processed in small idle-time chunks.
    *   3. We never call hljs.highlightAuto: it's O(N_languages) per block and is
    *      the dominant cost for documents with many unlabelled code blocks.
    */
   function highlightCodeBlocks(rootEl) {
     var blocks = Array.prototype.slice.call(rootEl.querySelectorAll('pre code'));
     if (blocks.length === 0) return;
-
-    var FIRST_BATCH = 6;
-    var IDLE_BATCH = 4;
-
-    var first = Math.min(FIRST_BATCH, blocks.length);
-    for (var i = 0; i < first; i++) {
-      highlightOneBlock(blocks[i]);
+    blocks.forEach(function (block) {
+      attachCopyButton(block);
+      block.classList.add('hljs');
+    });
+    if (window.MEditor && window.MEditor.reportPerf) {
+      window.MEditor.reportPerf('PreviewJSHighlightScheduled');
     }
-    if (blocks.length <= first) return;
 
-    var remaining = blocks.slice(first);
+    loadHighlightIfNeeded().then(function () {
+      highlightLoadedBlocks(blocks);
+    }).catch(function () {
+      blocks.forEach(function (block) {
+        block.classList.add('hljs');
+      });
+    });
+  }
+
+  function highlightLoadedBlocks(blocks) {
+    var FIRST_BATCH = blocks.length > 12 ? 1 : 2;
+    var IDLE_BATCH = 2;
+    var first = Math.min(FIRST_BATCH, blocks.length);
+    var immediate = blocks.slice(0, first);
+    var deferred = blocks.slice(first);
+
+    scheduleNextFrame(function () {
+      for (var i = 0; i < immediate.length; i++) {
+        highlightOneBlock(immediate[i]);
+      }
+
+      if (deferred.length === 0) return;
+
+      if (typeof window.IntersectionObserver !== 'function') {
+        scheduleIdleHighlights(deferred, IDLE_BATCH);
+        return;
+      }
+
+      if (window.MEditor && window.MEditor.disconnectCodeHighlightObserver) {
+        window.MEditor.disconnectCodeHighlightObserver();
+      }
+
+      var observer = new IntersectionObserver(function (entries) {
+        var visible = [];
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          observer.unobserve(entry.target);
+          visible.push(entry.target);
+        });
+        if (visible.length > 0) {
+          scheduleIdleHighlights(visible, IDLE_BATCH);
+        }
+      }, { rootMargin: '360px 0px' });
+
+      deferred.forEach(function (block) {
+        if (block.getAttribute('data-meditor-highlighted') === '1') return;
+        observer.observe(block);
+      });
+
+      if (window.MEditor && window.MEditor.setCodeHighlightObserver) {
+        window.MEditor.setCodeHighlightObserver(observer);
+      }
+    });
+  }
+
+  function scheduleIdleHighlights(blocks, batchSize) {
+    var remaining = blocks.slice();
     var processNext = function () {
-      var batch = remaining.splice(0, IDLE_BATCH);
-      for (var j = 0; j < batch.length; j++) highlightOneBlock(batch[j]);
+      var batch = remaining.splice(0, batchSize);
+      for (var i = 0; i < batch.length; i++) {
+        highlightOneBlock(batch[i]);
+      }
       if (remaining.length > 0) scheduleIdle(processNext);
     };
     scheduleIdle(processNext);
@@ -181,7 +271,16 @@
     }
   }
 
+  function scheduleNextFrame(fn) {
+    if (typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(function () { fn(); });
+    } else {
+      setTimeout(fn, 16);
+    }
+  }
+
   function highlightOneBlock(block) {
+    if (!block || block.getAttribute('data-meditor-highlighted') === '1') return;
     var lang = null;
     var match = block.className.match(/language-([a-zA-Z0-9_+#-]+)/);
     if (match) { lang = match[1].toLowerCase(); }
@@ -201,8 +300,7 @@
       // and font apply, but skip syntax coloring entirely.
       block.classList.add('hljs');
     }
-
-    attachCopyButton(block);
+    block.setAttribute('data-meditor-highlighted', '1');
   }
 
   /// Attach a hover-revealed copy button to a code block's <pre> wrapper.
@@ -256,6 +354,9 @@
    */
   function renderMermaidDiagrams(diagrams) {
     if (!diagrams || diagrams.length === 0) return;
+    if (window.MEditor && window.MEditor.reportPerf) {
+      window.MEditor.reportPerf('PreviewJSMermaidScheduled');
+    }
 
     loadMermaidIfNeeded().then(function () {
       configureMermaidFromTheme();
@@ -314,6 +415,9 @@
       var el = document.getElementById(d.id);
       if (el && r && r.svg) {
         el.outerHTML = '<div class="mermaid-container">' + r.svg + '</div>';
+        if (window.MEditor && window.MEditor.invalidateLayoutMetrics) {
+          window.MEditor.invalidateLayoutMetrics();
+        }
       }
     }).catch(function (e) {
       var el = document.getElementById(d.id);
@@ -325,8 +429,8 @@
   }
 
   /**
-   * Full render pipeline: takes raw markdown, returns nothing.
-   * Mutates the given target element with rendered HTML.
+   * Full render pipeline: takes raw markdown, mutates the target element,
+   * and returns heading metadata used for scroll sync / TOC updates.
    */
   function renderInto(targetEl, content) {
     try {
@@ -334,21 +438,38 @@
       var html = renderMarkdown(extracted.processed);
       targetEl.innerHTML = html;
       // Wrap tables in a scrollable container for wide tables.
-      var tables = targetEl.querySelectorAll('table');
-      for (var t = 0; t < tables.length; t++) {
-        var wrapper = document.createElement('div');
-        wrapper.className = 'table-wrapper';
-        tables[t].parentNode.insertBefore(wrapper, tables[t]);
-        wrapper.appendChild(tables[t]);
+      if (html.indexOf('<table') !== -1) {
+        var tables = targetEl.querySelectorAll('table');
+        for (var t = 0; t < tables.length; t++) {
+          var wrapper = document.createElement('div');
+          wrapper.className = 'table-wrapper';
+          tables[t].parentNode.insertBefore(wrapper, tables[t]);
+          wrapper.appendChild(tables[t]);
+        }
       }
       // Use the original (unprocessed) content for line numbers, since
       // mermaid extraction doesn't add or remove lines.
-      stampHeadingLines(targetEl, content || '');
+      var metadata = /<h[1-6][\s>]/.test(html)
+        ? stampHeadingLines(targetEl, content || '')
+        : {
+          sourceAnchors: [],
+          sourceAnchorLines: [],
+          tocItems: []
+        };
+      if (window.MEditor && window.MEditor.reportPerf) {
+        window.MEditor.reportPerf('PreviewJSRenderDOMCommitted');
+      }
       highlightCodeBlocks(targetEl);
       renderMermaidDiagrams(extracted.diagrams);
+      return metadata;
     } catch (e) {
       targetEl.innerHTML = '<div class="error-block">Render error: ' +
         String((e && e.message) || e) + '</div>';
+      return {
+        sourceAnchors: [],
+        sourceAnchorLines: [],
+        tocItems: []
+      };
     }
   }
 

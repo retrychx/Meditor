@@ -5,6 +5,7 @@ struct TOCOutlineView: View {
     let items: [TOCItem]
     let theme: PreviewTheme
     let activeLineIndex: Int
+    let isLoading: Bool
     let onSelect: (TOCItem) -> Void
 
     var body: some View {
@@ -17,17 +18,21 @@ struct TOCOutlineView: View {
                     .padding(.top, 16)
                     .padding(.bottom, 8)
 
-                ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
-                    Button {
-                        onSelect(item)
-                    } label: {
-                        TOCRow(
-                            item: item,
-                            isActive: idx == activeLineIndex,
-                            previousLevel: idx > 0 ? items[idx - 1].level : nil
-                        )
+                if items.isEmpty {
+                    TOCPlaceholder(theme: theme, isLoading: isLoading)
+                } else {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
+                        Button {
+                            onSelect(item)
+                        } label: {
+                            TOCRow(
+                                item: item,
+                                isActive: idx == activeLineIndex,
+                                previousLevel: idx > 0 ? items[idx - 1].level : nil
+                            )
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 10)
@@ -46,6 +51,56 @@ struct TOCOutlineView: View {
             )
             .padding(.horizontal, 8)
             .padding(.vertical, 10)
+    }
+}
+
+private struct TOCPlaceholder: View {
+    let theme: PreviewTheme
+    let isLoading: Bool
+
+    private let widths: [CGFloat] = [0.78, 0.62, 0.7, 0.54]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(Array(widths.enumerated()), id: \.offset) { idx, width in
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(Color.primary.opacity(opacity(for: idx)))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(width: width * 156, height: height(for: idx), alignment: .leading)
+                    .padding(.leading, leadingInset(for: idx))
+            }
+
+            if isLoading {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.primary.opacity(0.08))
+                        .frame(width: 52, height: 8)
+                }
+                .padding(.top, 6)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func opacity(for index: Int) -> Double {
+        isLoading ? 0.08 - (Double(index) * 0.01) : 0.05 - (Double(index) * 0.006)
+    }
+
+    private func height(for index: Int) -> CGFloat {
+        index == 0 ? 10 : 8
+    }
+
+    private func leadingInset(for index: Int) -> CGFloat {
+        switch index {
+        case 1: return 12
+        case 2: return 24
+        case 3: return 12
+        default: return 0
+        }
     }
 }
 

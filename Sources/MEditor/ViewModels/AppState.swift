@@ -20,23 +20,41 @@ enum PreviewMode: Equatable {
 final class AppState {
     var fileTree: [FileItem] = []
     var fileItemMap: [URL: FileItem] = [:]
+    var indexedFiles: [FileItem] = []
     var selectedFileID: URL?
     var rootURL: URL? {
         didSet {
             syncShareServerState()
-            if !isRestoringSession { persistSession() }
+            if !isRestoringSession { scheduleSessionPersist() }
         }
     }
     var openTabs: [EditorTab] = [] {
         didSet {
             syncShareServerState()
-            if !isRestoringSession { persistSession() }
+            if !isRestoringSession { scheduleSessionPersist() }
         }
     }
     var selectedTabID: UUID? {
-        didSet { if !isRestoringSession { persistSession() } }
+        didSet { if !isRestoringSession { scheduleSessionPersist() } }
+    }
+
+    /// Coalesce multiple state changes within the same runloop tick into a
+    /// single persistSession call. Without this, operations like restoring
+    /// 10 tabs fire persistSession 10× in one frame.
+    @ObservationIgnored
+    private var sessionPersistScheduled = false
+
+    private func scheduleSessionPersist() {
+        guard !sessionPersistScheduled else { return }
+        sessionPersistScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.sessionPersistScheduled = false
+            self.persistSession()
+        }
     }
     var previewContent: String = ""
+    var previewContentRevision: Int = 0
     var previewLanguage: EditorLanguage = .markdown
     var previewMode: PreviewMode = .empty {
         didSet {
@@ -143,6 +161,12 @@ final class AppState {
     @ObservationIgnored
     private var autoSaveTimer: Timer?
 
+    @ObservationIgnored
+    private var pendingTreeReloadWorkItem: DispatchWorkItem?
+
+    @ObservationIgnored
+    private var fileIndexGeneration = 0
+
     init(fileService: FileServiceProtocol = FileService(),
          fileWatcher: any FileWatcherServiceProtocol = FileWatcherService(),
          themeStore: PreviewThemeStore = PreviewThemeStore(),
@@ -223,34 +247,73 @@ final class AppState {
         openTabs.removeAll()
         selectedTabID = nil
         selectedFileID = nil
-        previewContent = ""
-        previewHTMLFileURL = nil
-        previewMode = .empty
+        clearPreview()
         reloadFileTree()
         fileWatcher.startWatching(urls: [url]) { [weak self] in
-            self?.reloadFileTree()
+            self?.scheduleWatchedTreeReload()
         }
     }
 
     func reloadFileTree() {
         guard let rootURL else { return }
+        let sid = PerformanceTracer.begin("ReloadFileTree", log: PerformanceTracer.fileOps)
+        defer { PerformanceTracer.end("ReloadFileTree", log: PerformanceTracer.fileOps, id: sid) }
+
+        pendingTreeReloadWorkItem?.cancel()
         fileItemMap = [:]
         let children = fileService.loadImmediateChildren(of: rootURL)
         fileTree = children
         addToMap(children)
-        for item in children where item.isDirectory {
-            loadSubtree(item, depth: 1, maxDepth: 6)
+        rebuildFileIndex(for: rootURL)
+    }
+
+    func loadChildrenIfNeeded(for item: FileItem) {
+        guard item.isDirectory, !item.childrenLoaded, !item.isLoadingChildren else { return }
+        item.isLoadingChildren = true
+        let service = fileService
+        let url = item.url
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let children = service.loadImmediateChildren(of: url)
+            await self?.applyLoadedChildren(children, to: item, expectedURL: url)
         }
     }
 
-    private func loadSubtree(_ item: FileItem, depth: Int, maxDepth: Int) {
-        guard depth <= maxDepth else { return }
-        let subChildren = fileService.loadImmediateChildren(of: item.url)
-        item.children = subChildren
-        addToMap(subChildren)
-        for child in subChildren where child.isDirectory {
-            loadSubtree(child, depth: depth + 1, maxDepth: maxDepth)
+    private func scheduleWatchedTreeReload() {
+        pendingTreeReloadWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.reloadFileTree()
         }
+        pendingTreeReloadWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: workItem)
+    }
+
+    private func rebuildFileIndex(for rootURL: URL) {
+        let sid = PerformanceTracer.begin("RebuildFileIndex", log: PerformanceTracer.fileOps)
+        fileIndexGeneration &+= 1
+        let generation = fileIndexGeneration
+        let service = fileService
+        indexedFiles = []
+        Task.detached(priority: .utility) { [weak self] in
+            let files = service.loadAllFiles(under: rootURL)
+            await self?.applyIndexedFiles(files, generation: generation, rootURL: rootURL)
+            await MainActor.run {
+                PerformanceTracer.end("RebuildFileIndex", log: PerformanceTracer.fileOps, id: sid)
+            }
+        }
+    }
+
+    private func applyLoadedChildren(_ children: [FileItem], to item: FileItem, expectedURL: URL) {
+        guard item.url == expectedURL else { return }
+        item.children = children
+        item.childrenLoaded = true
+        item.isLoadingChildren = false
+        addToMap(children)
+    }
+
+    private func applyIndexedFiles(_ files: [FileItem], generation: Int, rootURL: URL) {
+        guard generation == fileIndexGeneration else { return }
+        guard self.rootURL?.standardizedFileURL == rootURL.standardizedFileURL else { return }
+        indexedFiles = files
     }
 
     func selectFile(_ item: FileItem) {
@@ -356,25 +419,90 @@ final class AppState {
             syncPreviewContent(from: tab)
         } else {
             selectedTabID = nil
-            previewContent = ""
-            previewHTMLFileURL = nil
-            previewMode = .empty
+            clearPreview()
         }
     }
 
     // MARK: - Preview
 
-    func syncPreviewContent(from tab: EditorTab) {
-        previewLanguage = tab.language
-        if tab.language == .html {
-            previewHTMLFileURL = tab.url
-            previewReloadToken &+= 1
+    @discardableResult
+    func clearPreview() -> Bool {
+        var changed = false
+        if !previewContent.isEmpty {
             previewContent = ""
-            previewMode = .html
-        } else {
+            changed = true
+        }
+        if previewHTMLFileURL != nil {
             previewHTMLFileURL = nil
-            previewContent = tab.content
-            previewMode = tab.content.isEmpty ? .empty : .markdown
+            changed = true
+        }
+        if previewMode != .empty {
+            previewMode = .empty
+            changed = true
+        }
+        if changed {
+            previewContentRevision &+= 1
+        }
+        return changed
+    }
+
+    @discardableResult
+    func showMarkdownPreview(content: String) -> Bool {
+        var changed = false
+        let nextMode: PreviewMode = .markdown
+        if previewHTMLFileURL != nil {
+            previewHTMLFileURL = nil
+            changed = true
+        }
+        if previewLanguage != .markdown {
+            previewLanguage = .markdown
+        }
+        if previewContent != content {
+            previewContent = content
+            changed = true
+        }
+        if previewMode != nextMode {
+            previewMode = nextMode
+            changed = true
+        }
+        if changed {
+            previewContentRevision &+= 1
+        }
+        return changed
+    }
+
+    @discardableResult
+    func showHTMLPreview(fileURL: URL) -> Bool {
+        let normalizedURL = fileURL.standardizedFileURL
+        let currentURL = previewHTMLFileURL?.standardizedFileURL
+        var changed = false
+        if !previewContent.isEmpty {
+            previewContent = ""
+            changed = true
+        }
+        if previewLanguage != .html {
+            previewLanguage = .html
+        }
+        if previewMode != .html {
+            previewMode = .html
+            changed = true
+        }
+        if currentURL != normalizedURL {
+            previewHTMLFileURL = fileURL
+            previewReloadToken &+= 1
+            changed = true
+        }
+        return changed
+    }
+
+    func syncPreviewContent(from tab: EditorTab) {
+        let sid = PerformanceTracer.begin("SyncPreviewContent", log: PerformanceTracer.preview)
+        defer { PerformanceTracer.end("SyncPreviewContent", log: PerformanceTracer.preview, id: sid) }
+
+        if tab.language == .html {
+            showHTMLPreview(fileURL: tab.url)
+        } else {
+            showMarkdownPreview(content: tab.content)
         }
     }
 }

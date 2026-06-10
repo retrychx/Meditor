@@ -9,6 +9,11 @@ import Foundation
 /// doesn't need to re-grant access via Open Panel after every launch — and
 /// so the URL keeps working even if the file is renamed/moved.
 final class SessionStore: SessionStoreProtocol {
+    private enum BookmarkLookup {
+        case hit(Data)
+        case generated(Data)
+        case failed
+    }
 
     // MARK: - Persisted shape
 
@@ -29,6 +34,12 @@ final class SessionStore: SessionStoreProtocol {
 
     /// Debounced save coalesces bursty state changes.
     private var pendingSave: DispatchWorkItem?
+
+    /// Cache bookmarkData by standardized URL to avoid repeated IPC calls.
+    /// Each `bookmarkData(options:...)` invocation triggers a synchronous XPC
+    /// round-trip to the scoped-bookmark agent — caching eliminates this for
+    /// URLs that haven't changed between saves.
+    private var bookmarkCache: [URL: Data] = [:]
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
@@ -58,10 +69,14 @@ final class SessionStore: SessionStoreProtocol {
         pendingSave = nil
 
         let session = PersistedSession(
-            rootBookmark: rootURL.flatMap { Self.bookmarkData(for: $0) },
-            tabs: openTabURLs.compactMap { Self.bookmarkData(for: $0) },
+            rootBookmark: rootURL.flatMap { bookmarkData(for: $0) },
+            tabs: openTabURLs.compactMap { bookmarkData(for: $0) },
             selectedTabIndex: selectedIndex
         )
+
+        // Prune cache entries for URLs no longer in the session.
+        let activeURLs = Set(openTabURLs.map(\.standardizedFileURL) + [rootURL?.standardizedFileURL].compactMap { $0 })
+        bookmarkCache = bookmarkCache.filter { activeURLs.contains($0.key) }
 
         guard let encoded = try? JSONEncoder().encode(session) else { return }
         self.userDefaults.set(encoded, forKey: Self.userDefaultsKey)
@@ -104,6 +119,35 @@ final class SessionStore: SessionStoreProtocol {
 
     // MARK: - Internal
 
+    /// Return cached bookmark data or create + cache it. Avoids redundant IPC.
+    private func bookmarkData(for url: URL) -> Data? {
+        let key = url.standardizedFileURL
+        switch cachedBookmarkData(for: key) {
+        case .hit(let data), .generated(let data):
+            return data
+        case .failed:
+            return nil
+        }
+    }
+
+    private func cachedBookmarkData(for url: URL) -> BookmarkLookup {
+        if let cached = bookmarkCache[url] {
+            PerformanceTracer.event("SessionBookmarkCacheHit", log: PerformanceTracer.session)
+            return .hit(cached)
+        }
+
+        PerformanceTracer.event("SessionBookmarkCacheMiss", log: PerformanceTracer.session)
+        let sid = PerformanceTracer.begin("SessionBookmarkCreate", log: PerformanceTracer.session)
+        defer { PerformanceTracer.end("SessionBookmarkCreate", log: PerformanceTracer.session, id: sid) }
+
+        guard let data = Self.bookmarkData(for: url) else {
+            PerformanceTracer.event("SessionBookmarkCreateFailed", log: PerformanceTracer.session)
+            return .failed
+        }
+        bookmarkCache[url] = data
+        return .generated(data)
+    }
+
     private static func bookmarkData(for url: URL) -> Data? {
         do {
             return try url.bookmarkData(
@@ -115,6 +159,7 @@ final class SessionStore: SessionStoreProtocol {
             // Bookmark creation can fail if the URL was never security-scoped
             // to begin with (e.g. constructed from a string path). Fall back
             // to a non-scoped bookmark so a non-sandboxed build still benefits.
+            PerformanceTracer.event("SessionBookmarkFallbackNonScoped", log: PerformanceTracer.session)
             return try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
         }
     }

@@ -1,14 +1,15 @@
 import SwiftUI
 import AppKit
+import os
 
 /// A native NSTextView-based code editor with basic syntax highlighting.
 /// Avoids WKWebView/CDN/JS bridge complexity.
 struct NativeEditorView: NSViewRepresentable {
-    /// Files larger than this threshold (in bytes) skip regex-based highlighting
-    /// to avoid performance issues on large documents.
-    static let largeFileThreshold = 500 * 1024
+    /// Files larger than this threshold skip regex highlighting entirely.
+    static let syntaxHighlightThreshold = 150 * 1024
 
     let content: String
+    let contentRevision: Int
     let language: EditorLanguage
     let onContentChange: (String) -> Void
     let onCursorChange: ((Int, Int) -> Void)?
@@ -87,11 +88,13 @@ struct NativeEditorView: NSViewRepresentable {
             guard line != coordinator.lastReportedLine else { return }
             coordinator.lastReportedLine = line
             coordinator.onVisibleTopLineChange?(line)
+            coordinator.scheduleVisibleRangeHighlight()
         }
 
         if !content.isEmpty {
             textView.string = content
             context.coordinator.lastAcknowledgedContent = content
+            context.coordinator.lastAcknowledgedRevision = contentRevision
             context.coordinator.rebuildLineOffsets(for: content)
             context.coordinator.scheduleHighlight()
         }
@@ -120,7 +123,9 @@ struct NativeEditorView: NSViewRepresentable {
         // Only push content to the editor if it changed externally (e.g., tab switch).
         // Highlighting is deferred to the next runloop tick so the user sees plain
         // text instantly, with syntax colors fading in shortly after.
-        if context.coordinator.lastAcknowledgedContent != content {
+        if context.coordinator.lastAcknowledgedRevision != contentRevision {
+            context.coordinator.localRevisionPredictionActive = false
+            context.coordinator.lastAcknowledgedRevision = contentRevision
             context.coordinator.isProgrammaticChange = true
             textView.string = content
             context.coordinator.lastAcknowledgedContent = content
@@ -146,20 +151,24 @@ struct NativeEditorView: NSViewRepresentable {
         var currentLanguage: EditorLanguage = .markdown
         var lastTheme: PreviewTheme = .github
         var lastAcknowledgedContent: String = ""
+        var lastAcknowledgedRevision: Int = 0
         weak var textView: NSTextView?
         var scrollObserver: NSObjectProtocol?
         var lastReportedLine: Int = -1
         var lastAppliedTargetLine: Int = -1
         var lastAppliedRequestID: Int = -1
         var isProgrammaticScroll = false
+        var localRevisionPredictionActive = false
 
         private var debounceTimer: Timer?
         private var highlightTimer: Timer?
+        private var visibleHighlightTimer: Timer?
         fileprivate var isProgrammaticChange = false
 
         /// Cached line offset table: lineOffsets[i] = character index of line i's start.
         /// Invalidated on every content change for O(1) line lookups during scroll.
         private var lineOffsets: [Int] = [0]
+        private var lineOffsetsDirty = false
 
         init(onContentChange: @escaping (String) -> Void,
              onCursorChange: ((Int, Int) -> Void)?,
@@ -169,7 +178,24 @@ struct NativeEditorView: NSViewRepresentable {
             self.onVisibleTopLineChange = onVisibleTopLineChange
         }
 
+        private static func previewUpdateDebounce(for content: String) -> TimeInterval {
+            let bytes = content.utf8.count
+            switch bytes {
+            case 0..<16 * 1024:
+                return 0.02
+            case 16 * 1024..<64 * 1024:
+                return 0.03
+            case 64 * 1024..<256 * 1024:
+                return 0.05
+            default:
+                return 0.08
+            }
+        }
+
         deinit {
+            debounceTimer?.invalidate()
+            highlightTimer?.invalidate()
+            visibleHighlightTimer?.invalidate()
             if let observer = scrollObserver {
                 NotificationCenter.default.removeObserver(observer)
             }
@@ -177,6 +203,7 @@ struct NativeEditorView: NSViewRepresentable {
 
         /// Rebuild the line offset cache from the current text content.
         func rebuildLineOffsets(for text: String) {
+            let sid = PerformanceTracer.begin("RebuildLineOffsets", log: PerformanceTracer.editor)
             let ns = text as NSString
             var offsets: [Int] = [0]
             offsets.reserveCapacity(ns.length / 40) // rough estimate
@@ -186,6 +213,29 @@ struct NativeEditorView: NSViewRepresentable {
                 }
             }
             lineOffsets = offsets
+            lineOffsetsDirty = false
+            PerformanceTracer.end("RebuildLineOffsets", log: PerformanceTracer.editor, id: sid)
+        }
+
+        private func ensureLineOffsets(for text: String) {
+            if lineOffsetsDirty {
+                rebuildLineOffsets(for: text)
+            }
+        }
+
+        private func lineIndex(for characterIndex: Int, in text: String) -> Int {
+            ensureLineOffsets(for: text)
+            var lo = 0
+            var hi = lineOffsets.count
+            while lo < hi {
+                let mid = (lo + hi) / 2
+                if lineOffsets[mid] <= characterIndex {
+                    lo = mid + 1
+                } else {
+                    hi = mid
+                }
+            }
+            return max(0, lo - 1)
         }
 
         func textDidChange(_ notification: Notification) {
@@ -193,13 +243,26 @@ struct NativeEditorView: NSViewRepresentable {
 
             let newContent = textView.string
             lastAcknowledgedContent = newContent
+            if !localRevisionPredictionActive {
+                lastAcknowledgedRevision &+= 1
+                localRevisionPredictionActive = true
+            }
+
+            // Incremental line offset update: instead of marking dirty and
+            // full-rebuilding on next access, patch the offset table from
+            // the edit range. NSTextView provides the edited range after each
+            // change; for simplicity we full-rebuild here but using Data.withUTF8
+            // on the changed portion would be the next level.
             rebuildLineOffsets(for: newContent)
 
-            // Content update debounce (50ms) - keeps preview reactive during typing
+            // Content update debounce scales with file size so small notes
+            // still feel immediate while large documents avoid bursty rerenders.
             debounceTimer?.invalidate()
-            debounceTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: false) { [weak self] _ in
+            let previewUpdateDebounce = Self.previewUpdateDebounce(for: newContent)
+            debounceTimer = Timer.scheduledTimer(withTimeInterval: previewUpdateDebounce, repeats: false) { [weak self] _ in
                 guard let self = self else { return }
                 DispatchQueue.main.async {
+                    self.localRevisionPredictionActive = false
                     self.onContentChange(newContent)
                 }
             }
@@ -217,12 +280,11 @@ struct NativeEditorView: NSViewRepresentable {
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let textView = textView, let onCursorChange = onCursorChange else { return }
-            let nsText = textView.string as NSString
             let range = textView.selectedRange()
-            let lineRange = nsText.lineRange(for: NSRange(location: range.location, length: 0))
-            let line = nsText.substring(to: range.location).components(separatedBy: "\n").count
-            let column = range.location - lineRange.location + 1
-            onCursorChange(line, column)
+            let lineIndex = lineIndex(for: range.location, in: textView.string)
+            let lineStart = lineOffsets[safe: lineIndex] ?? 0
+            let column = max(1, range.location - lineStart + 1)
+            onCursorChange(lineIndex + 1, column)
         }
 
         /// Compute the 0-based line index of the first visible character at
@@ -231,6 +293,7 @@ struct NativeEditorView: NSViewRepresentable {
             guard let scrollView = textView.enclosingScrollView,
                   let layoutManager = textView.layoutManager,
                   let textContainer = textView.textContainer else { return 0 }
+            ensureLineOffsets(for: textView.string)
 
             let visibleRect = scrollView.contentView.bounds
             let pointInTextContainer = NSPoint(
@@ -261,15 +324,10 @@ struct NativeEditorView: NSViewRepresentable {
                   let layoutManager = textView.layoutManager,
                   let textContainer = textView.textContainer,
                   let scrollView = textView.enclosingScrollView else { return }
-            let nsText = textView.string as NSString
-
-            // Walk to find the character index of the start of the target line.
-            var currentLine = 0
-            var charIndex = 0
-            while currentLine < line && charIndex < nsText.length {
-                if nsText.character(at: charIndex) == 0x0A { currentLine += 1 }
-                charIndex += 1
-            }
+            let sid = PerformanceTracer.begin("EditorScrollToLine", log: PerformanceTracer.editor)
+            ensureLineOffsets(for: textView.string)
+            let safeLine = min(line, max(0, lineOffsets.count - 1))
+            let charIndex = lineOffsets[safeLine]
             // Lay out and find the rect.
             let glyphRange = layoutManager.glyphRange(forCharacterRange: NSRange(location: charIndex, length: 0), actualCharacterRange: nil)
             let rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
@@ -278,6 +336,7 @@ struct NativeEditorView: NSViewRepresentable {
             isProgrammaticScroll = true
             scrollView.contentView.scroll(to: NSPoint(x: 0, y: targetY))
             scrollView.reflectScrolledClipView(scrollView.contentView)
+            PerformanceTracer.end("EditorScrollToLine", log: PerformanceTracer.editor, id: sid)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                 self?.isProgrammaticScroll = false
             }
@@ -292,46 +351,72 @@ struct NativeEditorView: NSViewRepresentable {
             }
         }
 
+        /// Re-highlight after scrolling settles so newly visible text receives
+        /// syntax colors without repainting on every scroll tick.
+        func scheduleVisibleRangeHighlight() {
+            visibleHighlightTimer?.invalidate()
+            visibleHighlightTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: false) { [weak self] _ in
+                self?.applyHighlighting()
+            }
+        }
+
         func applyHighlighting() {
             guard let textView = textView else { return }
             let text = textView.string
             guard !text.isEmpty else { return }
 
-            // Large files: skip both regex highlighting AND full-range attribute
-            // resets. The text view's typingAttributes (set during makeNSView)
-            // already render the body with the right font/color, so doing
-            // nothing is the correct fast path. Touching the full NSTextStorage
-            // would defeat `allowsNonContiguousLayout`.
-            if text.utf8.count > NativeEditorView.largeFileThreshold {
+            if text.utf8.count > NativeEditorView.syntaxHighlightThreshold {
+                PerformanceTracer.event("HighlightSkipped_LargeFile", log: PerformanceTracer.editor)
                 return
             }
 
-            guard let storage = textView.textStorage else { return }
-            let fullRange = NSRange(location: 0, length: (text as NSString).length)
+            let sid = PerformanceTracer.begin("ApplyHighlighting", log: PerformanceTracer.editor)
+
+            guard let storage = textView.textStorage,
+                  let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer else {
+                PerformanceTracer.end("ApplyHighlighting", log: PerformanceTracer.editor, id: sid)
+                return
+            }
+
+            let nsText = text as NSString
+            let fullLength = nsText.length
+
+            // Compute visible character range + buffer (2000 chars above/below).
+            let visibleRect = textView.enclosingScrollView?.contentView.bounds ?? textView.visibleRect
+            let glyphRange = layoutManager.glyphRange(forBoundingRect: visibleRect, in: textContainer)
+            let visibleCharRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+
+            let bufferChars = 2000
+            let rangeStart = max(0, visibleCharRange.location - bufferChars)
+            let rangeEnd = min(fullLength, visibleCharRange.location + visibleCharRange.length + bufferChars)
+            let highlightRange = NSRange(location: rangeStart, length: rangeEnd - rangeStart)
+
             let baseColor = lastTheme.foregroundNSColor
             let baseFont = NSFont.systemFont(ofSize: 14)
 
-            // Reset to base style
             storage.beginEditing()
-            storage.removeAttribute(.foregroundColor, range: fullRange)
-            storage.removeAttribute(.font, range: fullRange)
-            storage.removeAttribute(.backgroundColor, range: fullRange)
-            storage.removeAttribute(.paragraphStyle, range: fullRange)
-            storage.addAttribute(.foregroundColor, value: baseColor, range: fullRange)
-            storage.addAttribute(.font, value: baseFont, range: fullRange)
+            // Reset only the highlight range
+            storage.removeAttribute(.foregroundColor, range: highlightRange)
+            storage.removeAttribute(.font, range: highlightRange)
+            storage.removeAttribute(.backgroundColor, range: highlightRange)
+            storage.removeAttribute(.paragraphStyle, range: highlightRange)
+            storage.addAttribute(.foregroundColor, value: baseColor, range: highlightRange)
+            storage.addAttribute(.font, value: baseFont, range: highlightRange)
 
-            // Apply comfortable line spacing across the whole document.
             let para = NSMutableParagraphStyle()
             para.lineHeightMultiple = 1.18
             para.paragraphSpacing = 4
-            storage.addAttribute(.paragraphStyle, value: para, range: fullRange)
+            storage.addAttribute(.paragraphStyle, value: para, range: highlightRange)
 
             guard let engine = HighlightService.shared.engine(for: currentLanguage) else {
                 storage.endEditing()
+                PerformanceTracer.end("ApplyHighlighting", log: PerformanceTracer.editor, id: sid)
                 return
             }
-            engine.highlight(text: text, into: storage, range: fullRange, baseFont: baseFont)
+            engine.highlight(text: text, into: storage, range: highlightRange, baseFont: baseFont)
             storage.endEditing()
+            PerformanceTracer.end("ApplyHighlighting", log: PerformanceTracer.editor, id: sid)
         }
     }
 }
@@ -339,5 +424,11 @@ struct NativeEditorView: NSViewRepresentable {
 extension NSFont {
     var isBold: Bool {
         fontDescriptor.symbolicTraits.contains(.bold)
+    }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }

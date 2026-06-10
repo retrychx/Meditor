@@ -13,11 +13,14 @@ final class FileItem: Identifiable, Hashable {
     let url: URL
     let isDirectory: Bool
     var children: [FileItem]?
+    var childrenLoaded: Bool
+    var isLoadingChildren = false
 
-    init(url: URL, isDirectory: Bool, children: [FileItem]? = nil) {
+    init(url: URL, isDirectory: Bool, children: [FileItem]? = nil, childrenLoaded: Bool? = nil) {
         self.url = url
         self.isDirectory = isDirectory
         self.children = children
+        self.childrenLoaded = childrenLoaded ?? (!isDirectory || children != nil)
     }
 
     var name: String { url.lastPathComponent }

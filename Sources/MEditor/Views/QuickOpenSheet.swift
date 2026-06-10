@@ -4,10 +4,8 @@ import SwiftUI
 /// Trigger via ⌘P.
 ///
 /// Implementation notes:
-/// - Searches all files in `state.fileItemMap` (which the file tree already
-///   populates via depth-limited traversal). No async/Bg search needed for
-///   the typical project size; if perf becomes an issue, we can move ranking
-///   to a background task.
+/// - Searches a background-built flat file index so opening a folder doesn't
+///   have to eagerly hydrate the full sidebar tree.
 /// - Ranks results by simple substring + path depth. Good enough for now.
 struct QuickOpenSheet: View {
     @Environment(AppState.self) private var state
@@ -67,8 +65,15 @@ struct QuickOpenSheet: View {
 
     // MARK: - Results
 
+    private var searchableFiles: [FileItem] {
+        if !state.indexedFiles.isEmpty {
+            return state.indexedFiles
+        }
+        return state.fileItemMap.values.filter { !$0.isDirectory }
+    }
+
     private var results: [FileItem] {
-        let allFiles = state.fileItemMap.values.filter { !$0.isDirectory }
+        let allFiles = searchableFiles
         guard !query.isEmpty else {
             // Empty query: show recently used (open tabs first), then a-z by name.
             let openURLs = Set(state.openTabs.map { $0.url })
