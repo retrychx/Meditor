@@ -3,6 +3,13 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* Skip layout/paint for off-screen blocks — massive win for long docs.
+   Browser only renders viewport + 200px margin, rest is deferred. */
+#content > * {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 80px;
+}
+
 html, body {
   background: var(--bg);
   color: var(--text);
