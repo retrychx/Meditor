@@ -74,6 +74,21 @@ final class WebViewPool {
 
     func markReady() {
         isReady = true
+        // Pre-warm JS engines in the pooled webview:
+        // 1. Load hljs so code highlighting is instant
+        // 2. Run a dummy marked.parse to JIT-compile marked's regex patterns
+        warmedView?.evaluateJavaScript("""
+            (function() {
+                if (typeof hljs === 'undefined') {
+                    var s = document.createElement('script');
+                    s.src = 'highlight.min.js';
+                    document.head.appendChild(s);
+                }
+                if (typeof marked !== 'undefined') {
+                    marked.parse('# warm\\n\\ntext **bold** `code`\\n\\n```js\\nvar x=1;\\n```\\n');
+                }
+            })();
+        """, completionHandler: nil)
     }
 }
 
