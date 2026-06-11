@@ -82,6 +82,7 @@ private struct TabButton: View {
                     Circle()
                         .fill(Color.orange)
                         .frame(width: 5, height: 5)
+                        .transition(.scale.combined(with: .opacity))
                 } else {
                     // Invisible placeholder to keep width stable
                     Image(systemName: "xmark")
@@ -90,6 +91,7 @@ private struct TabButton: View {
                 }
             }
             .frame(width: 12, height: 12)
+            .animation(.easeOut(duration: 0.2), value: tab.isModified)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 3)

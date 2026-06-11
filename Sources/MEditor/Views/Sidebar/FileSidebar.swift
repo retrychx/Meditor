@@ -327,6 +327,7 @@ struct FileSidebar: View {
                         }
                 }
                 .listRowSeparator(.hidden)
+                .animation(.spring(response: 0.25, dampingFraction: 0.85), value: expandedPaths)
                 .onAppear {
                     if expandedPaths.contains(item.url.path) {
                         state.loadChildrenIfNeeded(for: item)
