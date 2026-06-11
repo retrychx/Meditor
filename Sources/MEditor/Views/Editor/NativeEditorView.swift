@@ -79,6 +79,9 @@ struct NativeEditorView: NSViewRepresentable {
         let ruler = LineNumberRulerView(textView: textView)
         scrollView.verticalRulerView = ruler
 
+        // Accept image file drops
+        textView.registerForDraggedTypes([.fileURL])
+
         // Observe scroll position changes for preview sync
         let center = NotificationCenter.default
         context.coordinator.scrollObserver = center.addObserver(
@@ -381,6 +384,31 @@ struct NativeEditorView: NSViewRepresentable {
         @objc func meditorToggleBold(_ sender: Any?) { toggleBold() }
         @objc func meditorToggleItalic(_ sender: Any?) { toggleItalic() }
         @objc func meditorInsertLink(_ sender: Any?) { insertLink() }
+
+        // MARK: - Image drag & drop
+
+        private static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "tiff"]
+
+        func textView(_ textView: NSTextView, performDragOperation draggingInfo: NSDraggingInfo) -> Bool {
+            guard let items = draggingInfo.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [
+                .urlReadingFileURLsOnly: true
+            ]) as? [URL] else { return false }
+
+            let images = items.filter { Self.imageExtensions.contains($0.pathExtension.lowercased()) }
+            guard !images.isEmpty else { return false }
+
+            let dropPoint = textView.convert(draggingInfo.draggingLocation, from: nil)
+            let charIndex = textView.characterIndexForInsertion(at: dropPoint)
+            var insertText = ""
+            for url in images {
+                let name = url.lastPathComponent
+                // Try relative path if we have a source file context
+                let path = url.path
+                insertText += "![\(name)](\(path))\n"
+            }
+            textView.insertText(insertText, replacementRange: NSRange(location: charIndex, length: 0))
+            return true
+        }
 
         /// Compute the 0-based line index of the first visible character at
         /// the top of the editor's viewport. Uses cached line offsets for O(log n).
