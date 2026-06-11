@@ -88,16 +88,19 @@ struct WelcomeView: View {
             Spacer()
 
             // Pixel title
-            HStack(spacing: 6) {
+            HStack(spacing: 12) {
                 ForEach(0..<7, id: \.self) { i in
                     PixelCharView(
                         char: displayedChars[i],
                         font: Self.pixelFont,
                         color: Self.auroraBlue,
-                        opacity: locked[i] ? 1.0 : 0.4
+                        opacity: locked[i] ? 1.0 : 0.35
                     )
+                    .scaleEffect(locked[i] ? 1.0 : 0.9)
+                    .animation(.spring(response: 0.2, dampingFraction: 0.6), value: locked[i])
                 }
             }
+            .padding(.vertical, 12)
 
             // Typewriter subtitle
             HStack(spacing: 0) {
@@ -206,11 +209,12 @@ private struct PixelCharView: View {
     let color: Color
     let opacity: Double
 
-    private let pixelSize: CGFloat = 5
-    private let gap: CGFloat = 1
+    private let pixelSize: CGFloat = 8
+    private let gap: CGFloat = 2
+    private let cornerRadius: CGFloat = 2
 
     var body: some View {
-        let bitmap = font[char] ?? fallbackBitmap
+        let bitmap = font[char] ?? randomBitmap()
         Canvas { context, size in
             for row in 0..<bitmap.count {
                 for col in 0..<bitmap[row].count {
@@ -221,17 +225,20 @@ private struct PixelCharView: View {
                             width: pixelSize,
                             height: pixelSize
                         )
-                        context.fill(Path(rect), with: .color(color.opacity(opacity)))
+                        let path = Path(roundedRect: rect, cornerRadius: cornerRadius)
+                        // Glow layer
+                        context.fill(path, with: .color(color.opacity(opacity * 0.3)))
+                        context.fill(path, with: .color(color.opacity(opacity)))
                     }
                 }
             }
         }
         .frame(width: CGFloat(5) * (pixelSize + gap) - gap,
                height: CGFloat(7) * (pixelSize + gap) - gap)
+        .shadow(color: color.opacity(opacity * 0.4), radius: 6, y: 2)
     }
 
-    // Random block pattern for shuffle characters
-    private var fallbackBitmap: [[Bool]] {
+    private func randomBitmap() -> [[Bool]] {
         (0..<7).map { _ in (0..<5).map { _ in Bool.random() } }
     }
 }
