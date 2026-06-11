@@ -29,6 +29,7 @@ struct EditorView: View {
                 .foregroundStyle(.quaternary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(DotGridBackground())
         }
     }
 }
