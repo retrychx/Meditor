@@ -140,12 +140,10 @@ struct PreviewPanel: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 4) {
-            Text("—")
-                .font(.system(size: 18, weight: .ultraLight))
-                .foregroundStyle(.quaternary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        Text(L("preview.empty"))
+            .font(.system(size: 12))
+            .foregroundStyle(.quaternary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var loadingOverlay: some View {
