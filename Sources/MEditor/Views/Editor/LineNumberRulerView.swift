@@ -45,11 +45,13 @@ final class LineNumberRulerView: NSRulerView {
         ]
 
         var lineNumber = 1
-        var charIndex = 0
-        // Count lines before visible range
-        while charIndex < visibleChars.location && charIndex < text.length {
-            if text.character(at: charIndex) == 0x0A { lineNumber += 1 }
-            charIndex += 1
+        // Fast line count before visible range using vectorized search
+        var searchStart = 0
+        while searchStart < visibleChars.location {
+            let found = text.range(of: "\n", range: NSRange(location: searchStart, length: visibleChars.location - searchStart))
+            if found.location == NSNotFound { break }
+            lineNumber += 1
+            searchStart = found.location + 1
         }
 
         // Draw line numbers for visible lines

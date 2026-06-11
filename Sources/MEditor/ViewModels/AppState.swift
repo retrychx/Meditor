@@ -299,7 +299,7 @@ final class AppState {
         externallyModifiedTab = nil
         Task.detached(priority: .userInitiated) { [weak self, service = fileService] in
             guard let content = try? service.readFile(at: url) else { return }
-            await MainActor.run {
+            await MainActor.run { [weak self] in
                 guard let self, let idx = self.openTabs.firstIndex(where: { $0.id == tabID }) else { return }
                 self.openTabs[idx].content = content
                 self.openTabs[idx].isModified = false
