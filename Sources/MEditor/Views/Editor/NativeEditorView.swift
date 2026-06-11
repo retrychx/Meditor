@@ -73,6 +73,12 @@ struct NativeEditorView: NSViewRepresentable {
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
 
+        // Line number gutter
+        scrollView.rulersVisible = true
+        scrollView.hasVerticalRuler = true
+        let ruler = LineNumberRulerView(textView: textView)
+        scrollView.verticalRulerView = ruler
+
         // Observe scroll position changes for preview sync
         let center = NotificationCenter.default
         context.coordinator.scrollObserver = center.addObserver(
