@@ -23,7 +23,7 @@ struct WelcomeView: View {
         "M": [[1,0,0,0,1],[1,1,0,1,1],[1,0,1,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1]],
         "E": [[1,1,1,1,1],[1,0,0,0,0],[1,0,0,0,0],[1,1,1,1,0],[1,0,0,0,0],[1,0,0,0,0],[1,1,1,1,1]],
         "D": [[1,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,0]],
-        "I": [[0,1,1,1,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,1,1,1,0]],
+        "I": [[1,1,1],[0,1,0],[0,1,0],[0,1,0],[0,1,0],[0,1,0],[1,1,1]],
         "T": [[1,1,1,1,1],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0]],
         "O": [[0,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[0,1,1,1,0]],
         "R": [[1,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,0],[1,0,1,0,0],[1,0,0,1,0],[1,0,0,0,1]],
@@ -46,12 +46,16 @@ struct WelcomeView: View {
                     .animation(.spring(response: 0.2, dampingFraction: 0.65), value: locked[i])
                 }
             }
-            .padding(.horizontal, 32)
-            .padding(.vertical, 24)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 28)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: 20)
                     .fill(Self.cardBg)
-                    .shadow(color: Self.auroraBlue.opacity(0.15), radius: 20, y: 8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 20)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    )
+                    .shadow(color: Self.auroraBlue.opacity(0.12), radius: 24, y: 10)
             )
 
             // Typewriter subtitle
@@ -156,11 +160,12 @@ private struct PixelCharView: View {
     let opacity: Double
 
     private let px: CGFloat = 7
-    private let gap: CGFloat = 2
+    private let gap: CGFloat = 1.5
     private let radius: CGFloat = 1.5
 
     var body: some View {
         let bitmap = font[char] ?? randomBitmap()
+        let cols = bitmap.first?.count ?? 5
         Canvas { ctx, _ in
             for row in 0..<bitmap.count {
                 for col in 0..<bitmap[row].count {
@@ -176,7 +181,7 @@ private struct PixelCharView: View {
                 }
             }
         }
-        .frame(width: 5 * (px + gap) - gap, height: 7 * (px + gap) - gap)
+        .frame(width: CGFloat(cols) * (px + gap) - gap, height: 7 * (px + gap) - gap)
     }
 
     private func randomBitmap() -> [[Bool]] {
