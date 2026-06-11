@@ -34,18 +34,11 @@
   }
 
   // Paragraph-level parse cache: avoids re-parsing unchanged paragraphs.
-  // Key = paragraph text hash, Value = rendered HTML for that paragraph.
+  // Key = paragraph text (exact match, no hash collision risk).
+  // Only caches blocks under 2KB to bound memory usage.
   var paragraphCache = new Map();
-  var PARAGRAPH_CACHE_LIMIT = 500;
-
-  function paragraphHash(s) {
-    var h = 0x811c9dc5;
-    for (var i = 0, len = s.length; i < len; i++) {
-      h ^= s.charCodeAt(i);
-      h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
-    }
-    return h;
-  }
+  var PARAGRAPH_CACHE_LIMIT = 300;
+  var PARAGRAPH_CACHE_MAX_BLOCK = 2048;
 
   /**
    * Render markdown by splitting into paragraphs (blocks separated by blank lines),
@@ -53,30 +46,30 @@
    * Falls back to full parse if content has complex cross-block structures.
    */
   function renderMarkdownCached(content) {
-    // Split by double newline (paragraph boundary in markdown)
     var blocks = content.split(/\n{2,}/);
 
-    // If too few blocks or content has link reference definitions
-    // (which are cross-block), fall back to full parse for correctness.
+    // Fallback: link reference definitions are cross-block state.
     if (blocks.length <= 2 || /^\[.+\]:\s/m.test(content)) {
       return renderMarkdown(content);
     }
 
     var htmlParts = [];
-    var allCached = true;
 
     for (var i = 0; i < blocks.length; i++) {
       var block = blocks[i];
       if (!block.trim()) { htmlParts.push(''); continue; }
 
-      var hash = paragraphHash(block);
-      if (paragraphCache.has(hash)) {
-        htmlParts.push(paragraphCache.get(hash));
+      if (block.length <= PARAGRAPH_CACHE_MAX_BLOCK && paragraphCache.has(block)) {
+        htmlParts.push(paragraphCache.get(block));
       } else {
-        allCached = false;
-        // Parse single block with surrounding context hint
         var blockHTML = marked.parse(block, { gfm: true, breaks: false });
-        paragraphCache.set(hash, blockHTML);
+        if (block.length <= PARAGRAPH_CACHE_MAX_BLOCK) {
+          paragraphCache.set(block, blockHTML);
+          if (paragraphCache.size > PARAGRAPH_CACHE_LIMIT) {
+            var firstKey = paragraphCache.keys().next().value;
+            paragraphCache.delete(firstKey);
+          }
+        }
         htmlParts.push(blockHTML);
 
         // Evict oldest if over limit
