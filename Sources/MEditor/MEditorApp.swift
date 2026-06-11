@@ -11,9 +11,10 @@ struct MEditorApp: App {
                 .frame(minWidth: 900, minHeight: 500)
                 .onAppear {
                     NSWindow.allowsAutomaticWindowTabbing = false
-                    // Remember window size/position across launches.
+                    // Remove toolbar bottom border
                     if let window = NSApp.windows.first {
                         window.setFrameAutosaveName("MEditorMainWindow")
+                        window.titlebarSeparatorStyle = .none
                     }
                     // Pre-warm a WKWebView so first file open renders instantly.
                     WebViewPool.shared.warmUp()
