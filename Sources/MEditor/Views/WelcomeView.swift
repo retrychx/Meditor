@@ -14,8 +14,8 @@ struct WelcomeView: View {
     private static let charset = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789#@&%!?")
     private static let subtitle = "A minimal Markdown editor for macOS"
 
-    // 极光蓝
-    private static let auroraBlue = Color(red: 0.0, green: 0.75, blue: 0.95) // #00BFF2
+    // 极光蓝 (得物 Stark 设计系统)
+    private static let auroraBlue = Color(red: 0.23, green: 0.51, blue: 0.96) // #3B82F6
 
     var body: some View {
         VStack(spacing: 24) {
