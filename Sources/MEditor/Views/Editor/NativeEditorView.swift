@@ -165,6 +165,13 @@ struct NativeEditorView: NSViewRepresentable {
         private var visibleHighlightTimer: Timer?
         fileprivate var isProgrammaticChange = false
 
+        /// Pending auto-close character to insert after the current edit completes.
+        private var pendingAutoClose: Character?
+        private static let autoPairs: [Character: Character] = [
+            "(": ")", "[": "]", "{": "}",
+            "\"": "\"", "'": "'", "`": "`"
+        ]
+
         /// Cached line offset table: lineOffsets[i] = character index of line i's start.
         /// Invalidated on every content change for O(1) line lookups during scroll.
         private var lineOffsets: [Int] = [0]
@@ -245,8 +252,39 @@ struct NativeEditorView: NSViewRepresentable {
             return max(0, lo - 1)
         }
 
+        func textView(_ textView: NSTextView, shouldChangeTextIn range: NSRange, replacementString text: String?) -> Bool {
+            guard !isProgrammaticChange, let text, text.count == 1,
+                  let char = text.first,
+                  let close = Self.autoPairs[char] else { return true }
+            // Only auto-close when inserting (not replacing selection with a pair char)
+            // For quotes/backtick: skip if the char before cursor is alphanumeric (likely closing)
+            if char == close { // symmetric pair (", ', `)
+                let ns = textView.string as NSString
+                if range.location > 0 {
+                    let prev = ns.character(at: range.location - 1)
+                    if CharacterSet.alphanumerics.contains(Unicode.Scalar(prev)!) {
+                        return true
+                    }
+                }
+            }
+            if range.length == 0 {
+                pendingAutoClose = close
+            }
+            return true
+        }
+
         func textDidChange(_ notification: Notification) {
             guard let textView = textView, !isProgrammaticChange else { return }
+
+            // Handle auto-close bracket that was deferred from shouldChangeText
+            if let close = pendingAutoClose {
+                pendingAutoClose = nil
+                let pos = textView.selectedRange().location
+                isProgrammaticChange = true
+                textView.insertText(String(close), replacementRange: NSRange(location: pos, length: 0))
+                textView.setSelectedRange(NSRange(location: pos, length: 0))
+                isProgrammaticChange = false
+            }
 
             let newContent = textView.string
             lastAcknowledgedContent = newContent
