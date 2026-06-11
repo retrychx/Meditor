@@ -115,6 +115,23 @@ struct MEditorApp: App {
                     NSApp.sendAction(#selector(NSTextView.performFindPanelAction(_:)), to: nil, from: menuItem)
                 }
                 .keyboardShortcut("f", modifiers: [.command, .option])
+
+                Divider()
+
+                Button(L("menu.bold")) {
+                    NSApp.sendAction(#selector(NativeEditorView.Coordinator.meditorToggleBold(_:)), to: nil, from: nil)
+                }
+                .keyboardShortcut("b", modifiers: .command)
+
+                Button(L("menu.italic")) {
+                    NSApp.sendAction(#selector(NativeEditorView.Coordinator.meditorToggleItalic(_:)), to: nil, from: nil)
+                }
+                .keyboardShortcut("i", modifiers: .command)
+
+                Button(L("menu.link")) {
+                    NSApp.sendAction(#selector(NativeEditorView.Coordinator.meditorInsertLink(_:)), to: nil, from: nil)
+                }
+                .keyboardShortcut("k", modifiers: .command)
             }
 
             CommandGroup(replacing: .windowList) {

@@ -294,6 +294,50 @@ struct NativeEditorView: NSViewRepresentable {
             onCursorChange(lineIndex + 1, column)
         }
 
+        // MARK: - Markdown formatting shortcuts
+
+        /// Wrap selection with markdown syntax. If no selection, insert placeholder.
+        func wrapSelection(prefix: String, suffix: String, placeholder: String) {
+            guard let textView = textView else { return }
+            let range = textView.selectedRange()
+            let text = textView.string as NSString
+
+            if range.length > 0 {
+                let selected = text.substring(with: range)
+                // Toggle: if already wrapped, unwrap
+                let before = range.location >= prefix.count
+                    ? text.substring(with: NSRange(location: range.location - prefix.count, length: prefix.count))
+                    : ""
+                let after = (range.location + range.length + suffix.count <= text.length)
+                    ? text.substring(with: NSRange(location: range.location + range.length, length: suffix.count))
+                    : ""
+                if before == prefix && after == suffix {
+                    // Unwrap
+                    let fullRange = NSRange(location: range.location - prefix.count, length: range.length + prefix.count + suffix.count)
+                    textView.insertText(selected, replacementRange: fullRange)
+                    textView.setSelectedRange(NSRange(location: range.location - prefix.count, length: range.length))
+                } else {
+                    // Wrap
+                    let wrapped = prefix + selected + suffix
+                    textView.insertText(wrapped, replacementRange: range)
+                    textView.setSelectedRange(NSRange(location: range.location + prefix.count, length: range.length))
+                }
+            } else {
+                // No selection: insert with placeholder
+                let insert = prefix + placeholder + suffix
+                textView.insertText(insert, replacementRange: range)
+                textView.setSelectedRange(NSRange(location: range.location + prefix.count, length: placeholder.count))
+            }
+        }
+
+        func toggleBold() { wrapSelection(prefix: "**", suffix: "**", placeholder: "bold") }
+        func toggleItalic() { wrapSelection(prefix: "*", suffix: "*", placeholder: "italic") }
+        func insertLink() { wrapSelection(prefix: "[", suffix: "](url)", placeholder: "text") }
+
+        @objc func meditorToggleBold(_ sender: Any?) { toggleBold() }
+        @objc func meditorToggleItalic(_ sender: Any?) { toggleItalic() }
+        @objc func meditorInsertLink(_ sender: Any?) { insertLink() }
+
         /// Compute the 0-based line index of the first visible character at
         /// the top of the editor's viewport. Uses cached line offsets for O(log n).
         func computeVisibleTopLine(textView: NSTextView) -> Int {
