@@ -105,6 +105,7 @@ private struct TabButton: View {
         .overlay(alignment: .bottom) {
             if isSelected {
                 Color.accentColor.frame(height: 2)
+                    .transition(.scale(scale: 0.5).combined(with: .opacity))
             }
         }
         .animation(.easeOut(duration: 0.15), value: isSelected)
