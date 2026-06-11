@@ -60,7 +60,7 @@ private struct TabButton: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: FileTypeConfiguration.shared.icon(for: tab.url.pathExtension))
-                .font(.system(size: 9.5))
+                .font(.system(size: 10))
                 .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
 
             Text(tab.name)
@@ -74,7 +74,7 @@ private struct TabButton: View {
                 if isHovered {
                     Button(action: onClose) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 7, weight: .bold))
+                            .font(.system(size: 8.5, weight: .bold))
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
@@ -85,7 +85,7 @@ private struct TabButton: View {
                 } else {
                     // Invisible placeholder to keep width stable
                     Image(systemName: "xmark")
-                        .font(.system(size: 7, weight: .bold))
+                        .font(.system(size: 8.5, weight: .bold))
                         .hidden()
                 }
             }

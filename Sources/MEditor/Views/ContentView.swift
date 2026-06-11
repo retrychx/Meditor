@@ -81,7 +81,7 @@ struct ContentView: View {
     private var welcomeScreen: some View {
         VStack(spacing: 14) {
             Image(systemName: "doc.text.magnifyingglass")
-                .font(.system(size: 36, weight: .light))
+                .font(.system(size: 32, weight: .light))
                 .foregroundStyle(.secondary)
             Text("MEditor")
                 .font(.system(size: 22, weight: .semibold))
