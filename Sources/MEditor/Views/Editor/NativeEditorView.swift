@@ -271,7 +271,8 @@ struct NativeEditorView: NSViewRepresentable {
                 let ns = textView.string as NSString
                 if range.location > 0 {
                     let prev = ns.character(at: range.location - 1)
-                    if CharacterSet.alphanumerics.contains(Unicode.Scalar(prev)!) {
+                    if let scalar = Unicode.Scalar(prev),
+                       CharacterSet.alphanumerics.contains(scalar) {
                         return true
                     }
                 }
