@@ -273,8 +273,11 @@
     var target = sourceAnchors[targetIndex];
     ignoreScrollEvent = true;
     var rect = target.getBoundingClientRect();
-    window.scrollTo({ top: window.scrollY + rect.top - 16, behavior: 'auto' });
-    setTimeout(function () { ignoreScrollEvent = false; }, 50);
+    var distance = Math.abs(rect.top);
+    // Smooth for small jumps (<800px), instant for large jumps to avoid sluggish feel.
+    var behavior = distance < 800 ? 'smooth' : 'auto';
+    window.scrollTo({ top: window.scrollY + rect.top - 16, behavior: behavior });
+    setTimeout(function () { ignoreScrollEvent = false; }, behavior === 'smooth' ? 150 : 50);
   }
 
   /** Return rendered HTML for export. Includes inlined CSS for portability. */
