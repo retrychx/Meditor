@@ -5,8 +5,8 @@ import SwiftUI
 /// break the void.
 struct DotGridBackground: View {
     var spacing: CGFloat = 20
-    var dotSize: CGFloat = 1.5
-    var opacity: Double = 0.35
+    var dotSize: CGFloat = 1.3
+    var opacity: Double = 0.22
 
     var body: some View {
         Canvas { context, size in
