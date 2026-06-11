@@ -8,6 +8,8 @@ struct WelcomeView: View {
     @State private var subtitleText = ""
     @State private var cursorVisible = true
     @State private var showButton = false
+    @State private var shimmerStart = UnitPoint(x: -1, y: 0.5)
+    @State private var shimmerEnd = UnitPoint(x: -0.5, y: 0.5)
 
     private let fullSubtitle = "A minimal Markdown editor for macOS"
 
@@ -15,18 +17,20 @@ struct WelcomeView: View {
         VStack(spacing: 20) {
             Spacer()
 
-            // Pixel-style title
+            // Pixel-style title with shimmer sweep
             Text("MEditor")
-                .font(.system(size: 42, weight: .black, design: .monospaced))
-                .tracking(4)
+                .font(.system(size: 56, weight: .black, design: .monospaced))
+                .tracking(6)
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [.accentColor, .accentColor.opacity(0.6)],
-                        startPoint: .leading, endPoint: .trailing
+                        colors: [.accentColor.opacity(0.7), .accentColor, .white, .accentColor, .accentColor.opacity(0.7)],
+                        startPoint: shimmerStart,
+                        endPoint: shimmerEnd
                     )
                 )
                 .opacity(titleVisible ? 1 : 0)
-                .offset(y: titleVisible ? 0 : 8)
+                .offset(y: titleVisible ? 0 : 10)
+                .shadow(color: .accentColor.opacity(0.3), radius: titleVisible ? 12 : 0, y: 4)
 
             // Typewriter subtitle
             HStack(spacing: 0) {
@@ -76,8 +80,14 @@ struct WelcomeView: View {
 
     private func startAnimations() {
         // 1. Title fades in
-        withAnimation(.easeOut(duration: 0.4).delay(0.1)) {
+        withAnimation(.easeOut(duration: 0.5).delay(0.1)) {
             titleVisible = true
+        }
+
+        // 2. Shimmer sweep (repeating)
+        withAnimation(.easeInOut(duration: 2.0).delay(0.6).repeatForever(autoreverses: false)) {
+            shimmerStart = UnitPoint(x: 1.5, y: 0.5)
+            shimmerEnd = UnitPoint(x: 2.0, y: 0.5)
         }
 
         // 2. Typewriter effect
