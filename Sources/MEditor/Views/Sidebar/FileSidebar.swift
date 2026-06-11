@@ -70,7 +70,7 @@ struct FileSidebar: View {
                     .font(.system(size: 11.5))
                 if !searchText.isEmpty {
                     Button(action: { searchText = "" }) {
-                        Image(systemName: "xmark.circle.fill")
+                        Image(systemName: "xmark.circle")
                             .foregroundStyle(.tertiary)
                             .font(.system(size: 10))
                     }
