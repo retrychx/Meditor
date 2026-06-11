@@ -42,7 +42,7 @@ struct EditorTabBar: View {
             .animation(.easeInOut(duration: 0.2), value: state.openTabs.map(\.id))
         }
         .frame(height: 26)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Color(nsColor: .textBackgroundColor))
     }
 }
 
@@ -103,7 +103,9 @@ private struct TabButton: View {
                 .animation(.easeOut(duration: 0.1), value: isHovered)
         )
         .overlay(alignment: .bottom) {
-            Rectangle().fill(Color.clear).frame(height: 0)
+            if isSelected {
+                Color.accentColor.frame(height: 2)
+            }
         }
         .animation(.easeOut(duration: 0.15), value: isSelected)
         .contentShape(Rectangle())
