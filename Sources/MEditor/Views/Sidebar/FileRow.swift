@@ -27,7 +27,7 @@ struct FileRow: View {
                     .truncationMode(.middle)
             }
         } icon: {
-            Image(systemName: item.isDirectory ? "folder.fill" : iconName)
+            Image(systemName: item.isDirectory ? "folder" : iconName)
                 .foregroundStyle(item.isDirectory ? .orange : .secondary)
                 .font(.system(size: 11))
         }
