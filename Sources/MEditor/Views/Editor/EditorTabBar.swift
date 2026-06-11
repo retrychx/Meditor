@@ -96,10 +96,19 @@ private struct TabButton: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 3)
         .frame(minWidth: 80, maxWidth: 160)
-        .background(isSelected ? Color(nsColor: .textBackgroundColor) : Color.clear)
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(isSelected ? Color(nsColor: .textBackgroundColor) : isHovered ? Color(nsColor: .textBackgroundColor).opacity(0.5) : Color.clear)
+                .animation(.easeOut(duration: 0.15), value: isSelected)
+                .animation(.easeOut(duration: 0.1), value: isHovered)
+        )
         .overlay(alignment: .bottom) {
-            if isSelected { Color.accentColor.frame(height: 2) }
+            if isSelected {
+                Color.accentColor.frame(height: 2)
+                    .transition(.scale(scale: 0.5).combined(with: .opacity))
+            }
         }
+        .animation(.easeOut(duration: 0.15), value: isSelected)
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
         .onTapGesture { state.selectTab(tab.id) }
