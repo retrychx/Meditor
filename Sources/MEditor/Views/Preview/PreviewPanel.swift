@@ -141,7 +141,7 @@ struct PreviewPanel: View {
 
     private var emptyState: some View {
         VStack(spacing: 8) {
-            Image(systemName: "eye")
+            Image(systemName: "eye.slash")
                 .font(.system(size: 24, weight: .light))
                 .foregroundStyle(.tertiary)
             Text(L("preview.empty"))

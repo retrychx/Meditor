@@ -17,7 +17,7 @@ struct EditorView: View {
             .equatable()
         } else {
             VStack(spacing: 8) {
-                Image(systemName: "doc.text")
+                Image(systemName: "pencil.line")
                     .font(.system(size: 28, weight: .light))
                     .foregroundStyle(.quaternary)
                 Text(L("editor.selectFile"))
