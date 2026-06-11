@@ -19,14 +19,14 @@ struct EditorView: View {
             VStack(spacing: 6) {
                 Text(L("editor.selectFile"))
                     .font(.system(size: 12))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                 HStack(spacing: 12) {
                     Text("⌘P quick open")
                     Text("·")
                     Text("⌘O open file")
                 }
                 .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(.quaternary)
+                .foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(DotGridBackground())

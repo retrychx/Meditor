@@ -140,9 +140,7 @@ struct PreviewPanel: View {
     }
 
     private var emptyState: some View {
-        Text(L("preview.empty"))
-            .font(.system(size: 12))
-            .foregroundStyle(.quaternary)
+        Color.clear
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(DotGridBackground())
     }
