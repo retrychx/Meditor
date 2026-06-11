@@ -79,29 +79,12 @@ struct ContentView: View {
     }
 
     private var welcomeScreen: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "doc.text.magnifyingglass")
-                .font(.system(size: 32, weight: .light))
-                .foregroundStyle(.secondary)
-            Text("MEditor")
-                .font(.system(size: 22, weight: .semibold))
-            Text(L("welcome.subtitle"))
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-            Button(action: openFolder) {
-                Text(L("menu.openFolder"))
-                    .font(.system(size: 13, weight: .medium))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
+        WelcomeView(onOpenFolder: openFolder)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(nsColor: .textBackgroundColor))
+            .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                handleDrop(providers)
             }
-            .buttonStyle(.borderedProminent)
-            .padding(.top, 6)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .textBackgroundColor))
-        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
-            handleDrop(providers)
-        }
     }
 
     private var mainLayout: some View {

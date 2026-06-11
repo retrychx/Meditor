@@ -87,6 +87,7 @@ extension LocalizationManager {
 
         // Welcome
         "welcome.subtitle": ("Markdown & HTML Editor", "Markdown & HTML 编辑器"),
+        "welcome.dropHint": ("Or drop a folder here", "或将文件夹拖放到此处"),
 
         // Alerts
         "alert.errorTitle": ("Error", "错误"),
