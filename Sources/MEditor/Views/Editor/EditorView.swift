@@ -18,7 +18,7 @@ struct EditorView: View {
         } else {
             VStack(spacing: 8) {
                 Image(systemName: "doc.text")
-                    .font(.system(size: 28, weight: .light))
+                    .font(.system(size: 32, weight: .light))
                     .foregroundStyle(.quaternary)
                 Text(L("editor.selectFile"))
                     .foregroundStyle(.tertiary)
