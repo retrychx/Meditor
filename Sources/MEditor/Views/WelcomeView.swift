@@ -1,52 +1,39 @@
 import SwiftUI
 
-/// Welcome screen with pixel-art styled title and typewriter animation.
+/// Welcome screen with shuffle/decode text animation on title.
 struct WelcomeView: View {
     let onOpenFolder: () -> Void
 
-    @State private var titleVisible = false
-    @State private var subtitleText = ""
-    @State private var cursorVisible = true
-    @State private var showButton = false
-    @State private var shimmerStart = UnitPoint(x: -1, y: 0.5)
-    @State private var shimmerEnd = UnitPoint(x: -0.5, y: 0.5)
+    @State private var displayedChars: [Character] = Array("MEditor")
+    @State private var locked: [Bool] = Array(repeating: false, count: 7)
+    @State private var animationDone = false
+    @State private var showContent = false
 
-    private let fullSubtitle = "A minimal Markdown editor for macOS"
+    private static let title = Array("MEditor")
+    private static let charset = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789#@&%")
+    private static let titleColor = Color(red: 0.29, green: 0.62, blue: 0.96) // #4A9EF5
 
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 24) {
             Spacer()
 
-            // Pixel-style title with shimmer sweep
-            Text("MEditor")
-                .font(.system(size: 56, weight: .black, design: .monospaced))
-                .tracking(6)
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [.accentColor.opacity(0.7), .accentColor, .white, .accentColor, .accentColor.opacity(0.7)],
-                        startPoint: shimmerStart,
-                        endPoint: shimmerEnd
-                    )
-                )
-                .opacity(titleVisible ? 1 : 0)
-                .offset(y: titleVisible ? 0 : 10)
-                .shadow(color: .accentColor.opacity(0.3), radius: titleVisible ? 12 : 0, y: 4)
-
-            // Typewriter subtitle
-            HStack(spacing: 0) {
-                Text(subtitleText)
-                    .font(.system(size: 14, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                Text("|")
-                    .font(.system(size: 14, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .opacity(cursorVisible ? 1 : 0)
+            // Shuffle title
+            HStack(spacing: 2) {
+                ForEach(0..<7, id: \.self) { i in
+                    Text(String(displayedChars[i]))
+                        .font(.system(size: 52, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Self.titleColor)
+                        .opacity(locked[i] ? 1.0 : 0.6)
+                }
             }
-            .frame(height: 20)
 
-            // Shortcut hints
-            if showButton {
-                VStack(spacing: 8) {
+            // Subtitle + button (appear after decode)
+            if showContent {
+                VStack(spacing: 16) {
+                    Text(L("welcome.subtitle"))
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+
                     Button(action: onOpenFolder) {
                         Label(L("menu.openFolder"), systemImage: "folder")
                             .font(.system(size: 13, weight: .medium))
@@ -54,61 +41,58 @@ struct WelcomeView: View {
                             .padding(.vertical, 8)
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(Self.titleColor)
 
                     Text("⌘⇧O")
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.tertiary)
                 }
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                .transition(.opacity.combined(with: .offset(y: 6)))
             }
 
             Spacer()
 
-            // Bottom hint
-            if showButton {
+            if showContent {
                 Text(L("welcome.dropHint"))
                     .font(.system(size: 11))
                     .foregroundStyle(.quaternary)
                     .padding(.bottom, 20)
-                    .transition(.opacity)
             }
         }
-        .onAppear {
-            startAnimations()
-        }
+        .onAppear { startShuffle() }
     }
 
-    private func startAnimations() {
-        // 1. Title fades in
-        withAnimation(.easeOut(duration: 0.5).delay(0.1)) {
-            titleVisible = true
+    private func startShuffle() {
+        guard !animationDone else {
+            // Already played once this session — show static
+            displayedChars = Self.title
+            locked = Array(repeating: true, count: 7)
+            showContent = true
+            return
         }
 
-        // 2. Shimmer sweep (repeating)
-        withAnimation(.easeInOut(duration: 2.0).delay(0.6).repeatForever(autoreverses: false)) {
-            shimmerStart = UnitPoint(x: 1.5, y: 0.5)
-            shimmerEnd = UnitPoint(x: 2.0, y: 0.5)
-        }
-
-        // 2. Typewriter effect
-        var charIndex = 0
-        Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { timer in
-            if charIndex < fullSubtitle.count {
-                let idx = fullSubtitle.index(fullSubtitle.startIndex, offsetBy: charIndex)
-                subtitleText += String(fullSubtitle[idx])
-                charIndex += 1
-            } else {
-                timer.invalidate()
-                // 3. Show button after typing finishes
-                withAnimation(.easeOut(duration: 0.3)) {
-                    showButton = true
-                }
+        // Shuffle phase: randomize all chars every 30ms
+        let shuffleTimer = Timer.scheduledTimer(withTimeInterval: 0.03, repeats: true) { timer in
+            for i in 0..<7 where !locked[i] {
+                displayedChars[i] = Self.charset.randomElement()!
             }
         }
 
-        // 3. Cursor blink
-        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
-            cursorVisible.toggle()
+        // Lock phase: lock one char every 80ms from left to right
+        for i in 0..<7 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15 + Double(i) * 0.08) {
+                locked[i] = true
+                displayedChars[i] = Self.title[i]
+
+                // All locked → stop and show content
+                if i == 6 {
+                    shuffleTimer.invalidate()
+                    animationDone = true
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        showContent = true
+                    }
+                }
+            }
         }
     }
 }
