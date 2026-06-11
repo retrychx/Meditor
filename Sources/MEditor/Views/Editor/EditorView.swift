@@ -15,8 +15,6 @@ struct EditorView: View {
                 theme: state.themeStore.current
             )
             .equatable()
-            .transition(.opacity.animation(.easeIn(duration: 0.12)))
-            .id(tab.id)
         } else {
             VStack(spacing: 8) {
                 Image(systemName: "doc.text")

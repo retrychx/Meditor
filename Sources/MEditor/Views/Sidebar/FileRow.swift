@@ -6,6 +6,8 @@ struct FileRow: View {
     let searchText: String
     let onAction: ((FileAction) -> Void)?
 
+    @State private var isHovered = false
+
     init(item: FileItem, isSelected: Bool = false, searchText: String = "", onAction: ((FileAction) -> Void)? = nil) {
         self.item = item
         self.isSelected = isSelected
@@ -37,8 +39,11 @@ struct FileRow: View {
         .contentShape(Rectangle())
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(isSelected ? Color.accentColor.opacity(0.16) : Color.clear)
+                .fill(isSelected ? Color.accentColor.opacity(0.16) : isHovered ? Color.primary.opacity(0.04) : Color.clear)
+                .animation(.easeOut(duration: 0.12), value: isSelected)
+                .animation(.easeOut(duration: 0.08), value: isHovered)
         )
+        .onHover { isHovered = $0 }
         .contextMenu {
             if item.isDirectory {
                 Button(L("menu.newFile")) {
