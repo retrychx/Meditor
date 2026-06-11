@@ -144,6 +144,7 @@ struct PreviewPanel: View {
             .font(.system(size: 12))
             .foregroundStyle(.quaternary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(DotGridBackground())
     }
 
     private var loadingOverlay: some View {
