@@ -104,7 +104,7 @@ struct FileSidebar: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     List(displayedTree, id: \.id) { item in
-                        FileRow(item: item, isSelected: item.id == state.selectedFileID, onAction: handleFileAction)
+                        FileRow(item: item, isSelected: item.id == state.selectedFileID, searchText: searchText, onAction: handleFileAction)
                             .help(item.url.path)
                             .contentShape(Rectangle())
                             .onTapGesture {
@@ -319,7 +319,7 @@ struct FileSidebar: View {
                         }
                     }
                 } label: {
-                    FileRow(item: item, isSelected: item.id == state.selectedFileID, onAction: handleFileAction)
+                    FileRow(item: item, isSelected: item.id == state.selectedFileID, searchText: searchText, onAction: handleFileAction)
                         .help(item.url.path)
                         .contentShape(Rectangle())
                         .onTapGesture {
@@ -335,7 +335,7 @@ struct FileSidebar: View {
             )
         } else {
             return AnyView(
-                FileRow(item: item, isSelected: item.id == state.selectedFileID, onAction: handleFileAction)
+                FileRow(item: item, isSelected: item.id == state.selectedFileID, searchText: searchText, onAction: handleFileAction)
                     .help(item.url.path)
                     .contentShape(Rectangle())
                     .onTapGesture {

@@ -3,20 +3,29 @@ import SwiftUI
 struct FileRow: View {
     let item: FileItem
     let isSelected: Bool
+    let searchText: String
     let onAction: ((FileAction) -> Void)?
 
-    init(item: FileItem, isSelected: Bool = false, onAction: ((FileAction) -> Void)? = nil) {
+    init(item: FileItem, isSelected: Bool = false, searchText: String = "", onAction: ((FileAction) -> Void)? = nil) {
         self.item = item
         self.isSelected = isSelected
+        self.searchText = searchText
         self.onAction = onAction
     }
 
     var body: some View {
         Label {
-            Text(item.name)
-                .font(.system(size: 12.5))
-                .lineLimit(1)
-                .truncationMode(.middle)
+            if searchText.isEmpty {
+                Text(item.name)
+                    .font(.system(size: 12.5))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } else {
+                highlightedName
+                    .font(.system(size: 12.5))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
         } icon: {
             Image(systemName: item.isDirectory ? "folder.fill" : iconName)
                 .foregroundStyle(item.isDirectory ? .orange : .secondary)
@@ -66,5 +75,18 @@ struct FileRow: View {
 
     private var fileColor: Color {
         FileTypeConfiguration.shared.color(for: item.fileExtension)
+    }
+
+    private var highlightedName: Text {
+        let name = item.name
+        let lower = name.lowercased()
+        let query = searchText.lowercased()
+        guard let range = lower.range(of: query) else {
+            return Text(name)
+        }
+        let before = String(name[name.startIndex..<range.lowerBound])
+        let match = String(name[range.lowerBound..<range.upperBound])
+        let after = String(name[range.upperBound...])
+        return Text(before) + Text(match).foregroundColor(.accentColor).bold() + Text(after)
     }
 }
