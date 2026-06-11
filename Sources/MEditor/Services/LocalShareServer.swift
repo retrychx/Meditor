@@ -274,7 +274,7 @@ final class LocalShareServer {
         <title>\(title) · MEditor Share</title>
         <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        html, body { background: #1a1a2e; color: #e0e0e0; }
+        html, body { background: #ffffff; color: #1d1d1f; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', sans-serif;
             font-size: 15px; line-height: 1.7;
@@ -282,24 +282,24 @@ final class LocalShareServer {
             padding: 24px clamp(18px, 3vw, 36px);
         }
         .nav { margin-bottom: 20px; font-size: 13px; }
-        .nav a { color: #7cb3ff; text-decoration: none; }
+        .nav a { color: #3b82f6; text-decoration: none; }
         .nav a:hover { text-decoration: underline; }
-        h1,h2,h3,h4,h5,h6 { color: #fff; margin-top: 28px; margin-bottom: 12px; font-weight: 600; }
-        h1 { font-size: 1.75em; border-bottom: 1px solid #333; padding-bottom: 10px; margin-top: 0; }
-        h2 { font-size: 1.3em; border-bottom: 1px solid #333; padding-bottom: 6px; }
+        h1,h2,h3,h4,h5,h6 { color: #1d1d1f; margin-top: 28px; margin-bottom: 12px; font-weight: 600; }
+        h1 { font-size: 1.75em; border-bottom: 1px solid #e5e5e5; padding-bottom: 10px; margin-top: 0; }
+        h2 { font-size: 1.3em; border-bottom: 1px solid #e5e5e5; padding-bottom: 6px; }
         p { margin-bottom: 16px; }
-        a { color: #7cb3ff; }
-        code { font-family: 'SF Mono', Menlo, monospace; font-size: 13px; padding: 2px 6px; border-radius: 4px; background: #2a2a3e; }
+        a { color: #3b82f6; }
+        code { font-family: 'SF Mono', Menlo, monospace; font-size: 13px; padding: 2px 6px; border-radius: 4px; background: #f3f4f6; }
         pre { margin-bottom: 16px; border-radius: 8px; overflow: hidden; }
-        pre code { background: none; padding: 16px; display: block; overflow-x: auto; border: 1px solid #333; border-radius: 8px; }
-        blockquote { margin: 0 0 16px; padding: 0 16px; color: #aaa; border-left: 4px solid #444; }
+        pre code { background: none; padding: 16px; display: block; overflow-x: auto; border: 1px solid #e5e5e5; border-radius: 8px; background: #f9fafb; }
+        blockquote { margin: 0 0 16px; padding: 0 16px; color: #6b7280; border-left: 4px solid #d1d5db; }
         ul, ol { padding-left: 2em; margin-bottom: 16px; }
         li { margin-bottom: 4px; }
         table { border-collapse: collapse; width: 100%; margin-bottom: 16px; }
-        th, td { border: 1px solid #333; padding: 8px 12px; text-align: left; }
-        th { background: #2a2a3e; font-weight: 600; }
+        th, td { border: 1px solid #e5e5e5; padding: 8px 12px; text-align: left; }
+        th { background: #f3f4f6; font-weight: 600; }
         img { max-width: 100%; border-radius: 6px; }
-        hr { height: 1px; border: none; background: #333; margin: 28px 0; }
+        hr { height: 1px; border: none; background: #e5e5e5; margin: 28px 0; }
         .hljs { background: #1e1e2e; }
         </style>
         </head>
