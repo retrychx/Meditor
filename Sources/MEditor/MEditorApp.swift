@@ -50,6 +50,15 @@ struct MEditorApp: App {
                 }
                 .keyboardShortcut("o", modifiers: .command)
 
+                Button("Close Project") {
+                    appState.rootURL = nil
+                    appState.openTabs.removeAll()
+                    appState.selectedTabID = nil
+                    appState.fileTree = []
+                    appState.previewContent = ""
+                    appState.previewMode = .empty
+                }
+
                 Divider()
 
                 Button(L("menu.newFile")) {
