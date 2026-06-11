@@ -80,7 +80,7 @@ struct ContentView: View {
 
     private var welcomeScreen: some View {
         VStack(spacing: 14) {
-            Image(systemName: "doc.text.magnifyingglass")
+            Image(systemName: "text.document")
                 .font(.system(size: 36, weight: .light))
                 .foregroundStyle(.secondary)
             Text("MEditor")
@@ -180,7 +180,7 @@ struct ContentView: View {
         Button {
             showSidebar.toggle()
         } label: {
-            Image(systemName: "sidebar.left")
+            Image(systemName: "sidebar.leading")
         }
         .help(showSidebar ? L("tooltip.hideSidebar") : L("tooltip.showSidebar"))
         .keyboardShortcut("b", modifiers: .command)
@@ -190,7 +190,7 @@ struct ContentView: View {
         Button {
             showPreview.toggle()
         } label: {
-            Image(systemName: "sidebar.right")
+            Image(systemName: "sidebar.trailing")
         }
         .help(showPreview ? L("tooltip.hidePreview") : L("tooltip.showPreview"))
         .keyboardShortcut("v", modifiers: [.command, .shift])
@@ -200,7 +200,7 @@ struct ContentView: View {
         Button {
             showEditor.toggle()
         } label: {
-            Image(systemName: "doc.text")
+            Image(systemName: "pencil.line")
         }
         .help(showEditor ? L("tooltip.hideEditor") : L("tooltip.showEditor"))
         .keyboardShortcut("m", modifiers: [.command, .shift])
@@ -219,7 +219,7 @@ struct ContentView: View {
                 server.start(preferredPort: AppSettings.shared.sharePort)
             }
         } label: {
-            Image(systemName: state.shareServer.isRunning ? "wifi" : "wifi.slash")
+            Image(systemName: state.shareServer.isRunning ? "antenna.radiowaves.left.and.right" : "antenna.radiowaves.left.and.right.slash")
         }
         .help(state.shareServer.isRunning ? L("share.stopWithURL", state.shareServer.shareURL) : L("share.viaLAN"))
         .popover(isPresented: Binding(

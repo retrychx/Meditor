@@ -20,8 +20,8 @@ final class FileTypeConfiguration {
     static let shared = FileTypeConfiguration()
 
     private var types: [FileTypeDescriptor] = [
-        .init(extensions: ["md", "markdown"], icon: "doc.text", color: Color(red: 0.38, green: 0.54, blue: 0.72), editorLanguage: .markdown, isPreviewSupported: true),
-        .init(extensions: ["html", "htm"], icon: "doc.richtext", color: Color(red: 0.68, green: 0.48, blue: 0.40), editorLanguage: .html, isPreviewSupported: true),
+        .init(extensions: ["md", "markdown"], icon: "doc.text.fill", color: Color(red: 0.38, green: 0.54, blue: 0.72), editorLanguage: .markdown, isPreviewSupported: true),
+        .init(extensions: ["html", "htm"], icon: "globe", color: Color(red: 0.68, green: 0.48, blue: 0.40), editorLanguage: .html, isPreviewSupported: true),
     ]
 
     private init() {}
@@ -56,7 +56,7 @@ final class FileTypeConfiguration {
 
     private let defaultDescriptor = FileTypeDescriptor(
         extensions: [],
-        icon: "doc",
+        icon: "doc.fill",
         color: .secondary,
         editorLanguage: nil
     )
