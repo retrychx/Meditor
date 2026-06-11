@@ -337,9 +337,11 @@ struct ContentView: View {
 
     private var statusBar: some View {
         HStack(spacing: 10) {
-            if let _ = state.selectedTab {
+            if let tab = state.selectedTab {
                 Text("Ln \(state.cursorLine), Col \(state.cursorColumn)")
                     .fixedSize()
+                Text("·")
+                Text("\(wordCount(tab.content)) words")
                 Text("·")
                 Text(state.currentFileSize)
                 Text("·")
@@ -352,6 +354,14 @@ struct ContentView: View {
         .padding(.horizontal, 12)
         .frame(height: 20)
         .background(Color(nsColor: .windowBackgroundColor).opacity(0.5))
+    }
+
+    private func wordCount(_ text: String) -> Int {
+        var count = 0
+        text.enumerateSubstrings(in: text.startIndex..., options: [.byWords, .substringNotRequired]) { _, _, _, _ in
+            count += 1
+        }
+        return count
     }
 
     // MARK: - Actions
