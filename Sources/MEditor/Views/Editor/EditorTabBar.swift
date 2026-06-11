@@ -103,10 +103,7 @@ private struct TabButton: View {
                 .animation(.easeOut(duration: 0.1), value: isHovered)
         )
         .overlay(alignment: .bottom) {
-            if isSelected {
-                Color.accentColor.frame(height: 2)
-                    .transition(.scale(scale: 0.5).combined(with: .opacity))
-            }
+            Rectangle().fill(Color.clear).frame(height: 0)
         }
         .animation(.easeOut(duration: 0.15), value: isSelected)
         .contentShape(Rectangle())
