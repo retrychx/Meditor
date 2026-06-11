@@ -45,7 +45,7 @@ struct NativeEditorView: NSViewRepresentable {
         // characters with the correct glyph widths and avoids the awkward
         // mid-line gaps that monospaced + CJK fallback produces.
         // Code spans / fenced blocks switch to monospaced via the highlighter.
-        textView.font = NSFont.systemFont(ofSize: 14)
+        textView.font = NSFont.systemFont(ofSize: CGFloat(AppSettings.shared.editorFontSize))
 
         // Comfortable line height + a touch of paragraph spacing for prose feel.
         let baseParagraph = NSMutableParagraphStyle()
