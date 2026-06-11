@@ -144,6 +144,10 @@ final class AppState {
     var pendingCloseTab: EditorTab?
     var showingCloseConfirmation = false
 
+    // Large file warning
+    var pendingLargeFile: FileItem?
+    var showingLargeFileWarning = false
+
     @ObservationIgnored
     var recentlyClosedURLs: [URL] = []
     static let recentlyClosedLimit = 16

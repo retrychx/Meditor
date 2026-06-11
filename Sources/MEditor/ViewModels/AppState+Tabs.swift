@@ -5,8 +5,25 @@ import os
 
 extension AppState {
 
+    /// Files larger than this are considered "large" — user gets a warning.
+    static let largeFileThreshold: Int64 = 1024 * 1024 // 1MB
+
     func openFile(_ item: FileItem) {
         guard !item.isDirectory else { return }
+
+        // Large file protection: warn before opening files > 1MB
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: item.url.path),
+           let size = attrs[.size] as? Int64,
+           size > Self.largeFileThreshold {
+            pendingLargeFile = item
+            showingLargeFileWarning = true
+            return
+        }
+
+        openFileUnchecked(item)
+    }
+
+    func openFileUnchecked(_ item: FileItem) {
         let sid = PerformanceTracer.begin("OpenFile", log: PerformanceTracer.fileOps)
 
         let needsDirectAccess = requiresDirectFileAccess(item.url)
