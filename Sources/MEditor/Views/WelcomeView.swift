@@ -23,7 +23,7 @@ struct WelcomeView: View {
         "M": [[1,0,0,0,1],[1,1,0,1,1],[1,0,1,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1]],
         "E": [[1,1,1,1,1],[1,0,0,0,0],[1,0,0,0,0],[1,1,1,1,0],[1,0,0,0,0],[1,0,0,0,0],[1,1,1,1,1]],
         "D": [[1,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,0]],
-        "I": [[1,1,1],[0,1,0],[0,1,0],[0,1,0],[0,1,0],[0,1,0],[1,1,1]],
+        "I": [[0,1,1,1,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,1,1,1,0]],
         "T": [[1,1,1,1,1],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0]],
         "O": [[0,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[0,1,1,1,0]],
         "R": [[1,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,0],[1,0,1,0,0],[1,0,0,1,0],[1,0,0,0,1]],
@@ -49,13 +49,28 @@ struct WelcomeView: View {
             .padding(.horizontal, 24)
             .padding(.vertical, 28)
             .background(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(Self.cardBg)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 20)
-                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                    )
-                    .shadow(color: Self.auroraBlue.opacity(0.12), radius: 24, y: 10)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(Self.cardBg)
+                    // Top highlight gradient (glass reflection)
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.08), Color.clear],
+                                startPoint: .top, endPoint: .center
+                            )
+                        )
+                    // Border
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.25), Color.white.opacity(0.05)],
+                                startPoint: .top, endPoint: .bottom
+                            ),
+                            lineWidth: 1
+                        )
+                }
+                .shadow(color: Color.black.opacity(0.3), radius: 16, y: 8)
             )
 
             // Typewriter subtitle
@@ -165,7 +180,6 @@ private struct PixelCharView: View {
 
     var body: some View {
         let bitmap = font[char] ?? randomBitmap()
-        let cols = bitmap.first?.count ?? 5
         Canvas { ctx, _ in
             for row in 0..<bitmap.count {
                 for col in 0..<bitmap[row].count {
@@ -181,7 +195,7 @@ private struct PixelCharView: View {
                 }
             }
         }
-        .frame(width: CGFloat(cols) * (px + gap) - gap, height: 7 * (px + gap) - gap)
+        .frame(width: 5 * (px + gap) - gap, height: 7 * (px + gap) - gap)
     }
 
     private func randomBitmap() -> [[Bool]] {
