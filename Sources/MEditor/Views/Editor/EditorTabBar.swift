@@ -10,6 +10,7 @@ struct EditorTabBar: View {
             HStack(spacing: 0) {
                 ForEach(state.openTabs) { tab in
                     TabButton(tab: tab, onClose: { state.closeTab(tab.id) })
+                        .opacity(draggedTabID == tab.id ? 0.5 : 1)
                         .onDrag {
                             draggedTabID = tab.id
                             return NSItemProvider(object: tab.id.uuidString as NSString)
@@ -38,6 +39,7 @@ struct EditorTabBar: View {
                         }
                 }
             }
+            .animation(.easeInOut(duration: 0.2), value: state.openTabs.map(\.id))
         }
         .frame(height: 26)
         .background(Color(nsColor: .windowBackgroundColor))
