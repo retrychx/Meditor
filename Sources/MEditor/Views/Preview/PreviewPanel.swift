@@ -140,13 +140,10 @@ struct PreviewPanel: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "eye")
-                .font(.system(size: 32, weight: .light))
-                .foregroundStyle(.tertiary)
-            Text(L("preview.empty"))
-                .foregroundStyle(.tertiary)
-                .font(.system(size: 12))
+        VStack(spacing: 4) {
+            Text("—")
+                .font(.system(size: 18, weight: .ultraLight))
+                .foregroundStyle(.quaternary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
