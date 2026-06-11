@@ -75,7 +75,7 @@ struct WelcomeView: View {
     }
 
     private func startAnimations() {
-        // Reset state (plays every time view appears)
+        // Reset state
         displayedChars = Self.title.map { _ in Self.charset.randomElement()! }
         locked = Array(repeating: false, count: 7)
         subtitleText = ""
@@ -115,6 +115,15 @@ struct WelcomeView: View {
                 timer.invalidate()
                 withAnimation(.easeOut(duration: 0.25)) {
                     showButton = true
+                }
+                // 3. Loop: wait 3s then replay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [self] in
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        showButton = false
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        startAnimations()
+                    }
                 }
             }
         }
