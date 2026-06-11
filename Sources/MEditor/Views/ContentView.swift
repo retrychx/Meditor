@@ -45,6 +45,17 @@ struct ContentView: View {
                 Text(L("alert.saveChangesMessage", tab.name))
             }
         }
+        .alert(L("alert.fileChanged"), isPresented: Binding(
+            get: { state.showingReloadPrompt },
+            set: { if !$0 { state.dismissReloadPrompt() } }
+        )) {
+            Button(L("alert.reload"), role: .none) { state.reloadExternallyModifiedTab() }
+            Button(L("alert.keepMine"), role: .cancel) { state.dismissReloadPrompt() }
+        } message: {
+            if let tab = state.externallyModifiedTab {
+                Text(L("alert.fileChangedMessage", tab.name))
+            }
+        }
     }
 
     private var welcomeScreen: some View {

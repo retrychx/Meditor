@@ -64,6 +64,7 @@ extension AppState {
         openTabs[idx].content = content
         openTabs[idx].contentRevision &+= 1
         openTabs[idx].awaitingInitialContent = false
+        recordModDate(for: openTabs[idx].url)
         if selectedTabID == tabID, openTabs[idx].language == .markdown {
             syncPreviewContent(from: openTabs[idx])
         }
