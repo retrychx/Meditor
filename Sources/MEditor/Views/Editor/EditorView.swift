@@ -16,13 +16,17 @@ struct EditorView: View {
             )
             .equatable()
         } else {
-            VStack(spacing: 8) {
-                Image(systemName: "doc.text")
-                    .font(.system(size: 32, weight: .light))
-                    .foregroundStyle(.quaternary)
+            VStack(spacing: 6) {
                 Text(L("editor.selectFile"))
-                    .foregroundStyle(.tertiary)
                     .font(.system(size: 12))
+                    .foregroundStyle(.tertiary)
+                HStack(spacing: 12) {
+                    Text("⌘P quick open")
+                    Text("·")
+                    Text("⌘O open file")
+                }
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.quaternary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
