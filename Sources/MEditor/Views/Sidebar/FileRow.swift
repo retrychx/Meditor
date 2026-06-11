@@ -24,7 +24,8 @@ struct FileRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 4)
-        .padding(.vertical, 2)
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
         .background(
             RoundedRectangle(cornerRadius: 6)
                 .fill(isSelected ? Color.accentColor.opacity(0.16) : Color.clear)
