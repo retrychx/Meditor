@@ -251,7 +251,69 @@ final class AppState {
         reloadFileTree()
         fileWatcher.startWatching(urls: [url]) { [weak self] in
             self?.scheduleWatchedTreeReload()
+            self?.checkExternalModifications()
         }
+    }
+
+    // MARK: - External modification detection
+
+    /// Tracks the last known modification date for each open tab's file.
+    @ObservationIgnored
+    private var knownModDates: [URL: Date] = [:]
+
+    /// Tab that was modified externally — shown in a reload alert.
+    var externallyModifiedTab: EditorTab?
+    var showingReloadPrompt = false
+
+    func recordModDate(for url: URL) {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        knownModDates[url] = attrs?[.modificationDate] as? Date
+    }
+
+    private func checkExternalModifications() {
+        for tab in openTabs where !tab.isModified {
+            let url = tab.url
+            guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+                  let diskDate = attrs[.modificationDate] as? Date else { continue }
+            let known = knownModDates[url]
+            if let known, diskDate > known {
+                knownModDates[url] = diskDate
+                externallyModifiedTab = tab
+                showingReloadPrompt = true
+                return // One at a time
+            } else if known == nil {
+                knownModDates[url] = diskDate
+            }
+        }
+    }
+
+    func reloadExternallyModifiedTab() {
+        guard let tab = externallyModifiedTab else { return }
+        let url = tab.url
+        let tabID = tab.id
+        showingReloadPrompt = false
+        externallyModifiedTab = nil
+        Task.detached(priority: .userInitiated) { [weak self, service = fileService] in
+            guard let content = try? service.readFile(at: url) else { return }
+            await MainActor.run {
+                guard let self, let idx = self.openTabs.firstIndex(where: { $0.id == tabID }) else { return }
+                self.openTabs[idx].content = content
+                self.openTabs[idx].isModified = false
+                self.recordModDate(for: url)
+                if self.selectedTabID == tabID {
+                    self.syncPreviewContent(from: self.openTabs[idx])
+                }
+            }
+        }
+    }
+
+    func dismissReloadPrompt() {
+        // User chose to keep their version — update known mod date to skip future prompts
+        if let tab = externallyModifiedTab {
+            recordModDate(for: tab.url)
+        }
+        showingReloadPrompt = false
+        externallyModifiedTab = nil
     }
 
     func reloadFileTree() {
