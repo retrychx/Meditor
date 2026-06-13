@@ -42,7 +42,7 @@ struct SettingsView: View {
             .padding(.top, 16)
             .padding(.horizontal, 10)
             .frame(width: 140)
-            .background(Color(nsColor: .windowBackgroundColor))
+            .background(Color(nsColor: .windowBackgroundColor), ignoresSafeAreaEdges: .top)
 
             // Divider
             Divider()
@@ -56,9 +56,26 @@ struct SettingsView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color(nsColor: .textBackgroundColor))
+            .background(Color(nsColor: .textBackgroundColor), ignoresSafeAreaEdges: .top)
         }
         .frame(width: 520, height: 340)
+        .onAppear { styleSettingsWindow() }
+    }
+
+    // MARK: - Window styling
+
+    private func styleSettingsWindow() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            guard let window = NSApp.windows.first(where: {
+                $0.title.localizedCaseInsensitiveContains("setting") ||
+                $0.title.localizedCaseInsensitiveContains("设置") ||
+                ($0.isVisible && $0 !== NSApp.windows.first(where: { $0.title == "MEditor" }))
+            }) else { return }
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = true
+            window.titlebarSeparatorStyle = .none
+            window.styleMask.insert(.fullSizeContentView)
+        }
     }
 
     // MARK: - General
