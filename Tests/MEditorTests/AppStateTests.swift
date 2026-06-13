@@ -56,6 +56,43 @@ class MockFileService: FileServiceProtocol {
     func writeFile(at url: URL, content: String) throws {
         setFile(url, content: content)
     }
+
+    func createFile(at url: URL, content: String) throws {
+        setFile(url, content: content)
+    }
+
+    func createDirectory(at url: URL) throws {}
+
+    func moveItem(from source: URL, to destination: URL) throws {
+        if let content = files[source] {
+            files[destination] = content
+            files.removeValue(forKey: source)
+        }
+    }
+
+    func removeItem(at url: URL) throws {
+        files.removeValue(forKey: url)
+    }
+
+    func fileExists(at url: URL) -> Bool {
+        // Check in-memory store first; fall back to real filesystem so
+        // session-restore tests that write to /tmp can resolve directories.
+        if files[url] != nil { return true }
+        return FileManager.default.fileExists(atPath: url.path)
+    }
+
+    func fileExists(at url: URL, isDirectory: inout Bool) -> Bool {
+        if files[url] != nil { isDirectory = false; return true }
+        var d: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &d)
+        isDirectory = d.boolValue
+        return exists
+    }
+
+    func attributes(at url: URL) -> [FileAttributeKey: Any]? {
+        if let content = files[url] { return [.size: Int64(content.utf8.count)] }
+        return try? FileManager.default.attributesOfItem(atPath: url.path)
+    }
 }
 
 final class MockFileWatcher: FileWatcherServiceProtocol {

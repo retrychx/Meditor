@@ -89,7 +89,14 @@ struct FileSidebar: View {
                 if searchText.isEmpty {
                     List {
                         ForEach(state.fileTree) { item in
-                            fileRow(item, depth: 0)
+                            SidebarTreeNode(
+                                item: item,
+                                searchText: searchText,
+                                expandedPaths: expandedPaths,
+                                onExpandedChange: handleExpandedChange,
+                                onAction: handleFileAction,
+                                onTap: { selectSidebarItem($0) }
+                            )
                         }
                     }
                 } else if displayedTree.isEmpty {
@@ -260,64 +267,16 @@ struct FileSidebar: View {
         state.selectFile(item)
     }
 
-    // MARK: - Recursive row renderer
+    // MARK: - Expanded paths
 
-    private func fileRow(_ item: FileItem, depth: Int) -> AnyView {
-        if item.isDirectory {
-            return AnyView(
-                DisclosureGroup(
-                    isExpanded: Binding(
-                        get: { expandedPaths.contains(item.url.path) },
-                        set: { expanded in
-                            if expanded {
-                                expandedPaths.insert(item.url.path)
-                                state.loadChildrenIfNeeded(for: item)
-                            } else {
-                                expandedPaths.remove(item.url.path)
-                            }
-                            persistExpandedPaths()
-                        }
-                    )
-                ) {
-                    if item.isLoadingChildren {
-                        HStack {
-                            ProgressView()
-                                .controlSize(.small)
-                            Spacer()
-                        }
-                        .padding(.vertical, 4)
-                    } else if let children = item.children {
-                        ForEach(children) { child in
-                            fileRow(child, depth: depth + 1)
-                        }
-                    }
-                } label: {
-                    FileRow(item: item, isSelected: item.id == state.selectedFileID, searchText: searchText, onAction: handleFileAction)
-                        .help(item.url.path)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            selectSidebarItem(item)
-                        }
-                }
-                .listRowSeparator(.hidden)
-                .animation(.spring(response: 0.25, dampingFraction: 0.85), value: expandedPaths)
-                .onAppear {
-                    if expandedPaths.contains(item.url.path) {
-                        state.loadChildrenIfNeeded(for: item)
-                    }
-                }
-            )
+    private func handleExpandedChange(_ item: FileItem, _ expanded: Bool) {
+        if expanded {
+            expandedPaths.insert(item.url.path)
+            state.loadChildrenIfNeeded(for: item)
         } else {
-            return AnyView(
-                FileRow(item: item, isSelected: item.id == state.selectedFileID, searchText: searchText, onAction: handleFileAction)
-                    .help(item.url.path)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        selectSidebarItem(item)
-                    }
-                    .listRowSeparator(.hidden)
-            )
+            expandedPaths.remove(item.url.path)
         }
+        persistExpandedPaths()
     }
 
     private func persistExpandedPaths() {

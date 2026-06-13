@@ -44,7 +44,7 @@ final class AppState {
     @ObservationIgnored
     private var sessionPersistScheduled = false
 
-    private func scheduleSessionPersist() {
+    func scheduleSessionPersist() {
         guard !sessionPersistScheduled else { return }
         sessionPersistScheduled = true
         DispatchQueue.main.async { [weak self] in

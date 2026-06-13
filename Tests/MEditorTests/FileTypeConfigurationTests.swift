@@ -60,7 +60,7 @@ final class FileTypeConfigurationTests: XCTestCase {
     }
 
     func test_icon_forHTML() {
-        XCTAssertEqual(FileTypeConfiguration.shared.icon(for: "html"), "doc.richtext")
+        XCTAssertEqual(FileTypeConfiguration.shared.icon(for: "html"), "globe")
     }
 
     func test_supportedPreviewExtensions() {

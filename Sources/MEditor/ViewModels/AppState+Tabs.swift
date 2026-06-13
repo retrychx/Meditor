@@ -76,14 +76,14 @@ extension AppState {
     }
 
     func applyLoadedContent(tabID: UUID, content: String) {
-        guard let idx = openTabs.firstIndex(where: { $0.id == tabID }) else { return }
-        guard openTabs[idx].awaitingInitialContent else { return }
-        openTabs[idx].content = content
-        openTabs[idx].contentRevision &+= 1
-        openTabs[idx].awaitingInitialContent = false
-        recordModDate(for: openTabs[idx].url)
-        if selectedTabID == tabID, openTabs[idx].language == .markdown {
-            syncPreviewContent(from: openTabs[idx])
+        guard let tab = openTabs.first(where: { $0.id == tabID }) else { return }
+        guard tab.awaitingInitialContent else { return }
+        tab.content = content
+        tab.contentRevision &+= 1
+        tab.awaitingInitialContent = false
+        recordModDate(for: tab.url)
+        if selectedTabID == tabID, tab.language == .markdown {
+            syncPreviewContent(from: tab)
         }
     }
 
@@ -173,13 +173,18 @@ extension AppState {
     }
 
     func updateTabContent(_ tabID: UUID, content: String) {
-        guard let idx = openTabs.firstIndex(where: { $0.id == tabID }) else { return }
-        openTabs[idx].content = content
-        openTabs[idx].contentRevision &+= 1
-        openTabs[idx].isModified = true
-        openTabs[idx].awaitingInitialContent = false
+        guard let tab = openTabs.first(where: { $0.id == tabID }) else { return }
+        // Mutate the class reference directly. `openTabs` array value does NOT
+        // change, so TabButton / EditorTabBar avoid spurious re-renders.
+        tab.content = content
+        tab.contentRevision &+= 1
+        tab.isModified = true
+        tab.awaitingInitialContent = false
+        // openTabs.didSet no longer fires for content changes, so trigger
+        // session persist explicitly (content mutations should be saved).
+        scheduleSessionPersist()
         if selectedTabID == tabID {
-            syncPreviewContent(from: openTabs[idx])
+            syncPreviewContent(from: tab)
         }
     }
 
@@ -187,11 +192,9 @@ extension AppState {
         guard tab.isModified else { return }
         do {
             try fileService.writeFile(at: tab.url, content: tab.content)
-            if let idx = openTabs.firstIndex(where: { $0.id == tab.id }) {
-                openTabs[idx].isModified = false
-                if tab.id == selectedTabID {
-                    syncPreviewContent(from: openTabs[idx])
-                }
+            tab.isModified = false  // mutate class reference directly
+            if tab.id == selectedTabID {
+                syncPreviewContent(from: tab)
             }
         } catch {
             report(.fileWrite(tab.url, underlying: error), logger: AppLog.file)
