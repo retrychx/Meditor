@@ -186,11 +186,19 @@ final class TemplateStore: TemplateStoreProtocol {
     }
 
     private static var htmlDocTemplate: String {
-        guard let url = Bundle.main.url(forResource: "Templates/doc-template", withExtension: "html"),
-              let content = try? String(contentsOf: url, encoding: .utf8) else {
-            return "<!DOCTYPE html>\n<html>\n<head><title>Document</title></head>\n<body>\n<h1>Title</h1>\n</body>\n</html>"
+        // Try multiple paths: SPM resource bundle (debug) + packaged .app
+        let mainURL = Bundle.main.bundleURL
+        let candidates = [
+            mainURL.appendingPathComponent("MEditor_MEditor.bundle/Resources/Templates/doc-template.html"),
+            mainURL.appendingPathComponent("Contents/Resources/Templates/doc-template.html"),
+            mainURL.deletingLastPathComponent().appendingPathComponent("MEditor_MEditor.bundle/Resources/Templates/doc-template.html"),
+        ]
+        for url in candidates {
+            if let content = try? String(contentsOf: url, encoding: .utf8) {
+                return content
+            }
         }
-        return content
+        return "<!DOCTYPE html>\n<html>\n<head><title>Document</title></head>\n<body>\n<h1>Title</h1>\n</body>\n</html>"
     }
 
     private static var meetingTemplate: String { """

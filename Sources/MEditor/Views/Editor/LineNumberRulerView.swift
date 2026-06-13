@@ -32,7 +32,7 @@ final class LineNumberRulerView: NSRulerView {
         guard let textView, let layoutManager = textView.layoutManager,
               let textContainer = textView.textContainer else { return }
 
-        let visibleRect = scrollView!.contentView.bounds
+        let visibleRect = scrollView?.contentView.bounds ?? .zero
         let visibleGlyphs = layoutManager.glyphRange(forBoundingRect: visibleRect, in: textContainer)
         let visibleChars = layoutManager.characterRange(forGlyphRange: visibleGlyphs, actualGlyphRange: nil)
 
