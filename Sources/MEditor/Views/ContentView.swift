@@ -133,9 +133,19 @@ struct ContentView: View {
                 }
 
                 VStack(spacing: 0) {
-                    if !state.openTabs.isEmpty {
-                        EditorTabBar()
+                    // Tab bar + inline action buttons (replaces NSToolbar)
+                    ZStack(alignment: .trailing) {
+                        if !state.openTabs.isEmpty {
+                            EditorTabBar()
+                        } else {
+                            // No tabs: minimal chrome bar for action buttons
+                            theme.chromeBackground
+                                .frame(height: 30)
+                                .overlay(alignment: .bottom) { theme.separator.frame(height: 1) }
+                        }
+                        editorActionButtons
                     }
+                    .background(theme.chromeBackground, ignoresSafeAreaEdges: .top)
                     HStack(spacing: 0) {
                         if showEditor {
                             editorColumn
@@ -167,44 +177,45 @@ struct ContentView: View {
             statusBar
         }
         .background(theme.editorBackground)
-        .toolbar {
-            ToolbarItemGroup(placement: .navigation) {
-                sidebarToggleBtn
-            }
-            ToolbarItemGroup(placement: .primaryAction) {
-                shareButton
-                exportMenu
-                themeMenu
-                editorToggleBtn
-                previewToggleBtn
-            }
-        }
     }
 
     private var sidebarColumn: some View {
         VStack(spacing: 0) {
-            // Project root name header
-            if let rootURL = state.rootURL {
-                HStack(spacing: 6) {
-                    Image(systemName: "folder.fill")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.orange.opacity(0.75))
-                    Text(rootURL.lastPathComponent.uppercased())
-                        .font(.system(size: 10, weight: .semibold, design: .default))
-                        .foregroundStyle(.secondary)
-                        .kerning(0.5)
-                        .lineLimit(1)
-                    Spacer()
+            // Sidebar header — traffic light clearance on left, toggle on right
+            HStack(spacing: 0) {
+                // Reserve space for traffic lights (red/yellow/green ~76pt)
+                Color.clear.frame(width: 76)
+
+                if let rootURL = state.rootURL {
+                    HStack(spacing: 5) {
+                        Image(systemName: "folder.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.orange.opacity(0.75))
+                        Text(rootURL.lastPathComponent.uppercased())
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .kerning(0.4)
+                            .lineLimit(1)
+                    }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .overlay(alignment: .bottom) {
-                    state.themeStore.current.separator.frame(height: 1)
+
+                Spacer()
+
+                // Sidebar hide button
+                ChromeButton(systemName: "sidebar.left", help: L("tooltip.hideSidebar")) {
+                    showSidebar = false
                 }
+                .keyboardShortcut("b", modifiers: .command)
+                .padding(.trailing, 6)
             }
+            .frame(height: 38)
+            .overlay(alignment: .bottom) {
+                state.themeStore.current.separator.frame(height: 1)
+            }
+
             FileSidebar()
         }
-        .background(state.themeStore.current.chromeBackground)
+        .background(state.themeStore.current.chromeBackground, ignoresSafeAreaEdges: .top)
     }
 
     private var editorColumn: some View {
@@ -217,99 +228,100 @@ struct ContentView: View {
             .background(state.themeStore.current.editorBackground)
     }
 
-    private var sidebarToggleBtn: some View {
-        Button {
-            showSidebar.toggle()
-        } label: {
-            Image(systemName: "sidebar.left")
+    // MARK: - Inline action buttons (replaces NSToolbar)
+
+    private var editorActionButtons: some View {
+        HStack(spacing: 2) {
+            // Show sidebar toggle when sidebar is hidden
+            if !showSidebar {
+                ChromeButton(
+                    systemName: "sidebar.left",
+                    help: L("tooltip.showSidebar"),
+                    isActive: false
+                ) { showSidebar = true }
+                .keyboardShortcut("b", modifiers: .command)
+
+                Divider().frame(height: 14).padding(.horizontal, 2)
+            }
+
+            // Share
+            ChromeButton(
+                systemName: state.shareServer.isRunning ? "wifi" : "wifi.slash",
+                help: state.shareServer.isRunning ? L("share.stopWithURL", state.shareServer.shareURL) : L("share.viaLAN"),
+                isActive: state.shareServer.isRunning
+            ) {
+                if state.shareServer.isRunning {
+                    state.shareServer.stop()
+                } else {
+                    state.shareServer.start(rootURL: state.rootURL, openTabs: state.openTabs, preferredPort: AppSettings.shared.sharePort)
+                }
+            }
+            .popover(isPresented: Binding(
+                get: { state.shareServer.isRunning && showSharePopover },
+                set: { showSharePopover = $0 }
+            )) {
+                SharePopoverContent(server: state.shareServer, selectedTab: state.selectedTab) {
+                    state.shareServer.stop(); showSharePopover = false
+                }
+            }
+            .onChange(of: state.shareServer.isRunning) { _, running in showSharePopover = running }
+
+            // Export
+            ChromeMenuButton(
+                systemName: "square.and.arrow.up",
+                help: L("export.title"),
+                isDisabled: !state.previewExporter.isExportAvailable,
+                items: exportItems
+            )
+
+            // Theme
+            ChromeMenuButton(
+                systemName: "paintpalette",
+                help: L("theme.title"),
+                items: PreviewTheme.allCases.map { t in
+                    (
+                        title: (state.themeStore.current == t ? "✓ " : "  ") + t.displayName,
+                        action: { state.themeStore.current = t }
+                    )
+                }
+            )
+
+            Divider().frame(height: 14).padding(.horizontal, 2)
+
+            // Editor / Preview toggles
+            ChromeButton(
+                systemName: "doc.text",
+                help: showEditor ? L("tooltip.hideEditor") : L("tooltip.showEditor"),
+                isActive: showEditor
+            ) { showEditor.toggle() }
+            .keyboardShortcut("m", modifiers: [.command, .shift])
+
+            ChromeButton(
+                systemName: "sidebar.right",
+                help: showPreview ? L("tooltip.hidePreview") : L("tooltip.showPreview"),
+                isActive: showPreview
+            ) { showPreview.toggle() }
+            .keyboardShortcut("v", modifiers: [.command, .shift])
         }
-        .help(showSidebar ? L("tooltip.hideSidebar") : L("tooltip.showSidebar"))
-        .keyboardShortcut("b", modifiers: .command)
+        .padding(.trailing, 8)
     }
 
-    private var previewToggleBtn: some View {
-        Button {
-            showPreview.toggle()
-        } label: {
-            Image(systemName: "sidebar.right")
-        }
-        .help(showPreview ? L("tooltip.hidePreview") : L("tooltip.showPreview"))
-        .keyboardShortcut("v", modifiers: [.command, .shift])
-    }
-
-    private var editorToggleBtn: some View {
-        Button {
-            showEditor.toggle()
-        } label: {
-            Image(systemName: "doc.text")
-        }
-        .help(showEditor ? L("tooltip.hideEditor") : L("tooltip.showEditor"))
-        .keyboardShortcut("m", modifiers: [.command, .shift])
+    private var exportItems: [(title: String, action: () -> Void)] {
+        let isHTML = state.previewMode == .html
+        return isHTML
+            ? [
+                (L("export.markdown"), { performExport(.markdown) }),
+                (L("export.pdf"),      { performExport(.pdf) }),
+                (L("export.image"),    { performExport(.image) })
+              ]
+            : [
+                (L("export.html"),  { performExport(.html) }),
+                (L("export.pdf"),   { performExport(.pdf) }),
+                (L("export.image"), { performExport(.image) })
+              ]
     }
 
     @State private var showSharePopover = false
-
-    private var shareButton: some View {
-        Button {
-            let server = state.shareServer
-            if server.isRunning {
-                server.stop()
-            } else {
-                server.start(rootURL: state.rootURL, openTabs: state.openTabs, preferredPort: AppSettings.shared.sharePort)
-            }
-        } label: {
-            Image(systemName: state.shareServer.isRunning ? "wifi" : "wifi.slash")
-        }
-        .help(state.shareServer.isRunning ? L("share.stopWithURL", state.shareServer.shareURL) : L("share.viaLAN"))
-        .popover(isPresented: Binding(
-            get: { state.shareServer.isRunning && showSharePopover },
-            set: { showSharePopover = $0 }
-        )) {
-            SharePopoverContent(server: state.shareServer, selectedTab: state.selectedTab) {
-                state.shareServer.stop()
-                showSharePopover = false
-            }
-        }
-        .onChange(of: state.shareServer.isRunning) { _, isRunning in
-            showSharePopover = isRunning
-        }
-    }
-
-    private var themeMenu: some View {
-        ToolbarIconMenuButton(
-            systemName: "paintpalette",
-            size: 13,
-            items: PreviewTheme.allCases.enumerated().map { idx, theme in
-                (title: (state.themeStore.current == theme ? "✓ " : "  ") + theme.displayName,
-                 action: { state.themeStore.current = theme })
-            }
-        )
-        .frame(width: 24, height: 22)
-        .help(L("theme.title"))
-    }
-
-    private var exportMenu: some View {
-        let isHTML = state.previewMode == .html
-        let items: [(String, () -> Void)] = isHTML
-            ? [
-                (L("export.markdown"), { performExport(.markdown) }),
-                (L("export.pdf"), { performExport(.pdf) }),
-                (L("export.image"), { performExport(.image) })
-            ]
-            : [
-                (L("export.html"), { performExport(.html) }),
-                (L("export.pdf"), { performExport(.pdf) }),
-                (L("export.image"), { performExport(.image) })
-            ]
-        return ToolbarIconMenuButton(
-            systemName: "square.and.arrow.up",
-            size: 13,
-            items: items,
-            isDisabled: !state.previewExporter.isExportAvailable
-        )
-        .frame(width: 24, height: 22)
-        .help(L("export.title"))
-    }
 
     private func performExport(_ format: PreviewExporter.ExportFormat) {
         let suggestedName = state.selectedTab?.url.deletingPathExtension().lastPathComponent ?? "Untitled"
