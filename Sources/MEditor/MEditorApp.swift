@@ -11,10 +11,13 @@ struct MEditorApp: App {
                 .frame(minWidth: 900, minHeight: 500)
                 .onAppear {
                     NSWindow.allowsAutomaticWindowTabbing = false
-                    // Remove toolbar bottom border
                     if let window = NSApp.windows.first {
                         window.setFrameAutosaveName("MEditorMainWindow")
+                        // Immersive title bar: content extends under the toolbar
+                        window.titleVisibility = .hidden
+                        window.titlebarAppearsTransparent = true
                         window.titlebarSeparatorStyle = .none
+                        window.styleMask.insert(.fullSizeContentView)
                     }
                     // Pre-warm a WKWebView so first file open renders instantly.
                     WebViewPool.shared.warmUp()
@@ -38,7 +41,7 @@ struct MEditorApp: App {
             SettingsView()
         }
         .windowStyle(.titleBar)
-        .windowToolbarStyle(.unifiedCompact)
+        .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button(L("menu.openFolder")) {

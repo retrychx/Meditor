@@ -161,6 +161,8 @@ struct ContentView: View {
 
             statusBar
         }
+        // fullSizeContentView: extend under toolbar but respect safe area
+        .ignoresSafeArea(edges: .top)
         .background(theme.editorBackground)
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
