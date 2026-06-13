@@ -55,9 +55,8 @@ struct MEditorApp: App {
                     appState.rootURL = nil
                     appState.openTabs.removeAll()
                     appState.selectedTabID = nil
-                    appState.fileTree = []
-                    appState.previewContent = ""
-                    appState.previewMode = .empty
+                    appState.fileTreeManager.clear()
+                    appState.clearPreview()
                 }
 
                 Divider()
