@@ -13,12 +13,16 @@ struct ChromeButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
+                .symbolRenderingMode(.hierarchical)
                 .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(isActive ? Color.accentColor : Color.secondary.opacity(isHovered ? 1 : 0.75))
+                .foregroundStyle(isActive ? Color.accentColor : Color.secondary.opacity(isHovered ? 1 : 0.7))
                 .frame(width: 28, height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(isHovered ? Color.primary.opacity(0.07) : Color.clear)
+                        .fill(isActive
+                            ? Color.accentColor.opacity(0.1)
+                            : isHovered ? Color.primary.opacity(0.07) : Color.clear
+                        )
                 )
         }
         .buttonStyle(.plain)
@@ -44,8 +48,9 @@ struct ChromeMenuButton: View {
             }
         } label: {
             Image(systemName: systemName)
+                .symbolRenderingMode(.hierarchical)
                 .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(Color.secondary.opacity(isHovered ? 1 : 0.75))
+                .foregroundStyle(Color.secondary.opacity(isHovered ? 1 : 0.7))
                 .frame(width: 28, height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: 5, style: .continuous)

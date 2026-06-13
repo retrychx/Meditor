@@ -63,26 +63,29 @@ struct FileSidebar: View {
             // Search bar
             HStack(spacing: 5) {
                 Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.tertiary)
-                    .font(.system(size: 10.5))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11))
                 TextField(L("sidebar.search"), text: $searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
                 if !searchText.isEmpty {
                     Button { searchText = "" } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.tertiary)
-                            .font(.system(size: 11))
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12))
                     }
                     .buttonStyle(.plain)
                     .transition(.scale.combined(with: .opacity))
                 }
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.primary.opacity(0.07))
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(Color.primary.opacity(0.07), lineWidth: 0.5)
             )
             .padding(.horizontal, 8)
             .padding(.top, 8)
