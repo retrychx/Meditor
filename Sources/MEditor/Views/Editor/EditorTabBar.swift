@@ -7,10 +7,11 @@ struct EditorTabBar: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
+            HStack(spacing: 1) {
                 ForEach(state.openTabs) { tab in
                     TabButton(tab: tab, onClose: { state.closeTab(tab.id) })
-                        .opacity(draggedTabID == tab.id ? 0.5 : 1)
+                        .opacity(draggedTabID == tab.id ? 0.45 : 1)
+                        .animation(DS.Motion.fast, value: draggedTabID)
                         .onDrag {
                             draggedTabID = tab.id
                             return NSItemProvider(object: tab.id.uuidString as NSString)
@@ -39,10 +40,14 @@ struct EditorTabBar: View {
                         }
                 }
             }
-            .animation(.easeInOut(duration: 0.2), value: state.openTabs.map(\.id))
+            .padding(.horizontal, 4)
+            .animation(DS.Motion.standard, value: state.openTabs.map(\.id))
         }
-        .frame(height: 26)
-        .background(Color(nsColor: .textBackgroundColor))
+        .frame(height: 34)
+        .background(DS.Color.chromeBg)
+        .overlay(alignment: .bottom) {
+            DS.Color.divider.frame(height: 1)
+        }
     }
 }
 
@@ -58,61 +63,87 @@ private struct TabButton: View {
     var isSelected: Bool { tab.id == state.selectedTabID }
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 5) {
+            // File type icon
             Image(systemName: FileTypeConfiguration.shared.icon(for: tab.url.pathExtension))
-                .font(.system(size: 10))
-                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                .font(.system(size: 10.5, weight: .regular))
+                .foregroundStyle(
+                    isSelected
+                        ? AnyShapeStyle(Color.accentColor)
+                        : AnyShapeStyle(Color.secondary.opacity(0.7))
+                )
+                .animation(DS.Motion.fast, value: isSelected)
 
+            // File name
             Text(tab.name)
-                .font(.system(size: 11, weight: isSelected ? .medium : .regular))
-                .foregroundStyle(isSelected ? .primary : .secondary)
+                .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                .foregroundStyle(isSelected ? Color.primary : Color.secondary.opacity(0.75))
                 .lineLimit(1)
-                .truncationMode(.tail)
+                .truncationMode(.middle)
+                .animation(DS.Motion.fast, value: isSelected)
 
-            // Close / modified indicator area (fixed width to prevent layout shift)
+            // Close / dot indicator (fixed-width slot)
             ZStack {
-                if isHovered {
+                if isHovered || isSelected {
                     Button(action: onClose) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 8.5, weight: .bold))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(Color.secondary)
                     }
                     .buttonStyle(.plain)
+                    .transition(.scale(scale: 0.6).combined(with: .opacity))
                 } else if tab.isModified {
                     Circle()
-                        .fill(Color.orange)
-                        .frame(width: 5, height: 5)
+                        .fill(Color.orange.opacity(0.85))
+                        .frame(width: 5.5, height: 5.5)
                         .transition(.scale.combined(with: .opacity))
                 } else {
-                    // Invisible placeholder to keep width stable
+                    // Placeholder — keeps layout stable
                     Image(systemName: "xmark")
-                        .font(.system(size: 8.5, weight: .bold))
+                        .font(.system(size: 8, weight: .bold))
                         .hidden()
                 }
             }
-            .frame(width: 12, height: 12)
-            .animation(.easeOut(duration: 0.2), value: tab.isModified)
+            .frame(width: 14, height: 14)
+            .animation(DS.Motion.fast, value: isHovered)
+            .animation(DS.Motion.standard, value: tab.isModified)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 3)
-        .frame(minWidth: 80, maxWidth: 160)
-        .background(
-            RoundedRectangle(cornerRadius: 4)
-                .fill(isSelected ? Color(nsColor: .textBackgroundColor) : isHovered ? Color(nsColor: .textBackgroundColor).opacity(0.5) : Color.clear)
-                .animation(.easeOut(duration: 0.15), value: isSelected)
-                .animation(.easeOut(duration: 0.1), value: isHovered)
-        )
-        .overlay(alignment: .bottom) {
-            if isSelected {
-                Color.accentColor.frame(height: 2)
-                    .transition(.scale(scale: 0.5).combined(with: .opacity))
-            }
-        }
-        .animation(.easeOut(duration: 0.15), value: isSelected)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 0)
+        .frame(minWidth: 88, maxWidth: 168, maxHeight: .infinity)
+        .background(tabBackground)
+        .overlay(alignment: .bottom) { activeUnderline }
+        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.xs, style: .continuous))
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
         .onTapGesture { state.selectTab(tab.id) }
         .help(tab.url.path)
+    }
+
+    @ViewBuilder
+    private var tabBackground: some View {
+        RoundedRectangle(cornerRadius: DS.Radius.xs, style: .continuous)
+            .fill(
+                isSelected
+                    ? DS.Color.editorBg
+                    : isHovered
+                        ? Color.primary.opacity(0.04)
+                        : Color.clear
+            )
+            .animation(DS.Motion.fast, value: isSelected)
+            .animation(DS.Motion.micro, value: isHovered)
+    }
+
+    @ViewBuilder
+    private var activeUnderline: some View {
+        if isSelected {
+            Color.accentColor
+                .frame(height: 2)
+                .clipShape(Capsule())
+                .padding(.horizontal, 10)
+                .transition(.scale.combined(with: .opacity))
+                .animation(DS.Motion.springFast, value: isSelected)
+        }
     }
 }
 
@@ -123,22 +154,16 @@ struct TabDropDelegate: DropDelegate {
     @Binding var draggedTabID: UUID?
     let state: AppState
 
-    func performDrop(info: DropInfo) -> Bool {
-        draggedTabID = nil
-        return true
-    }
+    func performDrop(info: DropInfo) -> Bool { draggedTabID = nil; return true }
 
     func dropEntered(info: DropInfo) {
         guard let draggedID = draggedTabID,
               draggedID != tab.id,
-              let sourceIndex = state.openTabs.firstIndex(where: { $0.id == draggedID }),
-              let destIndex = state.openTabs.firstIndex(where: { $0.id == tab.id }) else { return }
-
-        state.moveTab(from: sourceIndex, to: destIndex)
+              let src = state.openTabs.firstIndex(where: { $0.id == draggedID }),
+              let dst = state.openTabs.firstIndex(where: { $0.id == tab.id }) else { return }
+        state.moveTab(from: src, to: dst)
         draggedTabID = tab.id
     }
 
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
-    }
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
 }
