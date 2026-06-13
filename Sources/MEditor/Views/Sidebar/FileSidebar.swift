@@ -59,35 +59,37 @@ struct FileSidebar: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Search bar
+        let theme = state.themeStore.current
+        return VStack(spacing: 0) {
+            // Craft-style search bar — inset, subtle
             HStack(spacing: 5) {
                 Image(systemName: "magnifyingglass")
                     .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(theme.craftSecondary)
                     .font(.system(size: 11))
-                TextField(L("sidebar.search"), text: $searchText)
+                TextField("Search", text: $searchText)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 12))
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(theme.craftPrimary)
                 if !searchText.isEmpty {
                     Button { searchText = "" } label: {
                         Image(systemName: "xmark.circle.fill")
                             .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(.secondary)
-                            .font(.system(size: 12))
+                            .foregroundStyle(theme.craftSecondary)
+                            .font(.system(size: 13))
                     }
                     .buttonStyle(.plain)
                     .transition(.scale.combined(with: .opacity))
                 }
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 9)
             .padding(.vertical, 6)
             .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(Color.primary.opacity(0.08))
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(theme.craftHover.opacity(1.5))
             )
             .padding(.horizontal, 8)
-            .padding(.top, 8)
+            .padding(.top, 6)
             .padding(.bottom, 4)
 
             Group {
