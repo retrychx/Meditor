@@ -123,54 +123,58 @@ struct ContentView: View {
     private var mainLayout: some View {
         let theme = state.themeStore.current
         return VStack(spacing: 0) {
+            // ── Unified top bar (ONE row, full window width) ──
+            // Left section matches sidebar width; right section = tabs + actions.
+            // This is the only chrome row — no separate sidebar header.
+            HStack(spacing: 0) {
+                if showSidebar {
+                    // Sidebar portion of the top bar
+                    sidebarTopBar
+                        .frame(width: sidebarWidth)
+                    // Hairline divider between sidebar and tab sections
+                    theme.separator.frame(width: 1)
+                }
+                // Tab bar + actions (right portion)
+                ZStack(alignment: .trailing) {
+                    if !state.openTabs.isEmpty {
+                        EditorTabBar()
+                    } else {
+                        Color.clear
+                    }
+                    editorActionButtons
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .frame(height: 38)
+            .background(theme.chromeBackground, ignoresSafeAreaEdges: .top)
+            .overlay(alignment: .bottom) { theme.separator.frame(height: 1) }
+
+            // ── Content area (sidebar + editor) ──
             HStack(spacing: 0) {
                 if showSidebar {
                     sidebarColumn
                         .frame(width: sidebarWidth)
-                        // Sidebar background bleeds into the titlebar area
-                        .background(theme.chromeBackground, ignoresSafeAreaEdges: .top)
                     draggableDivider(width: $sidebarWidth, minValue: 160, maxValue: 360)
                 }
 
-                VStack(spacing: 0) {
-                    // Tab bar + inline action buttons (replaces NSToolbar)
-                    ZStack(alignment: .trailing) {
-                        if !state.openTabs.isEmpty {
-                            EditorTabBar()
-                        } else {
-                            // No tabs: minimal chrome bar for action buttons
-                            theme.chromeBackground
-                                .frame(height: 30)
-                                .overlay(alignment: .bottom) { theme.separator.frame(height: 1) }
-                        }
-                        editorActionButtons
+                HStack(spacing: 0) {
+                    if showEditor {
+                        editorColumn
+                            .frame(maxWidth: .infinity)
                     }
-                    .background(theme.chromeBackground, ignoresSafeAreaEdges: .top)
-                    HStack(spacing: 0) {
-                        if showEditor {
-                            editorColumn
-                                .frame(maxWidth: .infinity)
-                        }
-
-                        if showEditor && showPreview {
-                            state.themeStore.current.separator
-                                .frame(width: 1)
-                        }
-
-                        if showPreview {
-                            previewColumn
-                                .frame(maxWidth: .infinity)
-                        }
-
-                        if !showEditor && !showPreview {
-                            theme.editorBackground
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        }
+                    if showEditor && showPreview {
+                        theme.separator.frame(width: 1)
+                    }
+                    if showPreview {
+                        previewColumn
+                            .frame(maxWidth: .infinity)
+                    }
+                    if !showEditor && !showPreview {
+                        theme.editorBackground
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                // Editor background bleeds into the titlebar area
-                .background(theme.editorBackground, ignoresSafeAreaEdges: .top)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -179,43 +183,41 @@ struct ContentView: View {
         .background(theme.editorBackground)
     }
 
-    private var sidebarColumn: some View {
-        VStack(spacing: 0) {
-            // Sidebar header — traffic light clearance on left, toggle on right
-            HStack(spacing: 0) {
-                // Reserve space for traffic lights (red/yellow/green ~76pt)
-                Color.clear.frame(width: 76)
+    /// Left portion of the unified top bar (matches sidebar width).
+    private var sidebarTopBar: some View {
+        let theme = state.themeStore.current
+        return HStack(spacing: 0) {
+            // Traffic light clearance
+            Color.clear.frame(width: 76)
 
-                if let rootURL = state.rootURL {
-                    HStack(spacing: 5) {
-                        Image(systemName: "folder.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.orange.opacity(0.75))
-                        Text(rootURL.lastPathComponent.uppercased())
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .kerning(0.4)
-                            .lineLimit(1)
-                    }
+            if let rootURL = state.rootURL {
+                HStack(spacing: 4) {
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.orange.opacity(0.7))
+                    Text(rootURL.lastPathComponent.uppercased())
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .kerning(0.4)
+                        .lineLimit(1)
                 }
-
-                Spacer()
-
-                // Sidebar hide button
-                ChromeButton(systemName: "sidebar.left", help: L("tooltip.hideSidebar")) {
-                    showSidebar = false
-                }
-                .keyboardShortcut("b", modifiers: .command)
-                .padding(.trailing, 6)
-            }
-            .frame(height: 38)
-            .overlay(alignment: .bottom) {
-                state.themeStore.current.separator.frame(height: 1)
             }
 
-            FileSidebar()
+            Spacer()
+
+            ChromeButton(systemName: "sidebar.left", help: L("tooltip.hideSidebar")) {
+                withAnimation(DS.Motion.springFast) { showSidebar = false }
+            }
+            .keyboardShortcut("b", modifiers: .command)
+            .padding(.trailing, 4)
         }
-        .background(state.themeStore.current.chromeBackground, ignoresSafeAreaEdges: .top)
+        .frame(maxHeight: .infinity)
+        .background(theme.chromeBackground)
+    }
+
+    private var sidebarColumn: some View {
+        FileSidebar()
+            .background(state.themeStore.current.chromeBackground)
     }
 
     private var editorColumn: some View {
@@ -238,7 +240,9 @@ struct ContentView: View {
                     systemName: "sidebar.left",
                     help: L("tooltip.showSidebar"),
                     isActive: false
-                ) { showSidebar = true }
+                ) {
+                    withAnimation(DS.Motion.springFast) { showSidebar = true }
+                }
                 .keyboardShortcut("b", modifiers: .command)
 
                 Divider().frame(height: 14).padding(.horizontal, 2)
