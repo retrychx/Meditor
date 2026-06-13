@@ -82,10 +82,9 @@ struct FileSidebar: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .overlay(
+            .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .stroke(Color.primary.opacity(0.07), lineWidth: 0.5)
+                    .fill(Color.primary.opacity(0.08))
             )
             .padding(.horizontal, 8)
             .padding(.top, 8)

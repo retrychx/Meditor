@@ -45,12 +45,17 @@ enum PreviewTheme: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Sidebar background, slightly darker than the editor area for hierarchy.
+    /// Chrome background: sidebar + top bar. Intentionally distinct from editor
+    /// to create visual hierarchy without relying on materials.
     var chromeBackground: Color {
         switch self {
-        case .github:  return Color(nsColor: .windowBackgroundColor)
-        case .nord:    return Color(red: 0.141, green: 0.161, blue: 0.200)   // ~#242933
-        case .dracula: return Color(red: 0.129, green: 0.133, blue: 0.173)   // ~#21222c
+        case .github:
+            // Warm off-white, like Bear/Notion sidebar — cooler than editor white
+            return Color(red: 0.937, green: 0.937, blue: 0.941)  // #EFEFF0
+        case .nord:
+            return Color(red: 0.141, green: 0.161, blue: 0.200)  // #242933
+        case .dracula:
+            return Color(red: 0.129, green: 0.133, blue: 0.173)  // #21222c
         }
     }
 
