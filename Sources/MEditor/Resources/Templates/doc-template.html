@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>文档标题</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+:root{--bg:#fff;--bg-nav:#f8fafb;--code-bg:#1a1a2e;--text:#1a1a2e;--text2:#4a5568;--muted:#94a3b8;--border:#edf0f3;--accent:#0f766e;--accent-l:#f0fdfa;--accent-d:#115e59;--green:#059669;--green-l:#ecfdf5;--orange:#d97706;--orange-l:#fffbeb;--red:#dc2626;--red-l:#fef2f2;--r:8px;--sh:0 1px 2px rgba(0,0,0,.03)}
+*{margin:0;padding:0;box-sizing:border-box}
+::selection{background:#ccfbf1;color:var(--accent-d)}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);color:var(--text);line-height:1.65;-webkit-font-smoothing:antialiased;display:flex;min-height:100vh}
+.sidebar{position:fixed;top:0;left:0;width:220px;height:100vh;background:var(--bg-nav);border-right:1px solid var(--border);padding:1.5rem 0;overflow-y:auto;z-index:10}
+.sidebar-brand{padding:0 1.2rem .8rem;font-size:.85rem;font-weight:700;color:var(--accent-d);display:flex;align-items:center;gap:.4rem}
+.sidebar-brand span{font-size:.65rem;font-weight:500;background:var(--accent-l);color:var(--accent);padding:.1em .4em;border-radius:3px}
+.sidebar nav{padding:0 .6rem}
+.sidebar a{display:block;padding:.35rem .6rem;font-size:.8rem;color:var(--text2);text-decoration:none;border-radius:4px;margin-bottom:1px;transition:background .15s}
+.sidebar a:hover{background:var(--border);color:var(--text)}
+.sidebar a.active{background:var(--accent-l);color:var(--accent-d);font-weight:500}
+.sidebar .nav-group{margin-top:.8rem;padding:0 .6rem;font-size:.65rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.3rem}
+.main{margin-left:220px;flex:1;padding:2rem 3rem 2rem 2.5rem;max-width:calc(100vw - 220px);overflow-x:hidden}
+section{margin-bottom:2.5rem}
+h1{font-size:1.8rem;font-weight:700;letter-spacing:-.02em;margin-bottom:.3rem}
+h1+p{color:var(--text2);font-size:.95rem;margin-bottom:1.2rem}
+h2{font-size:1.15rem;font-weight:700;margin-bottom:.6rem;color:var(--text)}
+h3{font-size:.95rem;font-weight:600;margin-bottom:.3rem}
+p{color:var(--text2);font-size:.88rem;margin-bottom:.5rem}
+ul,ol{padding-left:1.2rem;margin-bottom:.5rem}
+li{color:var(--text2);font-size:.86rem;margin-bottom:.2rem}
+li::marker{font-size:.72rem}
+li strong{color:var(--text)}
+/* 流程图 */
+.flow{display:flex;align-items:center;gap:.6rem;margin:.8rem 0 1.2rem;padding:1rem 1.5rem;background:var(--bg-nav);border:1px solid var(--border);border-radius:var(--r)}
+.flow-node{text-align:center}
+.flow-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:.95rem;font-weight:700;margin:0 auto .2rem}
+.flow-icon.a{background:#f0fdfa;color:var(--accent-d);border:1px solid #99f6e4}
+.flow-icon.b{background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd}
+.flow-icon.c{background:#fef3c7;color:#92400e;border:1px solid #fde68a}
+.flow-lbl{font-size:.68rem;color:var(--text2);font-weight:500}
+.flow-arr{flex:0 0 60px;display:flex;align-items:center;align-self:center;margin-bottom:.8rem}
+/* 卡片 */
+.card{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:.8rem 1rem;margin-bottom:.5rem;box-shadow:var(--sh)}
+.card h3{font-size:.82rem;display:flex;align-items:center;gap:.4rem}
+.card p,.card li{font-size:.84rem}
+/* 特性网格 */
+.features{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin:.6rem 0}
+.feat{padding:.7rem .8rem;border:1px solid var(--border);border-radius:var(--r);background:var(--bg)}
+.feat h4{font-size:.82rem;font-weight:600;margin-bottom:.15rem}
+.feat p{font-size:.76rem;color:var(--text2);margin:0}
+/* 步骤条 */
+.steps{counter-reset:step}
+.stp{position:relative;padding-left:2.5rem;padding-bottom:.8rem;border-left:1.5px solid var(--border);margin-left:.6rem}
+.stp:last-child{border-left-color:transparent;padding-bottom:0}
+.stp::before{counter-increment:step;content:counter(step);position:absolute;left:-10px;top:1px;width:20px;height:20px;background:var(--accent);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.62rem;font-weight:600}
+.stp h3{font-size:.9rem;margin-bottom:.2rem}
+.stp p{font-size:.84rem}
+/* 代码块 */
+pre{background:var(--code-bg);border-radius:var(--r);padding:.6rem .9rem;overflow-x:auto;margin:.4rem 0;max-width:100%}
+pre code{font-family:'JetBrains Mono',monospace;font-size:.78rem;color:#e2e8f0;line-height:1.7;background:none;padding:0}
+code{font-family:'JetBrains Mono',monospace;font-size:.78rem;background:#f1f5f9;padding:.12em .35em;border-radius:3px;color:var(--accent-d)}
+/* 表格 */
+.tbl{border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:.5rem 0}
+table{width:100%;border-collapse:collapse;font-size:.82rem}
+th{text-align:left;padding:.5rem .8rem;background:var(--bg-nav);font-weight:600;color:var(--text2);font-size:.7rem;text-transform:uppercase;letter-spacing:.04em}
+td{padding:.45rem .8rem;border-top:1px solid var(--border);color:var(--text2)}
+td code{font-size:.74rem}
+tr:hover td{background:#f8fafb}
+/* 标签 */
+.tag{display:inline-block;padding:.1em .45em;border-radius:100px;font-size:.65rem;font-weight:600}
+.tag-g{background:var(--green-l);color:#065f46}
+.tag-o{background:var(--orange-l);color:#92400e}
+.tag-r{background:var(--red-l);color:#dc2626}
+/* 提示框 */
+.alert{display:flex;gap:.5rem;padding:.6rem .8rem;border-radius:var(--r);margin:.6rem 0;font-size:.82rem;align-items:flex-start;background:var(--orange-l);border:1px solid #fde68a}
+.alert p{margin:0;color:var(--text2)}
+.alert strong{color:var(--text)}
+.alert-info{background:var(--accent-l);border:1px solid #99f6e4}
+/* 页脚 */
+.footer{margin-top:2rem;padding-top:1rem;border-top:1px solid var(--border);color:var(--muted);font-size:.75rem}
+pre::-webkit-scrollbar{height:4px}
+pre::-webkit-scrollbar-thumb{background:#334155;border-radius:2px}
+@media(max-width:768px){.sidebar{display:none}.main{margin-left:0;padding:1.5rem}.features{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<!-- ==================== 侧边栏导航 ==================== -->
+<aside class="sidebar">
+  <div class="sidebar-brand">文档标题 <span>v1.0</span></div>
+  <nav>
+    <a href="#s1" class="active">概述</a>
+    <a href="#s2">章节二</a>
+    <a href="#s2-sub" style="padding-left:1.4rem;font-size:.75rem">子章节</a>
+    <div class="nav-group">分组标题</div>
+    <a href="#s3">章节三</a>
+    <a href="#s4">章节四</a>
+  </nav>
+</aside>
+
+<!-- ==================== 主内容区 ==================== -->
+<main class="main">
+
+<!-- ===== 概述 ===== -->
+<section id="s1">
+  <h1>文档主标题</h1>
+  <p>文档副标题或简要描述</p>
+
+  <!-- 信息表格 -->
+  <h3>基本信息</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>项</th><th>值</th></tr></thead>
+    <tbody>
+      <tr><td>字段一</td><td><code>值一</code></td></tr>
+      <tr><td>字段二</td><td>值二</td></tr>
+    </tbody>
+  </table></div>
+
+  <!-- 流程图 -->
+  <h3>流程图</h3>
+  <div class="flow">
+    <div class="flow-node"><div class="flow-icon a">A</div><span class="flow-lbl">步骤一<br>说明</span></div>
+    <div class="flow-arr"><svg width="60" height="12" viewBox="0 0 60 12"><line x1="0" y1="6" x2="48" y2="6" stroke="#94a3b8" stroke-width="2"/><polygon points="48,2 60,6 48,10" fill="#94a3b8"/></svg></div>
+    <div class="flow-node"><div class="flow-icon b">B</div><span class="flow-lbl">步骤二<br>说明</span></div>
+    <div class="flow-arr"><svg width="60" height="12" viewBox="0 0 60 12"><line x1="0" y1="6" x2="48" y2="6" stroke="#94a3b8" stroke-width="2"/><polygon points="48,2 60,6 48,10" fill="#94a3b8"/></svg></div>
+    <div class="flow-node"><div class="flow-icon c">C</div><span class="flow-lbl">步骤三<br>说明</span></div>
+  </div>
+
+  <!-- 提示框 -->
+  <div class="alert alert-info"><p><strong>提示：</strong>这是一个信息提示框（蓝绿色）。</p></div>
+  <div class="alert"><p><strong>警告：</strong>这是一个警告提示框（橙色）。</p></div>
+</section>
+
+<!-- ===== 章节二 ===== -->
+<section id="s2">
+  <h2>2. 章节标题</h2>
+
+  <!-- 对比表格 -->
+  <div class="tbl"><table>
+    <thead><tr><th>对比项</th><th>方案 A</th><th>方案 B</th></tr></thead>
+    <tbody>
+      <tr><td>维度一</td><td>值</td><td>值</td></tr>
+      <tr><td>维度二</td><td>值</td><td>值</td></tr>
+    </tbody>
+  </table></div>
+
+  <!-- 卡片 -->
+  <h3 id="s2-sub">子章节</h3>
+  <div class="card">
+    <h3>卡片标题</h3>
+    <p>卡片内容描述</p>
+    <ul>
+      <li><strong>要点一：</strong>说明</li>
+      <li><strong>要点二：</strong>说明</li>
+    </ul>
+  </div>
+
+  <!-- 代码块 -->
+  <pre><code class="language-typescript">// 代码示例
+const example = 'hello world';</code></pre>
+</section>
+
+<!-- ===== 章节三 ===== -->
+<section id="s3">
+  <h2>3. 特性展示</h2>
+
+  <!-- 特性网格（2列） -->
+  <div class="features">
+    <div class="feat"><h4>特性一</h4><p>特性描述</p></div>
+    <div class="feat"><h4>特性二</h4><p>特性描述</p></div>
+    <div class="feat"><h4>特性三</h4><p>特性描述</p></div>
+    <div class="feat"><h4>特性四</h4><p>特性描述</p></div>
+  </div>
+
+  <!-- 标签 -->
+  <p>状态标签：<span class="tag tag-g">低风险</span> <span class="tag tag-o">中风险</span> <span class="tag tag-r">高风险</span></p>
+</section>
+
+<!-- ===== 章节四 ===== -->
+<section id="s4">
+  <h2>4. 步骤条</h2>
+
+  <div class="steps">
+    <div class="stp">
+      <h3>步骤一标题</h3>
+      <p>步骤描述内容</p>
+    </div>
+    <div class="stp">
+      <h3>步骤二标题</h3>
+      <p>步骤描述内容</p>
+    </div>
+    <div class="stp">
+      <h3>步骤三标题</h3>
+      <p>步骤描述内容</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 页脚 ===== -->
+<div class="footer">
+  <p>文档标题 v1.0 — 最后更新：2026-01-01</p>
+  <p>Author: Your Name</p>
+</div>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/typescript.min.js"></script>
+<script>hljs.highlightAll();</script>
+</body>
+</html>

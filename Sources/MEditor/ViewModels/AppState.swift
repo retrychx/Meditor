@@ -228,10 +228,11 @@ final class AppState {
     func createFromTemplate(_ template: DocumentTemplate) {
         guard let root = rootURL else { return }
         let baseName = template.id == "blank" ? "untitled" : template.id
-        var url = root.appendingPathComponent(baseName + ".md")
+        let ext = template.fileExtension
+        var url = root.appendingPathComponent(baseName + "." + ext)
         var counter = 1
         while FileManager.default.fileExists(atPath: url.path) {
-            url = root.appendingPathComponent("\(baseName) \(counter).md")
+            url = root.appendingPathComponent("\(baseName) \(counter).\(ext)")
             counter += 1
         }
         FileManager.default.createFile(atPath: url.path, contents: template.content.data(using: .utf8))
