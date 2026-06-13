@@ -21,30 +21,30 @@ struct FileRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            // Selection accent line
-            SelectionAccentLine(verticalPad: 7)
-                .opacity(isSelected ? 1 : 0)
-                .animation(DS.Motion.springFast, value: isSelected)
+        HStack(spacing: 6) {
+            fileIcon
+                .frame(width: 15, alignment: .center)
 
-            HStack(spacing: 5) {
-                // File icon
-                fileIcon
-                    .frame(width: 14, alignment: .center)
-
-                // File name
-                nameLabel
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+            nameLabel
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 5)
+        .padding(.horizontal, 8)
+        .background(rowBackground)
+        // Left accent line via overlay — avoids affecting List layout
+        .overlay(alignment: .leading) {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(Color.accentColor)
+                    .frame(width: 2.5)
+                    .padding(.vertical, 7)
+                    .transition(.opacity)
+                    .animation(.easeOut(duration: 0.12), value: isSelected)
             }
-            .padding(.leading, 6)
-            .padding(.trailing, 8)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .contentShape(Rectangle())
-        .background(rowBackground)
-        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.sm))
         .onHover { isHovered = $0 }
         .contextMenu { contextMenuItems }
     }
@@ -55,12 +55,12 @@ struct FileRow: View {
     private var fileIcon: some View {
         if item.isDirectory {
             Image(systemName: "folder.fill")
-                .font(.system(size: 11.5, weight: .regular))
-                .foregroundStyle(.orange.opacity(0.85))
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(.orange.opacity(0.82))
         } else {
             Image(systemName: iconName)
                 .font(.system(size: 11, weight: .regular))
-                .foregroundStyle(fileColor.opacity(0.9))
+                .foregroundStyle(fileColor)
         }
     }
 
@@ -68,25 +68,29 @@ struct FileRow: View {
     private var nameLabel: some View {
         if searchText.isEmpty {
             Text(item.name)
-                .font(DS.Font.label(12.5, weight: isSelected ? .medium : .regular))
-                .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.primary.opacity(0.82)))
+                .font(.system(size: 12.5, weight: isSelected ? .medium : .regular))
+                .foregroundStyle(isSelected
+                    ? AnyShapeStyle(Color.primary)
+                    : AnyShapeStyle(Color.primary.opacity(0.78))
+                )
         } else {
             highlightedName
-                .font(DS.Font.label(12.5))
-                .lineLimit(1)
+                .font(.system(size: 12.5))
         }
     }
 
     @ViewBuilder
     private var rowBackground: some View {
-        RoundedRectangle(cornerRadius: DS.Radius.sm)
+        RoundedRectangle(cornerRadius: 5, style: .continuous)
             .fill(
                 isSelected
-                    ? DS.Color.rowSelected
-                    : isHovered ? DS.Color.rowHover : Color.clear
+                    ? Color.accentColor.opacity(0.12)
+                    : isHovered
+                        ? Color.primary.opacity(0.06)
+                        : Color.clear
             )
-            .animation(DS.Motion.fast, value: isSelected)
-            .animation(DS.Motion.micro, value: isHovered)
+            .animation(.easeOut(duration: 0.12), value: isSelected)
+            .animation(.easeOut(duration: 0.07), value: isHovered)
     }
 
     @ViewBuilder
@@ -123,8 +127,6 @@ struct FileRow: View {
         let before = String(name[name.startIndex..<range.lowerBound])
         let match  = String(name[range])
         let after  = String(name[range.upperBound...])
-        return Text(before)
-            + Text(match).foregroundColor(.accentColor).bold()
-            + Text(after)
+        return Text(before) + Text(match).foregroundColor(.accentColor).bold() + Text(after)
     }
 }

@@ -140,7 +140,7 @@ struct ContentView: View {
                         }
 
                         if showEditor && showPreview {
-                            DS.Color.divider
+                            state.themeStore.current.separator
                                 .frame(width: 1)
                         }
 
@@ -177,8 +177,29 @@ struct ContentView: View {
     }
 
     private var sidebarColumn: some View {
-        FileSidebar()
-            .background(DS.Color.sidebarBg)
+        VStack(spacing: 0) {
+            // Project root name header
+            if let rootURL = state.rootURL {
+                HStack(spacing: 6) {
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.orange.opacity(0.75))
+                    Text(rootURL.lastPathComponent.uppercased())
+                        .font(.system(size: 10, weight: .semibold, design: .default))
+                        .foregroundStyle(.secondary)
+                        .kerning(0.5)
+                        .lineLimit(1)
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .overlay(alignment: .bottom) {
+                    state.themeStore.current.separator.frame(height: 1)
+                }
+            }
+            FileSidebar()
+        }
+        .background(state.themeStore.current.chromeBackground)
     }
 
     private var editorColumn: some View {
@@ -326,25 +347,47 @@ struct ContentView: View {
     // MARK: - Status Bar
 
     private var statusBar: some View {
-        HStack(spacing: DS.Space.xs) {
+        let theme = state.themeStore.current
+        return HStack(spacing: 0) {
             if let tab = state.selectedTab {
-                StatusPill(text: "\(state.cursorLine):\(state.cursorColumn)", icon: "cursor.rays")
-                StatusPill(text: "\(wordCount(tab.content))w")
-                StatusPill(text: state.currentFileSize)
-                StatusPill(text: "UTF-8")
-                let langName = FileTypeConfiguration.shared
+                statusItem("\(state.cursorLine):\(state.cursorColumn)", icon: "character.cursor.ibeam", theme: theme)
+                statusDivider(theme)
+                statusItem("\(wordCount(tab.content)) words", theme: theme)
+                statusDivider(theme)
+                statusItem(state.currentFileSize, theme: theme)
+                statusDivider(theme)
+                let lang = FileTypeConfiguration.shared
                     .editorLanguage(for: tab.url.pathExtension.lowercased())?.rawValue
                     .capitalized ?? "Text"
-                StatusPill(text: langName)
+                statusItem(lang, theme: theme)
             }
             Spacer()
         }
-        .padding(.horizontal, DS.Space.md)
-        .frame(height: 26)
-        .background(DS.Color.statusBg)
+        .frame(height: 24)
+        .background(theme.chromeBackground)
         .overlay(alignment: .top) {
-            DS.Color.divider.frame(height: 1)
+            theme.separator.frame(height: 1)
         }
+    }
+
+    private func statusDivider(_ theme: PreviewTheme) -> some View {
+        theme.separator
+            .frame(width: 1, height: 12)
+            .padding(.horizontal, 8)
+    }
+
+    private func statusItem(_ text: String, icon: String? = nil, theme: PreviewTheme) -> some View {
+        HStack(spacing: 4) {
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 9, weight: .regular))
+                    .foregroundStyle(theme.foreground.opacity(0.35))
+            }
+            Text(text)
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .foregroundStyle(theme.foreground.opacity(0.4))
+        }
+        .padding(.horizontal, 10)
     }
 
     private func wordCount(_ text: String) -> Int {
