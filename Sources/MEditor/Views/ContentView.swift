@@ -226,9 +226,7 @@ struct ContentView: View {
             if server.isRunning {
                 server.stop()
             } else {
-                server.rootURL = state.rootURL
-                server.allowedFiles = state.openTabs.map(\.url)
-                server.start(preferredPort: AppSettings.shared.sharePort)
+                server.start(rootURL: state.rootURL, openTabs: state.openTabs, preferredPort: AppSettings.shared.sharePort)
             }
         } label: {
             Image(systemName: state.shareServer.isRunning ? "wifi" : "wifi.slash")

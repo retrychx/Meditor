@@ -203,7 +203,7 @@ final class AppStateTests: XCTestCase {
         ], for: root)
         state.openFolder(root)
         let staleURL = URL(fileURLWithPath: "/tmp/c.md")
-        state.fileItemMap[staleURL] = makeItem("c.md") // add stale entry
+        state.fileTreeManager.fileItemMap[staleURL] = makeItem("c.md") // add stale entry
 
         state.reloadFileTree()
 
@@ -262,7 +262,8 @@ final class AppStateTests: XCTestCase {
     func test_syncPreviewContent_hidesPreviewFindWhenPreviewBecomesEmpty() {
         state.previewFindController.show()
 
-        state.previewMode = .empty
+        // previewMode is now a forwarded get-only property; use clearPreview() to trigger the side-effect
+        state.clearPreview()
 
         XCTAssertFalse(state.previewFindController.isPresented)
         XCTAssertEqual(state.previewFindController.activeMode, .empty)
@@ -565,7 +566,7 @@ final class AppStateTests: XCTestCase {
         state.openTabs = [EditorTab(url: original, content: "# Readme", language: .markdown)]
         state.selectedTabID = state.openTabs[0].id
         state.selectedFileID = original
-        state.previewContent = "# Readme"
+        state.previewManager.showMarkdown(content: "# Readme")
 
         state.handleItemRenamed(from: original, to: renamed)
 
@@ -582,8 +583,7 @@ final class AppStateTests: XCTestCase {
         state.openTabs = [EditorTab(url: deleted, content: "# Readme", language: .markdown)]
         state.selectedTabID = state.openTabs[0].id
         state.selectedFileID = deleted
-        state.previewContent = "# Readme"
-        state.previewMode = .markdown
+        state.previewManager.showMarkdown(content: "# Readme")
 
         state.handleItemDeleted(at: deleted)
 

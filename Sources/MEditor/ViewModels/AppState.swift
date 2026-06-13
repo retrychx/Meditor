@@ -7,42 +7,104 @@ enum EditorLanguage: String {
     case html
 }
 
-/// What the preview pane is currently showing. Drives PreviewPanel's view selection
-/// without relying on string-based sentinels.
+/// What the preview pane is currently showing.
 enum PreviewMode: Equatable {
     case empty
     case markdown
     case html
 }
 
+/// Central coordinator / facade.
+///
+/// AppState owns the core cross-cutting state (tabs, file selection, rootURL)
+/// and delegates domain-specific work to dedicated Managers:
+///
+///   - FileTreeManager   → file tree, lazy-load, quick-open index
+///   - PreviewManager    → preview content, mode, scroll sync
+///   - ShareManager      → LAN share server
+///   - TemplateManager   → template picker UI + operations
+///
+/// Views reference `state.fileTree`, `state.previewContent`, etc. through
+/// forwarding computed properties so call sites are unchanged.
 @MainActor
 @Observable
 final class AppState {
-    var fileTree: [FileItem] = []
-    var fileItemMap: [URL: FileItem] = [:]
-    var indexedFiles: [FileItem] = []
-    var selectedFileID: URL?
+
+    // MARK: - Managers
+
+    let fileTreeManager: FileTreeManager
+    let previewManager: PreviewManager
+    let shareManager: ShareManager
+    let templateManager: TemplateManager
+
+    // MARK: - Core shared state
+
     var rootURL: URL? {
         didSet {
-            syncShareServerState()
+            shareManager.sync(rootURL: rootURL, openTabs: openTabs)
             if !isRestoringSession { scheduleSessionPersist() }
         }
     }
+
     var openTabs: [EditorTab] = [] {
         didSet {
-            syncShareServerState()
+            shareManager.sync(rootURL: rootURL, openTabs: openTabs)
             if !isRestoringSession { scheduleSessionPersist() }
         }
     }
+
     var selectedTabID: UUID? {
         didSet { if !isRestoringSession { scheduleSessionPersist() } }
     }
 
-    /// Coalesce multiple state changes within the same runloop tick into a
-    /// single persistSession call. Without this, operations like restoring
-    /// 10 tabs fire persistSession 10× in one frame.
-    @ObservationIgnored
-    private var sessionPersistScheduled = false
+    var selectedFileID: URL?
+
+    // MARK: - Cursor / Status bar
+
+    var cursorLine: Int = 1
+    var cursorColumn: Int = 1
+    var editorVisibleLine: Int = 0
+    var previewVisibleLine: Int = 0
+    var editorScrollCommand: ScrollSyncCommand = .idle
+    var previewScrollCommand: ScrollSyncCommand = .idle
+
+    var currentFileSize: String {
+        guard let tab = selectedTab else { return "" }
+        let f = ByteCountFormatter()
+        f.countStyle = .file
+        return f.string(fromByteCount: Int64(tab.content.utf8.count))
+    }
+
+    // MARK: - UI overlay state
+
+    var errorMessage: String?
+    var pendingCloseTab: EditorTab?
+    var showingCloseConfirmation = false
+    var pendingLargeFile: FileItem?
+    var showingLargeFileWarning = false
+    var showingQuickOpen = false
+    var externallyModifiedTab: EditorTab?
+    var showingReloadPrompt = false
+
+    // MARK: - Services
+
+    let fileService: FileServiceProtocol
+    let fileWatcher: any FileWatcherServiceProtocol
+    let themeStore: PreviewThemeStore
+    let sessionStore: SessionStore
+
+    // MARK: - Security-scoped resources
+
+    @ObservationIgnored private var accessRefCounts: [URL: Int] = [:]
+
+    @ObservationIgnored var isRestoringSession = false
+
+    @ObservationIgnored var recentlyClosedURLs: [URL] = []
+    static let recentlyClosedLimit = 16
+
+    // MARK: - Session persist coalescing
+
+    @ObservationIgnored private var sessionPersistScheduled = false
 
     func scheduleSessionPersist() {
         guard !sessionPersistScheduled else { return }
@@ -53,80 +115,29 @@ final class AppState {
             self.persistSession()
         }
     }
-    var previewContent: String = ""
-    var previewContentRevision: Int = 0
-    var previewLanguage: EditorLanguage = .markdown
-    var previewMode: PreviewMode = .empty {
-        didSet {
-            previewFindController.activeMode = previewMode
-            if previewMode == .empty {
-                previewFindController.close()
-            }
-        }
-    }
-    var previewHTMLFileURL: URL?
-    var previewReloadToken: Int = 0
-    var errorMessage: String?
 
-    // MARK: - Cursor / Status
+    // MARK: - Auto-save
 
-    var cursorLine: Int = 1
-    var cursorColumn: Int = 1
-    var editorVisibleLine: Int = 0
-    var previewVisibleLine: Int = 0
-    var editorScrollCommand: ScrollSyncCommand = .idle
-    var previewScrollCommand: ScrollSyncCommand = .idle
+    @ObservationIgnored private var autoSaveTimer: Timer?
+    @ObservationIgnored private var autoSaveObserver: Any?
 
-    func updateCursorPosition(line: Int, column: Int) {
-        cursorLine = line
-        cursorColumn = column
-    }
+    // MARK: - Init
 
-    func requestEditorScroll(to line: Int) {
-        guard line >= 0 else { return }
-        editorScrollCommand = editorScrollCommand.advanced(to: line)
-    }
-
-    func requestPreviewScroll(to line: Int) {
-        guard line >= 0 else { return }
-        previewScrollCommand = previewScrollCommand.advanced(to: line)
-    }
-
-    var currentFileSize: String {
-        guard let tab = selectedTab else { return "" }
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        return formatter.string(fromByteCount: Int64(tab.content.utf8.count))
-    }
-
-    // MARK: - Security Scoped Resources
-
-    @ObservationIgnored
-    private var accessRefCounts: [URL: Int] = [:]
-
-    @ObservationIgnored
-    var isRestoringSession = false
-
-    func beginAccessing(_ url: URL) {
-        let scopedURL = url.standardizedFileURL
-        if let count = accessRefCounts[scopedURL] {
-            accessRefCounts[scopedURL] = count + 1
-            return
-        }
-        if scopedURL.startAccessingSecurityScopedResource() {
-            accessRefCounts[scopedURL] = 1
-        }
-    }
-
-    func endAccessing(_ url: URL) {
-        let scopedURL = url.standardizedFileURL
-        guard let count = accessRefCounts[scopedURL] else { return }
-        if count > 1 {
-            accessRefCounts[scopedURL] = count - 1
-            return
-        }
-        accessRefCounts.removeValue(forKey: scopedURL)
-        scopedURL.stopAccessingSecurityScopedResource()
+    init(
+        fileService: FileServiceProtocol = FileService(),
+        fileWatcher: any FileWatcherServiceProtocol = FileWatcherService(),
+        themeStore: PreviewThemeStore = PreviewThemeStore(),
+        sessionStore: SessionStore = SessionStore()
+    ) {
+        self.fileService = fileService
+        self.fileWatcher = fileWatcher
+        self.themeStore = themeStore
+        self.sessionStore = sessionStore
+        self.fileTreeManager = FileTreeManager(fileService: fileService)
+        self.previewManager  = PreviewManager()
+        self.shareManager    = ShareManager()
+        self.templateManager = TemplateManager()
+        setupAutoSaveTimer()
     }
 
     deinit {
@@ -139,33 +150,64 @@ final class AppState {
         }
     }
 
-    // MARK: - Tab close confirmation
+    // MARK: - FileTreeManager forwarding
 
-    var pendingCloseTab: EditorTab?
-    var showingCloseConfirmation = false
+    var fileTree: [FileItem]      { fileTreeManager.fileTree }
+    var fileItemMap: [URL: FileItem] { fileTreeManager.fileItemMap }
+    var indexedFiles: [FileItem]  { fileTreeManager.indexedFiles }
 
-    // Large file warning
-    var pendingLargeFile: FileItem?
-    var showingLargeFileWarning = false
+    func reloadFileTree() {
+        guard let rootURL else { return }
+        fileTreeManager.reload(rootURL: rootURL)
+    }
 
-    @ObservationIgnored
-    var recentlyClosedURLs: [URL] = []
-    static let recentlyClosedLimit = 16
+    func loadChildrenIfNeeded(for item: FileItem) {
+        fileTreeManager.loadChildrenIfNeeded(for: item)
+    }
 
-    var showingQuickOpen = false
+    func isSameOrDescendant(_ url: URL, of base: URL) -> Bool {
+        fileTreeManager.isSameOrDescendant(url, of: base)
+    }
 
-    let fileService: FileServiceProtocol
-    let fileWatcher: any FileWatcherServiceProtocol
-    let themeStore: PreviewThemeStore
-    let previewExporter = PreviewExporter()
-    let previewFindController = PreviewFindController()
-    let sessionStore: SessionStore
-    let shareServer = LocalShareServer()
-    /// Owns template state and operations. Use this instead of the removed
-    /// `templateStore` / `showingTemplatePicker` properties on AppState.
-    let templateManager: TemplateManager
+    func replacingDescendantURL(_ url: URL, from old: URL, to new: URL) -> URL? {
+        fileTreeManager.replacingDescendantURL(url, from: old, to: new)
+    }
 
-    // MARK: - Template picker forwarding (thin facade → TemplateManager)
+    // MARK: - PreviewManager forwarding
+
+    var previewContent: String         { previewManager.content }
+    var previewContentRevision: Int    { previewManager.contentRevision }
+    var previewLanguage: EditorLanguage { previewManager.language }
+    var previewMode: PreviewMode       { previewManager.mode }
+    var previewHTMLFileURL: URL?       { previewManager.htmlFileURL }
+    var previewReloadToken: Int        { previewManager.reloadToken }
+    var previewExporter: PreviewExporter   { previewManager.exporter }
+    var previewFindController: PreviewFindController { previewManager.findController }
+
+    @discardableResult func clearPreview() -> Bool { previewManager.clear() }
+
+    @discardableResult func showMarkdownPreview(content: String) -> Bool {
+        previewManager.showMarkdown(content: content)
+    }
+
+    @discardableResult func showHTMLPreview(fileURL: URL) -> Bool {
+        previewManager.showHTML(fileURL: fileURL)
+    }
+
+    func syncPreviewContent(from tab: EditorTab) {
+        previewManager.sync(from: tab)
+    }
+
+    // MARK: - ShareManager forwarding
+
+    var shareServer: ShareManager { shareManager }
+
+    func syncShareServerState() {
+        shareManager.sync(rootURL: rootURL, openTabs: openTabs)
+    }
+
+    // MARK: - TemplateManager forwarding
+
     var showingTemplatePicker: Bool {
         get { templateManager.showingPicker }
         set { templateManager.showingPicker = newValue }
@@ -183,68 +225,132 @@ final class AppState {
         set { templateManager.pendingParentURL = newValue }
     }
 
-    @ObservationIgnored
-    private var autoSaveTimer: Timer?
+    // MARK: - Cursor
 
-    @ObservationIgnored
-    private var pendingTreeReloadWorkItem: DispatchWorkItem?
-
-    @ObservationIgnored
-    private var fileIndexGeneration = 0
-
-    init(fileService: FileServiceProtocol = FileService(),
-         fileWatcher: any FileWatcherServiceProtocol = FileWatcherService(),
-         themeStore: PreviewThemeStore = PreviewThemeStore(),
-         sessionStore: SessionStore = SessionStore()) {
-        self.fileService = fileService
-        self.fileWatcher = fileWatcher
-        self.themeStore = themeStore
-        self.sessionStore = sessionStore
-        self.templateManager = TemplateManager()
-        setupAutoSaveTimer()
+    func updateCursorPosition(line: Int, column: Int) {
+        cursorLine = line
+        cursorColumn = column
     }
 
-    // MARK: - Auto Save
+    func requestEditorScroll(to line: Int) {
+        guard line >= 0 else { return }
+        editorScrollCommand = editorScrollCommand.advanced(to: line)
+    }
 
-    @ObservationIgnored
-    private var autoSaveObserver: Any?
+    func requestPreviewScroll(to line: Int) {
+        guard line >= 0 else { return }
+        previewScrollCommand = previewScrollCommand.advanced(to: line)
+    }
 
-    func setupAutoSaveTimer() {
-        autoSaveTimer?.invalidate()
-        autoSaveTimer = nil
-        let settings = AppSettings.shared
-        guard settings.autoSave else { return }
-        autoSaveTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(settings.autoSaveInterval), repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.autoSaveModifiedTabs()
-            }
+    // MARK: - Security-scoped resources
+
+    func beginAccessing(_ url: URL) {
+        let scoped = url.standardizedFileURL
+        if let count = accessRefCounts[scoped] {
+            accessRefCounts[scoped] = count + 1
+            return
         }
-        if autoSaveObserver == nil {
-            autoSaveObserver = NotificationCenter.default.addObserver(forName: .autoSaveSettingsChanged, object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor in
-                    self?.setupAutoSaveTimer()
-                }
-            }
+        if scoped.startAccessingSecurityScopedResource() {
+            accessRefCounts[scoped] = 1
         }
     }
 
-    private func autoSaveModifiedTabs() {
-        for tab in openTabs where tab.isModified {
-            saveTab(tab)
+    func endAccessing(_ url: URL) {
+        let scoped = url.standardizedFileURL
+        guard let count = accessRefCounts[scoped] else { return }
+        if count > 1 { accessRefCounts[scoped] = count - 1; return }
+        accessRefCounts.removeValue(forKey: scoped)
+        scoped.stopAccessingSecurityScopedResource()
+    }
+
+    func requiresDirectFileAccess(_ url: URL) -> Bool {
+        guard let rootURL else { return true }
+        return !isSameOrDescendant(url, of: rootURL)
+    }
+
+    // MARK: - Error reporting
+
+    func setError(_ message: String) { errorMessage = message }
+
+    func report(_ error: AppError, logger: Logger = AppLog.app) {
+        AppLog.error(error, in: logger)
+        if error.severity == .user { errorMessage = error.errorDescription }
+    }
+
+    // MARK: - Tab computed
+
+    var selectedTab: EditorTab? {
+        get { openTabs.first { $0.id == selectedTabID } }
+        set {
+            guard let newValue else { selectedTabID = nil; return }
+            selectedTabID = newValue.id
         }
     }
 
-    func setError(_ message: String) {
-        errorMessage = message
+    // MARK: - Open folder
+
+    func openFolder(_ url: URL) {
+        let normalized = url.standardizedFileURL
+        let previous   = rootURL?.standardizedFileURL
+        if previous != normalized { beginAccessing(normalized) }
+
+        rootURL = url
+        if let previous, previous != normalized { endAccessing(previous) }
+
+        openTabs.forEach { endAccessing($0.url) }
+        openTabs.removeAll()
+        selectedTabID = nil
+        selectedFileID = nil
+        clearPreview()
+        fileTreeManager.clear()
+        fileTreeManager.reload(rootURL: url)
+
+        fileWatcher.startWatching(urls: [url]) { [weak self] in
+            guard let self else { return }
+            self.fileTreeManager.scheduleWatchedReload(rootURL: url)
+            self.checkExternalModifications()
+        }
+    }
+
+    // MARK: - File tree interaction
+
+    func selectFile(_ item: FileItem) {
+        if item.isDirectory { selectedFileID = item.id } else { openFile(item) }
+    }
+
+    // MARK: - File CRUD (used by FileSidebar)
+
+    func createFileOrFolder(name: String, isFolder: Bool, parentURL: URL) {
+        let target = parentURL.appendingPathComponent(name)
+        do {
+            if isFolder { try fileService.createDirectory(at: target) }
+            else        { try fileService.createFile(at: target, content: "") }
+            reloadFileTree()
+        } catch { setError(error.localizedDescription) }
+    }
+
+    func renameFileItem(from oldURL: URL, newName: String) {
+        let newURL = oldURL.deletingLastPathComponent().appendingPathComponent(newName)
+        do {
+            try fileService.moveItem(from: oldURL, to: newURL)
+            handleItemRenamed(from: oldURL, to: newURL)
+            reloadFileTree()
+        } catch { setError(error.localizedDescription) }
+    }
+
+    func deleteFileItem(at url: URL) {
+        do {
+            try fileService.removeItem(at: url)
+            handleItemDeleted(at: url)
+            reloadFileTree()
+        } catch { setError(error.localizedDescription) }
     }
 
     // MARK: - Templates
 
     func createFromTemplate(_ template: DocumentTemplate) {
         templateManager.createFromTemplate(
-            template,
-            rootURL: rootURL,
-            fileService: fileService,
+            template, rootURL: rootURL, fileService: fileService,
             onSuccess: { [weak self] item in
                 self?.reloadFileTree()
                 self?.openFile(item)
@@ -257,109 +363,67 @@ final class AppState {
 
     func saveCurrentAsTemplate(name: String) {
         guard let tab = selectedTab else { return }
-        do {
-            try templateManager.saveAs(name: name, content: tab.content)
-        } catch {
-            setError(error.localizedDescription)
-        }
+        do    { try templateManager.saveAs(name: name, content: tab.content) }
+        catch { setError(error.localizedDescription) }
     }
 
-    // MARK: - File operations (used by FileSidebar)
+    // MARK: - Cross-domain coordination
 
-    func createFileOrFolder(name: String, isFolder: Bool, parentURL: URL) {
-        let targetURL = parentURL.appendingPathComponent(name)
-        do {
-            if isFolder {
-                try fileService.createDirectory(at: targetURL)
-            } else {
-                try fileService.createFile(at: targetURL, content: "")
+    func handleItemRenamed(from oldURL: URL, to newURL: URL) {
+        let old = oldURL.standardizedFileURL
+        let new = newURL.standardizedFileURL
+
+        if let id = selectedFileID,
+           let r = fileTreeManager.replacingDescendantURL(id, from: old, to: new) {
+            selectedFileID = r
+        }
+
+        for tab in openTabs {
+            if let r = fileTreeManager.replacingDescendantURL(tab.url, from: old, to: new) {
+                tab.url = r
             }
-            reloadFileTree()
-        } catch {
-            setError(error.localizedDescription)
         }
+
+        recentlyClosedURLs = recentlyClosedURLs.compactMap {
+            fileTreeManager.replacingDescendantURL($0, from: old, to: new)
+        }
+
+        if let tab = selectedTab { syncPreviewContent(from: tab) }
     }
 
-    func renameFileItem(from oldURL: URL, newName: String) {
-        let newURL = oldURL.deletingLastPathComponent().appendingPathComponent(newName)
-        do {
-            try fileService.moveItem(from: oldURL, to: newURL)
-            handleItemRenamed(from: oldURL, to: newURL)
-            reloadFileTree()
-        } catch {
-            setError(error.localizedDescription)
-        }
-    }
+    func handleItemDeleted(at deletedURL: URL) {
+        let deleted = deletedURL.standardizedFileURL
 
-    func deleteFileItem(at url: URL) {
-        do {
-            try fileService.removeItem(at: url)
-            handleItemDeleted(at: url)
-            reloadFileTree()
-        } catch {
-            setError(error.localizedDescription)
-        }
-    }
+        let removed = openTabs.filter { fileTreeManager.isSameOrDescendant($0.url, of: deleted) }
+        removed.forEach { endAccessing($0.url) }
+        openTabs.removeAll { fileTreeManager.isSameOrDescendant($0.url, of: deleted) }
+        recentlyClosedURLs.removeAll { fileTreeManager.isSameOrDescendant($0, of: deleted) }
 
-    func report(_ error: AppError, logger: Logger = AppLog.app) {
-        AppLog.error(error, in: logger)
-        if error.severity == .user {
-            errorMessage = error.errorDescription
-        }
-    }
+        if let id = selectedFileID,
+           fileTreeManager.isSameOrDescendant(id, of: deleted) { selectedFileID = nil }
 
-    var selectedTab: EditorTab? {
-        get { openTabs.first { $0.id == selectedTabID } }
-        set {
-            guard let newValue else {
-                selectedTabID = nil
-                return
-            }
-            selectedTabID = newValue.id
-        }
-    }
-
-    // MARK: - File tree
-
-    func openFolder(_ url: URL) {
-        let normalizedURL = url.standardizedFileURL
-        let previousRoot = rootURL?.standardizedFileURL
-        if previousRoot != normalizedURL {
-            beginAccessing(normalizedURL)
+        if let id = selectedTabID, !openTabs.contains(where: { $0.id == id }) {
+            selectedTabID = openTabs.first?.id
         }
 
-        rootURL = url
-        if let previousRoot, previousRoot != normalizedURL {
-            endAccessing(previousRoot)
-        }
-        openTabs.forEach { endAccessing($0.url) }
-        openTabs.removeAll()
-        selectedTabID = nil
-        selectedFileID = nil
-        clearPreview()
-        reloadFileTree()
-        fileWatcher.startWatching(urls: [url]) { [weak self] in
-            self?.scheduleWatchedTreeReload()
-            self?.checkExternalModifications()
+        if let tab = selectedTab {
+            syncSidebarSelectionToTab(tab)
+            syncPreviewContent(from: tab)
+        } else {
+            selectedTabID = nil
+            clearPreview()
         }
     }
 
     // MARK: - External modification detection
 
-    /// Tracks the last known modification date for each open tab's file.
-    @ObservationIgnored
-    private var knownModDates: [URL: Date] = [:]
-
-    /// Tab that was modified externally — shown in a reload alert.
-    var externallyModifiedTab: EditorTab?
-    var showingReloadPrompt = false
+    @ObservationIgnored private var knownModDates: [URL: Date] = [:]
 
     func recordModDate(for url: URL) {
-        let attrs = fileService.attributes(at: url)
-        knownModDates[url] = attrs?[.modificationDate] as? Date
+        knownModDates[url] = fileService.attributes(at: url)?[.modificationDate] as? Date
     }
 
-    private func checkExternalModifications() {
+    func checkExternalModifications() {
         for tab in openTabs where !tab.isModified {
             let url = tab.url
             guard let attrs = fileService.attributes(at: url),
@@ -369,7 +433,7 @@ final class AppState {
                 knownModDates[url] = diskDate
                 externallyModifiedTab = tab
                 showingReloadPrompt = true
-                return // One at a time
+                return
             } else if known == nil {
                 knownModDates[url] = diskDate
             }
@@ -385,275 +449,45 @@ final class AppState {
         Task.detached(priority: .userInitiated) { [weak self, service = fileService] in
             guard let content = try? service.readFile(at: url) else { return }
             await MainActor.run { [weak self] in
-                guard let self, let idx = self.openTabs.firstIndex(where: { $0.id == tabID }) else { return }
-                self.openTabs[idx].content = content
-                self.openTabs[idx].isModified = false
+                guard let self,
+                      let t = self.openTabs.first(where: { $0.id == tabID }) else { return }
+                t.content = content
+                t.isModified = false
                 self.recordModDate(for: url)
-                if self.selectedTabID == tabID {
-                    self.syncPreviewContent(from: self.openTabs[idx])
-                }
+                if self.selectedTabID == tabID { self.syncPreviewContent(from: t) }
             }
         }
     }
 
     func dismissReloadPrompt() {
-        // User chose to keep their version — update known mod date to skip future prompts
-        if let tab = externallyModifiedTab {
-            recordModDate(for: tab.url)
-        }
+        if let tab = externallyModifiedTab { recordModDate(for: tab.url) }
         showingReloadPrompt = false
         externallyModifiedTab = nil
     }
 
-    func reloadFileTree() {
-        guard let rootURL else { return }
-        let sid = PerformanceTracer.begin("ReloadFileTree", log: PerformanceTracer.fileOps)
-        defer { PerformanceTracer.end("ReloadFileTree", log: PerformanceTracer.fileOps, id: sid) }
+    // MARK: - Auto-save
 
-        pendingTreeReloadWorkItem?.cancel()
-        fileItemMap = [:]
-        let children = fileService.loadImmediateChildren(of: rootURL)
-        fileTree = children
-        addToMap(children)
-        rebuildFileIndex(for: rootURL)
-    }
-
-    func loadChildrenIfNeeded(for item: FileItem) {
-        guard item.isDirectory, !item.childrenLoaded, !item.isLoadingChildren else { return }
-        item.isLoadingChildren = true
-        let service = fileService
-        let url = item.url
-        Task.detached(priority: .userInitiated) { [weak self] in
-            let children = service.loadImmediateChildren(of: url)
-            await self?.applyLoadedChildren(children, to: item, expectedURL: url)
+    func setupAutoSaveTimer() {
+        autoSaveTimer?.invalidate()
+        autoSaveTimer = nil
+        let settings = AppSettings.shared
+        guard settings.autoSave else { return }
+        autoSaveTimer = Timer.scheduledTimer(
+            withTimeInterval: TimeInterval(settings.autoSaveInterval),
+            repeats: true
+        ) { [weak self] _ in
+            Task { @MainActor in self?.autoSaveModifiedTabs() }
         }
-    }
-
-    private func scheduleWatchedTreeReload() {
-        pendingTreeReloadWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.reloadFileTree()
-        }
-        pendingTreeReloadWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: workItem)
-    }
-
-    private func rebuildFileIndex(for rootURL: URL) {
-        let sid = PerformanceTracer.begin("RebuildFileIndex", log: PerformanceTracer.fileOps)
-        fileIndexGeneration &+= 1
-        let generation = fileIndexGeneration
-        let service = fileService
-        indexedFiles = []
-        Task.detached(priority: .utility) { [weak self] in
-            let files = service.loadAllFiles(under: rootURL)
-            await self?.applyIndexedFiles(files, generation: generation, rootURL: rootURL)
-            await MainActor.run {
-                PerformanceTracer.end("RebuildFileIndex", log: PerformanceTracer.fileOps, id: sid)
+        if autoSaveObserver == nil {
+            autoSaveObserver = NotificationCenter.default.addObserver(
+                forName: .autoSaveSettingsChanged, object: nil, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.setupAutoSaveTimer() }
             }
         }
     }
 
-    private func applyLoadedChildren(_ children: [FileItem], to item: FileItem, expectedURL: URL) {
-        guard item.url == expectedURL else { return }
-        item.children = children
-        item.childrenLoaded = true
-        item.isLoadingChildren = false
-        addToMap(children)
-    }
-
-    private func applyIndexedFiles(_ files: [FileItem], generation: Int, rootURL: URL) {
-        guard generation == fileIndexGeneration else { return }
-        guard self.rootURL?.standardizedFileURL == rootURL.standardizedFileURL else { return }
-        indexedFiles = files
-    }
-
-    func selectFile(_ item: FileItem) {
-        if item.isDirectory {
-            selectedFileID = item.id
-        } else {
-            openFile(item)
-        }
-    }
-
-    private func addToMap(_ items: [FileItem]) {
-        for item in items {
-            fileItemMap[item.id] = item
-        }
-    }
-
-    func isSameOrDescendant(_ url: URL, of baseURL: URL) -> Bool {
-        let path = url.standardizedFileURL.path
-        let basePath = baseURL.standardizedFileURL.path
-        return path == basePath || path.hasPrefix(basePath + "/")
-    }
-
-    func replacingDescendantURL(_ url: URL, from oldBaseURL: URL, to newBaseURL: URL) -> URL? {
-        let oldBasePath = oldBaseURL.standardizedFileURL.path
-        let sourcePath = url.standardizedFileURL.path
-        guard sourcePath == oldBasePath || sourcePath.hasPrefix(oldBasePath + "/") else { return nil }
-        let suffix = sourcePath.dropFirst(oldBasePath.count)
-        guard !suffix.isEmpty else { return newBaseURL.standardizedFileURL }
-        return newBaseURL.standardizedFileURL.appendingPathComponent(
-            String(suffix.drop(while: { $0 == "/" }))
-        )
-    }
-
-    func requiresDirectFileAccess(_ url: URL) -> Bool {
-        guard let rootURL else { return true }
-        return !isSameOrDescendant(url, of: rootURL)
-    }
-
-    func syncShareServerState() {
-        guard shareServer.isRunning else { return }
-
-        if shareServer.rootURL?.standardizedFileURL != rootURL?.standardizedFileURL {
-            shareServer.rootURL = rootURL
-        }
-
-        let currentAllowedFiles = openTabs.map(\.url.standardizedFileURL)
-        let existingAllowedFiles = shareServer.allowedFiles.map(\.standardizedFileURL)
-        if currentAllowedFiles != existingAllowedFiles {
-            shareServer.allowedFiles = openTabs.map(\.url)
-        }
-    }
-
-    func handleItemRenamed(from oldURL: URL, to newURL: URL) {
-        let oldURL = oldURL.standardizedFileURL
-        let newURL = newURL.standardizedFileURL
-
-        if let selectedFileID,
-           let replaced = replacingDescendantURL(selectedFileID, from: oldURL, to: newURL) {
-            self.selectedFileID = replaced
-        }
-
-        if let previewHTMLFileURL,
-           let replaced = replacingDescendantURL(previewHTMLFileURL, from: oldURL, to: newURL) {
-            self.previewHTMLFileURL = replaced
-        }
-
-        for idx in openTabs.indices {
-            if let replaced = replacingDescendantURL(openTabs[idx].url, from: oldURL, to: newURL) {
-                openTabs[idx].url = replaced
-            }
-        }
-
-        recentlyClosedURLs = recentlyClosedURLs.compactMap {
-            replacingDescendantURL($0, from: oldURL, to: newURL)
-        }
-
-        if let tab = selectedTab {
-            syncPreviewContent(from: tab)
-        }
-    }
-
-    func handleItemDeleted(at deletedURL: URL) {
-        let deletedURL = deletedURL.standardizedFileURL
-
-        let removedTabs = openTabs.filter { isSameOrDescendant($0.url, of: deletedURL) }
-        for tab in removedTabs {
-            endAccessing(tab.url)
-        }
-        openTabs.removeAll { isSameOrDescendant($0.url, of: deletedURL) }
-        recentlyClosedURLs.removeAll { isSameOrDescendant($0, of: deletedURL) }
-
-        if let selectedFileID, isSameOrDescendant(selectedFileID, of: deletedURL) {
-            self.selectedFileID = nil
-        }
-
-        if let selectedTabID,
-           !openTabs.contains(where: { $0.id == selectedTabID }) {
-            self.selectedTabID = openTabs.first?.id
-        }
-
-        if let tab = selectedTab {
-            syncSidebarSelectionToTab(tab)
-            syncPreviewContent(from: tab)
-        } else {
-            selectedTabID = nil
-            clearPreview()
-        }
-    }
-
-    // MARK: - Preview
-
-    @discardableResult
-    func clearPreview() -> Bool {
-        var changed = false
-        if !previewContent.isEmpty {
-            previewContent = ""
-            changed = true
-        }
-        if previewHTMLFileURL != nil {
-            previewHTMLFileURL = nil
-            changed = true
-        }
-        if previewMode != .empty {
-            previewMode = .empty
-            changed = true
-        }
-        if changed {
-            previewContentRevision &+= 1
-        }
-        return changed
-    }
-
-    @discardableResult
-    func showMarkdownPreview(content: String) -> Bool {
-        var changed = false
-        let nextMode: PreviewMode = .markdown
-        if previewHTMLFileURL != nil {
-            previewHTMLFileURL = nil
-            changed = true
-        }
-        if previewLanguage != .markdown {
-            previewLanguage = .markdown
-        }
-        if previewContent != content {
-            previewContent = content
-            changed = true
-        }
-        if previewMode != nextMode {
-            previewMode = nextMode
-            changed = true
-        }
-        if changed {
-            previewContentRevision &+= 1
-        }
-        return changed
-    }
-
-    @discardableResult
-    func showHTMLPreview(fileURL: URL) -> Bool {
-        let normalizedURL = fileURL.standardizedFileURL
-        let currentURL = previewHTMLFileURL?.standardizedFileURL
-        var changed = false
-        if !previewContent.isEmpty {
-            previewContent = ""
-            changed = true
-        }
-        if previewLanguage != .html {
-            previewLanguage = .html
-        }
-        if previewMode != .html {
-            previewMode = .html
-            changed = true
-        }
-        if currentURL != normalizedURL {
-            previewHTMLFileURL = fileURL
-            previewReloadToken &+= 1
-            changed = true
-        }
-        return changed
-    }
-
-    func syncPreviewContent(from tab: EditorTab) {
-        let sid = PerformanceTracer.begin("SyncPreviewContent", log: PerformanceTracer.preview)
-        defer { PerformanceTracer.end("SyncPreviewContent", log: PerformanceTracer.preview, id: sid) }
-
-        if tab.language == .html {
-            showHTMLPreview(fileURL: tab.url)
-        } else {
-            showMarkdownPreview(content: tab.content)
-        }
+    private func autoSaveModifiedTabs() {
+        for tab in openTabs where tab.isModified { saveTab(tab) }
     }
 }
