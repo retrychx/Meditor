@@ -25,6 +25,35 @@ struct ContentView: View {
             QuickOpenSheet()
                 .environment(state)
         }
+        .sheet(isPresented: Binding(
+            get: { state.showingTemplatePicker },
+            set: { state.showingTemplatePicker = $0 }
+        )) {
+            TemplatePickerSheet(store: state.templateStore) { template in
+                state.createFromTemplate(template)
+            }
+            .environment(state)
+        }
+        .alert(L("template.saveTitle"), isPresented: Binding(
+            get: { state.showingSaveTemplate },
+            set: { state.showingSaveTemplate = $0 }
+        )) {
+            TextField(L("template.namePlaceholder"), text: Binding(
+                get: { state.saveTemplateName },
+                set: { state.saveTemplateName = $0 }
+            ))
+            Button(L("common.save")) {
+                state.saveCurrentAsTemplate(name: state.saveTemplateName)
+                state.saveTemplateName = ""
+                state.showingSaveTemplate = false
+            }
+            Button(L("common.cancel"), role: .cancel) {
+                state.saveTemplateName = ""
+                state.showingSaveTemplate = false
+            }
+        } message: {
+            Text(L("template.saveMessage"))
+        }
         .alert(L("alert.errorTitle"), isPresented: Binding(
             get: { state.errorMessage != nil },
             set: { if !$0 { state.errorMessage = nil } }

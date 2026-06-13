@@ -160,7 +160,13 @@ final class AppState {
     let previewExporter = PreviewExporter()
     let previewFindController = PreviewFindController()
     let sessionStore: SessionStore
+    let templateStore: TemplateStore
     let shareServer = LocalShareServer()
+
+    // Template picker
+    var showingTemplatePicker = false
+    var showingSaveTemplate = false
+    var saveTemplateName = ""
 
     @ObservationIgnored
     private var autoSaveTimer: Timer?
@@ -179,6 +185,7 @@ final class AppState {
         self.fileWatcher = fileWatcher
         self.themeStore = themeStore
         self.sessionStore = sessionStore
+        self.templateStore = TemplateStore()
         setupAutoSaveTimer()
     }
 
@@ -214,6 +221,31 @@ final class AppState {
 
     func setError(_ message: String) {
         errorMessage = message
+    }
+
+    // MARK: - Templates
+
+    func createFromTemplate(_ template: DocumentTemplate) {
+        guard let root = rootURL else { return }
+        let baseName = template.id == "blank" ? "untitled" : template.id
+        var url = root.appendingPathComponent(baseName + ".md")
+        var counter = 1
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = root.appendingPathComponent("\(baseName) \(counter).md")
+            counter += 1
+        }
+        FileManager.default.createFile(atPath: url.path, contents: template.content.data(using: .utf8))
+        let item = FileItem(url: url, isDirectory: false)
+        openFile(item)
+    }
+
+    func saveCurrentAsTemplate(name: String) {
+        guard let tab = selectedTab else { return }
+        do {
+            try templateStore.save(name: name, content: tab.content)
+        } catch {
+            setError(error.localizedDescription)
+        }
     }
 
     func report(_ error: AppError, logger: Logger = AppLog.app) {
