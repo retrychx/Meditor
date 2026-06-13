@@ -160,16 +160,28 @@ final class AppState {
     let previewExporter = PreviewExporter()
     let previewFindController = PreviewFindController()
     let sessionStore: SessionStore
-    let templateStore: TemplateStore
     let shareServer = LocalShareServer()
+    /// Owns template state and operations. Use this instead of the removed
+    /// `templateStore` / `showingTemplatePicker` properties on AppState.
+    let templateManager: TemplateManager
 
-    // Template picker
-    var showingTemplatePicker = false
-    var showingSaveTemplate = false
-    var saveTemplateName = ""
-    /// Target directory when creating a file from a specific sidebar folder.
-    /// Set by FileSidebar before opening the template picker; consumed and cleared by createFromTemplate.
-    var templateCreateParentURL: URL?
+    // MARK: - Template picker forwarding (thin facade → TemplateManager)
+    var showingTemplatePicker: Bool {
+        get { templateManager.showingPicker }
+        set { templateManager.showingPicker = newValue }
+    }
+    var showingSaveTemplate: Bool {
+        get { templateManager.showingSaveAs }
+        set { templateManager.showingSaveAs = newValue }
+    }
+    var saveTemplateName: String {
+        get { templateManager.saveAsName }
+        set { templateManager.saveAsName = newValue }
+    }
+    var templateCreateParentURL: URL? {
+        get { templateManager.pendingParentURL }
+        set { templateManager.pendingParentURL = newValue }
+    }
 
     @ObservationIgnored
     private var autoSaveTimer: Timer?
@@ -188,7 +200,7 @@ final class AppState {
         self.fileWatcher = fileWatcher
         self.themeStore = themeStore
         self.sessionStore = sessionStore
-        self.templateStore = TemplateStore()
+        self.templateManager = TemplateManager()
         setupAutoSaveTimer()
     }
 
@@ -229,34 +241,24 @@ final class AppState {
     // MARK: - Templates
 
     func createFromTemplate(_ template: DocumentTemplate) {
-        // Use the folder the user right-clicked, falling back to project root.
-        let targetDir = templateCreateParentURL ?? rootURL
-        templateCreateParentURL = nil  // consume immediately
-        guard let targetDir else { return }
-
-        let baseName = template.id == "blank" ? "untitled" : template.id
-        let ext = template.fileExtension
-        var url = targetDir.appendingPathComponent(baseName + "." + ext)
-        var counter = 1
-        while fileService.fileExists(at: url) {
-            url = targetDir.appendingPathComponent("\(baseName) \(counter).\(ext)")
-            counter += 1
-        }
-        do {
-            try fileService.createFile(at: url, content: template.content)
-        } catch {
-            report(.fileCreate(url, underlying: error), logger: AppLog.file)
-            return
-        }
-        reloadFileTree()
-        let item = FileItem(url: url, isDirectory: false)
-        openFile(item)
+        templateManager.createFromTemplate(
+            template,
+            rootURL: rootURL,
+            fileService: fileService,
+            onSuccess: { [weak self] item in
+                self?.reloadFileTree()
+                self?.openFile(item)
+            },
+            onError: { [weak self] error in
+                self?.report(error, logger: AppLog.file)
+            }
+        )
     }
 
     func saveCurrentAsTemplate(name: String) {
         guard let tab = selectedTab else { return }
         do {
-            try templateStore.save(name: name, content: tab.content)
+            try templateManager.saveAs(name: name, content: tab.content)
         } catch {
             setError(error.localizedDescription)
         }
