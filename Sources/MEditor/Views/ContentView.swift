@@ -135,13 +135,19 @@ struct ContentView: View {
                     theme.separator.frame(width: 1)
                 }
                 // Tab bar + actions (right portion)
-                ZStack(alignment: .trailing) {
+                // Actions group has fixed width; tabs fill the rest and clip
+                HStack(spacing: 0) {
                     if !state.openTabs.isEmpty {
                         EditorTabBar()
+                            .frame(maxWidth: .infinity)
+                            .clipped()
                     } else {
                         Color.clear
+                            .frame(maxWidth: .infinity)
                     }
+                    // Action buttons: fixed width, never pushed by tabs
                     editorActionButtons
+                        .fixedSize(horizontal: true, vertical: false)
                 }
                 .frame(maxWidth: .infinity)
             }
