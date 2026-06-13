@@ -63,19 +63,15 @@ struct MEditorApp: App {
                 Divider()
 
                 Button(L("menu.newFile")) {
-                    if let root = appState.rootURL {
-                        var newURL = root.appendingPathComponent("untitled.md")
-                        var counter = 1
-                        while FileManager.default.fileExists(atPath: newURL.path) {
-                            newURL = root.appendingPathComponent("untitled \(counter).md")
-                            counter += 1
-                        }
-                        FileManager.default.createFile(atPath: newURL.path, contents: Data())
-                        let item = FileItem(url: newURL, isDirectory: false)
-                        appState.openFile(item)
-                    }
+                    appState.showingTemplatePicker = true
                 }
                 .keyboardShortcut("n", modifiers: .command)
+                .disabled(appState.rootURL == nil)
+
+                Button(L("menu.saveAsTemplate")) {
+                    appState.showingSaveTemplate = true
+                }
+                .disabled(appState.selectedTab == nil)
             }
 
             CommandGroup(replacing: .saveItem) {
