@@ -41,7 +41,7 @@ struct MEditorApp: App {
             SettingsView()
         }
         .windowStyle(.titleBar)
-        .windowToolbarStyle(.unified)
+        .windowToolbarStyle(.unifiedCompact)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button(L("menu.openFolder")) {
