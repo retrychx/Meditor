@@ -113,7 +113,8 @@ struct ContentView: View {
             onOpenRecent: { url in state.openFolder(url) }
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .textBackgroundColor))
+        // Background bleeds into titlebar — no visible separator
+        .background(Color(nsColor: .textBackgroundColor), ignoresSafeAreaEdges: .top)
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
             handleDrop(providers)
         }
@@ -126,6 +127,8 @@ struct ContentView: View {
                 if showSidebar {
                     sidebarColumn
                         .frame(width: sidebarWidth)
+                        // Sidebar background bleeds into the titlebar area
+                        .background(theme.chromeBackground, ignoresSafeAreaEdges: .top)
                     draggableDivider(width: $sidebarWidth, minValue: 160, maxValue: 360)
                 }
 
@@ -156,6 +159,8 @@ struct ContentView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Editor background bleeds into the titlebar area
+                .background(theme.editorBackground, ignoresSafeAreaEdges: .top)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
