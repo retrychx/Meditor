@@ -36,9 +36,9 @@ struct FileRow: View {
                 Spacer(minLength: 0)
             }
         }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 8)
-        .frame(minHeight: 26)
+        .padding(.vertical, 5)
+        .padding(.horizontal, 6)
+        .frame(minHeight: 30)
         .background(rowBackground)
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }

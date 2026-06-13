@@ -95,6 +95,13 @@ struct FileSidebar: View {
             Group {
                 if searchText.isEmpty {
                     List {
+                        // Craft-style section header
+                        if let rootURL = state.rootURL {
+                            sectionHeader(rootURL.lastPathComponent.uppercased())
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                                .listRowInsets(.init(top: 8, leading: 8, bottom: 2, trailing: 8))
+                        }
                         ForEach(state.fileTree) { item in
                             SidebarTreeNode(
                                 item: item,
@@ -131,6 +138,49 @@ struct FileSidebar: View {
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
             .frame(minWidth: 200)
+
+            // Craft-style: New File button pinned to bottom of sidebar
+            if state.rootURL != nil {
+                Divider().opacity(0.4)
+                HStack(spacing: 6) {
+                    Button {
+                        createParentURL = state.rootURL
+                        createIsFolder = false
+                        createName = ""
+                        showCreateAlert = true
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "square.and.pencil")
+                                .font(.system(size: 12))
+                            Text(L("menu.newFile"))
+                                .font(.system(size: 12.5))
+                        }
+                        .foregroundStyle(theme.craftSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        createParentURL = state.rootURL
+                        createIsFolder = true
+                        createName = ""
+                        showCreateAlert = true
+                    } label: {
+                        Image(systemName: "folder.badge.plus")
+                            .font(.system(size: 12))
+                            .foregroundStyle(theme.craftSecondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 8)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 4)
+                .padding(.bottom, 4)
+            }
         }
         // MARK: - Create alert
         .alert(L(createIsFolder ? "menu.newFolder" : "menu.newFile"), isPresented: $showCreateAlert) {
@@ -259,6 +309,16 @@ struct FileSidebar: View {
     }
 
     // MARK: - Helpers
+
+    /// Craft-style section header: small caps, muted, no decoration
+    private func sectionHeader(_ title: String) -> some View {
+        let theme = state.themeStore.current
+        return Text(title)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(theme.craftSecondary)
+            .kerning(0.5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
 
     private func refresh() {
         state.reloadFileTree()
