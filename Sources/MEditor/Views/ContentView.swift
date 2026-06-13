@@ -152,41 +152,46 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity)
             }
             .frame(height: 38)
-            .background {
-                // Use system sidebar material for the chrome bar.
-                // .withinWindow blends with the WINDOW background — predictable,
-                // no desktop color bleeding. Same as Finder, Mail, Notes.
-                VisualEffect(material: .sidebar, blendingMode: .withinWindow)
-                    .ignoresSafeArea(edges: .top)
-            }
+            .background(theme.chromeBackground, ignoresSafeAreaEdges: .top)
             .overlay(alignment: .bottom) {
-                theme.separator.frame(height: 1).opacity(0.6)
+                Color.black.opacity(0.06).frame(height: 1)
             }
 
             // ── Content area (sidebar + editor) ──
+            // Craft-style: window canvas (#F2F2F2) is the base,
+            // editor card floats on top with white bg + subtle shadow.
             HStack(spacing: 0) {
                 if showSidebar {
                     sidebarColumn
                         .frame(width: sidebarWidth)
-                    draggableDivider(width: $sidebarWidth, minValue: 160, maxValue: 360)
                 }
 
-                HStack(spacing: 0) {
-                    if showEditor {
-                        editorColumn
-                            .frame(maxWidth: .infinity)
+                // Editor card — white, floats on the gray canvas
+                ZStack {
+                    // Canvas background
+                    theme.windowBackground
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    HStack(spacing: 0) {
+                        if showEditor {
+                            editorColumn
+                                .frame(maxWidth: .infinity)
+                        }
+                        if showEditor && showPreview {
+                            Color.black.opacity(0.06).frame(width: 1)
+                        }
+                        if showPreview {
+                            previewColumn
+                                .frame(maxWidth: .infinity)
+                        }
+                        if !showEditor && !showPreview {
+                            theme.windowBackground
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
                     }
-                    if showEditor && showPreview {
-                        theme.separator.frame(width: 1)
-                    }
-                    if showPreview {
-                        previewColumn
-                            .frame(maxWidth: .infinity)
-                    }
-                    if !showEditor && !showPreview {
-                        theme.editorBackground
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // Craft-style left separator: very subtle shadow instead of hard border
+                    .shadow(color: .black.opacity(0.05), radius: 8, x: -2, y: 0)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -194,7 +199,7 @@ struct ContentView: View {
 
             statusBar
         }
-        .background(theme.editorBackground)
+        .background(theme.windowBackground)
     }
 
     /// Left portion of the unified top bar (matches sidebar width).
@@ -226,14 +231,12 @@ struct ContentView: View {
             .padding(.trailing, 4)
         }
         .frame(maxHeight: .infinity)
-        .background(VisualEffect(material: .sidebar, blendingMode: .withinWindow))
+        .background(state.themeStore.current.chromeBackground)
     }
 
     private var sidebarColumn: some View {
         FileSidebar()
-            // System sidebar material: Finder/Mail/Notes all use this.
-            // .withinWindow = predictable, adapts to appearance, no desktop bleed.
-            .background(VisualEffect(material: .sidebar, blendingMode: .withinWindow))
+            .background(state.themeStore.current.chromeBackground)
     }
 
     private var editorColumn: some View {
@@ -417,11 +420,9 @@ struct ContentView: View {
             Spacer()
         }
         .frame(height: 22)
-        .background {
-            VisualEffect(material: .sidebar, blendingMode: .withinWindow)
-        }
+        .background(theme.chromeBackground)
         .overlay(alignment: .top) {
-            theme.separator.frame(height: 1).opacity(0.5)
+            Color.black.opacity(0.06).frame(height: 1)
         }
     }
 

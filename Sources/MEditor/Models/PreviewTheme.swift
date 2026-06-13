@@ -45,17 +45,29 @@ enum PreviewTheme: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Chrome background: sidebar + top bar. Intentionally distinct from editor
-    /// to create visual hierarchy without relying on materials.
+    /// Chrome background: sidebar + top bar. Craft-style palette.
     var chromeBackground: Color {
         switch self {
         case .github:
-            // Warm off-white, like Bear/Notion sidebar — cooler than editor white
-            return Color(red: 0.937, green: 0.937, blue: 0.941)  // #EFEFF0
+            // Craft-style: barely-there light gray. Clean, not cold.
+            return Color(red: 0.973, green: 0.973, blue: 0.973)  // #F8F8F8
         case .nord:
             return Color(red: 0.141, green: 0.161, blue: 0.200)  // #242933
         case .dracula:
             return Color(red: 0.129, green: 0.133, blue: 0.173)  // #21222c
+        }
+    }
+
+    /// Window canvas behind everything — slightly deeper than sidebar.
+    /// Craft uses this to make the editor card "float".
+    var windowBackground: Color {
+        switch self {
+        case .github:
+            return Color(red: 0.949, green: 0.949, blue: 0.949)  // #F2F2F2
+        case .nord:
+            return Color(red: 0.118, green: 0.133, blue: 0.165)  // #1e2229
+        case .dracula:
+            return Color(red: 0.106, green: 0.110, blue: 0.145)  // #1b1c25
         }
     }
 
