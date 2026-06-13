@@ -13,11 +13,12 @@ struct MEditorApp: App {
                     NSWindow.allowsAutomaticWindowTabbing = false
                     if let window = NSApp.windows.first {
                         window.setFrameAutosaveName("MEditorMainWindow")
-                        // Immersive title bar: content extends under the toolbar
                         window.titleVisibility = .hidden
                         window.titlebarAppearsTransparent = true
                         window.titlebarSeparatorStyle = .none
                         window.styleMask.insert(.fullSizeContentView)
+                        // Remove NSToolbar entirely — buttons live in SwiftUI layout
+                        window.toolbar = nil
                     }
                     // Pre-warm a WKWebView so first file open renders instantly.
                     WebViewPool.shared.warmUp()
@@ -41,7 +42,6 @@ struct MEditorApp: App {
             SettingsView()
         }
         .windowStyle(.titleBar)
-        .windowToolbarStyle(.unifiedCompact)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button(L("menu.openFolder")) {
