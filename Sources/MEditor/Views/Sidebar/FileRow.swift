@@ -84,13 +84,11 @@ struct FileRow: View {
 
     private var highlightedName: Text {
         let name = item.name
-        let lower = name.lowercased()
-        let query = searchText.lowercased()
-        guard let range = lower.range(of: query) else {
+        guard let range = name.range(of: searchText, options: .caseInsensitive) else {
             return Text(name)
         }
         let before = String(name[name.startIndex..<range.lowerBound])
-        let match = String(name[range.lowerBound..<range.upperBound])
+        let match = String(name[range])
         let after = String(name[range.upperBound...])
         return Text(before) + Text(match).foregroundColor(.accentColor).bold() + Text(after)
     }
