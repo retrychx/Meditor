@@ -3,14 +3,15 @@ import Foundation
 // MARK: - Model
 
 struct DocumentTemplate: Identifiable, Equatable {
-    let id: String              // unique slug, e.g. "meeting-notes"
-    let name: String            // display name
-    let description: String     // one-liner for preview
-    let content: String         // markdown content
-    let isBuiltin: Bool         // built-in templates cannot be deleted
+    let id: String
+    let name: String
+    let description: String
+    let content: String
+    let isBuiltin: Bool
     let createdAt: Date
+    let fileExtension: String  // "md" or "html"
 
-    var fileName: String { id + ".md" }
+    var fileName: String { id + "." + fileExtension }
 }
 
 // MARK: - Protocol (testable)
@@ -87,7 +88,8 @@ final class TemplateStore: TemplateStoreProtocol {
             description: String(content.prefix(80)).replacingOccurrences(of: "\n", with: " "),
             content: content,
             isBuiltin: false,
-            createdAt: Date()
+            createdAt: Date(),
+            fileExtension: "md"
         )
 
         // Write content
@@ -150,7 +152,8 @@ final class TemplateStore: TemplateStoreProtocol {
                 description: meta.description,
                 content: content,
                 isBuiltin: false,
-                createdAt: meta.createdAt
+                createdAt: meta.createdAt,
+                fileExtension: "md"
             )
         }.sorted { $0.createdAt > $1.createdAt }
     }
@@ -168,17 +171,26 @@ final class TemplateStore: TemplateStoreProtocol {
     // MARK: - Built-in templates
 
     static var builtins: [DocumentTemplate] {[
-        DocumentTemplate(id: "blank", name: "Blank", description: "Empty document", content: "", isBuiltin: true, createdAt: .distantPast),
-        DocumentTemplate(id: "meeting-notes", name: "Meeting Notes", description: "Attendees, agenda, action items", content: meetingTemplate, isBuiltin: true, createdAt: .distantPast),
-        DocumentTemplate(id: "tech-design", name: "Tech Design", description: "Background, design, implementation plan", content: techDesignTemplate, isBuiltin: true, createdAt: .distantPast),
-        DocumentTemplate(id: "weekly-report", name: "Weekly Report", description: "Progress, blockers, next week plan", content: weeklyTemplate, isBuiltin: true, createdAt: .distantPast),
-        DocumentTemplate(id: "journal", name: "Journal", description: "Daily reflection and notes", content: journalTemplate, isBuiltin: true, createdAt: .distantPast),
+        DocumentTemplate(id: "blank", name: "Blank", description: "Empty document", content: "", isBuiltin: true, createdAt: .distantPast, fileExtension: "md"),
+        DocumentTemplate(id: "meeting-notes", name: "Meeting Notes", description: "Attendees, agenda, action items", content: meetingTemplate, isBuiltin: true, createdAt: .distantPast, fileExtension: "md"),
+        DocumentTemplate(id: "tech-design", name: "Tech Design", description: "Background, design, implementation plan", content: techDesignTemplate, isBuiltin: true, createdAt: .distantPast, fileExtension: "md"),
+        DocumentTemplate(id: "weekly-report", name: "Weekly Report", description: "Progress, blockers, next week plan", content: weeklyTemplate, isBuiltin: true, createdAt: .distantPast, fileExtension: "md"),
+        DocumentTemplate(id: "journal", name: "Journal", description: "Daily reflection and notes", content: journalTemplate, isBuiltin: true, createdAt: .distantPast, fileExtension: "md"),
+        DocumentTemplate(id: "html-doc", name: "HTML Document", description: "Styled document with sidebar navigation", content: htmlDocTemplate, isBuiltin: true, createdAt: .distantPast, fileExtension: "html"),
     ]}
 
     private static var datePlaceholder: String {
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd"
         return fmt.string(from: Date())
+    }
+
+    private static var htmlDocTemplate: String {
+        guard let url = Bundle.main.url(forResource: "Templates/doc-template", withExtension: "html"),
+              let content = try? String(contentsOf: url, encoding: .utf8) else {
+            return "<!DOCTYPE html>\n<html>\n<head><title>Document</title></head>\n<body>\n<h1>Title</h1>\n</body>\n</html>"
+        }
+        return content
     }
 
     private static var meetingTemplate: String { """
