@@ -169,8 +169,7 @@ struct FileSidebar: View {
         case .newFile(let parentURL):
             createParentURL = parentURL
             createIsFolder = false
-            createName = ""
-            showCreateAlert = true
+            state.showingTemplatePicker = true
 
         case .newFolder(let parentURL):
             createParentURL = parentURL
