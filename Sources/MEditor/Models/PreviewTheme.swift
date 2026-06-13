@@ -89,6 +89,44 @@ enum PreviewTheme: String, CaseIterable, Identifiable {
         }
     }
 
+    // MARK: - Craft-extracted interaction tokens (light #1F2225 / dark #F4F4F4)
+
+    /// Primary text — Craft: #1F2225 warm near-black (not pure black)
+    var craftPrimary: Color {
+        switch self {
+        case .github:  return Color(red: 0.122, green: 0.133, blue: 0.145)  // #1F2225
+        case .nord:    return Color(red: 0.847, green: 0.871, blue: 0.914)  // #D8DEE9
+        case .dracula: return Color(red: 0.973, green: 0.973, blue: 0.949)  // #F8F8F2
+        }
+    }
+
+    /// Secondary text — Craft: #9EA4AA
+    var craftSecondary: Color {
+        switch self {
+        case .github:  return Color(red: 0.620, green: 0.643, blue: 0.667)  // #9EA4AA
+        case .nord:    return Color(red: 0.600, green: 0.627, blue: 0.667)  // nord secondary
+        case .dracula: return Color(red: 0.620, green: 0.643, blue: 0.667)  // dracula secondary
+        }
+    }
+
+    /// Hover overlay — Craft: rgba(31,34,37,0.08)
+    var craftHover: Color {
+        switch self {
+        case .github:  return Color(red: 0.122, green: 0.133, blue: 0.145).opacity(0.08)
+        case .nord:    return Color.white.opacity(0.06)
+        case .dracula: return Color.white.opacity(0.06)
+        }
+    }
+
+    /// Selected overlay — Craft: rgba(31,34,37,0.13)
+    var craftSelected: Color {
+        switch self {
+        case .github:  return Color(red: 0.122, green: 0.133, blue: 0.145).opacity(0.13)
+        case .nord:    return Color.white.opacity(0.1)
+        case .dracula: return Color.white.opacity(0.1)
+        }
+    }
+
     // MARK: - NSColor variants for AppKit views
 
     var editorBackgroundNSColor: NSColor {

@@ -6,6 +6,7 @@ struct FileRow: View {
     let searchText: String
     let onAction: ((FileAction) -> Void)?
 
+    @Environment(AppState.self) private var state
     @State private var isHovered = false
 
     init(
@@ -21,29 +22,24 @@ struct FileRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 7) {
             fileIcon
-                .frame(width: 15, alignment: .center)
+                .frame(width: 16, alignment: .center)
 
             nameLabel
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.vertical, 5)
-        .padding(.horizontal, 8)
-        .background(rowBackground)
-        // Left accent line via overlay — avoids affecting List layout
-        .overlay(alignment: .leading) {
-            if isSelected {
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(Color.accentColor)
-                    .frame(width: 2.5)
-                    .padding(.vertical, 7)
-                    .transition(.opacity)
-                    .animation(.easeOut(duration: 0.12), value: isSelected)
+
+            // Modified indicator — subtle dot on the right
+            if !item.isDirectory {
+                Spacer(minLength: 0)
             }
         }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .frame(minHeight: 26)
+        .background(rowBackground)
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
         .contextMenu { contextMenuItems }
@@ -53,27 +49,35 @@ struct FileRow: View {
 
     @ViewBuilder
     private var fileIcon: some View {
+        let theme = state.themeStore.current
         if item.isDirectory {
             Image(systemName: "folder.fill")
                 .symbolRenderingMode(.hierarchical)
-                .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(Color.orange)
+                .font(.system(size: 13))
+                .foregroundStyle(Color.orange.opacity(0.85))
         } else {
             Image(systemName: iconName)
                 .symbolRenderingMode(.hierarchical)
-                .font(.system(size: 12, weight: .regular))
-                .foregroundStyle(fileColor)
+                .font(.system(size: 12))
+                .foregroundStyle(
+                    isSelected
+                        ? AnyShapeStyle(Color.accentColor.opacity(0.9))
+                        : AnyShapeStyle(fileColor.opacity(0.75))
+                )
         }
     }
 
     @ViewBuilder
     private var nameLabel: some View {
+        let theme = state.themeStore.current
         if searchText.isEmpty {
             Text(item.name)
                 .font(.system(size: 12.5, weight: isSelected ? .medium : .regular))
-                .foregroundStyle(isSelected
-                    ? AnyShapeStyle(Color.primary)
-                    : AnyShapeStyle(Color.primary.opacity(0.78))
+                // Craft token: selected uses primary text, others use slightly muted
+                .foregroundStyle(
+                    isSelected
+                        ? AnyShapeStyle(theme.craftPrimary)
+                        : AnyShapeStyle(theme.craftPrimary.opacity(0.72))
                 )
         } else {
             highlightedName
@@ -83,15 +87,19 @@ struct FileRow: View {
 
     @ViewBuilder
     private var rowBackground: some View {
-        RoundedRectangle(cornerRadius: 6, style: .continuous)
+        let theme = state.themeStore.current
+        RoundedRectangle(cornerRadius: 5, style: .continuous)
             .fill(
                 isSelected
-                    ? AnyShapeStyle(Color.accentColor.opacity(0.12))
+                    // Craft selected: accent tint, not pure gray overlay
+                    ? AnyShapeStyle(Color.accentColor.opacity(0.1))
                     : isHovered
-                        ? AnyShapeStyle(Color.black.opacity(0.04))
+                        // Craft hover: rgba(31,34,37, 0.08)
+                        ? AnyShapeStyle(theme.craftHover)
                         : AnyShapeStyle(Color.clear)
             )
-            .animation(.easeOut(duration: 0.1), value: isSelected)
+            .padding(.horizontal, 4)
+            .animation(.easeOut(duration: 0.09), value: isSelected)
             .animation(.easeOut(duration: 0.07), value: isHovered)
     }
 
