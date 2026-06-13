@@ -74,6 +74,7 @@ extension LocalizationManager {
         "template.saveTitle": ("Save as Template", "保存为模板"),
         "template.namePlaceholder": ("Template name", "模板名称"),
         "template.saveMessage": ("Save current file content as a reusable template.", "将当前文件内容保存为可复用模板。"),
+        "template.builtinSection": ("Built-in", "内置模板"),
         "template.blank": ("Blank", "空白文档"),
         "template.blankDesc": ("Empty document", "空文档"),
         "template.meeting": ("Meeting Notes", "会议记录"),

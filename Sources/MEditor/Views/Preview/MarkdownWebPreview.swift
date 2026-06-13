@@ -99,11 +99,9 @@ private struct MarkdownWebView: NSViewRepresentable {
             findController?.register(webView: pooled, for: .markdown)
 
             // Apply theme + push content (webview is already loaded and ready)
-            let themeJS = "window.MEditor && window.MEditor.setTheme('\(theme.rawValue)');"
-            pooled.evaluateJavaScript(themeJS, completionHandler: nil)
+            pooled.evaluateJavaScript(JSBridge.call("setTheme", args: [theme.rawValue]), completionHandler: nil)
             if let baseURL = sourceURL?.deletingLastPathComponent().absoluteString {
-                let escaped = baseURL.replacingOccurrences(of: "'", with: "\\'")
-                pooled.evaluateJavaScript("window.MEditor && window.MEditor.setBaseURL('\(escaped)');", completionHandler: nil)
+                pooled.evaluateJavaScript(JSBridge.call("setBaseURL", args: [baseURL]), completionHandler: nil)
             }
             context.coordinator.scheduleContentUpdate(content, revision: contentRevision, immediately: true)
             return pooled
@@ -141,7 +139,7 @@ private struct MarkdownWebView: NSViewRepresentable {
         // Theme changed: swap stylesheet via JS; re-render handled by bridge.
         if theme != coordinator.lastTheme {
             coordinator.lastTheme = theme
-            coordinator.evaluateWhenReady("window.MEditor && window.MEditor.setTheme('\(theme.rawValue)');")
+            coordinator.evaluateWhenReady(JSBridge.call("setTheme", args: [theme.rawValue]))
         }
 
         // Source URL changed: update <base href> so relative resources resolve.
@@ -149,8 +147,7 @@ private struct MarkdownWebView: NSViewRepresentable {
         if sourceChanged {
             coordinator.lastSourceURL = sourceURL
             let baseURL = sourceURL?.deletingLastPathComponent().absoluteString ?? ""
-            let escaped = baseURL.replacingOccurrences(of: "'", with: "\\'")
-            coordinator.evaluateWhenReady("window.MEditor && window.MEditor.setBaseURL('\(escaped)');")
+            coordinator.evaluateWhenReady(JSBridge.call("setBaseURL", args: [baseURL]))
         }
 
         // Font size changed: update CSS variable.
@@ -175,7 +172,7 @@ private struct MarkdownWebView: NSViewRepresentable {
             coordinator.lastAppliedRequestID = scrollRequestID
             coordinator.isProgrammaticScroll = true
             coordinator.evaluateWhenReady(
-                "window.MEditor && window.MEditor.scrollToLine(\(scrollToLine));"
+                JSBridge.call("scrollToLine", intArg: scrollToLine)
             )
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                 coordinator.isProgrammaticScroll = false

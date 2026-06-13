@@ -81,6 +81,37 @@ final class FileService: FileServiceProtocol {
         try content.write(to: url, atomically: true, encoding: .utf8)
     }
 
+    func createFile(at url: URL, content: String) throws {
+        try content.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    func createDirectory(at url: URL) throws {
+        try fm.createDirectory(at: url, withIntermediateDirectories: false)
+    }
+
+    func moveItem(from source: URL, to destination: URL) throws {
+        try fm.moveItem(at: source, to: destination)
+    }
+
+    func removeItem(at url: URL) throws {
+        try fm.removeItem(at: url)
+    }
+
+    func fileExists(at url: URL) -> Bool {
+        fm.fileExists(atPath: url.path)
+    }
+
+    func fileExists(at url: URL, isDirectory: inout Bool) -> Bool {
+        var isDir: ObjCBool = false
+        let exists = fm.fileExists(atPath: url.path, isDirectory: &isDir)
+        isDirectory = isDir.boolValue
+        return exists
+    }
+
+    func attributes(at url: URL) -> [FileAttributeKey: Any]? {
+        try? fm.attributesOfItem(atPath: url.path)
+    }
+
     // MARK: - Private
 
     private func sortItems(_ items: [FileItem]) -> [FileItem] {

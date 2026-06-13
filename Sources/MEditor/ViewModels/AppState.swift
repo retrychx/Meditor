@@ -167,6 +167,9 @@ final class AppState {
     var showingTemplatePicker = false
     var showingSaveTemplate = false
     var saveTemplateName = ""
+    /// Target directory when creating a file from a specific sidebar folder.
+    /// Set by FileSidebar before opening the template picker; consumed and cleared by createFromTemplate.
+    var templateCreateParentURL: URL?
 
     @ObservationIgnored
     private var autoSaveTimer: Timer?
@@ -226,16 +229,26 @@ final class AppState {
     // MARK: - Templates
 
     func createFromTemplate(_ template: DocumentTemplate) {
-        guard let root = rootURL else { return }
+        // Use the folder the user right-clicked, falling back to project root.
+        let targetDir = templateCreateParentURL ?? rootURL
+        templateCreateParentURL = nil  // consume immediately
+        guard let targetDir else { return }
+
         let baseName = template.id == "blank" ? "untitled" : template.id
         let ext = template.fileExtension
-        var url = root.appendingPathComponent(baseName + "." + ext)
+        var url = targetDir.appendingPathComponent(baseName + "." + ext)
         var counter = 1
-        while FileManager.default.fileExists(atPath: url.path) {
-            url = root.appendingPathComponent("\(baseName) \(counter).\(ext)")
+        while fileService.fileExists(at: url) {
+            url = targetDir.appendingPathComponent("\(baseName) \(counter).\(ext)")
             counter += 1
         }
-        FileManager.default.createFile(atPath: url.path, contents: template.content.data(using: .utf8))
+        do {
+            try fileService.createFile(at: url, content: template.content)
+        } catch {
+            report(.fileCreate(url, underlying: error), logger: AppLog.file)
+            return
+        }
+        reloadFileTree()
         let item = FileItem(url: url, isDirectory: false)
         openFile(item)
     }
@@ -244,6 +257,43 @@ final class AppState {
         guard let tab = selectedTab else { return }
         do {
             try templateStore.save(name: name, content: tab.content)
+        } catch {
+            setError(error.localizedDescription)
+        }
+    }
+
+    // MARK: - File operations (used by FileSidebar)
+
+    func createFileOrFolder(name: String, isFolder: Bool, parentURL: URL) {
+        let targetURL = parentURL.appendingPathComponent(name)
+        do {
+            if isFolder {
+                try fileService.createDirectory(at: targetURL)
+            } else {
+                try fileService.createFile(at: targetURL, content: "")
+            }
+            reloadFileTree()
+        } catch {
+            setError(error.localizedDescription)
+        }
+    }
+
+    func renameFileItem(from oldURL: URL, newName: String) {
+        let newURL = oldURL.deletingLastPathComponent().appendingPathComponent(newName)
+        do {
+            try fileService.moveItem(from: oldURL, to: newURL)
+            handleItemRenamed(from: oldURL, to: newURL)
+            reloadFileTree()
+        } catch {
+            setError(error.localizedDescription)
+        }
+    }
+
+    func deleteFileItem(at url: URL) {
+        do {
+            try fileService.removeItem(at: url)
+            handleItemDeleted(at: url)
+            reloadFileTree()
         } catch {
             setError(error.localizedDescription)
         }
@@ -303,14 +353,14 @@ final class AppState {
     var showingReloadPrompt = false
 
     func recordModDate(for url: URL) {
-        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        let attrs = fileService.attributes(at: url)
         knownModDates[url] = attrs?[.modificationDate] as? Date
     }
 
     private func checkExternalModifications() {
         for tab in openTabs where !tab.isModified {
             let url = tab.url
-            guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+            guard let attrs = fileService.attributes(at: url),
                   let diskDate = attrs[.modificationDate] as? Date else { continue }
             let known = knownModDates[url]
             if let known, diskDate > known {

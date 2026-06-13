@@ -79,7 +79,7 @@ struct FileRow: View {
     }
 
     private var fileColor: Color {
-        FileTypeConfiguration.shared.color(for: item.fileExtension)
+        Color(hex: FileTypeConfiguration.shared.color(for: item.fileExtension))
     }
 
     private var highlightedName: Text {

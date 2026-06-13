@@ -6,9 +6,13 @@ final class LineNumberRulerView: NSRulerView {
     private let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
     private let textColor = NSColor.tertiaryLabelColor
 
-    init(textView: NSTextView) {
+    /// Returns nil if textView is not yet embedded in a scroll view.
+    /// Caller (NativeEditorView.makeNSView) creates this after the scrollView
+    /// is set up, so in practice scrollView is always available.
+    init?(textView: NSTextView) {
+        guard let scrollView = textView.enclosingScrollView else { return nil }
         self.textView = textView
-        super.init(scrollView: textView.enclosingScrollView!, orientation: .verticalRuler)
+        super.init(scrollView: scrollView, orientation: .verticalRuler)
         self.ruleThickness = 36
         self.clientView = textView
 
@@ -19,7 +23,7 @@ final class LineNumberRulerView: NSRulerView {
         NotificationCenter.default.addObserver(
             self, selector: #selector(boundsDidChange(_:)),
             name: NSView.boundsDidChangeNotification,
-            object: textView.enclosingScrollView?.contentView
+            object: scrollView.contentView
         )
     }
 

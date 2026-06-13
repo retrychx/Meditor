@@ -167,7 +167,7 @@ struct FileSidebar: View {
     private func handleFileAction(_ action: FileAction) {
         switch action {
         case .newFile(let parentURL):
-            createParentURL = parentURL
+            state.templateCreateParentURL = parentURL  // remember target dir
             createIsFolder = false
             state.showingTemplatePicker = true
 
@@ -211,19 +211,8 @@ struct FileSidebar: View {
         } else {
             fileName = createName.hasSuffix(".md") ? createName : "\(createName).md"
         }
-        let targetURL = parentURL.appendingPathComponent(fileName)
 
-        do {
-            if createIsFolder {
-                try FileManager.default.createDirectory(at: targetURL, withIntermediateDirectories: false)
-            } else {
-                try "".write(to: targetURL, atomically: true, encoding: .utf8)
-            }
-            refresh()
-        } catch {
-            state.setError(L(createIsFolder ? "error.createFolderFailed" : "error.createFileFailed", error.localizedDescription))
-        }
-
+        state.createFileOrFolder(name: fileName, isFolder: createIsFolder, parentURL: parentURL)
         resetCreateState()
     }
 
@@ -240,16 +229,7 @@ struct FileSidebar: View {
             return
         }
 
-        let newURL = target.url.deletingLastPathComponent().appendingPathComponent(renameName)
-
-        do {
-            try FileManager.default.moveItem(at: target.url, to: newURL)
-            state.handleItemRenamed(from: target.url, to: newURL)
-            refresh()
-        } catch {
-            state.setError(L("error.renameFailed", error.localizedDescription))
-        }
-
+        state.renameFileItem(from: target.url, newName: renameName)
         resetRenameState()
     }
 
@@ -261,13 +241,7 @@ struct FileSidebar: View {
     // MARK: - Delete
 
     private func deleteItem(_ item: FileItem) {
-        do {
-            try FileManager.default.removeItem(at: item.url)
-            state.handleItemDeleted(at: item.url)
-            refresh()
-        } catch {
-            state.setError(L("error.deleteFailed", error.localizedDescription))
-        }
+        state.deleteFileItem(at: item.url)
     }
 
     // MARK: - Helpers

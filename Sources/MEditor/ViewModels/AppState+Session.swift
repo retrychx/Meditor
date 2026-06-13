@@ -38,7 +38,7 @@ extension AppState {
 
         if let rootData = session.rootBookmark,
            let resolved = SessionStore.resolveBookmark(rootData),
-           FileManager.default.fileExists(atPath: resolved.url.path) {
+           fileService.fileExists(at: resolved.url) {
             openFolder(resolved.url)
         }
 
@@ -48,7 +48,7 @@ extension AppState {
         for (originalIndex, tabBookmark) in session.tabs.enumerated() {
             guard let resolved = SessionStore.resolveBookmark(tabBookmark) else { continue }
             let url = resolved.url
-            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            guard fileService.fileExists(at: url) else { continue }
             guard !url.hasDirectoryPath else { continue }
             if alreadyOpenURLs.contains(url.standardizedFileURL) { continue }
 

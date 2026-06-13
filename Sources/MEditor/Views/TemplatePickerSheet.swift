@@ -53,7 +53,7 @@ struct TemplatePickerSheet: View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 if !store.builtinTemplates().isEmpty {
-                    sectionHeader("Built-in")
+                    sectionHeader(L("template.builtinSection"))
                     ForEach(filteredBuiltin) { t in templateRow(t) }
                 }
                 let user = filteredUser
@@ -109,7 +109,7 @@ struct TemplatePickerSheet: View {
 
             if !template.isBuiltin {
                 Button {
-                    try? (store as? TemplateStore)?.delete(id: template.id)
+                    try? store.delete(id: template.id)
                 } label: {
                     Image(systemName: "trash")
                         .font(.system(size: 10))

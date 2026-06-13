@@ -12,7 +12,7 @@ extension AppState {
         guard !item.isDirectory else { return }
 
         // Large file protection: warn before opening files > 1MB
-        if let attrs = try? FileManager.default.attributesOfItem(atPath: item.url.path),
+        if let attrs = fileService.attributes(at: item.url),
            let size = attrs[.size] as? Int64,
            size > Self.largeFileThreshold {
             pendingLargeFile = item
@@ -219,7 +219,7 @@ extension AppState {
 
     func reopenLastClosedTab() {
         while let url = recentlyClosedURLs.popLast() {
-            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            guard fileService.fileExists(at: url) else { continue }
             if openTabs.contains(where: { $0.url == url }) { continue }
             openFile(FileItem(url: url, isDirectory: false))
             return
