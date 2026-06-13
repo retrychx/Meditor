@@ -108,12 +108,15 @@ struct ContentView: View {
     }
 
     private var welcomeScreen: some View {
-        WelcomeView(onOpenFolder: openFolder)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(nsColor: .textBackgroundColor))
-            .onDrop(of: [.fileURL], isTargeted: nil) { providers in
-                handleDrop(providers)
-            }
+        WelcomeView(
+            onOpenFolder: openFolder,
+            onOpenRecent: { url in state.openFolder(url) }
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .textBackgroundColor))
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            handleDrop(providers)
+        }
     }
 
     private var mainLayout: some View {
@@ -137,7 +140,7 @@ struct ContentView: View {
                         }
 
                         if showEditor && showPreview {
-                            theme.separator
+                            DS.Color.divider
                                 .frame(width: 1)
                         }
 
@@ -175,7 +178,7 @@ struct ContentView: View {
 
     private var sidebarColumn: some View {
         FileSidebar()
-            .background(state.themeStore.current.chromeBackground)
+            .background(DS.Color.sidebarBg)
     }
 
     private var editorColumn: some View {
@@ -236,33 +239,10 @@ struct ContentView: View {
             get: { state.shareServer.isRunning && showSharePopover },
             set: { showSharePopover = $0 }
         )) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(L("share.active"))
-                    .font(.system(size: 12, weight: .semibold))
-                if let tab = state.selectedTab,
-                   let url = state.shareServer.shareURLForFile(tab.url) {
-                    Text(L("share.currentFile"))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                    Text(url)
-                        .font(.system(size: 11, design: .monospaced))
-                        .textSelection(.enabled)
-                    Button(L("share.copyURL")) {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(url, forType: .string)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                }
-                Divider()
-                Button(L("share.stop")) {
-                    state.shareServer.stop()
-                    showSharePopover = false
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+            SharePopoverContent(server: state.shareServer, selectedTab: state.selectedTab) {
+                state.shareServer.stop()
+                showSharePopover = false
             }
-            .padding(12)
         }
         .onChange(of: state.shareServer.isRunning) { _, isRunning in
             showSharePopover = isRunning
@@ -346,24 +326,25 @@ struct ContentView: View {
     // MARK: - Status Bar
 
     private var statusBar: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: DS.Space.xs) {
             if let tab = state.selectedTab {
-                Text("Ln \(state.cursorLine), Col \(state.cursorColumn)")
-                    .fixedSize()
-                Text("·")
-                Text("\(wordCount(tab.content)) words")
-                Text("·")
-                Text(state.currentFileSize)
-                Text("·")
-                Text("UTF-8")
+                StatusPill(text: "\(state.cursorLine):\(state.cursorColumn)", icon: "cursor.rays")
+                StatusPill(text: "\(wordCount(tab.content))w")
+                StatusPill(text: state.currentFileSize)
+                StatusPill(text: "UTF-8")
+                let langName = FileTypeConfiguration.shared
+                    .editorLanguage(for: tab.url.pathExtension.lowercased())?.rawValue
+                    .capitalized ?? "Text"
+                StatusPill(text: langName)
             }
             Spacer()
         }
-        .font(.system(size: 11, design: .monospaced))
-        .foregroundStyle(.tertiary)
-        .padding(.horizontal, 12)
-        .frame(height: 20)
-        .background(Color(nsColor: .windowBackgroundColor).opacity(0.5))
+        .padding(.horizontal, DS.Space.md)
+        .frame(height: 26)
+        .background(DS.Color.statusBg)
+        .overlay(alignment: .top) {
+            DS.Color.divider.frame(height: 1)
+        }
     }
 
     private func wordCount(_ text: String) -> Int {

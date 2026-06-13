@@ -60,30 +60,38 @@ struct FileSidebar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Compact search
-            HStack(spacing: 5) {
+            // Search bar
+            HStack(spacing: DS.Space.xs) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.tertiary)
-                    .font(.system(size: 10))
+                    .font(.system(size: 10.5, weight: .medium))
                 TextField(L("sidebar.search"), text: $searchText)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 11.5))
+                    .font(.system(size: 12))
                 if !searchText.isEmpty {
                     Button(action: { searchText = "" }) {
-                        Image(systemName: "xmark.circle")
+                        Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.tertiary)
-                            .font(.system(size: 10))
+                            .font(.system(size: 11))
                     }
                     .buttonStyle(.plain)
+                    .transition(.scale.combined(with: .opacity))
+                    .animation(DS.Motion.fast, value: searchText.isEmpty)
                 }
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, DS.Space.sm)
             .padding(.vertical, 6)
-            .background(Color(nsColor: .quaternaryLabelColor).opacity(0.3))
-            .clipShape(RoundedRectangle(cornerRadius: 5))
-            .padding(.horizontal, 8)
-            .padding(.top, 6)
-            .padding(.bottom, 4)
+            .background(
+                RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                    .fill(Color.primary.opacity(0.06))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                            .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+                    )
+            )
+            .padding(.horizontal, DS.Space.sm)
+            .padding(.top, DS.Space.sm)
+            .padding(.bottom, DS.Space.xs)
 
             Group {
                 if searchText.isEmpty {
