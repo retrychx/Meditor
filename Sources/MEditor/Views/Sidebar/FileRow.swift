@@ -55,11 +55,13 @@ struct FileRow: View {
     private var fileIcon: some View {
         if item.isDirectory {
             Image(systemName: "folder.fill")
-                .font(.system(size: 12, weight: .regular))
-                .foregroundStyle(.orange.opacity(0.82))
+                .symbolRenderingMode(.hierarchical)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(Color.orange)
         } else {
             Image(systemName: iconName)
-                .font(.system(size: 11, weight: .regular))
+                .symbolRenderingMode(.hierarchical)
+                .font(.system(size: 12, weight: .regular))
                 .foregroundStyle(fileColor)
         }
     }
@@ -84,12 +86,12 @@ struct FileRow: View {
         RoundedRectangle(cornerRadius: 5, style: .continuous)
             .fill(
                 isSelected
-                    ? Color.accentColor.opacity(0.12)
+                    ? AnyShapeStyle(.tint.opacity(0.13))
                     : isHovered
-                        ? Color.primary.opacity(0.06)
-                        : Color.clear
+                        ? AnyShapeStyle(Color.primary.opacity(0.055))
+                        : AnyShapeStyle(Color.clear)
             )
-            .animation(.easeOut(duration: 0.12), value: isSelected)
+            .animation(.easeOut(duration: 0.1), value: isSelected)
             .animation(.easeOut(duration: 0.07), value: isHovered)
     }
 

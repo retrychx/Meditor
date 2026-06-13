@@ -152,8 +152,13 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity)
             }
             .frame(height: 38)
-            .background(theme.chromeBackground, ignoresSafeAreaEdges: .top)
-            .overlay(alignment: .bottom) { theme.separator.frame(height: 1) }
+            .background {
+                VisualEffect(material: .titlebar, blendingMode: .withinWindow)
+                    .ignoresSafeArea(edges: .top)
+            }
+            .overlay(alignment: .bottom) {
+                theme.separator.frame(height: 1).opacity(0.5)
+            }
 
             // ── Content area (sidebar + editor) ──
             HStack(spacing: 0) {
@@ -218,12 +223,13 @@ struct ContentView: View {
             .padding(.trailing, 4)
         }
         .frame(maxHeight: .infinity)
-        .background(theme.chromeBackground)
+        .background(VisualEffect(material: .titlebar, blendingMode: .withinWindow))
     }
 
     private var sidebarColumn: some View {
         FileSidebar()
-            .background(state.themeStore.current.chromeBackground)
+            // macOS sidebar material: frosted glass that reads env colors
+            .background(VisualEffect(material: .sidebar, blendingMode: .behindWindow))
     }
 
     private var editorColumn: some View {
