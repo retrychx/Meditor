@@ -74,6 +74,6 @@ final class TemplateManager {
 
     /// Save the given content as a user template.
     func saveAs(name: String, content: String) throws {
-        try store.save(name: name, content: content)
+        _ = try store.save(name: name, content: content)
     }
 }
