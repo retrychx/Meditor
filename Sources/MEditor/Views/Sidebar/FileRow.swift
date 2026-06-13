@@ -83,12 +83,12 @@ struct FileRow: View {
 
     @ViewBuilder
     private var rowBackground: some View {
-        RoundedRectangle(cornerRadius: 5, style: .continuous)
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
             .fill(
                 isSelected
-                    ? AnyShapeStyle(.tint.opacity(0.13))
+                    ? AnyShapeStyle(Color.accentColor.opacity(0.12))
                     : isHovered
-                        ? AnyShapeStyle(Color.primary.opacity(0.055))
+                        ? AnyShapeStyle(Color.black.opacity(0.04))
                         : AnyShapeStyle(Color.clear)
             )
             .animation(.easeOut(duration: 0.1), value: isSelected)

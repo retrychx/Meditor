@@ -108,25 +108,18 @@ private struct TabItem: View {
     @ViewBuilder
     private var tabBackground: some View {
         if isSelected {
-            ZStack(alignment: .bottom) {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(editorBg)
-                    // Crop bottom corners so the tab flows into the editor seamlessly
-                    .padding(.bottom, -6)
-                    .clipped()
-                // Subtle top border line in accent color — 1px, not 2px
-                VStack {
-                    Color.accentColor.opacity(0.7).frame(height: 1)
-                    Spacer()
-                }
-            }
-            .shadow(color: .black.opacity(0.06), radius: 2, y: 1)
-            .animation(.easeOut(duration: 0.15), value: isSelected)
-        } else if isHovered {
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .fill(Color.primary.opacity(0.06))
+            // Craft-style: white rounded pill, floats above chrome bar
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.white)
+                .shadow(color: .black.opacity(0.09), radius: 4, x: 0, y: 1)
                 .padding(.horizontal, 2)
-                .padding(.vertical, 5)
+                .padding(.vertical, 4)
+                .animation(.spring(response: 0.22, dampingFraction: 0.75), value: isSelected)
+        } else if isHovered {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.black.opacity(0.05))
+                .padding(.horizontal, 2)
+                .padding(.vertical, 4)
         }
     }
 
