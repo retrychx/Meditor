@@ -76,8 +76,9 @@ struct NativeEditorView: NSViewRepresentable {
         // Line number gutter
         scrollView.rulersVisible = true
         scrollView.hasVerticalRuler = true
-        let ruler = LineNumberRulerView(textView: textView)
-        scrollView.verticalRulerView = ruler
+        if let ruler = LineNumberRulerView(textView: textView) {
+            scrollView.verticalRulerView = ruler
+        }
 
         // Accept image file drops
         textView.registerForDraggedTypes([.fileURL])
