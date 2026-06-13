@@ -16,11 +16,17 @@ import Foundation
 enum JSBridge {
 
     /// JSON-encode a Swift String into a JavaScript string literal (with quotes).
-    /// Falls back to `"null"` only if JSON serialization is unavailable (impossible in practice).
     static func encode(_ string: String) -> String {
-        guard let data = try? JSONSerialization.data(withJSONObject: string, options: []),
+        guard let data = try? JSONEncoder().encode(string),
               let json = String(data: data, encoding: .utf8) else {
-            return "null"
+            // Manual fallback: escape special chars
+            let escaped = string
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+                .replacingOccurrences(of: "\n", with: "\\n")
+                .replacingOccurrences(of: "\r", with: "\\r")
+                .replacingOccurrences(of: "\t", with: "\\t")
+            return "\"\(escaped)\""
         }
         return json
     }
