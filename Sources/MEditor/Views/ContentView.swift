@@ -29,7 +29,7 @@ struct ContentView: View {
             get: { state.showingTemplatePicker },
             set: { state.showingTemplatePicker = $0 }
         )) {
-            TemplatePickerSheet(store: state.templateStore) { template in
+            TemplatePickerSheet(store: state.templateManager.store) { template in
                 state.createFromTemplate(template)
             }
             .environment(state)
