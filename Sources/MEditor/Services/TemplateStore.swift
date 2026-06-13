@@ -171,12 +171,12 @@ final class TemplateStore: TemplateStoreProtocol {
     // MARK: - Built-in templates
 
     static var builtins: [DocumentTemplate] {[
-        DocumentTemplate(id: "blank", name: "Blank", description: "Empty document", content: "", isBuiltin: true, createdAt: .distantPast, fileExtension: "md"),
-        DocumentTemplate(id: "meeting-notes", name: "Meeting Notes", description: "Attendees, agenda, action items", content: meetingTemplate, isBuiltin: true, createdAt: .distantPast, fileExtension: "md"),
-        DocumentTemplate(id: "tech-design", name: "Tech Design", description: "Background, design, implementation plan", content: techDesignTemplate, isBuiltin: true, createdAt: .distantPast, fileExtension: "md"),
-        DocumentTemplate(id: "weekly-report", name: "Weekly Report", description: "Progress, blockers, next week plan", content: weeklyTemplate, isBuiltin: true, createdAt: .distantPast, fileExtension: "md"),
-        DocumentTemplate(id: "journal", name: "Journal", description: "Daily reflection and notes", content: journalTemplate, isBuiltin: true, createdAt: .distantPast, fileExtension: "md"),
-        DocumentTemplate(id: "html-doc", name: "HTML Document", description: "Styled document with sidebar navigation", content: htmlDocTemplate, isBuiltin: true, createdAt: .distantPast, fileExtension: "html"),
+        DocumentTemplate(id: "blank", name: L("template.blank"), description: L("template.blankDesc"), content: "", isBuiltin: true, createdAt: .distantPast, fileExtension: "md"),
+        DocumentTemplate(id: "meeting-notes", name: L("template.meeting"), description: L("template.meetingDesc"), content: meetingTemplate, isBuiltin: true, createdAt: .distantPast, fileExtension: "md"),
+        DocumentTemplate(id: "tech-design", name: L("template.techDesign"), description: L("template.techDesignDesc"), content: techDesignTemplate, isBuiltin: true, createdAt: .distantPast, fileExtension: "md"),
+        DocumentTemplate(id: "weekly-report", name: L("template.weekly"), description: L("template.weeklyDesc"), content: weeklyTemplate, isBuiltin: true, createdAt: .distantPast, fileExtension: "md"),
+        DocumentTemplate(id: "journal", name: L("template.journal"), description: L("template.journalDesc"), content: journalTemplate, isBuiltin: true, createdAt: .distantPast, fileExtension: "md"),
+        DocumentTemplate(id: "html-doc", name: L("template.htmlDoc"), description: L("template.htmlDocDesc"), content: htmlDocTemplate, isBuiltin: true, createdAt: .distantPast, fileExtension: "html"),
     ]}
 
     private static var datePlaceholder: String {
