@@ -152,9 +152,15 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity)
             }
             .frame(height: 38)
-            .background(theme.chromeBackground, ignoresSafeAreaEdges: .top)
+            .background {
+                // Use system sidebar material for the chrome bar.
+                // .withinWindow blends with the WINDOW background — predictable,
+                // no desktop color bleeding. Same as Finder, Mail, Notes.
+                VisualEffect(material: .sidebar, blendingMode: .withinWindow)
+                    .ignoresSafeArea(edges: .top)
+            }
             .overlay(alignment: .bottom) {
-                theme.separator.frame(height: 1)
+                theme.separator.frame(height: 1).opacity(0.6)
             }
 
             // ── Content area (sidebar + editor) ──
@@ -220,12 +226,14 @@ struct ContentView: View {
             .padding(.trailing, 4)
         }
         .frame(maxHeight: .infinity)
-        .background(state.themeStore.current.chromeBackground)
+        .background(VisualEffect(material: .sidebar, blendingMode: .withinWindow))
     }
 
     private var sidebarColumn: some View {
         FileSidebar()
-            .background(state.themeStore.current.chromeBackground)
+            // System sidebar material: Finder/Mail/Notes all use this.
+            // .withinWindow = predictable, adapts to appearance, no desktop bleed.
+            .background(VisualEffect(material: .sidebar, blendingMode: .withinWindow))
     }
 
     private var editorColumn: some View {
@@ -379,42 +387,62 @@ struct ContentView: View {
         let theme = state.themeStore.current
         return HStack(spacing: 0) {
             if let tab = state.selectedTab {
-                statusItem("\(state.cursorLine):\(state.cursorColumn)", icon: "character.cursor.ibeam", theme: theme)
+                // Cursor position
+                statusChip("\(state.cursorLine):\(state.cursorColumn)",
+                           icon: "character.cursor.ibeam")
                 statusDivider(theme)
-                statusItem("\(wordCount(tab.content)) words", theme: theme)
+                // Word count
+                statusChip("\(wordCount(tab.content))w")
                 statusDivider(theme)
-                statusItem(state.currentFileSize, theme: theme)
+                // File size
+                statusChip(state.currentFileSize)
                 statusDivider(theme)
+                // Language
                 let lang = FileTypeConfiguration.shared
                     .editorLanguage(for: tab.url.pathExtension.lowercased())?.rawValue
                     .capitalized ?? "Text"
-                statusItem(lang, theme: theme)
+                statusChip(lang)
+                // Modified indicator
+                if tab.isModified {
+                    statusDivider(theme)
+                    HStack(spacing: 3) {
+                        Circle().fill(Color.orange).frame(width: 5, height: 5)
+                        Text(L("statusBar.modified"))
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 8)
+                }
             }
             Spacer()
         }
-        .frame(height: 24)
-        .background(theme.chromeBackground)
+        .frame(height: 22)
+        .background {
+            VisualEffect(material: .sidebar, blendingMode: .withinWindow)
+        }
         .overlay(alignment: .top) {
-            theme.separator.frame(height: 1)
+            theme.separator.frame(height: 1).opacity(0.5)
         }
     }
 
     private func statusDivider(_ theme: PreviewTheme) -> some View {
         theme.separator
-            .frame(width: 1, height: 12)
-            .padding(.horizontal, 8)
+            .frame(width: 1, height: 10)
+            .opacity(0.5)
+            .padding(.horizontal, 6)
     }
 
-    private func statusItem(_ text: String, icon: String? = nil, theme: PreviewTheme) -> some View {
-        HStack(spacing: 4) {
+    private func statusChip(_ text: String, icon: String? = nil) -> some View {
+        HStack(spacing: 3) {
             if let icon {
                 Image(systemName: icon)
-                    .font(.system(size: 9, weight: .regular))
-                    .foregroundStyle(theme.foreground.opacity(0.35))
+                    .symbolRenderingMode(.hierarchical)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
             }
             Text(text)
-                .font(.system(size: 11, weight: .regular, design: .monospaced))
-                .foregroundStyle(theme.foreground.opacity(0.4))
+                .font(.system(size: 10.5, weight: .regular, design: .monospaced))
+                .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 10)
     }
