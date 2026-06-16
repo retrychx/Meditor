@@ -49,7 +49,6 @@ struct FileRow: View {
 
     @ViewBuilder
     private var fileIcon: some View {
-        let theme = state.themeStore.current
         if item.isDirectory {
             Image(systemName: "folder.fill")
                 .symbolRenderingMode(.hierarchical)
@@ -87,15 +86,14 @@ struct FileRow: View {
 
     @ViewBuilder
     private var rowBackground: some View {
-        let theme = state.themeStore.current
-        RoundedRectangle(cornerRadius: 5, style: .continuous)
+        // Native sidebar-style selection: a subtle neutral highlight that reads
+        // well on the translucent material, no white pill / drop shadow.
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
             .fill(
                 isSelected
-                    // Craft selected: accent tint, not pure gray overlay
-                    ? AnyShapeStyle(Color.accentColor.opacity(0.1))
+                    ? AnyShapeStyle(Color.primary.opacity(0.10))
                     : isHovered
-                        // Craft hover: rgba(31,34,37, 0.08)
-                        ? AnyShapeStyle(theme.craftHover)
+                        ? AnyShapeStyle(Color.primary.opacity(0.05))
                         : AnyShapeStyle(Color.clear)
             )
             .padding(.horizontal, 4)

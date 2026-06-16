@@ -49,8 +49,8 @@ enum PreviewTheme: String, CaseIterable, Identifiable {
     var chromeBackground: Color {
         switch self {
         case .github:
-            // Craft-style: barely-there light gray. Clean, not cold.
-            return Color(red: 0.973, green: 0.973, blue: 0.973)  // #F8F8F8
+            // Craft-style sidebar: visibly darker than editor white
+            return Color(red: 0.933, green: 0.933, blue: 0.933)  // #EEEEEE
         case .nord:
             return Color(red: 0.141, green: 0.161, blue: 0.200)  // #242933
         case .dracula:
@@ -63,7 +63,7 @@ enum PreviewTheme: String, CaseIterable, Identifiable {
     var windowBackground: Color {
         switch self {
         case .github:
-            return Color(red: 0.949, green: 0.949, blue: 0.949)  // #F2F2F2
+            return Color(nsColor: .textBackgroundColor)           // pure white editor
         case .nord:
             return Color(red: 0.118, green: 0.133, blue: 0.165)  // #1e2229
         case .dracula:

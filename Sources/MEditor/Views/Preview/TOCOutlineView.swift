@@ -39,18 +39,18 @@ struct TOCOutlineView: View {
             .padding(.top, 8)
             .padding(.bottom, 10)
         }
-        .background(panelBackground)
-    }
-
-    private var panelBackground: some View {
-        RoundedRectangle(cornerRadius: 12)
-            .fill(theme.editorBackground.opacity(theme.isDark ? 0.3 : 0.58))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(theme.separator.opacity(theme.isDark ? 0.18 : 0.12), lineWidth: 1)
-            )
-            .padding(.horizontal, 8)
-            .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(theme.editorBackground.opacity(theme.isDark ? 0.3 : 0.58))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(theme.separator.opacity(theme.isDark ? 0.18 : 0.12), lineWidth: 1)
+        )
+        // Clip content to the rounded panel so overflowing rows/text are masked.
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 10)
     }
 }
 
