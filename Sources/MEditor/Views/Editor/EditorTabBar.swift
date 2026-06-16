@@ -5,32 +5,29 @@ import UniformTypeIdentifiers
 
 struct EditorTabBar: View {
     @Environment(AppState.self) private var state
-
     @State private var draggedTabID: UUID?
 
     private var theme: PreviewTheme { state.themeStore.current }
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 1) {
+            HStack(spacing: 2) {
                 ForEach(state.openTabs) { tab in
                     TabItem(
                         tab: tab,
                         isSelected: tab.id == state.selectedTabID,
-                        editorBg: theme.editorBackground,
+                        isDark: theme.isDark,
                         onSelect: { state.selectTab(tab.id) },
                         onClose: { state.closeTab(tab.id) }
                     )
-                    .opacity(draggedTabID == tab.id ? 0.4 : 1)
-                    .animation(.easeOut(duration: 0.12), value: draggedTabID)
+                    .opacity(draggedTabID == tab.id ? 0.45 : 1)
+                    .animation(DS.Motion.fast, value: draggedTabID)
                     .onDrag {
                         draggedTabID = tab.id
                         return NSItemProvider(object: tab.id.uuidString as NSString)
                     }
-                    .onDrop(
-                        of: [UTType.text],
-                        delegate: TabDropDelegate(tab: tab, draggedTabID: $draggedTabID, state: state)
-                    )
+                    .onDrop(of: [UTType.text],
+                            delegate: TabDropDelegate(tab: tab, draggedTabID: $draggedTabID, state: state))
                     .contextMenu {
                         Button(L("tab.close")) { state.closeTab(tab.id) }
                         Button(L("tab.closeOthers")) {
@@ -44,10 +41,9 @@ struct EditorTabBar: View {
                     }
                 }
             }
-            .padding(.leading, 4)
+            .padding(.horizontal, 6)
             .animation(.easeInOut(duration: 0.18), value: state.openTabs.map(\.id))
         }
-        // Tab bar fills the parent chrome bar height — no inner background needed
     }
 }
 
@@ -56,7 +52,7 @@ struct EditorTabBar: View {
 private struct TabItem: View {
     let tab: EditorTab
     let isSelected: Bool
-    let editorBg: Color
+    let isDark: Bool
     let onSelect: () -> Void
     let onClose: () -> Void
 
@@ -65,34 +61,31 @@ private struct TabItem: View {
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 5) {
-                // File icon — small, hierarchical
+                // File icon
                 Image(systemName: FileTypeConfiguration.shared.icon(for: tab.url.pathExtension))
                     .symbolRenderingMode(.hierarchical)
-                    .font(.system(size: 10.5))
+                    .font(.system(size: 11))
                     .foregroundStyle(
-                        isSelected
-                            ? AnyShapeStyle(Color.accentColor)
-                            : AnyShapeStyle(Color.secondary.opacity(0.5))
+                        isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(Color.secondary.opacity(0.5))
                     )
 
                 // File name
                 Text(tab.name)
                     .font(.system(size: 12, weight: isSelected ? .medium : .regular))
                     .foregroundStyle(
-                        isSelected
-                            ? AnyShapeStyle(Color.primary)
-                            : AnyShapeStyle(Color.secondary.opacity(0.65))
+                        isSelected ? AnyShapeStyle(Color.primary) : AnyShapeStyle(Color.secondary.opacity(0.7))
                     )
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .layoutPriority(1)
 
-                // Modified dot / close
+                // Dot or close button
                 closeOrDot
                     .frame(width: 14, height: 14)
             }
             .padding(.horizontal, 10)
-            .frame(minWidth: 80, maxWidth: 160, maxHeight: .infinity)
+            .padding(.vertical, 5)
+            .frame(minWidth: 72, maxWidth: 180, maxHeight: .infinity)
             .background(tabBackground)
         }
         .buttonStyle(.plain)
@@ -100,24 +93,18 @@ private struct TabItem: View {
         .help(tab.url.path)
     }
 
-    // MARK: - Background
-    // Active: white card with rounded top corners — visually "opens into" the editor.
-    // Inactive + hovered: subtle fill.
-    // Inactive: fully transparent.
-
     @ViewBuilder
     private var tabBackground: some View {
         if isSelected {
-            // Craft-style: white rounded pill, floats above chrome bar
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(Color.white)
-                .shadow(color: .black.opacity(0.09), radius: 4, x: 0, y: 1)
+            // Craft: white (light) or dark-card (dark) rounded pill, subtle shadow
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isDark ? Color(white: 0.22) : Color.white)
+                .shadow(color: .black.opacity(isDark ? 0.3 : 0.1), radius: 4, x: 0, y: 1)
                 .padding(.horizontal, 2)
                 .padding(.vertical, 4)
-                .animation(.spring(response: 0.22, dampingFraction: 0.75), value: isSelected)
         } else if isHovered {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(Color.black.opacity(0.05))
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(0.06))
                 .padding(.horizontal, 2)
                 .padding(.vertical, 4)
         }
@@ -131,7 +118,6 @@ private struct TabItem: View {
                     ZStack {
                         Circle()
                             .fill(Color.primary.opacity(0.1))
-                            .frame(width: 14, height: 14)
                         Image(systemName: "xmark")
                             .font(.system(size: 7, weight: .bold))
                             .foregroundStyle(Color.secondary)
@@ -144,16 +130,14 @@ private struct TabItem: View {
                     .fill(Color.orange.opacity(0.85))
                     .frame(width: 5, height: 5)
                     .transition(.scale.combined(with: .opacity))
-            } else {
-                Color.clear
             }
         }
-        .animation(.easeOut(duration: 0.15), value: isHovered)
-        .animation(.easeOut(duration: 0.15), value: tab.isModified)
+        .animation(DS.Motion.fast, value: isHovered)
+        .animation(DS.Motion.fast, value: tab.isModified)
     }
 }
 
-// MARK: - Tab Drop Delegate
+// MARK: - Drop Delegate
 
 struct TabDropDelegate: DropDelegate {
     let tab: EditorTab
@@ -163,8 +147,7 @@ struct TabDropDelegate: DropDelegate {
     func performDrop(info: DropInfo) -> Bool { draggedTabID = nil; return true }
 
     func dropEntered(info: DropInfo) {
-        guard let from = draggedTabID,
-              from != tab.id,
+        guard let from = draggedTabID, from != tab.id,
               let src = state.openTabs.firstIndex(where: { $0.id == from }),
               let dst = state.openTabs.firstIndex(where: { $0.id == tab.id }) else { return }
         state.moveTab(from: src, to: dst)

@@ -17,8 +17,7 @@ struct MEditorApp: App {
                         window.titlebarAppearsTransparent = true
                         window.titlebarSeparatorStyle = .none
                         window.styleMask.insert(.fullSizeContentView)
-                        // Remove NSToolbar entirely — buttons live in SwiftUI layout
-                        window.toolbar = nil
+                        window.isMovableByWindowBackground = true
                     }
                     // Pre-warm a WKWebView so first file open renders instantly.
                     WebViewPool.shared.warmUp()
@@ -40,6 +39,7 @@ struct MEditorApp: App {
         }
         Settings {
             SettingsView()
+                .environment(appState)
         }
         .windowStyle(.titleBar)
         .commands {
@@ -171,6 +171,12 @@ struct MEditorApp: App {
                     appState.showingQuickOpen = true
                 }
                 .keyboardShortcut("p", modifiers: .command)
+                .disabled(appState.rootURL == nil)
+
+                Button(L("menu.commandPalette")) {
+                    appState.showingQuickOpen = true
+                }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
                 .disabled(appState.rootURL == nil)
             }
         }

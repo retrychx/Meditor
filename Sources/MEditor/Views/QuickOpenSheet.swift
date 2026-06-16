@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Fuzzy file finder presented as a sheet over the main window.
 /// Trigger via ⌘P.
@@ -9,6 +10,7 @@ import SwiftUI
 /// - Ranks results by simple substring + path depth. Good enough for now.
 struct QuickOpenSheet: View {
     @Environment(AppState.self) private var state
+    @Environment(WorkspaceUIState.self) private var workspaceUI
     @Environment(\.dismiss) private var dismiss
 
     @State private var query = ""
@@ -22,17 +24,17 @@ struct QuickOpenSheet: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
                     .font(.system(size: 13))
-                TextField(L("quickOpen.placeholder"), text: $query)
+                TextField(L("quickOpen.commandPlaceholder"), text: $query)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .focused($searchFocused)
                     .onSubmit { commitSelection() }
                     .onKeyPress(.upArrow) {
-                        highlighted = max(0, highlighted - 1)
+                        moveHighlight(-1)
                         return .handled
                     }
                     .onKeyPress(.downArrow) {
-                        highlighted = min(results.count - 1, highlighted + 1)
+                        moveHighlight(1)
                         return .handled
                     }
                     .onKeyPress(.escape) {
@@ -47,7 +49,7 @@ struct QuickOpenSheet: View {
             Divider()
 
             // Results
-            if results.isEmpty {
+            if flatResults.isEmpty {
                 emptyState
             } else {
                 resultsList
@@ -72,7 +74,11 @@ struct QuickOpenSheet: View {
         return state.fileItemMap.values.filter { !$0.isDirectory }
     }
 
-    private var results: [FileItem] {
+    private var commandResults: [PaletteItem] {
+        filteredCommands.prefix(query.isEmpty ? 5 : 6).map(PaletteItem.command)
+    }
+
+    private var fileResults: [PaletteItem] {
         let allFiles = searchableFiles
         guard !query.isEmpty else {
             // Empty query: show recently used (open tabs first), then a-z by name.
@@ -81,9 +87,43 @@ struct QuickOpenSheet: View {
             let others = allFiles
                 .filter { !openURLs.contains($0.url) }
                 .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-            return Array((openFiles + others).prefix(50))
+            return Array((openFiles + others).prefix(45)).map(PaletteItem.file)
         }
-        return rank(allFiles, query: query)
+        return rank(allFiles, query: query).map(PaletteItem.file)
+    }
+
+    private var flatResults: [PaletteItem] {
+        commandResults + fileResults
+    }
+
+    private var resultSections: [PaletteSection] {
+        var sections: [PaletteSection] = []
+        if !commandResults.isEmpty {
+            sections.append(PaletteSection(title: L("quickOpen.actions"), items: commandResults))
+        }
+        if !fileResults.isEmpty {
+            sections.append(PaletteSection(title: L("quickOpen.files"), items: fileResults))
+        }
+        return sections
+    }
+
+    private var filteredCommands: [CommandPaletteItem] {
+        guard !query.isEmpty else { return commandPalette }
+
+        let q = query.lowercased()
+        return commandPalette.compactMap { item in
+            let haystacks = [item.title, item.subtitle] + item.keywords
+            let bestScore = haystacks.reduce(Int.max) { current, value in
+                let candidate = value.lowercased()
+                if candidate.hasPrefix(q) { return min(current, 0) }
+                if candidate.contains(q) { return min(current, 100 + candidate.count - q.count) }
+                return current
+            }
+            return bestScore == Int.max ? nil : item
+        }
+        .sorted { lhs, rhs in
+            score(for: lhs, query: q) < score(for: rhs, query: q)
+        }
     }
 
     /// Crude relevance ranking: prefers names that contain the query as a
@@ -107,36 +147,17 @@ struct QuickOpenSheet: View {
     private var resultsList: some View {
         ScrollViewReader { proxy in
             List {
-                ForEach(Array(results.enumerated()), id: \.element.id) { idx, item in
-                    HStack(spacing: 8) {
-                        Image(systemName: FileTypeConfiguration.shared.icon(for: item.fileExtension))
-                            .foregroundStyle(.secondary)
-                            .font(.system(size: 11))
-                            .frame(width: 14)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(item.name)
-                                .font(.system(size: 13))
-                            Text(relativePath(for: item.url))
-                                .font(.system(size: 10))
-                                .foregroundStyle(.tertiary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
+                ForEach(resultSections) { section in
+                    Section {
+                        ForEach(section.items) { item in
+                            resultRow(item)
                         }
-                        Spacer()
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 4)
-                    .listRowInsets(EdgeInsets())
-                    .listRowSeparator(.hidden)
-                    .background(idx == highlighted ? Color.accentColor.opacity(0.18) : Color.clear)
-                    .contentShape(Rectangle())
-                    .id(idx)
-                    .onTapGesture(count: 2) {
-                        highlighted = idx
-                        commitSelection()
-                    }
-                    .onTapGesture {
-                        highlighted = idx
+                    } header: {
+                        Text(section.title)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                            .textCase(nil)
+                            .padding(.leading, 10)
                     }
                 }
             }
@@ -163,9 +184,22 @@ struct QuickOpenSheet: View {
     // MARK: - Actions
 
     private func commitSelection() {
-        guard highlighted >= 0, highlighted < results.count else { return }
-        state.openFile(results[highlighted])
+        guard highlighted >= 0, highlighted < flatResults.count else { return }
+        switch flatResults[highlighted] {
+        case .file(let item):
+            state.openFile(item)
+        case .command(let item):
+            item.action()
+        }
         dismiss()
+    }
+
+    private func moveHighlight(_ delta: Int) {
+        guard !flatResults.isEmpty else {
+            highlighted = 0
+            return
+        }
+        highlighted = min(max(0, highlighted + delta), flatResults.count - 1)
     }
 
     private func relativePath(for url: URL) -> String {
@@ -176,5 +210,273 @@ struct QuickOpenSheet: View {
             return String(path.dropFirst(rootPath.count).drop(while: { $0 == "/" }))
         }
         return path
+    }
+
+    private func score(for item: CommandPaletteItem, query: String) -> Int {
+        let haystacks = [item.title, item.subtitle] + item.keywords
+        return haystacks.reduce(Int.max) { current, value in
+            let candidate = value.lowercased()
+            if candidate.hasPrefix(query) { return min(current, 0) }
+            if candidate.contains(query) { return min(current, 100 + candidate.count - query.count) }
+            return current
+        }
+    }
+
+    private var commandPalette: [CommandPaletteItem] {
+        [
+            CommandPaletteItem(
+                id: "toggle-focus-mode",
+                title: L("quickOpen.toggleFocusMode"),
+                subtitle: L("quickOpen.toggleFocusModeDesc"),
+                icon: "scope",
+                keywords: ["focus", "distraction", "zen", "mode"]
+            ) {
+                workspaceUI.toggleFocusMode()
+            },
+            CommandPaletteItem(
+                id: "toggle-sidebar",
+                title: L("quickOpen.toggleSidebar"),
+                subtitle: L("quickOpen.toggleSidebarDesc"),
+                icon: "sidebar.left",
+                keywords: ["sidebar", "navigation", "files"]
+            ) {
+                workspaceUI.toggleSidebar()
+            },
+            CommandPaletteItem(
+                id: "toggle-editor",
+                title: L("quickOpen.toggleEditor"),
+                subtitle: L("quickOpen.toggleEditorDesc"),
+                icon: "doc.text",
+                keywords: ["editor", "write", "text"]
+            ) {
+                workspaceUI.toggleEditor()
+            },
+            CommandPaletteItem(
+                id: "toggle-preview",
+                title: L("quickOpen.togglePreview"),
+                subtitle: L("quickOpen.togglePreviewDesc"),
+                icon: "sidebar.right",
+                keywords: ["preview", "render", "web"]
+            ) {
+                workspaceUI.togglePreview()
+            },
+            CommandPaletteItem(
+                id: "open-insert-panel",
+                title: L("quickOpen.openInsertPanel"),
+                subtitle: L("quickOpen.openInsertPanelDesc"),
+                icon: "plus",
+                keywords: ["insert", "new", "template", "create"]
+            ) {
+                workspaceUI.rightPanel = .insert
+            },
+            CommandPaletteItem(
+                id: "open-page-info",
+                title: L("quickOpen.openPageInfo"),
+                subtitle: L("quickOpen.openPageInfoDesc"),
+                icon: "info.circle",
+                keywords: ["info", "metadata", "details", "page"]
+            ) {
+                workspaceUI.rightPanel = .pageInfo
+            },
+            CommandPaletteItem(
+                id: "open-comments",
+                title: L("quickOpen.openComments"),
+                subtitle: L("quickOpen.openCommentsDesc"),
+                icon: "bubble.left",
+                keywords: ["comments", "discussion", "notes"]
+            ) {
+                workspaceUI.rightPanel = .comments
+            },
+            CommandPaletteItem(
+                id: "open-share-panel",
+                title: L("quickOpen.openSharePanel"),
+                subtitle: L("quickOpen.openSharePanelDesc"),
+                icon: "square.and.arrow.up",
+                keywords: ["share", "lan", "publish", "network"]
+            ) {
+                workspaceUI.rightPanel = .share
+            },
+            CommandPaletteItem(
+                id: "open-search-results",
+                title: L("quickOpen.openSearchResults"),
+                subtitle: L("quickOpen.openSearchResultsDesc"),
+                icon: "magnifyingglass.circle",
+                keywords: ["search", "results", "global"]
+            ) {
+                workspaceUI.rightPanel = .search
+            },
+            CommandPaletteItem(
+                id: "open-folder",
+                title: L("quickOpen.openFolder"),
+                subtitle: L("quickOpen.openFolderDesc"),
+                icon: "folder",
+                keywords: ["folder", "workspace", "project"]
+            ) {
+                openFolderPicker()
+            },
+            CommandPaletteItem(
+                id: "new-document",
+                title: L("quickOpen.newDocument"),
+                subtitle: L("quickOpen.newDocumentDesc"),
+                icon: "square.and.pencil",
+                keywords: ["new", "template", "document", "file"]
+            ) {
+                state.templateCreateParentURL = state.rootURL
+                state.showingTemplatePicker = true
+            },
+            CommandPaletteItem(
+                id: "cycle-theme",
+                title: L("quickOpen.cycleTheme"),
+                subtitle: L("quickOpen.cycleThemeDesc"),
+                icon: "paintpalette",
+                keywords: ["theme", "appearance", "color"]
+            ) {
+                cycleTheme()
+            },
+            CommandPaletteItem(
+                id: "export-pdf",
+                title: L("quickOpen.exportPDF"),
+                subtitle: L("quickOpen.exportPDFDesc"),
+                icon: "doc.richtext",
+                keywords: ["export", "pdf", "share"]
+            ) {
+                exportPDF()
+            }
+        ]
+    }
+
+    private func openFolderPicker() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = L("panel.chooseFolder")
+        if panel.runModal() == .OK, let url = panel.url {
+            state.openFolder(url)
+        }
+    }
+
+    private func cycleTheme() {
+        let allThemes = PreviewTheme.allCases
+        guard let currentIndex = allThemes.firstIndex(of: state.themeStore.current) else {
+            state.themeStore.current = allThemes.first ?? .github
+            return
+        }
+        let nextIndex = allThemes.index(after: currentIndex)
+        state.themeStore.current = nextIndex == allThemes.endIndex ? allThemes[allThemes.startIndex] : allThemes[nextIndex]
+    }
+
+    private func exportPDF() {
+        let suggestedName = state.selectedTab?.url.deletingPathExtension().lastPathComponent ?? "Untitled"
+        state.previewExporter.export(format: .pdf, suggestedName: suggestedName) { result in
+            if case .failure(let error) = result {
+                state.setError(error.localizedDescription)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func resultRow(_ item: PaletteItem) -> some View {
+        let idx = flatResults.firstIndex(where: { $0.id == item.id }) ?? 0
+
+        HStack(spacing: 8) {
+            Image(systemName: item.icon)
+                .foregroundStyle(.secondary)
+                .font(.system(size: 11))
+                .frame(width: 14)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.title)
+                    .font(.system(size: 13))
+
+                Text(subtitle(for: item))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 4)
+        .listRowInsets(EdgeInsets())
+        .listRowSeparator(.hidden)
+        .background(idx == highlighted ? Color.accentColor.opacity(0.18) : Color.clear)
+        .contentShape(Rectangle())
+        .id(idx)
+        .onTapGesture(count: 2) {
+            highlighted = idx
+            commitSelection()
+        }
+        .onTapGesture {
+            highlighted = idx
+        }
+    }
+
+    private func subtitle(for item: PaletteItem) -> String {
+        switch item {
+        case .file(let file):
+            return relativePath(for: file.url)
+        case .command(let command):
+            return command.subtitle
+        }
+    }
+}
+
+private struct PaletteSection: Identifiable {
+    let title: String
+    let items: [PaletteItem]
+
+    var id: String { title }
+}
+
+private struct CommandPaletteItem {
+    let id: String
+    let title: String
+    let subtitle: String
+    let icon: String
+    let keywords: [String]
+    let action: () -> Void
+}
+
+private enum PaletteItem: Identifiable {
+    case file(FileItem)
+    case command(CommandPaletteItem)
+
+    var id: String {
+        switch self {
+        case .file(let item):
+            return "file:\(item.id.absoluteString)"
+        case .command(let item):
+            return "command:\(item.id)"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .file(let item):
+            return item.name
+        case .command(let item):
+            return item.title
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .file(let item):
+            return item.url.path
+        case .command(let item):
+            return item.subtitle
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .file(let item):
+            return FileTypeConfiguration.shared.icon(for: item.fileExtension)
+        case .command(let item):
+            return item.icon
+        }
     }
 }

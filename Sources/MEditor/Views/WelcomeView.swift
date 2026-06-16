@@ -39,8 +39,10 @@ struct WelcomeView: View {
 
     var body: some View {
         ZStack {
-            // Background: dot grid
-            DotGridBackground(opacity: 0.45)
+            // Craft-style: clean white/light background with subtle dot grid
+            Color(nsColor: .textBackgroundColor)
+                .ignoresSafeArea()
+            DotGridBackground(opacity: 0.25)
                 .ignoresSafeArea()
 
             HStack(spacing: 0) {
@@ -171,14 +173,22 @@ struct WelcomeView: View {
     private var ctaButton: some View {
         VStack(spacing: DS.Space.sm) {
             Button(action: onOpenFolder) {
-                Label(L("menu.openFolder"), systemImage: "folder")
-                    .font(.system(size: 13, weight: .medium))
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 8)
+                HStack(spacing: 6) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 13, weight: .medium))
+                    Text(L("menu.openFolder"))
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 22)
+                .padding(.vertical, 9)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color.accentColor)
+                        .shadow(color: Color.accentColor.opacity(0.3), radius: 8, y: 3)
+                )
             }
-            .buttonStyle(.borderedProminent)
-            .tint(Self.auroraBlue)
-            .shadow(color: Self.auroraBlue.opacity(0.35), radius: 8, y: 3)
+            .buttonStyle(.plain)
 
             Text("⌘⇧O")
                 .font(DS.Font.mono(10))

@@ -52,6 +52,9 @@ struct SidebarTreeNode: View {
                     onAction: onAction
                 )
                 .help(item.url.path)
+                // Pull the label closer to the disclosure chevron — the default
+                // DisclosureGroup chevron-to-label gap is a touch wide.
+                .padding(.leading, -6)
                 .contentShape(Rectangle())
                 .onTapGesture { onTap(item) }
             }

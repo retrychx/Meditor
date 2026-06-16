@@ -2,12 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(AppState.self) private var state
-    @State private var showSidebar = AppSettings.shared.showSidebarOnLaunch
-    @State private var showEditor = AppSettings.shared.showEditorOnLaunch
-    @State private var showPreview = AppSettings.shared.showPreviewOnLaunch
-
-    // Panel widths
-    @State private var sidebarWidth: CGFloat = 220
+    @State private var workspaceUI = WorkspaceUIState()
 
     var body: some View {
         Group {
@@ -18,12 +13,15 @@ struct ContentView: View {
             }
         }
         .preferredColorScheme(state.themeStore.current.isDark ? .dark : .light)
+        .environment(workspaceUI)
+        .background(WindowConfigurator())
         .sheet(isPresented: Binding(
             get: { state.showingQuickOpen },
             set: { state.showingQuickOpen = $0 }
         )) {
             QuickOpenSheet()
                 .environment(state)
+                .environment(workspaceUI)
         }
         .sheet(isPresented: Binding(
             get: { state.showingTemplatePicker },
@@ -121,122 +119,18 @@ struct ContentView: View {
     }
 
     private var mainLayout: some View {
-        let theme = state.themeStore.current
-        return VStack(spacing: 0) {
-            // ── Unified top bar (ONE row, full window width) ──
-            // Left section matches sidebar width; right section = tabs + actions.
-            // This is the only chrome row — no separate sidebar header.
-            HStack(spacing: 0) {
-                if showSidebar {
-                    // Sidebar portion of the top bar
-                    sidebarTopBar
-                        .frame(width: sidebarWidth)
-                    // Hairline divider between sidebar and tab sections
-                    theme.separator.frame(width: 1)
-                }
-                // Tab bar + actions (right portion)
-                // Actions group has fixed width; tabs fill the rest and clip
-                HStack(spacing: 0) {
-                    if !state.openTabs.isEmpty {
-                        EditorTabBar()
-                            .frame(maxWidth: .infinity)
-                            .clipped()
-                    } else {
-                        Color.clear
-                            .frame(maxWidth: .infinity)
-                    }
-                    // Action buttons: fixed width, never pushed by tabs
-                    editorActionButtons
-                        .fixedSize(horizontal: true, vertical: false)
-                }
-                .frame(maxWidth: .infinity)
-            }
-            .frame(height: 38)
-            .background(theme.chromeBackground, ignoresSafeAreaEdges: .top)
-            .overlay(alignment: .bottom) {
-                Color.black.opacity(0.06).frame(height: 1)
-            }
-
-            // ── Content area (sidebar + editor) ──
-            // Craft-style: window canvas (#F2F2F2) is the base,
-            // editor card floats on top with white bg + subtle shadow.
-            HStack(spacing: 0) {
-                if showSidebar {
-                    sidebarColumn
-                        .frame(width: sidebarWidth)
-                }
-
-                // Editor card — white, floats on the gray canvas
-                ZStack {
-                    // Canvas background
-                    theme.windowBackground
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                    HStack(spacing: 0) {
-                        if showEditor {
-                            editorColumn
-                                .frame(maxWidth: .infinity)
-                        }
-                        if showEditor && showPreview {
-                            Color.black.opacity(0.06).frame(width: 1)
-                        }
-                        if showPreview {
-                            previewColumn
-                                .frame(maxWidth: .infinity)
-                        }
-                        if !showEditor && !showPreview {
-                            theme.windowBackground
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    // Craft-style left separator: very subtle shadow instead of hard border
-                    .shadow(color: .black.opacity(0.05), radius: 8, x: -2, y: 0)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            statusBar
+        AppShell(workspaceUI: workspaceUI, onExport: performExport) {
+            sidebarColumn
+        } editor: {
+            editorColumn
+        } preview: {
+            previewColumn
         }
-        .background(theme.windowBackground)
-    }
-
-    /// Left portion of the unified top bar (matches sidebar width).
-    private var sidebarTopBar: some View {
-        let theme = state.themeStore.current
-        return HStack(spacing: 0) {
-            // Traffic light clearance
-            Color.clear.frame(width: 76)
-
-            if let rootURL = state.rootURL {
-                HStack(spacing: 4) {
-                    Image(systemName: "folder.fill")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.orange.opacity(0.7))
-                    Text(rootURL.lastPathComponent.uppercased())
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .kerning(0.4)
-                        .lineLimit(1)
-                }
-            }
-
-            Spacer()
-
-            ChromeButton(systemName: "sidebar.left", help: L("tooltip.hideSidebar")) {
-                withAnimation(DS.Motion.springFast) { showSidebar = false }
-            }
-            .keyboardShortcut("b", modifiers: .command)
-            .padding(.trailing, 4)
-        }
-        .frame(maxHeight: .infinity)
-        .background(state.themeStore.current.chromeBackground)
     }
 
     private var sidebarColumn: some View {
         FileSidebar()
-            .background(state.themeStore.current.chromeBackground)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var editorColumn: some View {
@@ -249,103 +143,6 @@ struct ContentView: View {
             .background(state.themeStore.current.editorBackground)
     }
 
-    // MARK: - Inline action buttons (replaces NSToolbar)
-
-    private var editorActionButtons: some View {
-        HStack(spacing: 2) {
-            // Show sidebar toggle when sidebar is hidden
-            if !showSidebar {
-                ChromeButton(
-                    systemName: "sidebar.left",
-                    help: L("tooltip.showSidebar"),
-                    isActive: false
-                ) {
-                    withAnimation(DS.Motion.springFast) { showSidebar = true }
-                }
-                .keyboardShortcut("b", modifiers: .command)
-
-                Divider().frame(height: 14).padding(.horizontal, 2)
-            }
-
-            // Share
-            ChromeButton(
-                systemName: state.shareServer.isRunning ? "wifi" : "wifi.slash",
-                help: state.shareServer.isRunning ? L("share.stopWithURL", state.shareServer.shareURL) : L("share.viaLAN"),
-                isActive: state.shareServer.isRunning
-            ) {
-                if state.shareServer.isRunning {
-                    state.shareServer.stop()
-                } else {
-                    state.shareServer.start(rootURL: state.rootURL, openTabs: state.openTabs, preferredPort: AppSettings.shared.sharePort)
-                }
-            }
-            .popover(isPresented: Binding(
-                get: { state.shareServer.isRunning && showSharePopover },
-                set: { showSharePopover = $0 }
-            )) {
-                SharePopoverContent(server: state.shareServer, selectedTab: state.selectedTab) {
-                    state.shareServer.stop(); showSharePopover = false
-                }
-            }
-            .onChange(of: state.shareServer.isRunning) { _, running in showSharePopover = running }
-
-            // Export
-            ChromeMenuButton(
-                systemName: "square.and.arrow.up",
-                help: L("export.title"),
-                isDisabled: !state.previewExporter.isExportAvailable,
-                items: exportItems
-            )
-
-            // Theme
-            ChromeMenuButton(
-                systemName: "paintpalette",
-                help: L("theme.title"),
-                items: PreviewTheme.allCases.map { t in
-                    (
-                        title: (state.themeStore.current == t ? "✓ " : "  ") + t.displayName,
-                        action: { state.themeStore.current = t }
-                    )
-                }
-            )
-
-            Divider().frame(height: 14).padding(.horizontal, 2)
-
-            // Editor / Preview toggles
-            ChromeButton(
-                systemName: "doc.text",
-                help: showEditor ? L("tooltip.hideEditor") : L("tooltip.showEditor"),
-                isActive: showEditor
-            ) { showEditor.toggle() }
-            .keyboardShortcut("m", modifiers: [.command, .shift])
-
-            ChromeButton(
-                systemName: "sidebar.right",
-                help: showPreview ? L("tooltip.hidePreview") : L("tooltip.showPreview"),
-                isActive: showPreview
-            ) { showPreview.toggle() }
-            .keyboardShortcut("v", modifiers: [.command, .shift])
-        }
-        .padding(.trailing, 8)
-    }
-
-    private var exportItems: [(title: String, action: () -> Void)] {
-        let isHTML = state.previewMode == .html
-        return isHTML
-            ? [
-                (L("export.markdown"), { performExport(.markdown) }),
-                (L("export.pdf"),      { performExport(.pdf) }),
-                (L("export.image"),    { performExport(.image) })
-              ]
-            : [
-                (L("export.html"),  { performExport(.html) }),
-                (L("export.pdf"),   { performExport(.pdf) }),
-                (L("export.image"), { performExport(.image) })
-              ]
-    }
-
-    @State private var showSharePopover = false
-
     private func performExport(_ format: PreviewExporter.ExportFormat) {
         let suggestedName = state.selectedTab?.url.deletingPathExtension().lastPathComponent ?? "Untitled"
         state.previewExporter.export(format: format, suggestedName: suggestedName) { result in
@@ -353,107 +150,6 @@ struct ContentView: View {
                 state.setError(error.localizedDescription)
             }
         }
-    }
-
-    // MARK: - Draggable Divider
-
-    private func draggableDivider(
-        width: Binding<CGFloat>,
-        minValue: CGFloat,
-        maxValue: CGFloat,
-        invert: Bool = false
-    ) -> some View {
-        Color(nsColor: .separatorColor).opacity(0.4)
-            .frame(width: 1)
-            .overlay {
-                Color.clear
-                    .frame(width: 5)
-                    .contentShape(Rectangle())
-                    .onHover { inside in
-                        if inside { NSCursor.resizeLeftRight.push() }
-                        else { NSCursor.pop() }
-                    }
-                    .gesture(
-                        DragGesture(minimumDistance: 1, coordinateSpace: .local)
-                            .onChanged { value in
-                                let delta = value.translation.width
-                                let newWidth = width.wrappedValue + (invert ? -delta : delta)
-                                width.wrappedValue = max(minValue, min(maxValue, newWidth))
-                            }
-                    )
-            }
-    }
-
-    // MARK: - Status Bar
-
-    private var statusBar: some View {
-        let theme = state.themeStore.current
-        return HStack(spacing: 0) {
-            if let tab = state.selectedTab {
-                // Cursor position
-                statusChip("\(state.cursorLine):\(state.cursorColumn)",
-                           icon: "character.cursor.ibeam")
-                statusDivider(theme)
-                // Word count
-                statusChip("\(wordCount(tab.content))w")
-                statusDivider(theme)
-                // File size
-                statusChip(state.currentFileSize)
-                statusDivider(theme)
-                // Language
-                let lang = FileTypeConfiguration.shared
-                    .editorLanguage(for: tab.url.pathExtension.lowercased())?.rawValue
-                    .capitalized ?? "Text"
-                statusChip(lang)
-                // Modified indicator
-                if tab.isModified {
-                    statusDivider(theme)
-                    HStack(spacing: 3) {
-                        Circle().fill(Color.orange).frame(width: 5, height: 5)
-                        Text(L("statusBar.modified"))
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 8)
-                }
-            }
-            Spacer()
-        }
-        .frame(height: 22)
-        .background(theme.chromeBackground)
-        .overlay(alignment: .top) {
-            Color.black.opacity(0.06).frame(height: 1)
-        }
-    }
-
-    private func statusDivider(_ theme: PreviewTheme) -> some View {
-        theme.separator
-            .frame(width: 1, height: 10)
-            .opacity(0.5)
-            .padding(.horizontal, 6)
-    }
-
-    private func statusChip(_ text: String, icon: String? = nil) -> some View {
-        HStack(spacing: 3) {
-            if let icon {
-                Image(systemName: icon)
-                    .symbolRenderingMode(.hierarchical)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.tertiary)
-            }
-            Text(text)
-                .font(.system(size: 10.5, weight: .regular, design: .monospaced))
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 10)
-    }
-
-    private func wordCount(_ text: String) -> Int {
-        var count = 0
-        text.enumerateSubstrings(in: text.startIndex..., options: [.byWords, .substringNotRequired]) { _, _, _, _ in
-            count += 1
-        }
-        return count
     }
 
     // MARK: - Actions

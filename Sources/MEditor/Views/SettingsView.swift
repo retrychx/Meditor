@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @State private var settings = AppSettings.shared
+    @Environment(AppState.self) private var state
     private let loc = LocalizationManager.shared
     @State private var selectedTab: SettingsTab = .general
 
@@ -83,6 +84,21 @@ struct SettingsView: View {
     private var generalContent: some View {
         ScrollView {
             VStack(spacing: 0) {
+                settingsGroup(title: L("theme.title")) {
+                    settingsRow(label: L("theme.title")) {
+                        Picker("", selection: Binding(
+                            get: { state.themeStore.current },
+                            set: { state.themeStore.current = $0 }
+                        )) {
+                            ForEach(PreviewTheme.allCases, id: \.self) { t in
+                                Text(t.displayName).tag(t)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 120)
+                    }
+                }
+
                 settingsGroup(title: L("settings.section.language")) {
                     settingsRow(label: L("settings.language")) {
                         Picker("", selection: languageBinding) {

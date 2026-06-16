@@ -50,6 +50,8 @@ enum DS {
         static let standard: Animation = .easeOut(duration: 0.22)
         static let spring:   Animation = .spring(response: 0.28, dampingFraction: 0.72)
         static let springFast: Animation = .spring(response: 0.18, dampingFraction: 0.75)
+        /// Smoother spring for panel slide in/out (sidebar collapse/expand).
+        static let panel: Animation = .spring(response: 0.34, dampingFraction: 0.86)
     }
 
     // MARK: - Elevation (shadow system)

@@ -5,16 +5,24 @@ struct EditorView: View {
 
     var body: some View {
         if let tab = state.selectedTab {
-            EditorViewContent(
-                tabID: tab.id,
-                content: tab.content,
-                contentRevision: tab.contentRevision,
-                language: tab.language,
-                scrollToLine: state.editorScrollCommand.line,
-                scrollRequestID: state.editorScrollCommand.nonce,
-                theme: state.themeStore.current
-            )
-            .equatable()
+            VStack(spacing: 0) {
+                DocumentHeader(tab: tab, theme: state.themeStore.current)
+
+                state.themeStore.current.separator
+                    .opacity(state.themeStore.current.isDark ? 0.28 : 0.18)
+                    .frame(height: 1)
+
+                EditorViewContent(
+                    tabID: tab.id,
+                    content: tab.content,
+                    contentRevision: tab.contentRevision,
+                    language: tab.language,
+                    scrollToLine: state.editorScrollCommand.line,
+                    scrollRequestID: state.editorScrollCommand.nonce,
+                    theme: state.themeStore.current
+                )
+                .equatable()
+            }
         } else {
             VStack(spacing: 6) {
                 Text(L("editor.selectFile"))
@@ -31,6 +39,70 @@ struct EditorView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(DotGridBackground())
         }
+    }
+}
+
+private struct DocumentHeader: View {
+    let tab: EditorTab
+    let theme: PreviewTheme
+
+    @Environment(AppState.self) private var state
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: FileTypeConfiguration.shared.icon(for: tab.url.pathExtension))
+                .symbolRenderingMode(.hierarchical)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(Color(hex: FileTypeConfiguration.shared.color(for: tab.url.pathExtension)).opacity(0.82))
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(tab.name)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(theme.craftPrimary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+
+                    if tab.isModified {
+                        Circle()
+                            .fill(Color.orange.opacity(0.9))
+                            .frame(width: 6, height: 6)
+                    }
+                }
+
+                Text(relativePath)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(theme.craftSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer()
+
+            Text(languageLabel)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(theme.craftSecondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(
+                    Capsule()
+                        .fill(theme.craftHover)
+                )
+        }
+        .padding(.horizontal, 18)
+        .frame(height: 46)
+        .background(theme.editorBackground)
+    }
+
+    private var relativePath: String {
+        FilePathFormatter.relativePath(for: tab.url, rootURL: state.rootURL)
+    }
+
+    private var languageLabel: String {
+        FileTypeConfiguration.shared
+            .editorLanguage(for: tab.url.pathExtension.lowercased())?.rawValue
+            .capitalized ?? "Text"
     }
 }
 
