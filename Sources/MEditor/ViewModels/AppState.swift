@@ -37,6 +37,9 @@ final class AppState {
     let gitlabShareManager: GitLabShareManager
     let templateManager: TemplateManager
 
+    /// AI assistant conversation store (multi-session, persisted).
+    let aiConversation = AIConversation()
+
     // MARK: - Core shared state
 
     var rootURL: URL? {
