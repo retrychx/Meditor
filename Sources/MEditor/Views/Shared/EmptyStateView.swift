@@ -15,11 +15,11 @@ struct EmptyStateView: View {
                 // Icon
                 ZStack {
                     Circle()
-                        .fill(Color.accentColor.opacity(0.08))
+                        .fill(Color.appAccent.opacity(0.08))
                         .frame(width: 56, height: 56)
                     Image(systemName: systemImage)
                         .font(.system(size: 22, weight: .light))
-                        .foregroundStyle(Color.accentColor.opacity(0.6))
+                        .foregroundStyle(Color.appAccent.opacity(0.6))
                 }
 
                 VStack(spacing: DS.Space.xs) {

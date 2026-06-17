@@ -4,6 +4,7 @@ struct RightPanelHost: View {
     @Environment(AppState.self) private var state
     @Bindable var workspaceUI: WorkspaceUIState
     @State private var searchQuery = ""
+    @State private var gitlabToken = ""
 
     private var theme: PreviewTheme { state.themeStore.current }
 
@@ -144,7 +145,17 @@ struct RightPanelHost: View {
     }
 
     private var sharePanel: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            lanShareSection
+            Divider().opacity(0.4)
+            gitlabSection
+        }
+    }
+
+    @ViewBuilder
+    private var lanShareSection: some View {
         VStack(alignment: .leading, spacing: 12) {
+            sectionLabel(L("share.lan.title"))
             if state.shareServer.isRunning {
                 // The base host:port alone returns 404 — a working link must carry
                 // the access token and file path, so surface the *current file's*
@@ -190,6 +201,94 @@ struct RightPanelHost: View {
                 .disabled(state.openTabs.isEmpty)
             }
         }
+    }
+
+    @ViewBuilder
+    private var gitlabSection: some View {
+        let mgr = state.gitlabShareManager
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel(L("gitlab.title"))
+
+            if mgr.isConfigured {
+                Button {
+                    if let tab = state.selectedTab {
+                        Task { await mgr.publish(tab: tab) }
+                    }
+                } label: {
+                    Label(L("gitlab.publish"), systemImage: "arrow.up.circle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(state.selectedTab == nil || mgr.isPublishing)
+
+                if mgr.isPublishing {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text(L("gitlab.publishing")).font(.system(size: 11.5))
+                            .foregroundStyle(theme.craftSecondary)
+                    }
+                }
+
+                if let url = mgr.lastResultURL {
+                    infoRow(L("gitlab.shared"), url)
+                    HStack(spacing: 8) {
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(url, forType: .string)
+                        } label: {
+                            Label(L("share.copyURL"), systemImage: "link").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        Button {
+                            if let u = URL(string: url) { NSWorkspace.shared.open(u) }
+                        } label: {
+                            Label(L("gitlab.open"), systemImage: "safari").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+
+                if let err = mgr.lastError {
+                    Text(err)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Text(L("gitlab.manageHint"))
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(theme.craftSecondary.opacity(0.7))
+            } else {
+                panelNote(L("gitlab.configHint"))
+                TextField("gitlab.example.com", text: Binding(
+                    get: { mgr.host }, set: { mgr.host = $0 }))
+                    .textFieldStyle(.roundedBorder)
+                SecureField(L("gitlab.token"), text: $gitlabToken)
+                    .textFieldStyle(.roundedBorder)
+                Picker("", selection: Binding(
+                    get: { mgr.visibility }, set: { mgr.visibility = $0 })) {
+                    Text(L("gitlab.visibility.internal")).tag("internal")
+                    Text(L("gitlab.visibility.private")).tag("private")
+                }
+                .pickerStyle(.segmented)
+                Button {
+                    mgr.saveToken(gitlabToken)
+                    gitlabToken = ""
+                } label: {
+                    Label(L("gitlab.saveConfig"), systemImage: "key")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .disabled(mgr.host.isEmpty || gitlabToken.isEmpty)
+            }
+        }
+    }
+
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(theme.craftSecondary)
+            .kerning(0.3)
     }
 
     private var searchPanel: some View {
@@ -362,12 +461,12 @@ private struct OutlineResultRow: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(isActive ? Color.accentColor.opacity(0.12) : isHovered ? theme.craftHover : Color.clear)
+                            .fill(isActive ? Color.appAccent.opacity(0.12) : isHovered ? theme.craftHover : Color.clear)
                     )
                     .overlay(alignment: .leading) {
                         if isActive || item.level >= 3 {
                             RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                                .fill(isActive ? Color.accentColor.opacity(0.78) : theme.craftSecondary.opacity(0.18))
+                                .fill(isActive ? Color.appAccent.opacity(0.78) : theme.craftSecondary.opacity(0.18))
                                 .frame(width: isActive ? 2.5 : 1)
                                 .padding(.vertical, 5)
                         }

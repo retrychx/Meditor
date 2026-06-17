@@ -358,12 +358,12 @@ private struct SearchPanelResultRow: View {
         .buttonStyle(.plain)
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(isSelected ? Color.accentColor.opacity(0.12) : isHovered ? theme.craftHover : Color.clear)
+                .fill(isSelected ? Color.appAccent.opacity(0.12) : isHovered ? theme.craftHover : Color.clear)
         )
         .overlay(alignment: .leading) {
             if isSelected {
                 RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.8))
+                    .fill(Color.appAccent.opacity(0.8))
                     .frame(width: 2)
                     .padding(.vertical, 5)
             }

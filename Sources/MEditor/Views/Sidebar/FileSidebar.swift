@@ -91,19 +91,27 @@ struct FileSidebar: View {
             )
         }
         .background(.clear)
-        .alert(L(createIsFolder ? "menu.newFolder" : "menu.newFile"), isPresented: $showCreateAlert) {
-            TextField(L(createIsFolder ? "create.folderName" : "create.fileName"), text: $createName)
-            Button(L("common.cancel"), role: .cancel) { resetCreateState() }
-            Button(L("common.create")) { createItem() }
-        } message: {
-            Text(L(createIsFolder ? "create.messageFolder" : "create.messageFile"))
+        .sheet(isPresented: $showCreateAlert) {
+            InputDialog(
+                title: L(createIsFolder ? "menu.newFolder" : "menu.newFile"),
+                message: L(createIsFolder ? "create.messageFolder" : "create.messageFile"),
+                placeholder: L(createIsFolder ? "create.folderName" : "create.fileName"),
+                confirmTitle: L("common.create"),
+                text: $createName,
+                onConfirm: { createItem(); showCreateAlert = false },
+                onCancel: { resetCreateState(); showCreateAlert = false }
+            )
         }
-        .alert(L("rename.title"), isPresented: $showRenameAlert) {
-            TextField(L("rename.newName"), text: $renameName)
-            Button(L("common.cancel"), role: .cancel) { resetRenameState() }
-            Button(L("rename.title")) { renameItem() }
-        } message: {
-            if let target = renameTarget { Text(L("rename.messageFormat", target.name)) }
+        .sheet(isPresented: $showRenameAlert) {
+            InputDialog(
+                title: L("rename.title"),
+                message: renameTarget.map { L("rename.messageFormat", $0.name) } ?? "",
+                placeholder: L("rename.newName"),
+                confirmTitle: L("rename.title"),
+                text: $renameName,
+                onConfirm: { renameItem(); showRenameAlert = false },
+                onCancel: { resetRenameState(); showRenameAlert = false }
+            )
         }
         .confirmationDialog(
             L("delete.confirmFormat", itemToDelete?.name ?? ""),
@@ -434,7 +442,6 @@ private struct PinnedViewsBar: View {
 
 private struct SidebarBottomBar: View {
     @Environment(AppState.self) private var state
-    @Environment(\.openSettings) private var openSettings
     let onNewFile: () -> Void
     let onNewFolder: () -> Void
 
@@ -448,8 +455,9 @@ private struct SidebarBottomBar: View {
                 SidebarIconButton(icon: "folder.badge.plus", help: L("sidebar.newFolder"), action: onNewFolder)
                     .disabled(state.rootURL == nil)
                 SidebarIconButton(icon: "gearshape", help: L("menu.preferences")) {
-                    openSettings()
+                    state.showingSettings = true
                 }
+                .anchorPreference(key: SettingsAnchorKey.self, value: .bounds) { $0 }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)

@@ -893,7 +893,7 @@ private struct SlashCommandMenuRow: View {
             Image(systemName: item.icon)
                 .symbolRenderingMode(.hierarchical)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                .foregroundStyle(isSelected ? Color.appAccent : Color.secondary)
                 .frame(width: 18)
 
             VStack(alignment: .leading, spacing: 1) {
@@ -917,7 +917,7 @@ private struct SlashCommandMenuRow: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(isSelected ? Color.accentColor.opacity(0.13) : Color.clear)
+                .fill(isSelected ? Color.appAccent.opacity(0.13) : Color.clear)
         )
     }
 }

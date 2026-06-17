@@ -68,11 +68,11 @@ struct SharePopoverContent: View {
                         } label: {
                             Image(systemName: copied ? "checkmark" : "doc.on.doc")
                                 .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(copied ? Color.green : Color.accentColor)
+                                .foregroundStyle(copied ? Color.green : Color.appAccent)
                                 .frame(width: 22, height: 22)
                                 .background(
                                     RoundedRectangle(cornerRadius: DS.Radius.sm)
-                                        .fill(Color.accentColor.opacity(0.1))
+                                        .fill(Color.appAccent.opacity(0.1))
                                 )
                         }
                         .buttonStyle(.plain)

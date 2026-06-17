@@ -12,4 +12,19 @@ extension Color {
             blue:  Double( v        & 0xFF) / 255
         )
     }
+
+    /// App-wide accent that honors the user's accent-style preference
+    /// (`MEditor.aiAccentStyle`: "system" or "shadcn"). For "shadcn" it resolves
+    /// to a mono near-black (#18181B) in light mode / near-white (#FAFAFA) in dark
+    /// mode; otherwise it falls back to the system accent. Used everywhere the app
+    /// draws its own accent so the choice applies globally, not just to controls.
+    static var appAccent: Color {
+        let raw = UserDefaults.standard.string(forKey: "MEditor.aiAccentStyle") ?? "system"
+        guard raw == "shadcn" else { return .accentColor }
+        return Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(white: 0.98, alpha: 1)                              // #FAFAFA
+                : NSColor(red: 0.094, green: 0.094, blue: 0.106, alpha: 1)    // #18181B
+        })
+    }
 }
