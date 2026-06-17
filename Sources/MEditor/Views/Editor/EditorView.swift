@@ -19,6 +19,8 @@ struct EditorView: View {
                     language: tab.language,
                     scrollToLine: state.editorScrollCommand.line,
                     scrollRequestID: state.editorScrollCommand.nonce,
+                    insertText: state.editorInsertText,
+                    insertRequestID: state.editorInsertNonce,
                     theme: state.themeStore.current
                 )
                 .equatable()
@@ -119,6 +121,8 @@ private struct EditorViewContent: View, Equatable {
     let language: EditorLanguage
     let scrollToLine: Int
     let scrollRequestID: Int
+    let insertText: String
+    let insertRequestID: Int
     let theme: PreviewTheme
 
     @Environment(AppState.self) private var state
@@ -130,6 +134,7 @@ private struct EditorViewContent: View, Equatable {
         lhs.tabID == rhs.tabID &&
         lhs.contentRevision == rhs.contentRevision &&
         lhs.scrollRequestID == rhs.scrollRequestID &&
+        lhs.insertRequestID == rhs.insertRequestID &&
         lhs.theme == rhs.theme &&
         lhs.language == rhs.language
     }
@@ -150,6 +155,11 @@ private struct EditorViewContent: View, Equatable {
             },
             scrollToLine: scrollToLine,
             scrollRequestID: scrollRequestID,
+            onSelectionChange: { text in
+                state.editorSelectedText = text
+            },
+            insertText: insertText,
+            insertRequestID: insertRequestID,
             theme: theme
         )
     }

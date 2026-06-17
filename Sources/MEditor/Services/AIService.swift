@@ -280,6 +280,20 @@ struct AIClient {
                     // `-p` = print mode (non-interactive, prints the reply and exits).
                     process.arguments = ["-p", prompt]
 
+                    // GUI apps don't inherit the user's shell PATH, so the CLI may
+                    // fail to find `node`/deps. Prepend common install locations.
+                    var env = ProcessInfo.processInfo.environment
+                    let home = FileManager.default.homeDirectoryForCurrentUser.path
+                    let extra = [
+                        "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin",
+                        "\(home)/.local/bin", "\(home)/.bun/bin",
+                        "\(home)/.npm-global/bin", "\(home)/.volta/bin",
+                        "\(home)/.nvm/current/bin"
+                    ]
+                    let current = env["PATH"] ?? ""
+                    env["PATH"] = (extra + (current.isEmpty ? [] : [current])).joined(separator: ":")
+                    process.environment = env
+
                     let outPipe = Pipe()
                     let errPipe = Pipe()
                     process.standardOutput = outPipe
