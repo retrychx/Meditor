@@ -464,9 +464,7 @@ private struct CodeBlockView: View {
     }
 
     private func copy() {
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setString(code, forType: .string)
+        Pasteboard.copy(code)
         copied = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { copied = false }
     }

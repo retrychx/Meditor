@@ -225,7 +225,7 @@ struct FileSidebar: View {
     private func deleteItem(_ item: FileItem) { state.deleteFileItem(at: item.url) }
 
     private func copyToPasteboard(_ value: String) {
-        let pb = NSPasteboard.general; pb.clearContents(); pb.setString(value, forType: .string)
+        Pasteboard.copy(value)
     }
 
     private func selectSidebarItem(_ item: FileItem) { state.selectFile(item) }

@@ -117,48 +117,12 @@ struct AIConfig: Sendable {
 // MARK: - Keychain (API key)
 
 enum AIKeychain {
-    private static let service = "com.meditor.ai"
-    private static let account = "apiKey"
+    private static let store = Keychain(service: "com.meditor.ai", account: "apiKey")
 
-    static func save(_ key: String) {
-        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        let base: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-        SecItemDelete(base as CFDictionary)
-        guard !trimmed.isEmpty, let data = trimmed.data(using: .utf8) else { return }
-        var add = base
-        add[kSecValueData as String] = data
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        SecItemAdd(add as CFDictionary, nil)
-    }
-
-    static func load() -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data,
-              let str = String(data: data, encoding: .utf8) else { return nil }
-        return str
-    }
-
-    static func clear() {
-        SecItemDelete([
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ] as CFDictionary)
-    }
-
-    static var hasKey: Bool { load() != nil }
+    static func save(_ key: String) { store.save(key) }
+    static func load() -> String? { store.load() }
+    static func clear() { store.clear() }
+    static var hasKey: Bool { store.hasValue }
 }
 
 // MARK: - Client
@@ -204,6 +168,9 @@ struct AIClient {
                     if !config.apiKey.isEmpty {
                         req.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
                     }
+                    // Fail fast if the endpoint never responds (the byte stream
+                    // itself stays open for the whole generation once flowing).
+                    req.timeoutInterval = 60
 
                     let payload: [String: Any] = [
                         "model": config.model,
@@ -212,7 +179,15 @@ struct AIClient {
                     ]
                     req.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
-                    let (bytes, response) = try await URLSession.shared.bytes(for: req)
+                    let session = URLSession(configuration: {
+                        let c = URLSessionConfiguration.default
+                        c.timeoutIntervalForRequest = 60          // idle timeout between bytes
+                        c.timeoutIntervalForResource = 600         // overall ceiling
+                        c.waitsForConnectivity = false
+                        return c
+                    }())
+
+                    let (bytes, response) = try await session.bytes(for: req)
                     guard let http = response as? HTTPURLResponse else {
                         throw AIError.network("invalid response")
                     }
