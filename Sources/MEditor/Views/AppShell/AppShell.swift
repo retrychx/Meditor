@@ -176,6 +176,18 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
                                 .transition(.move(edge: .top).combined(with: .opacity))
                         }
                     }
+                    // Floating AI assistant launcher — pinned to the bottom-trailing
+                    // corner of the document area (clear of the right rail). Fades
+                    // out while its hero panel is open so the panel appears to grow
+                    // out of this button.
+                    .overlay(alignment: .bottomTrailing) {
+                        AIAssistantButton()
+                            .padding(.trailing, 18)
+                            .padding(.bottom, 18)
+                            .opacity(state.showingAIAssistant ? 0 : 1)
+                            .allowsHitTesting(!state.showingAIAssistant)
+                            .animation(DS.Motion.fast, value: state.showingAIAssistant)
+                    }
 
                     if !workspaceUI.isFocusMode {
                         RightPanelRail(workspaceUI: workspaceUI)
@@ -455,7 +467,7 @@ private struct FocusToggleButton: View {
             Image(systemName: "scope")
                 .symbolRenderingMode(.hierarchical)
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Color.appAccent)
                 .frame(width: 30, height: 30)
                 .background(
                     Circle()
@@ -466,7 +478,7 @@ private struct FocusToggleButton: View {
                 // Breathing accent halo — slow pulse that signals focus is active.
                 .background(
                     Circle()
-                        .fill(Color.accentColor)
+                        .fill(Color.appAccent)
                         .opacity(breathe ? 0.30 : 0.08)
                         .scaleEffect(breathe ? 1.55 : 1.08)
                         .blur(radius: 6)

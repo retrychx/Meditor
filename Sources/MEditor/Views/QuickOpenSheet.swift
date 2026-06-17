@@ -402,7 +402,7 @@ struct QuickOpenSheet: View {
         .padding(.vertical, 4)
         .listRowInsets(EdgeInsets())
         .listRowSeparator(.hidden)
-        .background(idx == highlighted ? Color.accentColor.opacity(0.18) : Color.clear)
+        .background(idx == highlighted ? Color.appAccent.opacity(0.18) : Color.clear)
         .contentShape(Rectangle())
         .id(idx)
         .onTapGesture(count: 2) {

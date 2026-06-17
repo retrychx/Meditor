@@ -129,7 +129,7 @@ private struct TOCRow: View {
                 .background(backgroundStyle)
                 .overlay(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 1)
-                        .fill(isActive ? Color.accentColor : levelStripeColor)
+                        .fill(isActive ? Color.appAccent : levelStripeColor)
                         .frame(width: stripeWidth)
                         .padding(.vertical, 5)
                         .opacity(isActive || item.level >= 3 ? 1 : 0)
@@ -184,7 +184,7 @@ private struct TOCRow: View {
 
     private var backgroundStyle: some ShapeStyle {
         if isActive {
-            return Color.accentColor.opacity(0.09)
+            return Color.appAccent.opacity(0.09)
         }
         return Color.clear
     }

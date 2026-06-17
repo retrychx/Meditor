@@ -66,7 +66,7 @@ private struct TabItem: View {
                     .symbolRenderingMode(.hierarchical)
                     .font(.system(size: 11))
                     .foregroundStyle(
-                        isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(Color.secondary.opacity(0.5))
+                        isSelected ? AnyShapeStyle(Color.appAccent) : AnyShapeStyle(Color.secondary.opacity(0.5))
                     )
 
                 // File name

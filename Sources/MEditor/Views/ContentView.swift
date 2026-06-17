@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @Environment(AppState.self) private var state
     @State private var workspaceUI = WorkspaceUIState()
+    @State private var settings = AppSettings.shared
 
     var body: some View {
         Group {
@@ -13,8 +14,34 @@ struct ContentView: View {
             }
         }
         .preferredColorScheme(state.themeStore.current.isDark ? .dark : .light)
+        // Global accent — the AI-assistant accent style is applied app-wide so
+        // every control (create buttons, pickers, toggles, selection highlights)
+        // honors the user's choice (system blue vs shadcn mono).
+        .tint(AIAccentStyle.current(settings).fill(state.themeStore.current))
         .environment(workspaceUI)
         .background(WindowConfigurator())
+        .overlayPreferenceValue(SettingsAnchorKey.self) { anchor in
+            GeometryReader { proxy in
+                if state.showingSettings {
+                    let rect: CGRect = anchor.map { proxy[$0] }
+                        ?? CGRect(x: proxy.size.width / 2, y: proxy.size.height, width: 0, height: 0)
+                    SettingsHeroOverlay(originRect: rect, containerSize: proxy.size)
+                        .environment(state)
+                        .environment(workspaceUI)
+                }
+            }
+        }
+        .overlayPreferenceValue(AIAssistantAnchorKey.self) { anchor in
+            GeometryReader { proxy in
+                if state.showingAIAssistant {
+                    let rect: CGRect = anchor.map { proxy[$0] }
+                        ?? CGRect(x: proxy.size.width, y: proxy.size.height, width: 0, height: 0)
+                    AIAssistantHeroOverlay(originRect: rect, containerSize: proxy.size)
+                        .environment(state)
+                        .environment(workspaceUI)
+                }
+            }
+        }
         .sheet(isPresented: Binding(
             get: { state.showingQuickOpen },
             set: { state.showingQuickOpen = $0 }

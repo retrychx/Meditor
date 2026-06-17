@@ -41,11 +41,11 @@ struct RightPanelRail: View {
             Image(systemName: icon)
                 .symbolRenderingMode(.hierarchical)
                 .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(isActive ? Color.accentColor : theme.craftSecondary)
+                .foregroundStyle(isActive ? Color.appAccent : theme.craftSecondary)
                 .frame(width: 28, height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(isActive ? Color.accentColor.opacity(0.12) : Color.clear)
+                        .fill(isActive ? Color.appAccent.opacity(0.12) : Color.clear)
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }

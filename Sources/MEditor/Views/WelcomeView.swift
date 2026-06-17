@@ -184,8 +184,8 @@ struct WelcomeView: View {
                 .padding(.vertical, 9)
                 .background(
                     Capsule(style: .continuous)
-                        .fill(Color.accentColor)
-                        .shadow(color: Color.accentColor.opacity(0.3), radius: 8, y: 3)
+                        .fill(Color.appAccent)
+                        .shadow(color: Color.appAccent.opacity(0.3), radius: 8, y: 3)
                 )
             }
             .buttonStyle(.plain)

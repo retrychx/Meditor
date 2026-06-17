@@ -15,12 +15,12 @@ struct ChromeButton: View {
             Image(systemName: systemName)
                 .symbolRenderingMode(.hierarchical)
                 .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(isActive ? Color.accentColor : Color.primary.opacity(isHovered ? 0.65 : 0.35))
+                .foregroundStyle(isActive ? Color.appAccent : Color.primary.opacity(isHovered ? 0.65 : 0.35))
                 .frame(width: 28, height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(isActive
-                            ? Color.accentColor.opacity(0.1)
+                            ? Color.appAccent.opacity(0.1)
                             : isHovered ? Color.black.opacity(0.05) : Color.clear
                         )
                 )

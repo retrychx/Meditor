@@ -34,6 +34,7 @@ final class AppState {
     let fileTreeManager: FileTreeManager
     let previewManager: PreviewManager
     let shareManager: ShareManager
+    let gitlabShareManager: GitLabShareManager
     let templateManager: TemplateManager
 
     // MARK: - Core shared state
@@ -66,6 +67,8 @@ final class AppState {
 
     var errorMessage: String?
     var showingQuickOpen = false
+    var showingSettings = false
+    var showingAIAssistant = false
     var externallyModifiedTab: EditorTab?
     var showingReloadPrompt = false
 
@@ -102,6 +105,7 @@ final class AppState {
         self.fileTreeManager = FileTreeManager(fileService: fileService)
         self.previewManager  = PreviewManager()
         self.shareManager    = ShareManager()
+        self.gitlabShareManager = GitLabShareManager()
         self.templateManager = TemplateManager()
         wireTabManagerCallbacks()
         setupAutoSaveTimer()

@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Template picker — left category sidebar + right template grid.
+/// Template picker — Craft-inspired: a search header, sectioned scroll, and
+/// rich cards that each render a miniature preview of the template's layout.
 struct TemplatePickerSheet: View {
     @Environment(AppState.self) private var state
     @Environment(\.dismiss) private var dismiss
@@ -8,172 +9,136 @@ struct TemplatePickerSheet: View {
     let store: TemplateStoreProtocol
     let onSelect: (DocumentTemplate) -> Void
 
-    @State private var query       = ""
+    @State private var query = ""
     @State private var selectedID: String? = "blank"
-    @State private var category    = TemplateCategory.builtin
     @FocusState private var searchFocused: Bool
 
-    enum TemplateCategory: String, CaseIterable {
-        case builtin = "内置模板"
-        case mine    = "我的模板"
-
-        var icon: String {
-            switch self {
-            case .builtin: return "doc.text.fill"
-            case .mine:    return "person.crop.circle"
-            }
-        }
-    }
+    private let columns = [GridItem(.adaptive(minimum: 132, maximum: 168), spacing: 16)]
 
     // MARK: - Body
 
     var body: some View {
         VStack(spacing: 0) {
-            // Search bar
-            searchBar
-
-            Divider()
-
-            HStack(spacing: 0) {
-                // Category sidebar
-                categorySidebar
-
-                Divider()
-
-                // Template grid
-                templateGrid
-            }
-
-            Divider()
-
-            // Footer
+            header
+            Divider().opacity(0.6)
+            content
+            Divider().opacity(0.6)
             footer
         }
-        .frame(width: 520, height: 420)
+        .frame(width: 580, height: 480)
+        .background(DS.Color.editorBg)
         .onAppear { searchFocused = true }
     }
 
-    // MARK: - Search bar
+    // MARK: - Header (search)
 
-    private var searchBar: some View {
-        HStack(spacing: 8) {
+    private var header: some View {
+        HStack(spacing: DS.Space.sm) {
             Image(systemName: "magnifyingglass")
-                .foregroundStyle(.tertiary)
-                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .font(.system(size: 13, weight: .medium))
             TextField(L("template.search"), text: $query)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13))
+                .font(.system(size: 13.5))
                 .focused($searchFocused)
             if !query.isEmpty {
                 Button { query = "" } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.tertiary)
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                 }
                 .buttonStyle(.plain)
                 .transition(.scale.combined(with: .opacity))
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .padding(.horizontal, DS.Space.md)
+        .padding(.vertical, 9)
+        .background(
+            RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                .fill(Color.primary.opacity(0.06))
+        )
+        .padding(.horizontal, DS.Space.lg)
+        .padding(.vertical, DS.Space.md)
         .animation(DS.Motion.fast, value: query.isEmpty)
     }
 
-    // MARK: - Category sidebar
+    // MARK: - Content
 
-    private var categorySidebar: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(TemplateCategory.allCases, id: \.self) { cat in
-                let count = templatesFor(cat).count
-                if count > 0 || cat == .builtin {
-                    CategoryRow(
-                        icon: cat.icon,
-                        label: cat.rawValue,
-                        count: count,
-                        isSelected: category == cat && query.isEmpty
-                    )
-                    .onTapGesture {
-                        withAnimation(DS.Motion.fast) {
-                            query = ""
-                            category = cat
-                        }
-                    }
-                }
-            }
-            Spacer()
-        }
-        .padding(.top, 8)
-        .padding(.horizontal, 8)
-        .frame(width: 130)
-        .background(Color(nsColor: .windowBackgroundColor))
-    }
-
-    // MARK: - Template grid
-
-    private var templateGrid: some View {
-        let templates = query.isEmpty ? templatesFor(category) : allFiltered
-        return Group {
-            if templates.isEmpty {
-                VStack(spacing: 10) {
-                    Image(systemName: "doc.text.magnifyingglass")
-                        .font(.system(size: 28, weight: .light))
-                        .foregroundStyle(.tertiary)
-                    Text(L("common.noMatches"))
-                        .font(.system(size: 12))
-                        .foregroundStyle(.tertiary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+    private var content: some View {
+        Group {
+            if sections.allSatisfy({ $0.items.isEmpty }) {
+                emptyState
             } else {
                 ScrollView {
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 110, maximum: 140), spacing: 8)],
-                        spacing: 8
-                    ) {
-                        ForEach(templates) { template in
-                            TemplateCard(
-                                template: template,
-                                isSelected: selectedID == template.id,
-                                onDelete: template.isBuiltin ? nil : {
-                                    try? store.delete(id: template.id)
-                                }
-                            )
-                            .onTapGesture {
-                                withAnimation(DS.Motion.springFast) {
-                                    selectedID = template.id
-                                }
-                            }
-                            .onTapGesture(count: 2) {
-                                selectedID = template.id
-                                confirmSelection()
+                    VStack(alignment: .leading, spacing: DS.Space.lg) {
+                        ForEach(sections) { section in
+                            if !section.items.isEmpty {
+                                sectionView(section)
                             }
                         }
                     }
-                    .padding(12)
+                    .padding(DS.Space.lg)
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .textBackgroundColor))
+    }
+
+    private func sectionView(_ section: Section) -> some View {
+        VStack(alignment: .leading, spacing: DS.Space.sm) {
+            Text(section.title.uppercased())
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(.tertiary)
+                .kerning(0.5)
+
+            LazyVGrid(columns: columns, spacing: DS.Space.lg) {
+                ForEach(section.items) { template in
+                    TemplateCard(
+                        template: template,
+                        isSelected: selectedID == template.id,
+                        onDelete: template.isBuiltin ? nil : { try? store.delete(id: template.id) }
+                    )
+                    .onTapGesture {
+                        withAnimation(DS.Motion.springFast) { selectedID = template.id }
+                    }
+                    .onTapGesture(count: 2) {
+                        selectedID = template.id
+                        confirmSelection()
+                    }
+                }
+            }
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: DS.Space.sm) {
+            Image(systemName: "doc.text.magnifyingglass")
+                .font(.system(size: 30, weight: .light))
+                .foregroundStyle(.tertiary)
+            Text(L("common.noMatches"))
+                .font(.system(size: 12.5))
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Footer
 
     private var footer: some View {
         HStack {
-            // Selected template preview name
-            if let id = selectedID,
-               let template = store.template(byID: id) {
-                HStack(spacing: 6) {
-                    Image(systemName: templateIcon(template))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+            if let id = selectedID, let template = store.template(byID: id) {
+                HStack(spacing: 7) {
+                    TemplateThumbnail(kind: .init(template), accent: TemplateKind(template).accent)
+                        .frame(width: 22, height: 16)
+                        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color.primary.opacity(0.1)))
                     Text(template.name)
-                        .font(.system(size: 12))
+                        .font(.system(size: 12.5, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
             } else {
                 Text(L("template.selectHint"))
-                    .font(.system(size: 12))
+                    .font(.system(size: 12.5))
                     .foregroundStyle(.tertiary)
             }
 
@@ -181,23 +146,32 @@ struct TemplatePickerSheet: View {
 
             Button(L("common.cancel")) { dismiss() }
                 .keyboardShortcut(.escape, modifiers: [])
-
             Button(L("template.create")) { confirmSelection() }
                 .keyboardShortcut(.return, modifiers: [])
                 .buttonStyle(.borderedProminent)
+                .tint(Color.appAccent)
                 .disabled(selectedID == nil)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, DS.Space.lg)
+        .padding(.vertical, DS.Space.md)
     }
 
-    // MARK: - Helpers
+    // MARK: - Sections data
 
-    private func templatesFor(_ cat: TemplateCategory) -> [DocumentTemplate] {
-        switch cat {
-        case .builtin: return store.builtinTemplates()
-        case .mine:    return store.allTemplates().filter { !$0.isBuiltin }
+    private struct Section: Identifiable {
+        let id: String
+        let title: String
+        let items: [DocumentTemplate]
+    }
+
+    private var sections: [Section] {
+        if !query.isEmpty {
+            return [Section(id: "search", title: L("template.search"), items: allFiltered)]
         }
+        let mine = store.allTemplates().filter { !$0.isBuiltin }
+        var result = [Section(id: "builtin", title: "内置模板", items: store.builtinTemplates())]
+        if !mine.isEmpty { result.append(Section(id: "mine", title: "我的模板", items: mine)) }
+        return result
     }
 
     private var allFiltered: [DocumentTemplate] {
@@ -207,10 +181,6 @@ struct TemplatePickerSheet: View {
         }
     }
 
-    private func templateIcon(_ template: DocumentTemplate) -> String {
-        template.isBuiltin ? "doc.text" : "doc.badge.plus"
-    }
-
     private func confirmSelection() {
         guard let id = selectedID, let template = store.template(byID: id) else { return }
         onSelect(template)
@@ -218,55 +188,32 @@ struct TemplatePickerSheet: View {
     }
 }
 
-// MARK: - Category Row
+// MARK: - Template Kind (drives thumbnail layout + accent)
 
-private struct CategoryRow: View {
-    let icon: String
-    let label: String
-    let count: Int
-    let isSelected: Bool
+enum TemplateKind {
+    case blank, meeting, tech, weekly, journal, html, generic
 
-    @State private var isHovered = false
+    init(_ t: DocumentTemplate) {
+        let n = t.name.lowercased(), id = t.id.lowercased()
+        if id == "blank" || n.contains("空白") || n.contains("blank") { self = .blank }
+        else if id.contains("meeting") || n.contains("会议") { self = .meeting }
+        else if id.contains("tech") || n.contains("技术") { self = .tech }
+        else if id.contains("weekly") || n.contains("周报") { self = .weekly }
+        else if id.contains("journal") || n.contains("日记") || n.contains("日报") { self = .journal }
+        else if id.contains("html") || n.contains("html") { self = .html }
+        else { self = .generic }
+    }
 
-    var body: some View {
-        HStack(spacing: 7) {
-            Image(systemName: icon)
-                .font(.system(size: 12))
-                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-                .frame(width: 16, alignment: .center)
-
-            Text(label)
-                .font(.system(size: 12, weight: isSelected ? .medium : .regular))
-                .foregroundStyle(isSelected ? Color.primary : Color.secondary)
-                .lineLimit(1)
-
-            Spacer()
-
-            if count > 0 {
-                Text("\(count)")
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .foregroundStyle(.tertiary)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .background(
-                        Capsule().fill(Color.primary.opacity(0.07))
-                    )
-            }
+    var accent: Color {
+        switch self {
+        case .blank:   return .gray
+        case .meeting: return .blue
+        case .tech:    return .purple
+        case .weekly:  return .green
+        case .journal: return .orange
+        case .html:    return .teal
+        case .generic: return .accentColor
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .fill(
-                    isSelected
-                        ? Color.accentColor.opacity(0.12)
-                        : isHovered ? Color.primary.opacity(0.06) : Color.clear
-                )
-        )
-        .contentShape(Rectangle())
-        .onHover { isHovered = $0 }
-        .animation(.easeOut(duration: 0.1), value: isSelected)
-        .animation(.easeOut(duration: 0.08), value: isHovered)
     }
 }
 
@@ -279,83 +226,134 @@ private struct TemplateCard: View {
 
     @State private var isHovered = false
 
-    private var cardIcon: String {
-        // Map template name to a meaningful icon
-        let name = template.name.lowercased()
-        if name.contains("blank") || name.contains("空白") { return "doc" }
-        if name.contains("meeting") || name.contains("会议") { return "person.2" }
-        if name.contains("tech") || name.contains("技术") { return "cpu" }
-        if name.contains("daily") || name.contains("日报") { return "calendar" }
-        if name.contains("readme") { return "info.circle" }
-        if name.contains("report") || name.contains("报告") { return "chart.bar.doc.horizontal" }
-        return template.isBuiltin ? "doc.text" : "doc.badge.plus"
-    }
-
-    private var cardColor: Color {
-        let name = template.name.lowercased()
-        if name.contains("blank") || name.contains("空白") { return .gray }
-        if name.contains("meeting") || name.contains("会议") { return .blue }
-        if name.contains("tech") || name.contains("技术") { return .purple }
-        if name.contains("daily") || name.contains("日报") { return .green }
-        if name.contains("readme") { return .orange }
-        if name.contains("report") || name.contains("报告") { return .indigo }
-        return .accentColor
-    }
+    private var kind: TemplateKind { TemplateKind(template) }
 
     var body: some View {
-        VStack(spacing: 8) {
-            // Icon area
+        VStack(spacing: DS.Space.sm) {
             ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(
-                        isSelected
-                            ? cardColor.opacity(0.15)
-                            : Color.primary.opacity(0.05)
+                RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                    .fill(DS.Color.editorBg)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                            .stroke(isSelected ? kind.accent.opacity(0.9) : Color.primary.opacity(0.08),
+                                    lineWidth: isSelected ? 2 : 1)
                     )
-                    .frame(height: 52)
+                    .shadow(color: .black.opacity(isHovered || isSelected ? 0.14 : 0.06),
+                            radius: isHovered || isSelected ? 9 : 4,
+                            y: isHovered || isSelected ? 4 : 2)
 
-                Image(systemName: cardIcon)
-                    .font(.system(size: 22, weight: .light))
-                    .foregroundStyle(
-                        isSelected ? cardColor : Color.secondary.opacity(0.6)
-                    )
+                TemplateThumbnail(kind: kind, accent: kind.accent)
+                    .padding(12)
             }
+            .frame(height: 96)
+            .scaleEffect(isHovered && !isSelected ? 1.02 : 1)
 
-            // Name
             Text(template.name)
-                .font(.system(size: 11, weight: isSelected ? .medium : .regular))
-                .foregroundStyle(isSelected ? Color.primary : Color.primary.opacity(0.7))
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity)
+                .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                .foregroundStyle(isSelected ? Color.primary : Color.primary.opacity(0.78))
+                .lineLimit(1)
         }
-        .padding(8)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(isSelected ? Color.accentColor.opacity(0.08) : Color.clear)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(
-                            isSelected ? Color.accentColor.opacity(0.35) : Color.primary.opacity(0.08),
-                            lineWidth: isSelected ? 1.5 : 1
-                        )
-                )
-        )
         .overlay(alignment: .topTrailing) {
             if isHovered, let onDelete {
                 Button(action: onDelete) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 14))
+                        .font(.system(size: 15))
                         .foregroundStyle(.secondary)
-                        .background(Circle().fill(Color(nsColor: .textBackgroundColor)))
+                        .background(Circle().fill(DS.Color.editorBg))
                 }
                 .buttonStyle(.plain)
-                .offset(x: 5, y: -5)
+                .offset(x: 6, y: -6)
                 .transition(.scale.combined(with: .opacity))
             }
         }
+        .contentShape(Rectangle())
         .animation(DS.Motion.fast, value: isSelected)
         .animation(DS.Motion.micro, value: isHovered)
         .onHover { isHovered = $0 }
+    }
+}
+
+// MARK: - Template Thumbnail (miniature document preview)
+
+private struct TemplateThumbnail: View {
+    let kind: TemplateKind
+    let accent: Color
+
+    private var faint: Color { Color.primary.opacity(0.14) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            switch kind {
+            case .blank:
+                bar(accent, 26)
+                Spacer(minLength: 0)
+                bar(faint, 40)
+            case .meeting:
+                bar(accent, 48)
+                checkRow(34); checkRow(28)
+                miniTable()
+            case .tech:
+                bar(accent, 46)
+                bar(faint, 30, h: 4)
+                line(58); line(48)
+                miniTable()
+            case .weekly:
+                bar(accent, 42)
+                bulletRow(46); bulletRow(52); bulletRow(38)
+            case .journal:
+                bar(accent, 36)
+                line(56); line(44)
+                bar(faint, 26, h: 4)
+            case .html:
+                codeMark()
+                line(50); line(40)
+            case .generic:
+                bar(accent, 40)
+                line(56); line(48); line(36)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    // MARK: building blocks
+
+    private func bar(_ c: Color, _ w: CGFloat, h: CGFloat = 6) -> some View {
+        RoundedRectangle(cornerRadius: h / 2, style: .continuous).fill(c).frame(width: w, height: h)
+    }
+    private func line(_ w: CGFloat) -> some View { bar(faint, w, h: 4) }
+
+    private func checkRow(_ w: CGFloat) -> some View {
+        HStack(spacing: 5) {
+            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                .stroke(faint, lineWidth: 1).frame(width: 6, height: 6)
+            bar(faint, w, h: 4)
+        }
+    }
+    private func bulletRow(_ w: CGFloat) -> some View {
+        HStack(spacing: 5) {
+            Circle().fill(accent.opacity(0.5)).frame(width: 4, height: 4)
+            bar(faint, w, h: 4)
+        }
+    }
+    private func miniTable() -> some View {
+        VStack(spacing: 0) {
+            ForEach(0..<2, id: \.self) { _ in
+                HStack(spacing: 0) {
+                    ForEach(0..<3, id: \.self) { _ in
+                        Rectangle().stroke(faint, lineWidth: 0.8)
+                            .frame(width: 18, height: 9)
+                    }
+                }
+            }
+        }
+        .padding(.top, 2)
+    }
+    private func codeMark() -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: "chevron.left.forwardslash.chevron.right")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(accent)
+        }
     }
 }

@@ -60,7 +60,7 @@ struct FileRow: View {
                 .font(.system(size: 12))
                 .foregroundStyle(
                     isSelected
-                        ? AnyShapeStyle(Color.accentColor.opacity(0.9))
+                        ? AnyShapeStyle(Color.appAccent.opacity(0.9))
                         : AnyShapeStyle(fileColor.opacity(0.75))
                 )
         }
@@ -135,6 +135,6 @@ struct FileRow: View {
         let before = String(name[name.startIndex..<range.lowerBound])
         let match  = String(name[range])
         let after  = String(name[range.upperBound...])
-        return Text(before) + Text(match).foregroundColor(.accentColor).bold() + Text(after)
+        return Text(before) + Text(match).foregroundColor(Color.appAccent).bold() + Text(after)
     }
 }

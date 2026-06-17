@@ -116,7 +116,7 @@ enum DS {
 
         /// File row selected fill
         static var rowSelected: SwiftUI.Color {
-            SwiftUI.Color.accentColor.opacity(0.13)
+            SwiftUI.Color.appAccent.opacity(0.13)
         }
 
         /// Status bar pill background
@@ -149,7 +149,7 @@ extension View {
 
 /// Accent selection indicator (left edge line)
 struct SelectionAccentLine: View {
-    var color: SwiftUI.Color = .accentColor
+    var color: SwiftUI.Color = .appAccent
     var verticalPad: CGFloat = 6
 
     var body: some View {
