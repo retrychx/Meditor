@@ -57,6 +57,17 @@ final class AppState {
     var editorScrollCommand: ScrollSyncCommand = .idle
     var previewScrollCommand: ScrollSyncCommand = .idle
 
+    /// Current editor selection (empty when nothing selected). Used as AI context.
+    var editorSelectedText: String = ""
+    /// AI → editor insert command (text + monotonic nonce).
+    var editorInsertText: String = ""
+    var editorInsertNonce: Int = 0
+
+    func insertIntoEditor(_ text: String) {
+        editorInsertText = text
+        editorInsertNonce += 1
+    }
+
     var currentFileSize: String {
         guard let tab = selectedTab else { return "" }
         let f = ByteCountFormatter(); f.countStyle = .file

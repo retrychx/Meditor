@@ -11,6 +11,15 @@ struct AIAssistantAnchorKey: PreferenceKey {
     }
 }
 
+/// Reports the transcript's bottom-marker offset within the scroll viewport,
+/// used to decide whether to auto-follow streaming output.
+private struct AIBottomOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 // MARK: - Brand palette
 
 enum AIBrand {
@@ -254,6 +263,16 @@ final class AIConversation {
     var isResponding = false
     var showAllSuggestions = false
 
+    /// In-flight streaming task, so it can be cancelled (stop / new chat / switch).
+    @ObservationIgnored fileprivate var streamTask: Task<Void, Never>?
+
+    func cancelStreaming() {
+        streamTask?.cancel()
+        streamTask = nil
+        isResponding = false
+        persist()
+    }
+
     private static let fileURL: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("MEditor", isDirectory: true)
@@ -299,6 +318,7 @@ final class AIConversation {
 
     /// Start a fresh session. Reuses the current one if it's already empty.
     func newSession() {
+        cancelStreaming()
         input = ""
         if sessions.indices.contains(activeIndex), sessions[activeIndex].messages.isEmpty {
             return
@@ -311,11 +331,13 @@ final class AIConversation {
 
     fileprivate func activate(_ id: UUID) {
         guard sessions.contains(where: { $0.id == id }) else { return }
+        cancelStreaming()
         activeID = id
         input = ""
     }
 
     fileprivate func delete(_ id: UUID) {
+        if id == activeID { cancelStreaming() }
         sessions.removeAll { $0.id == id }
         if sessions.isEmpty {
             let fresh = AISession()
@@ -355,6 +377,7 @@ struct AIAssistantPanel: View {
     @State private var settings = AppSettings.shared
     @State private var convo = AIConversation.shared
     @State private var showHistory = false
+    @State private var atBottom = true
     @FocusState private var inputFocused: Bool
 
     private var theme: PreviewTheme { state.themeStore.current }
@@ -514,14 +537,15 @@ struct AIAssistantPanel: View {
     }
 
     private var transcriptView: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(convo.messages) { message in
-                        if !message.text.isEmpty {
-                            bubble(message).id(message.id)
+        GeometryReader { outer in
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(convo.messages) { message in
+                            if !message.text.isEmpty {
+                                bubble(message).id(message.id)
+                            }
                         }
-                    }
                     if convo.isResponding && (convo.messages.last?.text.isEmpty ?? true) {
                         HStack(spacing: 8) {
                             AIAssistantOrb(size: 18, glow: true)
@@ -531,20 +555,61 @@ struct AIAssistantPanel: View {
                             TypingDots(color: theme.craftSecondary)
                         }
                     }
+                    if !convo.isResponding && convo.messages.last?.role == .assistant {
+                        Button(action: regenerate) {
+                            HStack(spacing: 5) {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 10.5, weight: .semibold))
+                                Text(L("ai.regenerate"))
+                                    .font(.system(size: 11.5, weight: .medium))
+                            }
+                            .foregroundStyle(theme.craftSecondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .overlay(
+                                Capsule().strokeBorder(theme.separator.opacity(0.6), lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 2)
+                    }
                     // Bottom anchor — ensures the last line fully clears the
                     // composer and that scroll-to-end reaches the true bottom.
                     Color.clear
                         .frame(height: 1)
                         .id("bottom")
+                        .background(
+                            GeometryReader { g in
+                                Color.clear.preference(
+                                    key: AIBottomOffsetKey.self,
+                                    value: g.frame(in: .named("aiScroll")).maxY
+                                )
+                            }
+                        )
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 14)
                 .padding(.top, 16)
                 .padding(.bottom, 10)
             }
+            .coordinateSpace(name: "aiScroll")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .onChange(of: convo.messages.count) { _, _ in scrollToEnd(proxy) }
-            .onChange(of: convo.messages.last?.text) { _, _ in scrollToEnd(proxy) }
+            .onPreferenceChange(AIBottomOffsetKey.self) { maxY in
+                // The bottom marker sits within ~1 viewport when the user is at
+                // the end; only then do we follow streaming output.
+                atBottom = maxY <= outer.size.height + 40
+            }
+            .onChange(of: convo.messages.count) { _, _ in
+                // A new message (send/reply start) always jumps to the bottom.
+                scrollToEnd(proxy)
+            }
+            .onChange(of: convo.messages.last?.text) { _, _ in
+                if atBottom { scrollToEnd(proxy) }
+            }
+            .onAppear {
+                DispatchQueue.main.async { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            }
         }
     }
 
@@ -568,26 +633,42 @@ struct AIAssistantPanel: View {
                     )
             } else {
                 AIAssistantOrb(size: 20, glow: true).padding(.top, 1)
-                MarkdownText(
-                    markdown: message.text,
-                    textColor: theme.craftPrimary,
-                    secondaryColor: theme.craftSecondary,
-                    codeBackground: theme.isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.045),
-                    accent: Color.appAccent
-                )
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 13)
-                .padding(.vertical, 11)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(theme.isDark ? Color.white.opacity(0.03) : Color.white)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(theme.separator.opacity(theme.isDark ? 0.5 : 0.7), lineWidth: 1)
-                )
-                .shadow(color: .black.opacity(theme.isDark ? 0.18 : 0.04), radius: 5, x: 0, y: 1)
+                VStack(alignment: .leading, spacing: 6) {
+                    MarkdownText(
+                        markdown: message.text,
+                        textColor: theme.craftPrimary,
+                        secondaryColor: theme.craftSecondary,
+                        codeBackground: theme.isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.045),
+                        accent: Color.appAccent
+                    )
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 11)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(theme.isDark ? Color.white.opacity(0.03) : Color.white)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(theme.separator.opacity(theme.isDark ? 0.5 : 0.7), lineWidth: 1)
+                    )
+                    .shadow(color: .black.opacity(theme.isDark ? 0.18 : 0.04), radius: 5, x: 0, y: 1)
+
+                    if !convo.isResponding || message.id != convo.messages.last?.id {
+                        HStack(spacing: 12) {
+                            AIMessageAction(icon: "doc.on.doc", title: L("ai.copy"), theme: theme) {
+                                let pb = NSPasteboard.general
+                                pb.clearContents(); pb.setString(message.text, forType: .string)
+                            }
+                            AIMessageAction(icon: "text.insert", title: L("ai.insertToDoc"), theme: theme) {
+                                state.insertIntoEditor(message.text)
+                            }
+                            Spacer()
+                        }
+                        .padding(.leading, 2)
+                    }
+                }
             }
         }
     }
@@ -629,11 +710,13 @@ struct AIAssistantPanel: View {
 
                 Spacer(minLength: 4)
 
-                Button(action: send) {
+                Button(action: { convo.isResponding ? convo.cancelStreaming() : send() }) {
                     HStack(spacing: 5) {
                         if convo.isResponding {
-                            Image(systemName: "ellipsis")
-                                .font(.system(size: 12, weight: .bold))
+                            Image(systemName: "stop.fill")
+                                .font(.system(size: 11, weight: .bold))
+                            Text(L("ai.stop"))
+                                .font(.system(size: 12.5, weight: .semibold))
                         } else {
                             Text(L("ai.execute"))
                                 .font(.system(size: 12.5, weight: .semibold))
@@ -641,20 +724,23 @@ struct AIAssistantPanel: View {
                                 .font(.system(size: 11, weight: .bold))
                         }
                     }
-                    .foregroundStyle(canSend ? accent.onFill(theme) : Color.white.opacity(0.9))
+                    .foregroundStyle(convo.isResponding ? Color.white : (canSend ? accent.onFill(theme) : Color.white.opacity(0.9)))
                     .padding(.horizontal, 13)
                     .padding(.vertical, 7)
                     .background(
                         Capsule(style: .continuous)
-                            .fill(canSend ? AnyShapeStyle(accent.fill(theme))
-                                          : AnyShapeStyle(Color.gray.opacity(0.32)))
+                            .fill(convo.isResponding
+                                  ? AnyShapeStyle(Color(hex: "EF4444"))
+                                  : (canSend ? AnyShapeStyle(accent.fill(theme))
+                                             : AnyShapeStyle(Color.gray.opacity(0.32))))
                     )
-                    .shadow(color: accent.fill(theme).opacity(canSend ? 0.28 : 0), radius: 7, x: 0, y: 3)
+                    .shadow(color: accent.fill(theme).opacity(canSend && !convo.isResponding ? 0.28 : 0), radius: 7, x: 0, y: 3)
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.return, modifiers: [.command])
-                .disabled(!canSend)
+                .disabled(!canSend && !convo.isResponding)
                 .animation(DS.Motion.fast, value: canSend)
+                .animation(DS.Motion.fast, value: convo.isResponding)
             }
         }
         .padding(14)
@@ -740,12 +826,25 @@ struct AIAssistantPanel: View {
         withAnimation(DS.Motion.standard) {
             convo.messages.append(AIChatMessage(role: .user, text: trimmed))
             convo.input = ""
-            convo.isResponding = true
         }
         convo.persist()
+        runCompletion()
+    }
 
-        // Build the request: a system message with document context + the
-        // running conversation. Then stream the reply into a fresh bubble.
+    /// Drop the last assistant reply (if any) and re-run the request.
+    private func regenerate() {
+        guard !convo.isResponding else { return }
+        if convo.messages.last?.role == .assistant {
+            convo.messages.removeLast()
+        }
+        runCompletion()
+    }
+
+    /// Streams a reply for the current conversation into a fresh assistant bubble.
+    private func runCompletion() {
+        guard convo.messages.last?.role == .user else { return }
+        convo.isResponding = true
+
         let config = AIConfig.current(settings)
         var wire: [AIMessage] = [AIMessage(role: .system, content: systemContext())]
         wire += convo.messages.map {
@@ -755,12 +854,19 @@ struct AIAssistantPanel: View {
         let replyIndex = convo.messages.count
         convo.messages.append(AIChatMessage(role: .assistant, text: ""))
 
-        Task {
+        convo.streamTask = Task {
             do {
                 for try await chunk in AIClient(config: config).stream(wire) {
+                    try Task.checkCancellation()
                     if convo.messages.indices.contains(replyIndex) {
                         convo.messages[replyIndex].text += chunk
                     }
+                }
+            } catch is CancellationError {
+                // Keep whatever streamed so far; mark the partial reply.
+                if convo.messages.indices.contains(replyIndex),
+                   convo.messages[replyIndex].text.isEmpty {
+                    convo.messages.remove(at: replyIndex)
                 }
             } catch {
                 let msg = (error as? AIError)?.errorDescription ?? error.localizedDescription
@@ -769,6 +875,7 @@ struct AIAssistantPanel: View {
                 }
             }
             convo.isResponding = false
+            convo.streamTask = nil
             convo.persist()
         }
     }
@@ -777,7 +884,12 @@ struct AIAssistantPanel: View {
     private func systemContext() -> String {
         var ctx = "You are a helpful writing assistant embedded in a Markdown editor. "
             + "Answer concisely in the user's language."
-        if let tab = state.selectedTab {
+        let selection = state.editorSelectedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !selection.isEmpty {
+            let sel = selection.count > 8000 ? String(selection.prefix(8000)) + "…" : selection
+            let name = state.selectedTab?.name ?? "document"
+            ctx += "\n\nThe user selected this text in \"\(name)\":\n\n\(sel)"
+        } else if let tab = state.selectedTab {
             let body = tab.content.count > 8000 ? String(tab.content.prefix(8000)) + "…" : tab.content
             ctx += "\n\nThe current document is \"\(tab.name)\":\n\n\(body)"
         }
@@ -919,6 +1031,27 @@ private struct AIHistoryRow: View {
         .contentShape(Rectangle())
         .onTapGesture(perform: onSelect)
         .onHover { hovered = $0 }
+    }
+}
+
+private struct AIMessageAction: View {
+    let icon: String
+    let title: String
+    let theme: PreviewTheme
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon).font(.system(size: 10.5, weight: .medium))
+                Text(title).font(.system(size: 11, weight: .medium))
+            }
+            .foregroundStyle(hovered ? theme.craftPrimary : theme.craftSecondary)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+        .help(title)
     }
 }
 

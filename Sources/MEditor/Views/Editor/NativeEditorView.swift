@@ -20,6 +20,12 @@ struct NativeEditorView: NSViewRepresentable {
     let scrollToLine: Int
     /// Monotonic token so the same target line can be requested more than once.
     let scrollRequestID: Int
+    /// Reports the currently selected text (empty when nothing is selected).
+    var onSelectionChange: ((String) -> Void)? = nil
+    /// Text to insert at the caret / over the selection (driven by the AI panel).
+    var insertText: String = ""
+    /// Monotonic token so the same insert can be requested more than once.
+    var insertRequestID: Int = 0
     /// Theme drives the text view's background and foreground colors so the
     /// editor pane visually matches the rest of the app.
     var theme: PreviewTheme = .github
@@ -31,7 +37,6 @@ struct NativeEditorView: NSViewRepresentable {
             onVisibleTopLineChange: onVisibleTopLineChange
         )
     }
-
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollablePlainDocumentContentTextView()
         guard let textView = scrollView.documentView as? NSTextView else { return scrollView }
@@ -116,6 +121,7 @@ struct NativeEditorView: NSViewRepresentable {
         context.coordinator.onContentChange = onContentChange
         context.coordinator.onCursorChange = onCursorChange
         context.coordinator.onVisibleTopLineChange = onVisibleTopLineChange
+        context.coordinator.onSelectionChange = onSelectionChange
         context.coordinator.currentLanguage = language
 
         guard let textView = scrollView.documentView as? NSTextView else { return }
@@ -150,6 +156,26 @@ struct NativeEditorView: NSViewRepresentable {
             context.coordinator.lastAppliedRequestID = scrollRequestID
             context.coordinator.scrollToLine(scrollToLine)
         }
+
+        // Insert text from the AI panel at the caret (replacing any selection).
+        if insertRequestID != context.coordinator.lastInsertRequestID {
+            context.coordinator.lastInsertRequestID = insertRequestID
+            if insertRequestID > 0, !insertText.isEmpty {
+                let range = textView.selectedRange()
+                if textView.shouldChangeText(in: range, replacementString: insertText) {
+                    textView.textStorage?.replaceCharacters(in: range, with: insertText)
+                    textView.didChangeText()
+                    let newCaret = range.location + (insertText as NSString).length
+                    textView.setSelectedRange(NSRange(location: newCaret, length: 0))
+                    let newContent = textView.string
+                    context.coordinator.lastAcknowledgedContent = newContent
+                    context.coordinator.rebuildLineOffsets(for: newContent)
+                    context.coordinator.onContentChange(newContent)
+                    context.coordinator.scheduleHighlight()
+                    textView.scrollRangeToVisible(textView.selectedRange())
+                }
+            }
+        }
     }
 
     // MARK: - Coordinator
@@ -158,6 +184,7 @@ struct NativeEditorView: NSViewRepresentable {
         var onContentChange: (String) -> Void
         var onCursorChange: ((Int, Int) -> Void)?
         var onVisibleTopLineChange: ((Int) -> Void)?
+        var onSelectionChange: ((String) -> Void)?
         var currentLanguage: EditorLanguage = .markdown
         var lastTheme: PreviewTheme = .github
         var lastAcknowledgedContent: String = ""
@@ -167,6 +194,7 @@ struct NativeEditorView: NSViewRepresentable {
         var lastReportedLine: Int = -1
         var lastAppliedTargetLine: Int = -1
         var lastAppliedRequestID: Int = -1
+        var lastInsertRequestID: Int = 0
         var isProgrammaticScroll = false
         var localRevisionPredictionActive = false
 
@@ -358,12 +386,20 @@ struct NativeEditorView: NSViewRepresentable {
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
-            guard let textView = textView, let onCursorChange = onCursorChange else { return }
+            guard let textView = textView else { return }
             let range = textView.selectedRange()
-            let lineIndex = lineIndex(for: range.location, in: textView.string)
-            let lineStart = lineOffsets[safe: lineIndex] ?? 0
-            let column = max(1, range.location - lineStart + 1)
-            onCursorChange(lineIndex + 1, column)
+            if let onCursorChange = onCursorChange {
+                let lineIndex = lineIndex(for: range.location, in: textView.string)
+                let lineStart = lineOffsets[safe: lineIndex] ?? 0
+                let column = max(1, range.location - lineStart + 1)
+                onCursorChange(lineIndex + 1, column)
+            }
+            if let onSelectionChange = onSelectionChange {
+                let text = range.length > 0
+                    ? (textView.string as NSString).substring(with: range)
+                    : ""
+                onSelectionChange(text)
+            }
             updateSlashMenu(in: textView)
         }
 
