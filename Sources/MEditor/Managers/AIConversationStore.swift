@@ -17,6 +17,10 @@ final class AIConversation {
     var isResponding = false
     var showAllSuggestions = false
 
+    /// Maximum messages per session. When exceeded, oldest messages are dropped
+    /// (FIFO), but the first user message is always retained as seed context.
+    static let maxMessagesPerSession = 100
+
     /// In-flight streaming task, so it can be cancelled (stop / new chat / switch).
     @ObservationIgnored var streamTask: Task<Void, Never>?
     /// Debounced disk-persist work item.
@@ -49,13 +53,43 @@ final class AIConversation {
         get { sessions.indices.contains(activeIndex) ? sessions[activeIndex].messages : [] }
         set {
             guard sessions.indices.contains(activeIndex) else { return }
-            sessions[activeIndex].messages = newValue
+            // Enforce per-session message cap: keep first user message + newest tail.
+            let capped: [AIChatMessage]
+            if newValue.count > Self.maxMessagesPerSession {
+                let tail = Array(newValue.suffix(Self.maxMessagesPerSession - 1))
+                if let seed = newValue.first(where: { $0.role == .user }),
+                   tail.first?.id != seed.id {
+                    capped = [seed] + tail
+                } else {
+                    capped = tail
+                }
+            } else {
+                capped = newValue
+            }
+            sessions[activeIndex].messages = capped
             sessions[activeIndex].updatedAt = .now
+            // Auto-title from first user message, stripping leading Markdown markers.
             if sessions[activeIndex].title.isEmpty,
-               let firstUser = newValue.first(where: { $0.role == .user }) {
-                sessions[activeIndex].title = String(firstUser.text.prefix(40))
+               let firstUser = capped.first(where: { $0.role == .user }) {
+                let cleaned = firstUser.text
+                    .replacingOccurrences(of: #"^#{1,6}\s*"#, with: "",
+                                         options: .regularExpression)
+                sessions[activeIndex].title = String(cleaned.prefix(40))
             }
         }
+    }
+
+    // MARK: Context estimation
+
+    /// Rough token estimate for the current conversation (chars ÷ 4).
+    /// Used to surface a context-limit warning before the API rejects the request.
+    var estimatedTokenCount: Int {
+        messages.reduce(0) { $0 + $1.text.count / 4 }
+    }
+
+    /// True when estimated tokens exceed 80 % of a 128 K context window.
+    var isApproachingContextLimit: Bool {
+        estimatedTokenCount > 102_400   // 128 000 × 0.80
     }
 
     /// History ordered most-recently-updated first.

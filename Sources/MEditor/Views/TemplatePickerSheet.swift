@@ -84,7 +84,7 @@ struct TemplatePickerSheet: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func sectionView(_ section: Section) -> some View {
+    private func sectionView(_ section: PickerSection) -> some View {
         VStack(alignment: .leading, spacing: DS.Space.sm) {
             Text(section.title.uppercased())
                 .font(.system(size: 10.5, weight: .semibold))
@@ -158,19 +158,24 @@ struct TemplatePickerSheet: View {
 
     // MARK: - Sections data
 
-    private struct Section: Identifiable {
+    private struct PickerSection: Identifiable {
         let id: String
         let title: String
         let items: [DocumentTemplate]
     }
 
-    private var sections: [Section] {
+    private var sections: [PickerSection] {
         if !query.isEmpty {
-            return [Section(id: "search", title: L("template.search"), items: allFiltered)]
+            return [PickerSection(id: "search", title: L("template.search"), items: allFiltered)]
         }
-        let mine = store.allTemplates().filter { !$0.isBuiltin }
-        var result = [Section(id: "builtin", title: "内置模板", items: store.builtinTemplates())]
-        if !mine.isEmpty { result.append(Section(id: "mine", title: "我的模板", items: mine)) }
+        let md   = store.builtinTemplates().filter { $0.category == .markdown }
+        let html = store.builtinTemplates().filter { $0.category == .htmlTheme }
+        let user = store.userTemplates()
+
+        var result: [PickerSection] = []
+        if !md.isEmpty   { result.append(PickerSection(id: "markdown",  title: "文档模板",  items: md)) }
+        if !html.isEmpty { result.append(PickerSection(id: "htmlTheme", title: "HTML 主题", items: html)) }
+        if !user.isEmpty { result.append(PickerSection(id: "mine",      title: "我的模板",  items: user)) }
         return result
     }
 
@@ -185,175 +190,5 @@ struct TemplatePickerSheet: View {
         guard let id = selectedID, let template = store.template(byID: id) else { return }
         onSelect(template)
         dismiss()
-    }
-}
-
-// MARK: - Template Kind (drives thumbnail layout + accent)
-
-enum TemplateKind {
-    case blank, meeting, tech, weekly, journal, html, generic
-
-    init(_ t: DocumentTemplate) {
-        let n = t.name.lowercased(), id = t.id.lowercased()
-        if id == "blank" || n.contains("空白") || n.contains("blank") { self = .blank }
-        else if id.contains("meeting") || n.contains("会议") { self = .meeting }
-        else if id.contains("tech") || n.contains("技术") { self = .tech }
-        else if id.contains("weekly") || n.contains("周报") { self = .weekly }
-        else if id.contains("journal") || n.contains("日记") || n.contains("日报") { self = .journal }
-        else if id.contains("html") || n.contains("html") { self = .html }
-        else { self = .generic }
-    }
-
-    var accent: Color {
-        switch self {
-        case .blank:   return .gray
-        case .meeting: return .blue
-        case .tech:    return .purple
-        case .weekly:  return .green
-        case .journal: return .orange
-        case .html:    return .teal
-        case .generic: return .accentColor
-        }
-    }
-}
-
-// MARK: - Template Card
-
-private struct TemplateCard: View {
-    let template: DocumentTemplate
-    let isSelected: Bool
-    var onDelete: (() -> Void)? = nil
-
-    @State private var isHovered = false
-
-    private var kind: TemplateKind { TemplateKind(template) }
-
-    var body: some View {
-        VStack(spacing: DS.Space.sm) {
-            ZStack {
-                RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
-                    .fill(DS.Color.editorBg)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
-                            .stroke(isSelected ? kind.accent.opacity(0.9) : Color.primary.opacity(0.08),
-                                    lineWidth: isSelected ? 2 : 1)
-                    )
-                    .shadow(color: .black.opacity(isHovered || isSelected ? 0.14 : 0.06),
-                            radius: isHovered || isSelected ? 9 : 4,
-                            y: isHovered || isSelected ? 4 : 2)
-
-                TemplateThumbnail(kind: kind, accent: kind.accent)
-                    .padding(12)
-            }
-            .frame(height: 96)
-            .scaleEffect(isHovered && !isSelected ? 1.02 : 1)
-
-            Text(template.name)
-                .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-                .foregroundStyle(isSelected ? Color.primary : Color.primary.opacity(0.78))
-                .lineLimit(1)
-        }
-        .overlay(alignment: .topTrailing) {
-            if isHovered, let onDelete {
-                Button(action: onDelete) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 15))
-                        .foregroundStyle(.secondary)
-                        .background(Circle().fill(DS.Color.editorBg))
-                }
-                .buttonStyle(.plain)
-                .offset(x: 6, y: -6)
-                .transition(.scale.combined(with: .opacity))
-            }
-        }
-        .contentShape(Rectangle())
-        .animation(DS.Motion.fast, value: isSelected)
-        .animation(DS.Motion.micro, value: isHovered)
-        .onHover { isHovered = $0 }
-    }
-}
-
-// MARK: - Template Thumbnail (miniature document preview)
-
-private struct TemplateThumbnail: View {
-    let kind: TemplateKind
-    let accent: Color
-
-    private var faint: Color { Color.primary.opacity(0.14) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            switch kind {
-            case .blank:
-                bar(accent, 26)
-                Spacer(minLength: 0)
-                bar(faint, 40)
-            case .meeting:
-                bar(accent, 48)
-                checkRow(34); checkRow(28)
-                miniTable()
-            case .tech:
-                bar(accent, 46)
-                bar(faint, 30, h: 4)
-                line(58); line(48)
-                miniTable()
-            case .weekly:
-                bar(accent, 42)
-                bulletRow(46); bulletRow(52); bulletRow(38)
-            case .journal:
-                bar(accent, 36)
-                line(56); line(44)
-                bar(faint, 26, h: 4)
-            case .html:
-                codeMark()
-                line(50); line(40)
-            case .generic:
-                bar(accent, 40)
-                line(56); line(48); line(36)
-            }
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    // MARK: building blocks
-
-    private func bar(_ c: Color, _ w: CGFloat, h: CGFloat = 6) -> some View {
-        RoundedRectangle(cornerRadius: h / 2, style: .continuous).fill(c).frame(width: w, height: h)
-    }
-    private func line(_ w: CGFloat) -> some View { bar(faint, w, h: 4) }
-
-    private func checkRow(_ w: CGFloat) -> some View {
-        HStack(spacing: 5) {
-            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                .stroke(faint, lineWidth: 1).frame(width: 6, height: 6)
-            bar(faint, w, h: 4)
-        }
-    }
-    private func bulletRow(_ w: CGFloat) -> some View {
-        HStack(spacing: 5) {
-            Circle().fill(accent.opacity(0.5)).frame(width: 4, height: 4)
-            bar(faint, w, h: 4)
-        }
-    }
-    private func miniTable() -> some View {
-        VStack(spacing: 0) {
-            ForEach(0..<2, id: \.self) { _ in
-                HStack(spacing: 0) {
-                    ForEach(0..<3, id: \.self) { _ in
-                        Rectangle().stroke(faint, lineWidth: 0.8)
-                            .frame(width: 18, height: 9)
-                    }
-                }
-            }
-        }
-        .padding(.top, 2)
-    }
-    private func codeMark() -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: "chevron.left.forwardslash.chevron.right")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(accent)
-        }
     }
 }

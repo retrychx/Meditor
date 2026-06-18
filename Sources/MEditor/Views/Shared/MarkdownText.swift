@@ -233,7 +233,27 @@ struct MarkdownText: View {
         let kind: Kind
     }
 
+    // MARK: - Parse cache
+
+    /// LRU-style cache (NSCache manages memory under pressure automatically).
+    /// Key: the raw Markdown string; value: parsed Block array boxed in a class.
+    private final class BlockList { let blocks: [Block]; init(_ b: [Block]) { blocks = b } }
+    private static let parseCache: NSCache<NSString, BlockList> = {
+        let c = NSCache<NSString, BlockList>()
+        c.countLimit = 64   // at most 64 distinct strings cached
+        return c
+    }()
+
+    /// Returns the cached parse result when available, otherwise parses and caches.
     private static func parse(_ text: String) -> [Block] {
+        let key = text as NSString
+        if let cached = parseCache.object(forKey: key) { return cached.blocks }
+        let result = _parse(text)
+        parseCache.setObject(BlockList(result), forKey: key)
+        return result
+    }
+
+    private static func _parse(_ text: String) -> [Block] {
         var blocks: [Block] = []
         let lines = text.components(separatedBy: "\n")
         var paragraph: [String] = []

@@ -1,7 +1,8 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @State private var settings = AppSettings.shared
+    @Environment(AppSettings.self) private var settings
+    private var bindableSettings: Bindable<AppSettings> { Bindable(settings) }
     @Environment(AppState.self) private var state
     private let loc = LocalizationManager.shared
     @State private var selectedTab: SettingsTab = .general
@@ -23,7 +24,7 @@ struct SettingsView: View {
     private static let tagline      = "A minimal Markdown editor for macOS"
 
     enum SettingsTab: String, CaseIterable {
-        case general, editor, ai, sharing
+        case general, editor, ai, sharing, plugins, paths
 
         var label: String {
             switch self {
@@ -31,6 +32,8 @@ struct SettingsView: View {
             case .editor:  return L("settings.tab.editor")
             case .ai:      return L("settings.tab.ai")
             case .sharing: return L("settings.tab.sharing")
+            case .plugins: return "插件"
+            case .paths:   return "路径"
             }
         }
 
@@ -40,6 +43,8 @@ struct SettingsView: View {
             case .editor:  return "textformat"
             case .ai:      return "sparkles"
             case .sharing: return "wifi"
+            case .plugins: return "puzzlepiece.extension"
+            case .paths:   return "folder"
             }
         }
     }
@@ -80,16 +85,18 @@ struct SettingsView: View {
                     case .editor:  editorContent
                     case .ai:      aiContent
                     case .sharing: sharingContent
+                    case .plugins: pluginsContent
+                    case .paths:   pathsContent
                     }
                 }
                 .id(selectedTab)
                 .transition(.opacity)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .background(DS.Color.editorBg)
+                .background(DS.Color.sidebarBg)
                 .animation(DS.Motion.fast, value: selectedTab)
             }
         }
-        .frame(width: 560, height: 462)
+        .frame(width: 680, height: 560)
         .onAppear { if !embedded { styleSettingsWindow() } }
     }
 
@@ -165,7 +172,7 @@ struct SettingsView: View {
         ScrollView {
             VStack(spacing: 0) {
                 settingsGroup(title: L("theme.title")) {
-                    settingsRow(label: L("theme.title")) {
+                    settingsRow(label: L("theme.title"), subtitle: L("settings.desc.theme")) {
                         Picker("", selection: Binding(
                             get: { state.themeStore.current },
                             set: { state.themeStore.current = $0 }
@@ -178,7 +185,7 @@ struct SettingsView: View {
                         .frame(width: 120)
                     }
                     rowDivider
-                    settingsRow(label: L("ai.accentStyle")) {
+                    settingsRow(label: L("ai.accentStyle"), subtitle: L("settings.desc.accent")) {
                         Picker("", selection: Binding(
                             get: { AIAccentStyle.current(settings) },
                             set: { settings.aiAccentStyle = $0.rawValue }
@@ -193,7 +200,7 @@ struct SettingsView: View {
                 }
 
                 settingsGroup(title: L("settings.section.language")) {
-                    settingsRow(label: L("settings.language")) {
+                    settingsRow(label: L("settings.language"), subtitle: L("settings.desc.language")) {
                         Picker("", selection: languageBinding) {
                             Text(L("lang.system")).tag(AppLanguage.system)
                             Text("English").tag(AppLanguage.english)
@@ -205,10 +212,10 @@ struct SettingsView: View {
                 }
 
                 settingsGroup(title: L("settings.section.preview")) {
-                    settingsRow(label: L("settings.fontSize")) {
-                        HStack(spacing: DS.Space.sm) {
+                    settingsStackedRow(label: L("settings.fontSize"), subtitle: L("settings.desc.fontSize")) {
+                        HStack(spacing: DS.Space.md) {
                             Slider(value: fontSizeBinding, in: 10...28, step: 1)
-                                .frame(width: 120)
+                                .frame(maxWidth: .infinity)
                             Text("\(settings.previewFontSize) px")
                                 .font(DS.Font.mono(12))
                                 .foregroundStyle(.secondary)
@@ -218,13 +225,13 @@ struct SettingsView: View {
                 }
 
                 settingsGroup(title: L("settings.section.save")) {
-                    settingsRow(label: L("settings.autoSave")) {
-                        Toggle("", isOn: $settings.autoSave).labelsHidden()
+                    settingsRow(label: L("settings.autoSave"), subtitle: L("settings.desc.autoSave")) {
+                        Toggle("", isOn: bindableSettings.autoSave).labelsHidden()
                     }
                     if settings.autoSave {
                         rowDivider
                         settingsRow(label: L("settings.interval")) {
-                            Picker("", selection: $settings.autoSaveInterval) {
+                            Picker("", selection: bindableSettings.autoSaveInterval) {
                                 Text(L("settings.secondsFormat", 10)).tag(10)
                                 Text(L("settings.secondsFormat", 30)).tag(30)
                                 Text(L("settings.secondsFormat", 60)).tag(60)
@@ -246,25 +253,25 @@ struct SettingsView: View {
         ScrollView {
             VStack(spacing: 0) {
                 settingsGroup(title: L("ai.section.mode")) {
-                    settingsRow(label: L("ai.provider")) {
-                        Picker("", selection: $settings.aiProvider) {
+                    settingsStackedRow(label: L("ai.provider"), subtitle: L("settings.desc.provider")) {
+                        Picker("", selection: bindableSettings.aiProvider) {
                             Text(L("ai.provider.disabled")).tag(AIProviderKind.disabled.rawValue)
                             Text(L("ai.mode.local")).tag(AIProviderKind.claudeCLI.rawValue)
                             Text(L("ai.mode.remote")).tag(AIProviderKind.openai.rawValue)
                         }
                         .pickerStyle(.segmented)
                         .labelsHidden()
-                        .frame(width: 270)
+                        .frame(maxWidth: .infinity)
                     }
                 }
 
                 if settings.aiProvider == AIProviderKind.claudeCLI.rawValue {
                     settingsGroup(title: L("ai.section.local")) {
-                        settingsRow(label: L("ai.cliPath")) {
+                        settingsStackedRow(label: L("ai.cliPath"), subtitle: L("ai.cliHint")) {
                             HStack(spacing: 8) {
-                                TextField("/usr/local/bin/claude", text: $settings.aiCLIPath)
-                                    .multilineTextAlignment(.trailing)
-                                    .frame(width: 190)
+                                TextField("/usr/local/bin/claude", text: bindableSettings.aiCLIPath)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(maxWidth: .infinity)
                                 Button(action: detectCLI) {
                                     if aiDetecting {
                                         ProgressView().controlSize(.small)
@@ -275,12 +282,10 @@ struct SettingsView: View {
                                 .disabled(aiDetecting)
                             }
                         }
-                        rowDivider
-                        aiHintRow(L("ai.cliHint"))
                     }
                 } else if settings.aiProvider == AIProviderKind.openai.rawValue {
                     settingsGroup(title: L("ai.section.remote")) {
-                        settingsRow(label: L("ai.preset")) {
+                        settingsStackedRow(label: L("ai.preset")) {
                             Picker("", selection: Binding<String>(
                                 get: { AIPresets.match(settings.aiBaseURL)?.id ?? "custom" },
                                 set: { id in
@@ -296,18 +301,18 @@ struct SettingsView: View {
                                 Text(L("ai.preset.custom")).tag("custom")
                             }
                             .labelsHidden()
-                            .frame(width: 230)
+                            .frame(maxWidth: .infinity)
                         }
                         rowDivider
-                        settingsRow(label: L("ai.baseURL")) {
-                            TextField("https://api.openai.com/v1", text: $settings.aiBaseURL)
-                                .multilineTextAlignment(.trailing)
-                                .frame(width: 230)
+                        settingsStackedRow(label: L("ai.baseURL")) {
+                            TextField("https://api.openai.com/v1", text: bindableSettings.aiBaseURL)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(maxWidth: .infinity)
                         }
                         rowDivider
-                        settingsRow(label: L("ai.apiKey")) { aiKeyField }
+                        settingsStackedRow(label: L("ai.apiKey")) { aiKeyField }
                         rowDivider
-                        settingsRow(label: L("ai.model")) { aiModelField }
+                        settingsStackedRow(label: L("ai.model")) { aiModelField }
                     }
                 }
             }
@@ -335,14 +340,17 @@ struct SettingsView: View {
                 Text("•••••••• " + L("gitlab.tokenConfigured"))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
                 Button(L("gitlab.clearToken")) {
                     AIKeychain.clear(); aiKeyInput = ""; aiHasKey = false
                 }
             }
+            .frame(maxWidth: .infinity)
         } else {
             HStack(spacing: 8) {
                 SecureField("sk-…", text: $aiKeyInput)
-                    .frame(width: 160)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: .infinity)
                 Button(L("gitlab.saveConfig")) {
                     AIKeychain.save(aiKeyInput); aiKeyInput = ""; aiHasKey = AIKeychain.hasKey
                 }
@@ -356,15 +364,15 @@ struct SettingsView: View {
         HStack(spacing: 8) {
             let models = candidateModels
             if models.isEmpty {
-                TextField("gpt-4o-mini", text: $settings.aiModel)
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 160)
+                TextField("gpt-4o-mini", text: bindableSettings.aiModel)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: .infinity)
             } else {
-                Picker("", selection: $settings.aiModel) {
+                Picker("", selection: bindableSettings.aiModel) {
                     ForEach(models, id: \.self) { Text($0).tag($0) }
                 }
                 .labelsHidden()
-                .frame(width: 175)
+                .frame(maxWidth: .infinity)
             }
             Button(action: refreshModels) {
                 if aiLoadingModels {
@@ -420,19 +428,220 @@ struct SettingsView: View {
             VStack(spacing: 0) {
                 settingsGroup(title: L("settings.section.launchLayout")) {
                     settingsRow(label: L("settings.showSidebar")) {
-                        Toggle("", isOn: $settings.showSidebarOnLaunch).labelsHidden()
+                        Toggle("", isOn: bindableSettings.showSidebarOnLaunch).labelsHidden()
                     }
                     rowDivider
                     settingsRow(label: L("settings.showEditor")) {
-                        Toggle("", isOn: $settings.showEditorOnLaunch).labelsHidden()
+                        Toggle("", isOn: bindableSettings.showEditorOnLaunch).labelsHidden()
                     }
                     rowDivider
                     settingsRow(label: L("settings.showPreview")) {
-                        Toggle("", isOn: $settings.showPreviewOnLaunch).labelsHidden()
+                        Toggle("", isOn: bindableSettings.showPreviewOnLaunch).labelsHidden()
                     }
                 }
             }
             .padding(DS.Space.lg)
+        }
+    }
+
+    // MARK: - Plugins
+
+    private var pluginsContent: some View {
+        let plugins  = state.pluginManager
+        let builtins = plugins.skills.filter { $0.source == .builtin }
+        let manuals  = plugins.skills.filter { $0.source == .manual }
+
+        return ScrollView {
+            VStack(spacing: 0) {
+                // ── 内置技能 ──
+                settingsGroup(title: "内置技能 (\(builtins.filter(\.isEnabled).count)/\(builtins.count) 已启用)") {
+                    ForEach(builtins) { skill in
+                        builtinSkillRow(skill)
+                        if skill.id != builtins.last?.id { rowDivider }
+                    }
+                }
+
+                // ── 我的技能 ──
+                settingsGroup(title: "我的技能 (\(manuals.filter(\.isEnabled).count) 个已启用)") {
+                    if manuals.isEmpty {
+                        VStack(spacing: 8) {
+                            Image(systemName: "puzzlepiece.extension")
+                                .font(.system(size: 24, weight: .light))
+                                .foregroundStyle(.tertiary)
+                            Text("还没有自定义技能")
+                                .font(.system(size: 12.5))
+                                .foregroundStyle(.secondary)
+                            Text("点击下方按钮添加 SKILL.md 文件")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                    } else {
+                        ForEach(manuals) { skill in
+                            skillRow(skill)
+                            if skill.id != manuals.last?.id { rowDivider }
+                        }
+                    }
+                }
+
+                HStack {
+                    Button {
+                        openSkillFilePicker()
+                    } label: {
+                        Label("添加技能", systemImage: "plus")
+                            .font(.system(size: 13))
+                    }
+                    Spacer()
+                }
+                .padding(.top, 4)
+            }
+            .padding(DS.Space.lg)
+        }
+    }
+
+    /// Row for a built-in skill: toggle + name/desc + "内置" badge (no delete, no path).
+    private func builtinSkillRow(_ skill: PluginSkill) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Toggle("", isOn: Binding(
+                get: { skill.isEnabled },
+                set: { state.pluginManager.setEnabled(skill.id, enabled: $0) }
+            ))
+            .labelsHidden()
+            .controlSize(.small)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(skill.name)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary)
+                if !skill.description.isEmpty {
+                    Text(skill.description)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer()
+
+            Text("内置")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(Capsule(style: .continuous).fill(Color.primary.opacity(0.07)))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    /// Row for a manual (user-added) skill: toggle + name/desc/path + delete button.
+    private func skillRow(_ skill: PluginSkill) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Toggle("", isOn: Binding(
+                get: { skill.isEnabled },
+                set: { state.pluginManager.setEnabled(skill.id, enabled: $0) }
+            ))
+            .labelsHidden()
+            .controlSize(.small)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(skill.name)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary)
+                if !skill.description.isEmpty {
+                    Text(skill.description)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Text(skill.skillPath.deletingLastPathComponent().path
+                        .replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~"))
+                    .font(.system(size: 10.5, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            Button {
+                state.pluginManager.remove(id: skill.id)
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("移除此 Skill")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    private func openSkillFilePicker() {
+        let panel = NSOpenPanel()
+        panel.title = "选择 SKILL.md 文件"
+        panel.allowedContentTypes = [.text]
+        panel.allowsMultipleSelection = false
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        if panel.runModal() == .OK, let url = panel.url {
+            state.pluginManager.addManual(skillMDURL: url)
+        }
+    }
+
+    // MARK: - Paths
+
+    private var pathsContent: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                settingsGroup(title: "文档路径") {
+                    PathRow(
+                        icon: "folder.fill",
+                        title: "用户文档",
+                        subtitle: "侧边栏显示此目录下的文件",
+                        iconColor: .blue,
+                        currentPath: AppSettings.shared.userDocPath,
+                        onChoose: { chooseUserDocPath() },
+                        onClear:  { try? AppSettings.shared.setUserDocPath(nil) }
+                    )
+
+                    rowDivider
+
+                    PathRow(
+                        icon: "shippingbox.fill",
+                        title: "App 文档（输出目录）",
+                        subtitle: "HTML 美化等功能的默认保存位置",
+                        iconColor: .orange,
+                        currentPath: AppSettings.shared.appDocPath,
+                        onChoose: { chooseAppDocPath() },
+                        onClear:  { try? AppSettings.shared.setAppDocPath(nil) }
+                    )
+                }
+            }
+            .padding(DS.Space.lg)
+        }
+    }
+
+    private func chooseUserDocPath() {
+        let panel = NSOpenPanel()
+        panel.title = "选择用户文档目录"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK, let url = panel.url {
+            try? AppSettings.shared.setUserDocPath(url)
+        }
+    }
+
+    private func chooseAppDocPath() {
+        let panel = NSOpenPanel()
+        panel.title = "选择 App 文档输出目录"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK, let url = panel.url {
+            try? AppSettings.shared.setAppDocPath(url)
         }
     }
 
@@ -443,7 +652,7 @@ struct SettingsView: View {
             VStack(spacing: 0) {
                 settingsGroup(title: L("settings.section.lanShare")) {
                     settingsRow(label: L("settings.port")) {
-                        TextField("", value: $settings.sharePort, format: .number)
+                        TextField("", value: bindableSettings.sharePort, format: .number)
                             .multilineTextAlignment(.trailing)
                             .frame(width: 72)
                     }
@@ -468,25 +677,28 @@ struct SettingsView: View {
     private var gitlabSettingsGroup: some View {
         let mgr = state.gitlabShareManager
         settingsGroup(title: L("gitlab.title")) {
-            settingsRow(label: L("gitlab.host")) {
+            settingsStackedRow(label: L("gitlab.host")) {
                 TextField("gitlab.example.com", text: Binding(
                     get: { mgr.host }, set: { mgr.host = $0 }))
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 200)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: .infinity)
             }
             rowDivider
-            settingsRow(label: L("gitlab.token")) {
+            settingsStackedRow(label: L("gitlab.token")) {
                 if mgr.hasToken {
                     HStack(spacing: 8) {
                         Text("•••••••• " + L("gitlab.tokenConfigured"))
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
                         Button(L("gitlab.clearToken")) { mgr.clearToken() }
                     }
+                    .frame(maxWidth: .infinity)
                 } else {
                     HStack(spacing: 8) {
                         SecureField("glpat-…", text: $gitlabTokenInput)
-                            .frame(width: 150)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: .infinity)
                         Button(L("gitlab.saveConfig")) {
                             mgr.saveToken(gitlabTokenInput)
                             gitlabTokenInput = ""
@@ -496,66 +708,112 @@ struct SettingsView: View {
                 }
             }
             rowDivider
-            settingsRow(label: L("gitlab.visibility.internal") + " / " + L("gitlab.visibility.private")) {
+            settingsStackedRow(label: L("gitlab.visibility.internal") + " / " + L("gitlab.visibility.private")) {
                 Picker("", selection: Binding(
                     get: { mgr.visibility }, set: { mgr.visibility = $0 })) {
                     Text(L("gitlab.visibility.internal")).tag("internal")
                     Text(L("gitlab.visibility.private")).tag("private")
                 }
                 .labelsHidden()
-                .frame(width: 150)
+                .frame(maxWidth: .infinity)
             }
         }
     }
 
-    // MARK: - Reusable layout helpers
+    // MARK: - Reusable layout helpers (Craft-style grouped cards)
+
+    /// Card background — white in light mode, gently elevated in dark mode.
+    private var cardFill: Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(white: 0.16, alpha: 1)
+                : NSColor.white
+        })
+    }
 
     private var rowDivider: some View {
         Rectangle()
-            .fill(DS.Color.divider)
+            .fill(Color.primary.opacity(0.06))
             .frame(height: 1)
-            .padding(.leading, DS.Space.lg)
+            .padding(.leading, 16)
     }
 
     private func settingsGroup<Content: View>(
         title: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.tertiary)
-                .kerning(0.4)
-                .padding(.horizontal, DS.Space.lg)
-                .padding(.bottom, DS.Space.xs + 2)
+        VStack(alignment: .leading, spacing: 9) {
+            Text(title)
+                .font(.system(size: 13.5, weight: .bold))
+                .foregroundStyle(.primary)
+                .padding(.leading, 3)
 
             VStack(spacing: 0) {
                 content()
             }
             .background(
-                RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
-                    .fill(DS.Color.sidebarBg)
+                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(cardFill)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
-                    .stroke(DS.Color.divider, lineWidth: 1)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
             )
+            .shadow(color: .black.opacity(0.05), radius: 6, x: 0, y: 1)
         }
-        .padding(.bottom, DS.Space.xl - 4)
+        .padding(.bottom, 22)
     }
 
     private func settingsRow<Content: View>(
         label: String,
+        subtitle: String? = nil,
         @ViewBuilder control: () -> Content
     ) -> some View {
-        HStack {
-            Text(label)
-                .font(.system(size: 13))
-            Spacer()
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 12)
             control()
         }
-        .padding(.horizontal, DS.Space.lg)
-        .padding(.vertical, 9)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
+    }
+
+    /// Craft-style stacked row: title + subtitle on top, control filling the
+    /// width below. Used for wide/compound controls (segmented pickers, text
+    /// fields, control+button combos) so they align cleanly.
+    private func settingsStackedRow<Content: View>(
+        label: String,
+        subtitle: String? = nil,
+        @ViewBuilder control: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            control()
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     // MARK: - Bindings
@@ -796,5 +1054,58 @@ struct AppIconBadge: View {
                 .stroke(Color.white.opacity(0.12), lineWidth: max(1, size / 48))
         )
         .shadow(color: Color.black.opacity(0.35), radius: size * 0.18, y: size * 0.08)
+    }
+}
+
+// MARK: - Path Row
+
+private struct PathRow: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let iconColor: Color
+    let currentPath: URL?
+    let onChoose: () -> Void
+    let onClear: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16))
+                .foregroundStyle(iconColor)
+                .frame(width: 24, alignment: .center)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary)
+                if let url = currentPath {
+                    Text(url.path.replacingOccurrences(of:
+                        FileManager.default.homeDirectoryForCurrentUser.path, with: "~"))
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } else {
+                    Text(subtitle)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            HStack(spacing: 6) {
+                Button("选择文件夹", action: onChoose)
+                    .controlSize(.small)
+                if currentPath != nil {
+                    Button(currentPath == nil ? "" : "清除", action: onClear)
+                        .controlSize(.small)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 }

@@ -62,7 +62,7 @@
       if (block.length <= PARAGRAPH_CACHE_MAX_BLOCK && paragraphCache.has(block)) {
         htmlParts.push(paragraphCache.get(block));
       } else {
-        var blockHTML = marked.parse(block, { gfm: true, breaks: false });
+        var blockHTML = marked.parse(fixTableSeparators(block), { gfm: true, breaks: false });
         if (block.length <= PARAGRAPH_CACHE_MAX_BLOCK) {
           paragraphCache.set(block, blockHTML);
           if (paragraphCache.size > PARAGRAPH_CACHE_LIMIT) {

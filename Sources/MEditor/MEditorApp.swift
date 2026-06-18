@@ -8,6 +8,8 @@ struct MEditorApp: App {
         Window("MEditor", id: "main") {
             ContentView()
                 .environment(appState)
+                .environment(appState.aiUI)
+                .environment(AppSettings.shared)
                 .frame(minWidth: 900, minHeight: 500)
                 .onAppear {
                     NSWindow.allowsAutomaticWindowTabbing = false
@@ -40,6 +42,7 @@ struct MEditorApp: App {
         Settings {
             SettingsView()
                 .environment(appState)
+                .environment(AppSettings.shared)
         }
         .windowStyle(.titleBar)
         .commands {
@@ -55,11 +58,7 @@ struct MEditorApp: App {
                 .keyboardShortcut("o", modifiers: .command)
 
                 Button("Close Project") {
-                    appState.rootURL = nil
-                    appState.openTabs.removeAll()
-                    appState.selectedTabID = nil
-                    appState.fileTreeManager.clear()
-                    appState.clearPreview()
+                    appState.showingCloseProjectConfirmation = true
                 }
 
                 Divider()

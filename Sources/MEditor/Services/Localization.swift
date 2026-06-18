@@ -392,6 +392,12 @@ extension LocalizationManager {
         "settings.portHint": ("Port used for LAN preview sharing, default 8899", "局域网预览分享使用的端口，默认 8899"),
         "settings.section.language": ("Language", "语言"),
         "settings.section.assistant": ("AI Assistant", "AI 助手"),
+        "settings.desc.theme": ("Color scheme for the editor and preview", "编辑器与预览的配色主题"),
+        "settings.desc.accent": ("App-wide highlight color for buttons and selection", "全局按钮与选中态的强调色"),
+        "settings.desc.language": ("Interface display language", "界面显示语言"),
+        "settings.desc.fontSize": ("Base text size in the rendered preview", "预览渲染的基础字号"),
+        "settings.desc.autoSave": ("Automatically save modified documents on a timer", "按间隔自动保存已修改的文档"),
+        "settings.desc.provider": ("Where assistant replies are generated", "助手回复的生成来源"),
         "settings.language": ("Language", "语言"),
         "lang.system": ("System", "跟随系统"),
 

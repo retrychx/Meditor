@@ -1,5 +1,13 @@
 import Foundation
 
+// MARK: - Category
+
+enum TemplateCategory: String, Codable {
+    case markdown   // 用于新建 Markdown 文档
+    case htmlTheme  // 用于 HTML 美化输出
+    case user       // 用户自定义
+}
+
 // MARK: - Model
 
 struct DocumentTemplate: Identifiable, Equatable {
@@ -9,9 +17,21 @@ struct DocumentTemplate: Identifiable, Equatable {
     let content: String
     let isBuiltin: Bool
     let createdAt: Date
-    let fileExtension: String  // "md" or "html"
+    let fileExtension: String   // "md" or "html"
+    let category: TemplateCategory
 
     var fileName: String { id + "." + fileExtension }
+
+    init(
+        id: String, name: String, description: String, content: String,
+        isBuiltin: Bool, createdAt: Date, fileExtension: String,
+        category: TemplateCategory = .markdown
+    ) {
+        self.id = id; self.name = name; self.description = description
+        self.content = content; self.isBuiltin = isBuiltin
+        self.createdAt = createdAt; self.fileExtension = fileExtension
+        self.category = category
+    }
 }
 
 // MARK: - Protocol (testable)
@@ -20,6 +40,7 @@ protocol TemplateStoreProtocol {
     func allTemplates() -> [DocumentTemplate]
     func builtinTemplates() -> [DocumentTemplate]
     func userTemplates() -> [DocumentTemplate]
+    func htmlThemeTemplates() -> [DocumentTemplate]
     func template(byID id: String) -> DocumentTemplate?
     func save(name: String, content: String) throws -> DocumentTemplate
     func delete(id: String) throws
@@ -70,6 +91,10 @@ final class TemplateStore: TemplateStoreProtocol {
         return templates
     }
 
+    func htmlThemeTemplates() -> [DocumentTemplate] {
+        builtinTemplates().filter { $0.category == .htmlTheme }
+    }
+
     func template(byID id: String) -> DocumentTemplate? {
         allTemplates().first { $0.id == id }
     }
@@ -89,10 +114,10 @@ final class TemplateStore: TemplateStoreProtocol {
             content: content,
             isBuiltin: false,
             createdAt: Date(),
-            fileExtension: "md"
+            fileExtension: "md",
+            category: .user
         )
 
-        // Write content
         let fileURL = userDir.appendingPathComponent(template.fileName)
         do {
             try content.write(to: fileURL, atomically: true, encoding: .utf8)
@@ -100,14 +125,13 @@ final class TemplateStore: TemplateStoreProtocol {
             throw TemplateStoreError.writeFailed(error)
         }
 
-        // Write metadata
         let meta = TemplateMeta(name: trimmed, description: template.description, createdAt: template.createdAt)
         let metaURL = userDir.appendingPathComponent(slug + ".json")
         if let data = try? JSONEncoder().encode(meta) {
             try? data.write(to: metaURL, options: .atomic)
         }
 
-        cachedUserTemplates = nil // invalidate cache
+        cachedUserTemplates = nil
         return template
     }
 
@@ -138,7 +162,6 @@ final class TemplateStore: TemplateStoreProtocol {
             let slug = url.deletingPathExtension().lastPathComponent
             guard let content = try? String(contentsOf: url, encoding: .utf8) else { return nil }
 
-            // Try loading metadata
             let metaURL = userDir.appendingPathComponent(slug + ".json")
             let meta = (try? JSONDecoder().decode(TemplateMeta.self, from: Data(contentsOf: metaURL))) ?? TemplateMeta(
                 name: slug.replacingOccurrences(of: "-", with: " ").capitalized,
@@ -153,7 +176,8 @@ final class TemplateStore: TemplateStoreProtocol {
                 content: content,
                 isBuiltin: false,
                 createdAt: meta.createdAt,
-                fileExtension: "md"
+                fileExtension: "md",
+                category: .user
             )
         }.sorted { $0.createdAt > $1.createdAt }
     }
@@ -171,22 +195,18 @@ final class TemplateStore: TemplateStoreProtocol {
     // MARK: - Built-in templates
 
     static var builtins: [DocumentTemplate] {[
-        DocumentTemplate(id: "blank", name: L("template.blank"), description: L("template.blankDesc"), content: "", isBuiltin: true, createdAt: .distantPast, fileExtension: "md"),
-        DocumentTemplate(id: "meeting-notes", name: L("template.meeting"), description: L("template.meetingDesc"), content: meetingTemplate, isBuiltin: true, createdAt: .distantPast, fileExtension: "md"),
-        DocumentTemplate(id: "tech-design", name: L("template.techDesign"), description: L("template.techDesignDesc"), content: techDesignTemplate, isBuiltin: true, createdAt: .distantPast, fileExtension: "md"),
-        DocumentTemplate(id: "weekly-report", name: L("template.weekly"), description: L("template.weeklyDesc"), content: weeklyTemplate, isBuiltin: true, createdAt: .distantPast, fileExtension: "md"),
-        DocumentTemplate(id: "journal", name: L("template.journal"), description: L("template.journalDesc"), content: journalTemplate, isBuiltin: true, createdAt: .distantPast, fileExtension: "md"),
-        DocumentTemplate(id: "html-doc", name: L("template.htmlDoc"), description: L("template.htmlDocDesc"), content: htmlDocTemplate, isBuiltin: true, createdAt: .distantPast, fileExtension: "html"),
+        DocumentTemplate(id: "blank",        name: L("template.blank"),      description: L("template.blankDesc"),      content: "",                             isBuiltin: true, createdAt: .distantPast, fileExtension: "md",   category: .markdown),
+        DocumentTemplate(id: "meeting-notes",name: L("template.meeting"),    description: L("template.meetingDesc"),    content: BuiltinTemplates.meeting,       isBuiltin: true, createdAt: .distantPast, fileExtension: "md",   category: .markdown),
+        DocumentTemplate(id: "tech-design",  name: L("template.techDesign"), description: L("template.techDesignDesc"), content: BuiltinTemplates.techDesign,    isBuiltin: true, createdAt: .distantPast, fileExtension: "md",   category: .markdown),
+        DocumentTemplate(id: "weekly-report",name: L("template.weekly"),     description: L("template.weeklyDesc"),     content: BuiltinTemplates.weekly,        isBuiltin: true, createdAt: .distantPast, fileExtension: "md",   category: .markdown),
+        DocumentTemplate(id: "journal",      name: L("template.journal"),    description: L("template.journalDesc"),    content: BuiltinTemplates.journal,       isBuiltin: true, createdAt: .distantPast, fileExtension: "md",   category: .markdown),
+        DocumentTemplate(id: "html-doc",     name: L("template.htmlDoc"),    description: L("template.htmlDocDesc"),    content: htmlDocFromBundle,              isBuiltin: true, createdAt: .distantPast, fileExtension: "html", category: .htmlTheme),
+        DocumentTemplate(id: "html-tufte",   name: "Tufte 学术风",            description: "衬线字体・学术风格",           content: BuiltinTemplates.htmlTufte,    isBuiltin: true, createdAt: .distantPast, fileExtension: "html", category: .htmlTheme),
+        DocumentTemplate(id: "html-craft",   name: "Craft 现代风",            description: "卡片布局・现代简洁",           content: BuiltinTemplates.htmlCraft,    isBuiltin: true, createdAt: .distantPast, fileExtension: "html", category: .htmlTheme),
+        DocumentTemplate(id: "html-dark",    name: "Dark 代码风",             description: "深色主题・技术风格",           content: BuiltinTemplates.htmlDark,     isBuiltin: true, createdAt: .distantPast, fileExtension: "html", category: .htmlTheme),
     ]}
 
-    private static var datePlaceholder: String {
-        let fmt = DateFormatter()
-        fmt.dateFormat = "yyyy-MM-dd"
-        return fmt.string(from: Date())
-    }
-
-    private static var htmlDocTemplate: String {
-        // Try multiple paths: SPM resource bundle (debug) + packaged .app
+    private static var htmlDocFromBundle: String {
         let mainURL = Bundle.main.bundleURL
         let candidates = [
             mainURL.appendingPathComponent("MEditor_MEditor.bundle/Resources/Templates/doc-template.html"),
@@ -194,104 +214,10 @@ final class TemplateStore: TemplateStoreProtocol {
             mainURL.deletingLastPathComponent().appendingPathComponent("MEditor_MEditor.bundle/Resources/Templates/doc-template.html"),
         ]
         for url in candidates {
-            if let content = try? String(contentsOf: url, encoding: .utf8) {
-                return content
-            }
+            if let content = try? String(contentsOf: url, encoding: .utf8) { return content }
         }
         return "<!DOCTYPE html>\n<html>\n<head><title>Document</title></head>\n<body>\n<h1>Title</h1>\n</body>\n</html>"
     }
-
-    private static var meetingTemplate: String { """
-    # Meeting Notes
-
-    **Date:** \(datePlaceholder)
-    **Attendees:**
-
-    - [ ] Name 1
-    - [ ] Name 2
-
-    ## Agenda
-
-    1.
-
-    ## Discussion
-
-    ## Action Items
-
-    | Owner | Task | Due |
-    |-------|------|-----|
-    |       |      |     |
-    """ }
-
-    private static var techDesignTemplate: String { """
-    # Technical Design
-
-    ## Background
-
-    ## Goals
-
-    - [ ]
-
-    ## Non-Goals
-
-    -
-
-    ## Design
-
-    ### Architecture
-
-    ### API
-
-    ### Data Model
-
-    ## Implementation Plan
-
-    | Phase | Task | Estimate |
-    |-------|------|----------|
-    | 1     |      |          |
-
-    ## Risks
-
-    ## Open Questions
-    """ }
-
-    private static var weeklyTemplate: String { """
-    # Weekly Report
-
-    **Week of:** \(datePlaceholder)
-
-    ## Done This Week
-
-    -
-
-    ## In Progress
-
-    -
-
-    ## Blockers
-
-    -
-
-    ## Plan for Next Week
-
-    -
-
-    ## Notes
-    """ }
-
-    private static var journalTemplate: String { """
-    # \(datePlaceholder)
-
-    ## Today's Focus
-
-    -
-
-    ## Notes
-
-    ## Learnings
-
-    ## Tomorrow
-    """ }
 }
 
 // MARK: - Metadata DTO

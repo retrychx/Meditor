@@ -12,18 +12,31 @@ struct EditorView: View {
                     .opacity(state.themeStore.current.isDark ? 0.28 : 0.18)
                     .frame(height: 1)
 
-                EditorViewContent(
-                    tabID: tab.id,
-                    content: tab.content,
-                    contentRevision: tab.contentRevision,
-                    language: tab.language,
-                    scrollToLine: state.editorScrollCommand.line,
-                    scrollRequestID: state.editorScrollCommand.nonce,
-                    insertText: state.editorInsertText,
-                    insertRequestID: state.editorInsertNonce,
-                    theme: state.themeStore.current
-                )
-                .equatable()
+                ZStack(alignment: .bottom) {
+                    EditorViewContent(
+                        tabID: tab.id,
+                        content: tab.content,
+                        contentRevision: tab.contentRevision,
+                        language: tab.language,
+                        scrollToLine: state.editorScrollCommand.line,
+                        scrollRequestID: state.editorScrollCommand.nonce,
+                        insertText: state.editorInsertText,
+                        insertRequestID: state.editorInsertNonce,
+                        replaceText: state.editorReplaceText,
+                        replaceRequestID: state.editorReplaceNonce,
+                        pendingReplaceRange: state.pendingReplaceRange,
+                        theme: state.themeStore.current
+                    )
+                    .equatable()
+
+                    if state.editorSelectedText.count > 5 {
+                        InlineEditBar(selectedText: state.editorSelectedText)
+                            .environment(state)
+                            .padding(.bottom, 14)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                            .animation(.easeInOut(duration: 0.18), value: state.editorSelectedText.isEmpty)
+                    }
+                }
             }
         } else {
             VStack(spacing: 6) {
@@ -123,6 +136,9 @@ private struct EditorViewContent: View, Equatable {
     let scrollRequestID: Int
     let insertText: String
     let insertRequestID: Int
+    let replaceText: String
+    let replaceRequestID: Int
+    let pendingReplaceRange: NSRange?
     let theme: PreviewTheme
 
     @Environment(AppState.self) private var state
@@ -135,6 +151,7 @@ private struct EditorViewContent: View, Equatable {
         lhs.contentRevision == rhs.contentRevision &&
         lhs.scrollRequestID == rhs.scrollRequestID &&
         lhs.insertRequestID == rhs.insertRequestID &&
+        lhs.replaceRequestID == rhs.replaceRequestID &&
         lhs.theme == rhs.theme &&
         lhs.language == rhs.language
     }
@@ -158,8 +175,14 @@ private struct EditorViewContent: View, Equatable {
             onSelectionChange: { text in
                 state.editorSelectedText = text
             },
+            onRangeChange: { range in
+                state.editorSelectedRange = range
+            },
             insertText: insertText,
             insertRequestID: insertRequestID,
+            replaceText: replaceText,
+            replaceRequestID: replaceRequestID,
+            pendingReplaceRange: pendingReplaceRange,
             theme: theme
         )
     }
