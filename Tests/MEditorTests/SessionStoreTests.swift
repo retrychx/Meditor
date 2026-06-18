@@ -134,4 +134,41 @@ final class SessionStoreTests: XCTestCase {
         // Should have 1 tab (the last save)
         XCTAssertEqual(session?.tabs.count, 1)
     }
+
+    // MARK: - scheduleSave round-trip
+
+    func test_scheduleAndLoad_roundTrip() {
+        let root = tempDir!
+        let tab = createFile("roundtrip.md")
+
+        store.scheduleSave(rootURL: root, openTabURLs: [tab], selectedIndex: 0)
+
+        let exp = expectation(description: "scheduled save persists")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 2.0)
+
+        let session = store.load()
+        XCTAssertNotNil(session)
+        XCTAssertEqual(session?.tabs.count, 1)
+        XCTAssertEqual(session?.selectedTabIndex, 0)
+    }
+
+    // MARK: - Bookmark cache
+
+    func test_bookmarkCacheHit_resultConsistentAcrossSaves() {
+        let root = tempDir!
+        let tab = createFile("cached.md")
+
+        store.saveNow(rootURL: root, openTabURLs: [tab], selectedIndex: 0)
+        let first = store.load()
+
+        store.saveNow(rootURL: root, openTabURLs: [tab], selectedIndex: 0)
+        let second = store.load()
+
+        // Both loads should resolve to the same tab count — bookmark consistency.
+        XCTAssertEqual(first?.tabs.count, second?.tabs.count)
+        XCTAssertEqual(first?.selectedTabIndex, second?.selectedTabIndex)
+    }
 }

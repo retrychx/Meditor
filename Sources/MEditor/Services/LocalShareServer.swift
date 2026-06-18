@@ -104,6 +104,16 @@ final class LocalShareServer {
 
     private func handleConnection(_ connection: NWConnection) {
         connections.append(connection)
+        connection.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .cancelled, .failed:
+                Task { @MainActor [weak self] in
+                    self?.connections.removeAll { $0 === connection }
+                }
+            default:
+                break
+            }
+        }
         connection.start(queue: .main)
         receiveRequest(on: connection, accumulated: Data())
     }

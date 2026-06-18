@@ -5,6 +5,7 @@ extension Notification.Name {
     static let autoSaveSettingsChanged = Notification.Name("MEditor.autoSaveSettingsChanged")
     static let previewFontSizeChanged = Notification.Name("MEditor.previewFontSizeChanged")
     static let editorFontSizeChanged = Notification.Name("MEditor.editorFontSizeChanged")
+    static let docPathChanged = Notification.Name("MEditor.docPathChanged")
 }
 
 /// Centralized app preferences, persisted via UserDefaults.
@@ -30,6 +31,8 @@ final class AppSettings {
         static let aiBaseURL = "MEditor.aiBaseURL"
         static let aiModel = "MEditor.aiModel"
         static let aiCLIPath = "MEditor.aiCLIPath"
+        static let userDocPathBookmark = "MEditor.userDocPathBookmark"
+        static let appDocPathBookmark  = "MEditor.appDocPathBookmark"
     }
 
     /// LAN share server port (default 8899).
@@ -117,6 +120,81 @@ final class AppSettings {
     /// Absolute path to the local `claude` CLI binary.
     var aiCLIPath: String {
         didSet { defaults.set(aiCLIPath, forKey: Key.aiCLIPath) }
+    }
+
+    // MARK: - Document paths
+
+    /// User's preferred document directory (security-scoped bookmark).
+    var userDocPath: URL? {
+        get { resolveBookmark(forKey: Key.userDocPathBookmark) }
+    }
+
+    func setUserDocPath(_ url: URL?) throws {
+        if let url {
+            let data = try url.bookmarkData(
+                options: .withSecurityScope,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+            defaults.set(data, forKey: Key.userDocPathBookmark)
+        } else {
+            defaults.removeObject(forKey: Key.userDocPathBookmark)
+        }
+        NotificationCenter.default.post(name: .docPathChanged, object: nil)
+    }
+
+    /// App document output directory (default: Application Support/MEditor/Documents).
+    var appDocPath: URL {
+        get {
+            if let url = resolveBookmark(forKey: Key.appDocPathBookmark) { return url }
+            return defaultAppDocPath
+        }
+    }
+
+    func setAppDocPath(_ url: URL?) throws {
+        if let url {
+            let data = try url.bookmarkData(
+                options: .withSecurityScope,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+            defaults.set(data, forKey: Key.appDocPathBookmark)
+        } else {
+            defaults.removeObject(forKey: Key.appDocPathBookmark)
+        }
+        NotificationCenter.default.post(name: .docPathChanged, object: nil)
+    }
+
+    // MARK: - Theme token overrides
+
+    /// Returns the user's saved override for a CSS token in a given theme, or nil if using the default.
+    func themeToken(_ token: String, forTheme themeId: String) -> String? {
+        defaults.string(forKey: "MEditor.themeToken.\(themeId).\(token)")
+    }
+
+    /// Saves (or clears, when value is nil) the user's override for a CSS token in a given theme.
+    func setThemeToken(_ value: String?, token: String, forTheme themeId: String) {
+        let key = "MEditor.themeToken.\(themeId).\(token)"
+        if let value { defaults.set(value, forKey: key) }
+        else { defaults.removeObject(forKey: key) }
+    }
+
+    var defaultAppDocPath: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = base.appendingPathComponent("MEditor/Documents", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    private func resolveBookmark(forKey key: String) -> URL? {
+        guard let data = defaults.data(forKey: key) else { return nil }
+        var isStale = false
+        return try? URL(
+            resolvingBookmarkData: data,
+            options: .withSecurityScope,
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        )
     }
 
     private init() {

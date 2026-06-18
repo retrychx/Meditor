@@ -26,7 +26,7 @@ struct AIAssistantPanel: View {
     @Environment(AppState.self) private var state
     let onClose: () -> Void
 
-    @State private var settings = AppSettings.shared
+    @Environment(AppSettings.self) private var settings
     @State private var showHistory = false
     @State private var atBottom = true
     @FocusState private var inputFocused: Bool
@@ -66,34 +66,53 @@ struct AIAssistantPanel: View {
     // MARK: Header
 
     private var header: some View {
-        HStack {
-            AIHeaderButton(icon: "clock.arrow.circlepath", help: L("ai.history"), theme: theme) {
-                showHistory.toggle()
-            }
-            .popover(isPresented: $showHistory, arrowEdge: .bottom) {
-                AIHistoryView(convo: convo, theme: theme) { showHistory = false }
-            }
-            Spacer()
-            Button(action: newChat) {
-                HStack(spacing: 5) {
-                    Image(systemName: "plus.bubble")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text(L("ai.newChat"))
-                        .font(.system(size: 12.5, weight: .semibold))
+        VStack(spacing: 0) {
+            HStack {
+                AIHeaderButton(icon: "clock.arrow.circlepath", help: L("ai.history"), theme: theme) {
+                    showHistory.toggle()
                 }
-                .foregroundStyle(theme.craftPrimary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
-                .background(Capsule(style: .continuous).fill(theme.craftHover))
-                .overlay(Capsule().strokeBorder(theme.separator.opacity(0.5), lineWidth: 1))
+                .popover(isPresented: $showHistory, arrowEdge: .bottom) {
+                    AIHistoryView(convo: convo, theme: theme) { showHistory = false }
+                }
+                Spacer()
+                Button(action: newChat) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "plus.bubble")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text(L("ai.newChat"))
+                            .font(.system(size: 12.5, weight: .semibold))
+                    }
+                    .foregroundStyle(theme.craftPrimary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(Capsule(style: .continuous).fill(theme.craftHover))
+                    .overlay(Capsule().strokeBorder(theme.separator.opacity(0.5), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .help(L("ai.newChat"))
+                Spacer()
+                AIHeaderButton(icon: "xmark", help: L("common.close"), theme: theme, action: onClose)
             }
-            .buttonStyle(.plain)
-            .help(L("ai.newChat"))
-            Spacer()
-            AIHeaderButton(icon: "xmark", help: L("common.close"), theme: theme, action: onClose)
+            .padding(.horizontal, 12)
+            .frame(height: 52)
+
+            // Context-limit warning banner — shown when the conversation is near
+            // the model's context window so the user can start a new chat in time.
+            if convo.isApproachingContextLimit {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                    Text("Context nearly full — start a new chat to avoid truncation.")
+                        .font(.system(size: 11))
+                }
+                .foregroundStyle(Color(hex: "92400E"))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(hex: "FEF3C7"))
+                .transition(.opacity)
+            }
         }
-        .padding(.horizontal, 12)
-        .frame(height: 52)
         .background(
             theme.editorBackground
                 .overlay(alignment: .bottom) { theme.separator.opacity(0.4).frame(height: 1) }
@@ -397,12 +416,9 @@ struct AIAssistantPanel: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(.ultraThinMaterial)
-                // White frosted sheen over the blur → "white glass".
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(Color.white.opacity(theme.isDark ? 0.10 : 0.60))
-                )
+                // Solid white "glass" — visually equal to the prior material+tint
+                // but far cheaper to composite while the hero panel scales.
+                .fill(theme.isDark ? Color.white.opacity(0.08) : Color.white)
                 // Thin top-lit glass hairline.
                 .overlay(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -497,13 +513,21 @@ struct AIAssistantPanel: View {
         convo.isResponding = true
 
         let config = AIConfig.current(settings)
-        var wire: [AIMessage] = [AIMessage(role: .system, content: systemContext())]
+        // Full document context is expensive — inject only on the first user turn.
+        // Subsequent turns still carry the full history (including the first turn's
+        // context), so the model retains document awareness without re-paying the
+        // token cost on every round. Selection context is cheap and always included.
+        let userTurnCount = convo.messages.filter { $0.role == .user }.count
+        var wire: [AIMessage] = [AIMessage(role: .system, content: systemContext(includeFullDoc: userTurnCount == 1))]
         wire += convo.messages.map {
             AIMessage(role: $0.role == .user ? .user : .assistant, content: $0.text)
         }
 
-        let replyIndex = convo.messages.count
-        convo.messages.append(AIChatMessage(role: .assistant, text: ""))
+        // Capture UUID instead of index so session switches mid-stream don't
+        // corrupt a different session's messages.
+        let replyMessage = AIChatMessage(role: .assistant, text: "")
+        let replyID = replyMessage.id
+        convo.messages.append(replyMessage)
 
         convo.streamTask = Task {
             // Coalesce tokens and flush to the UI at most ~20×/sec, so neither the
@@ -523,15 +547,16 @@ struct AIAssistantPanel: View {
                 if !buffer.isEmpty { convo.appendToLastMessage(buffer) }
             } catch is CancellationError {
                 if !buffer.isEmpty { convo.appendToLastMessage(buffer) }
-                if convo.messages.indices.contains(replyIndex),
-                   convo.messages[replyIndex].text.isEmpty {
-                    convo.messages.remove(at: replyIndex)
+                // Remove the empty placeholder only if it's still this session's message.
+                if let idx = convo.messages.firstIndex(where: { $0.id == replyID }),
+                   convo.messages[idx].text.isEmpty {
+                    convo.messages.remove(at: idx)
                 }
             } catch {
                 if !buffer.isEmpty { convo.appendToLastMessage(buffer) }
                 let msg = (error as? AIError)?.errorDescription ?? error.localizedDescription
-                if convo.messages.indices.contains(replyIndex) {
-                    convo.messages[replyIndex].text = "⚠️ " + msg
+                if let idx = convo.messages.firstIndex(where: { $0.id == replyID }) {
+                    convo.messages[idx].text = "⚠️ " + msg
                 }
             }
             convo.isResponding = false
@@ -541,17 +566,37 @@ struct AIAssistantPanel: View {
     }
 
     /// System prompt grounding the assistant in the current document.
-    private func systemContext() -> String {
-        var ctx = "You are a helpful writing assistant embedded in a Markdown editor. "
-            + "Answer concisely in the user's language."
+    ///
+    /// - Parameter includeFullDoc: When `true` (first user turn), injects the
+    ///   full document body (up to 8 000 chars). On subsequent turns the model
+    ///   already has the document in its conversation history, so we only remind
+    ///   it of the document name to avoid re-paying the token cost every round.
+    ///   Selected text is always included because it's user-initiated and small.
+    private func systemContext(includeFullDoc: Bool = true) -> String {
+        var ctx = """
+You are a helpful writing assistant embedded in a native macOS Markdown editor.
+Rules:
+- Always format code in fenced code blocks with the correct language tag.
+- Use proper Markdown syntax (## headings, **bold**, _italic_, `inline code`).
+- When the user asks to insert or rewrite content, output clean Markdown without any preamble like "Here is..." or "Sure!".
+- Keep responses focused and concise; avoid repeating the user's request back to them.
+"""
         let selection = state.editorSelectedText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !selection.isEmpty {
-            let sel = selection.count > 8000 ? String(selection.prefix(8000)) + "…" : selection
+            // Selected text is cheap and always relevant — include regardless of turn.
+            let sel = selection.count > 4000 ? String(selection.prefix(4000)) + "…" : selection
             let name = state.selectedTab?.name ?? "document"
             ctx += "\n\nThe user selected this text in \"\(name)\":\n\n\(sel)"
-        } else if let tab = state.selectedTab {
+        } else if includeFullDoc, let tab = state.selectedTab {
             let body = tab.content.count > 8000 ? String(tab.content.prefix(8000)) + "…" : tab.content
             ctx += "\n\nThe current document is \"\(tab.name)\":\n\n\(body)"
+        } else if let tab = state.selectedTab {
+            // Subsequent turns: just name — full content is already in conversation history.
+            ctx += "\n\nThe user is editing a document named \"\(tab.name)\"."
+        }
+        let userSkills = state.pluginManager.userSkillsPrompt()
+        if !userSkills.isEmpty {
+            ctx += "\n\n---\n\n# 用户自定义技能\n\n" + userSkills
         }
         return ctx
     }

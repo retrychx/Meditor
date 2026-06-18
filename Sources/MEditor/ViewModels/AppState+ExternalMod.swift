@@ -54,11 +54,16 @@ extension AppState {
         autoSaveTimer?.invalidate()
         let settings = AppSettings.shared
         guard settings.autoSave else { return }
+        // Retain cycle analysis: Timer → closure → [weak self] → AppState. No cycle.
+        // AppState.deinit invalidates the timer and removes the observer, so no leak
+        // even though AppState's lifetime equals the app's lifetime in practice.
         let timer = Timer.scheduledTimer(
             withTimeInterval: TimeInterval(settings.autoSaveInterval), repeats: true
         ) { [weak self] _ in Task { @MainActor in self?.autoSaveModifiedTabs() } }
         autoSaveTimer = timer
         if autoSaveObserver == nil {
+            // [weak self] prevents NotificationCenter → closure → AppState cycle.
+            // Removed in deinit via NotificationCenter.default.removeObserver.
             autoSaveObserver = NotificationCenter.default.addObserver(
                 forName: .autoSaveSettingsChanged, object: nil, queue: .main
             ) { [weak self] _ in Task { @MainActor in self?.setupAutoSaveTimer() } }

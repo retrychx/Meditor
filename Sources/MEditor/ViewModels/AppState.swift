@@ -36,9 +36,12 @@ final class AppState {
     let shareManager: ShareManager
     let gitlabShareManager: GitLabShareManager
     let templateManager: TemplateManager
+    let pluginManager: PluginManager
 
     /// AI assistant conversation store (multi-session, persisted).
-    let aiConversation = AIConversation()
+    /// Lazy so disk I/O is deferred until the AI panel is first opened.
+    @ObservationIgnored
+    private(set) lazy var aiConversation: AIConversation = AIConversation()
 
     // MARK: - Core shared state
 
@@ -51,6 +54,10 @@ final class AppState {
 
     var selectedFileID: URL?
 
+    // MARK: - AI UI State
+
+    let aiUI = AIUIState()
+
     // MARK: - Cursor / Status bar
 
     var cursorLine: Int = 1
@@ -60,15 +67,30 @@ final class AppState {
     var editorScrollCommand: ScrollSyncCommand = .idle
     var previewScrollCommand: ScrollSyncCommand = .idle
 
-    /// Current editor selection (empty when nothing selected). Used as AI context.
-    var editorSelectedText: String = ""
-    /// AI → editor insert command (text + monotonic nonce).
-    var editorInsertText: String = ""
-    var editorInsertNonce: Int = 0
+    // MARK: - Editor selection tracking (NSRange, updated by EditorCoordinator)
+    var editorSelectedRange: NSRange = NSRange(location: 0, length: 0)
+
+    // Computed wrappers keep View layer unchanged while delegating to AIUIState.
+    var editorSelectedText: String {
+        get { aiUI.editorSelectedText }
+        set { aiUI.editorSelectedText = newValue }
+    }
+    var editorInsertText: String { aiUI.editorInsertText }
+    var editorInsertNonce: Int { aiUI.editorInsertNonce }
+
+    var editorReplaceText: String { aiUI.editorReplaceText }
+    var editorReplaceNonce: Int { aiUI.editorReplaceNonce }
+    var pendingReplaceRange: NSRange? {
+        get { aiUI.pendingReplaceRange }
+        set { aiUI.pendingReplaceRange = newValue }
+    }
 
     func insertIntoEditor(_ text: String) {
-        editorInsertText = text
-        editorInsertNonce += 1
+        aiUI.requestInsert(text)
+    }
+
+    func replaceInEditor(_ text: String) {
+        aiUI.requestReplace(text)
     }
 
     var currentFileSize: String {
@@ -82,9 +104,15 @@ final class AppState {
     var errorMessage: String?
     var showingQuickOpen = false
     var showingSettings = false
-    var showingAIAssistant = false
+    var showingCloseProjectConfirmation = false
+    var showingAIAssistant: Bool {
+        get { aiUI.showingAssistant }
+        set { aiUI.showingAssistant = newValue }
+    }
     var externallyModifiedTab: EditorTab?
     var showingReloadPrompt = false
+    var showingBeautifySheet = false
+    var showingInlineEdit = false
 
     // MARK: - Services
 
@@ -121,8 +149,10 @@ final class AppState {
         self.shareManager    = ShareManager()
         self.gitlabShareManager = GitLabShareManager()
         self.templateManager = TemplateManager()
+        self.pluginManager   = PluginManager()
         wireTabManagerCallbacks()
         setupAutoSaveTimer()
+        pluginManager.load()
     }
 
     deinit {

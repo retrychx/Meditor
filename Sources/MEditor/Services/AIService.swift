@@ -140,6 +140,43 @@ struct AIClient {
         }
     }
 
+    /// Convenience Task-wrapper around `stream()`.
+    /// Buffers chunks at ≥ 50 ms intervals, then calls `onChunk` on MainActor.
+    /// Fires `onComplete` exactly once with the full text or error.
+    @MainActor
+    func streamTask(
+        _ messages: [AIMessage],
+        onChunk: @escaping @MainActor (String) -> Void,
+        onComplete: @escaping @MainActor (String?, Error?) -> Void
+    ) -> Task<Void, Never> {
+        Task { @MainActor in
+            var accumulated = ""
+            var buffer      = ""
+            var lastFlush   = Date.distantPast
+            do {
+                for try await chunk in stream(messages) {
+                    try Task.checkCancellation()
+                    buffer += chunk
+                    if Date().timeIntervalSince(lastFlush) > 0.05 {
+                        accumulated += buffer
+                        onChunk(buffer)
+                        buffer    = ""
+                        lastFlush = Date()
+                    }
+                }
+                if !buffer.isEmpty {
+                    accumulated += buffer
+                    onChunk(buffer)
+                }
+                onComplete(accumulated, nil)
+            } catch is CancellationError {
+                onComplete(accumulated.isEmpty ? nil : accumulated, nil)
+            } catch {
+                onComplete(accumulated.isEmpty ? nil : accumulated, error)
+            }
+        }
+    }
+
     // MARK: Offline preview
 
     private func previewStream() -> AsyncThrowingStream<String, Error> {
@@ -234,6 +271,10 @@ struct AIClient {
 
     private func claudeCLIStream(_ messages: [AIMessage]) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
+            // Box lets the termination closure reach the process after it starts.
+            final class ProcessBox { var process: Process? }
+            let box = ProcessBox()
+
             let task = Task.detached {
                 do {
                     guard !config.cliPath.isEmpty else { throw AIError.notConfigured }
@@ -274,23 +315,27 @@ struct AIClient {
                     process.standardOutput = outPipe
                     process.standardError = errPipe
 
+                    try Task.checkCancellation()
                     try process.run()
+                    box.process = process
 
-                    // Stream stdout incrementally as the CLI flushes output.
-                    let handle = outPipe.fileHandleForReading
-                    while true {
-                        let data = handle.availableData
-                        if data.isEmpty { break }
-                        if let s = String(data: data, encoding: .utf8), !s.isEmpty {
-                            continuation.yield(s)
-                        }
-                    }
+                    // `claude -p` writes the complete reply then exits — block until
+                    // EOF. `availableData` is non-blocking and exits early if the
+                    // subprocess hasn't flushed yet, so we use readDataToEndOfFile().
+                    // The termination closure calls process.terminate() which closes
+                    // the pipe and unblocks this call when the Task is cancelled.
+                    let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
                     let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
                     process.waitUntilExit()
+
+                    if Task.isCancelled { continuation.finish(); return }
 
                     if process.terminationStatus != 0 {
                         let msg = String(data: errData, encoding: .utf8) ?? "exit \(process.terminationStatus)"
                         throw AIError.cliFailed(msg.trimmingCharacters(in: .whitespacesAndNewlines))
+                    }
+                    if let output = String(data: outData, encoding: .utf8), !output.isEmpty {
+                        continuation.yield(output)
                     }
                     continuation.finish()
                 } catch let e as AIError {
@@ -299,7 +344,10 @@ struct AIClient {
                     continuation.finish(throwing: AIError.cliFailed(error.localizedDescription))
                 }
             }
-            continuation.onTermination = { _ in task.cancel() }
+            continuation.onTermination = { _ in
+                task.cancel()
+                box.process?.terminate()
+            }
         }
     }
 }

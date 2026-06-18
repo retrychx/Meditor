@@ -330,6 +330,16 @@ private struct ToolbarActionGroup: View {
     var body: some View {
         HStack(spacing: 2) {
             ChromeButton(
+                systemName: "wand.and.stars",
+                help: "HTML 美化"
+            ) {
+                state.showingBeautifySheet = true
+            }
+            .disabled(state.selectedTab == nil)
+
+            Divider().frame(height: 14).padding(.horizontal, 2)
+
+            ChromeButton(
                 systemName: "scope",
                 help: L("tooltip.focusMode"),
                 isActive: workspaceUI.isFocusMode
@@ -384,7 +394,7 @@ struct DocStats {
     /// Short label for the status bar chip.
     var chipLabel: String {
         switch (cjkCount > 0, latinWords > 0) {
-        case (true, true):  return "\(cjkCount.formatted())字 \(latinWords)w"
+        case (true, true):  return "\(cjkCount.formatted())字"
         case (true, false): return "\(cjkCount.formatted())字"
         default:            return "\(latinWords)w"
         }

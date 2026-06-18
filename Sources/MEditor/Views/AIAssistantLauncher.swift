@@ -162,13 +162,17 @@ struct AIAssistantHeroOverlay: View {
                             lineWidth: 1
                         )
                 )
-                .shadow(color: .black.opacity(0.36), radius: 38, x: 0, y: 16)
-                .scaleEffect(shown ? 1 : 0.15, anchor: anchorPoint)
+                .compositingGroup()
+                .shadow(color: .black.opacity(0.32), radius: 24, x: 0, y: 12)
+                .scaleEffect(shown ? 1 : 0.16, anchor: anchorPoint)
                 .opacity(shown ? 1 : 0)
                 .padding(.trailing, 16)
                 .padding(.bottom, 16)
         }
-        .onAppear {
+        .task {
+            // Commit the collapsed state for one frame, then spring open — so the
+            // animation isn't coalesced into the initial insert (which skips it).
+            try? await Task.sleep(nanoseconds: 16_000_000)
             withAnimation(.spring(response: 0.42, dampingFraction: 0.80)) { shown = true }
         }
         .onExitCommand { dismiss() }

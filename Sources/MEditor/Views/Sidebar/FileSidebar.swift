@@ -35,6 +35,11 @@ struct FileSidebar: View {
     @State private var showDeleteConfirmation = false
     @State private var itemToDelete: FileItem?
 
+    @State private var userDocFiles: [URL] = []
+    @State private var appDocFiles: [URL] = []
+    @State private var userDocExpanded = true
+    @State private var appDocExpanded = true
+
     private var displayedTree: [FileItem] {
         guard !searchText.isEmpty else { return state.fileTree }
         if !state.indexedFiles.isEmpty {
@@ -129,7 +134,38 @@ struct FileSidebar: View {
 
     private var mainContent: some View {
         List {
-            // Folders section
+            // User document section
+            let userPath = AppSettings.shared.userDocPath
+            if let _ = userPath, !userDocFiles.isEmpty {
+                Section(isExpanded: $userDocExpanded) {
+                    ForEach(userDocFiles, id: \.path) { url in
+                        DocFileRow(url: url, isSelected: state.selectedFileID == url)
+                            .onTapGesture { state.openFile(FileItem(url: url, isDirectory: false)) }
+                    }
+                } header: {
+                    CraftSectionHeader(title: "用户文档")
+                }
+                .listRowInsets(.init(top: 1, leading: 12, bottom: 1, trailing: 12))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            }
+
+            // App document section
+            if !appDocFiles.isEmpty {
+                Section(isExpanded: $appDocExpanded) {
+                    ForEach(appDocFiles, id: \.path) { url in
+                        DocFileRow(url: url, isSelected: state.selectedFileID == url)
+                            .onTapGesture { state.openFile(FileItem(url: url, isDirectory: false)) }
+                    }
+                } header: {
+                    CraftSectionHeader(title: "App 文档")
+                }
+                .listRowInsets(.init(top: 1, leading: 12, bottom: 1, trailing: 12))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            }
+
+            // Workspace folders section
             if !state.fileTree.isEmpty {
                 Section {
                     ForEach(state.fileTree) { item in
@@ -154,6 +190,31 @@ struct FileSidebar: View {
         .scrollContentBackground(.hidden)
         .scrollIndicators(.hidden)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear { refreshDocFiles() }
+        .onReceive(NotificationCenter.default.publisher(for: .docPathChanged)) { _ in
+            refreshDocFiles()
+        }
+    }
+
+    private func refreshDocFiles() {
+        userDocFiles = listDocFiles(at: AppSettings.shared.userDocPath)
+        appDocFiles  = listDocFiles(at: AppSettings.shared.appDocPath)
+    }
+
+    private func listDocFiles(at url: URL?) -> [URL] {
+        guard let url else { return [] }
+        guard let contents = try? FileManager.default.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+        let allowed: Set<String> = ["md", "html"]
+        return contents
+            .filter { u in
+                guard let res = try? u.resourceValues(forKeys: [.isDirectoryKey]) else { return false }
+                return res.isDirectory == false && allowed.contains(u.pathExtension.lowercased())
+            }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
     @ViewBuilder
@@ -487,6 +548,49 @@ private struct SidebarIconButton: View {
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
         .help(help)
+        .animation(DS.Motion.micro, value: isHovered)
+    }
+}
+
+// MARK: - Doc File Row
+
+private struct DocFileRow: View {
+    let url: URL
+    let isSelected: Bool
+    @State private var isHovered = false
+    @Environment(AppState.self) private var state
+
+    private var icon: String {
+        switch url.pathExtension.lowercased() {
+        case "html": return "doc.richtext"
+        default:     return "doc.text"
+        }
+    }
+
+    var body: some View {
+        let theme = state.themeStore.current
+        HStack(spacing: 7) {
+            Image(systemName: icon)
+                .font(.system(size: 12))
+                .foregroundStyle(isSelected ? theme.craftPrimary : theme.craftSecondary)
+                .frame(width: 16, alignment: .center)
+            Text(url.lastPathComponent)
+                .font(.system(size: 13))
+                .foregroundStyle(isSelected ? theme.craftPrimary : theme.craftPrimary.opacity(0.82))
+                .lineLimit(1)
+            Spacer()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isSelected
+                      ? Color.primary.opacity(0.10)
+                      : isHovered ? Color.primary.opacity(0.05) : Color.clear)
+                .padding(.horizontal, 4)
+        )
+        .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
         .animation(DS.Motion.micro, value: isHovered)
     }
 }

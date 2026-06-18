@@ -43,6 +43,14 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: Binding(
+            get: { state.showingBeautifySheet },
+            set: { state.showingBeautifySheet = $0 }
+        )) {
+            BeautifySheet()
+                .environment(state)
+                .environment(settings)
+        }
+        .sheet(isPresented: Binding(
             get: { state.showingQuickOpen },
             set: { state.showingQuickOpen = $0 }
         )) {
@@ -129,6 +137,29 @@ struct ContentView: View {
             if let item = state.pendingLargeFile {
                 Text(L("alert.largeFileMessage", item.name))
             }
+        }
+        // Close Project confirmation — prevents accidental data loss from the menu item.
+        .confirmationDialog(
+            "Close Project?",
+            isPresented: Binding(
+                get: { state.showingCloseProjectConfirmation },
+                set: { state.showingCloseProjectConfirmation = $0 }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Close", role: .destructive) {
+                state.showingCloseProjectConfirmation = false
+                state.rootURL = nil
+                state.openTabs.removeAll()
+                state.selectedTabID = nil
+                state.fileTreeManager.clear()
+                state.clearPreview()
+            }
+            Button("Cancel", role: .cancel) {
+                state.showingCloseProjectConfirmation = false
+            }
+        } message: {
+            Text("All open tabs will be closed. Unsaved changes will be lost.")
         }
     }
 

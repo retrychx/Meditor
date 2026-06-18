@@ -13,6 +13,15 @@ extension Color {
         )
     }
 
+    /// Convert a SwiftUI Color to a lowercase CSS hex string (#rrggbb).
+    func hexString() -> String {
+        guard let c = NSColor(self).usingColorSpace(.sRGB) else { return "#000000" }
+        let r = Int(max(0, min(1, c.redComponent))   * 255)
+        let g = Int(max(0, min(1, c.greenComponent)) * 255)
+        let b = Int(max(0, min(1, c.blueComponent))  * 255)
+        return String(format: "#%02x%02x%02x", r, g, b)
+    }
+
     /// App-wide accent that honors the user's accent-style preference
     /// (`MEditor.aiAccentStyle`: "system" or "shadcn"). For "shadcn" it resolves
     /// to a mono near-black (#18181B) in light mode / near-white (#FAFAFA) in dark
