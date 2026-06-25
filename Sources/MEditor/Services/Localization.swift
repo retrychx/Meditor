@@ -54,7 +54,7 @@ func L(_ key: String, _ args: CVarArg...) -> String {
 // MARK: - Translation table
 
 extension LocalizationManager {
-    static let table: [String: (en: String, zh: String)] = [
+    private static let table0: [String: (en: String, zh: String)] = [
         // Common
         "common.ok": ("OK", "好"),
         "common.cancel": ("Cancel", "取消"),
@@ -152,6 +152,9 @@ extension LocalizationManager {
 
         // Menus / commands
         "menu.openFolder": ("Open Folder…", "打开文件夹…"),
+        "menu.bold": ("Bold", "加粗"),
+        "menu.italic": ("Italic", "斜体"),
+        "menu.link": ("Insert Link", "插入链接"),
         "menu.openFile": ("Open File…", "打开文件…"),
         "menu.newFile": ("New from Template…", "从模板新建…"),
         "menu.saveAsTemplate": ("Save as Template…", "保存为模板…"),
@@ -162,6 +165,7 @@ extension LocalizationManager {
         "template.namePlaceholder": ("Template name", "模板名称"),
         "template.saveMessage": ("Save current file content as a reusable template.", "将当前文件内容保存为可复用模板。"),
         "template.builtinSection": ("Built-in", "内置模板"),
+        "template.selectHint": ("Select a template to get started", "选择模板以开始创建"),
         "template.blank": ("Blank", "空白文档"),
         "template.blankDesc": ("Empty document", "空文档"),
         "template.meeting": ("Meeting Notes", "会议记录"),
@@ -192,7 +196,9 @@ extension LocalizationManager {
         "menu.copyRelativePath": ("Copy Relative Path", "复制相对路径"),
         "menu.revealInFinder": ("Reveal in Finder", "在 Finder 中显示"),
         "panel.chooseFolder": ("Choose a project folder", "选择一个项目文件夹"),
+    ]
 
+    private static let table1: [String: (en: String, zh: String)] = [
         // Welcome
         "welcome.subtitle": ("Markdown & HTML Editor", "Markdown & HTML 编辑器"),
         "welcome.dropHint": ("Or drop a folder here", "或将文件夹拖放到此处"),
@@ -201,7 +207,14 @@ extension LocalizationManager {
         "alert.errorTitle": ("Error", "错误"),
         "alert.saveChangesTitle": ("Save changes?", "保存更改？"),
         "alert.dontSave": ("Don't Save", "不保存"),
-        "alert.saveChangesMessage": ("Save changes to \"%@\" before closing?", "关闭前保存对“%@”的更改？"),
+        "alert.saveChangesMessage": ("Save changes to \"%@\" before closing?", "关闭前保存对\"%@\"的更改？"),
+        "alert.fileChanged": ("File Changed", "文件已更改"),
+        "alert.fileChangedMessage": ("\"%@\" was modified by another app. Keep your changes or reload from disk?", "\"%@\"被其他应用修改。保留你的更改还是从磁盘重新加载？"),
+        "alert.keepMine": ("Keep Mine", "保留我的"),
+        "alert.reload": ("Reload", "重新加载"),
+        "alert.largeFile": ("Large File", "大文件"),
+        "alert.largeFileMessage": ("\"%@\" is large and may be slow to edit. Open anyway?", "\"%@\"文件较大，编辑可能较慢。仍要打开吗？"),
+        "alert.openAnyway": ("Open Anyway", "仍然打开"),
 
         // Toolbar tooltips
         "tooltip.showSidebar": ("Show Sidebar (⌥⌘B)", "显示侧边栏 (⌥⌘B)"),
@@ -222,6 +235,24 @@ extension LocalizationManager {
         "share.copyURL": ("Copy URL", "复制链接"),
         "share.stop": ("Stop Sharing", "停止分享"),
         "share.lan.title": ("LAN Share", "局域网分享"),
+
+        // GitHub Gist sharing
+        "github.gist.title": ("GitHub Gist", "GitHub Gist"),
+        "github.gist.token": ("Personal Access Token", "Personal Access Token"),
+        "github.gist.tokenConfigured": ("Configured", "已配置"),
+        "github.gist.clearToken": ("Clear", "清除"),
+        "github.gist.saveToken": ("Save", "保存"),
+        "github.gist.visibility": ("Visibility", "可见性"),
+        "github.gist.public": ("Public", "公开"),
+        "github.gist.secret": ("Secret", "私密"),
+        "github.error.notConfigured": ("GitHub not configured — set a token first.", "GitHub 未配置——请先设置 Token。"),
+        "github.error.invalidToken": ("Invalid token — please reconfigure.", "Token 无效，请重新配置。"),
+        "github.error.insufficientScope": ("Token lacks permission — needs gist scope.", "Token 权限不足，需要 gist 权限。"),
+        "github.error.tooLarge": ("File too large (>1MB) to share as a Gist.", "文件过大（>1MB），无法作为 Gist 分享。"),
+        "github.error.network": ("Cannot reach GitHub — check your network.", "无法连接 GitHub，请检查网络。"),
+        "github.error.server": ("GitHub error %d: %@", "GitHub 错误 %d：%@"),
+        "github.error.badResponse": ("Unexpected response from GitHub.", "GitHub 返回异常。"),
+        "github.error.keychain": ("Keychain error (%d).", "钥匙串错误（%d）。"),
 
         // GitLab Snippet sharing
         "gitlab.title": ("GitLab Snippet", "GitLab Snippet"),
@@ -246,7 +277,9 @@ extension LocalizationManager {
         "gitlab.error.server": ("GitLab error %d: %@", "GitLab 错误 %d：%@"),
         "gitlab.error.badResponse": ("Unexpected response from GitLab.", "GitLab 返回异常。"),
         "gitlab.error.keychain": ("Keychain error (%d).", "钥匙串错误（%d）。"),
+    ]
 
+    private static let table2: [String: (en: String, zh: String)] = [
         // Export
         "export.title": ("Export Preview", "导出预览"),
         "export.markdown": ("Export as Markdown…", "导出为 Markdown…"),
@@ -332,6 +365,21 @@ extension LocalizationManager {
         "rightPanel.share.message": ("Start LAN sharing to make currently open documents available on the local network.", "启动局域网分享后，可在本地网络访问当前打开的文档。"),
         "rightPanel.insert.message": ("Use existing document creation tools from a stable side panel while editing.", "编辑时可从稳定的侧边面板使用现有文档创建工具。"),
 
+        // Calendar
+        "calendar.today": ("Today", "今天"),
+        "calendar.tomorrow": ("Tomorrow", "明天"),
+        "calendar.allDay": ("All Day", "全天"),
+        "calendar.empty": ("No upcoming events", "暂无日程"),
+        "calendar.requestAccess": ("Grant Access", "授权访问"),
+        "calendar.accessHint": ("Calendar access is required to show your events.", "需要日历访问权限以显示你的日程。"),
+    ]
+
+    private static let table3: [String: (en: String, zh: String)] = [
+        // Todo
+        "todo.noRoot": ("No folder open", "未打开文件夹"),
+        "todo.empty": ("No tasks found", "暂无任务"),
+        "todo.refresh": ("Refresh tasks", "刷新任务"),
+
         // Sidebar
         "sidebar.search": ("Search", "搜索"),
         "sidebar.newDocument": ("New Document", "新建文档"),
@@ -354,12 +402,19 @@ extension LocalizationManager {
         "create.messageFile": ("Enter a name for the new file.", "请输入新文件的名称。"),
         "rename.title": ("Rename", "重命名"),
         "rename.newName": ("New name", "新名称"),
-        "rename.messageFormat": ("Rename “%@” to:", "将“%@”重命名为："),
-        "delete.confirmFormat": ("Are you sure you want to delete “%@”?", "确定要删除“%@”吗？"),
+        "rename.messageFormat": ("Rename \"%@\" to:", "将\"%@\"重命名为："),
+        "delete.confirmFormat": ("Are you sure you want to delete \"%@\"?", "确定要删除\"%@\"吗？"),
         "error.createFolderFailed": ("Failed to create folder: %@", "创建文件夹失败：%@"),
         "error.createFileFailed": ("Failed to create file: %@", "创建文件失败：%@"),
         "error.renameFailed": ("Failed to rename: %@", "重命名失败：%@"),
         "error.deleteFailed": ("Failed to delete: %@", "删除失败：%@"),
+
+        // Status bar
+        "statusBar.modified": ("Modified", "已修改"),
+        "statusBar.saved":    ("Saved", "已保存"),
+        "statusBar.sharing": ("Sharing", "分享中"),
+        "statusBar.copyLANLink": ("Copy LAN Link", "复制局域网链接"),
+        "statusBar.copyGistLink": ("Copy Gist Link", "复制 Gist 链接"),
 
         // Tab context menu
         "tab.close": ("Close", "关闭"),
@@ -369,6 +424,7 @@ extension LocalizationManager {
 
         // Editor / Preview placeholders
         "editor.selectFile": ("Select a file to edit", "选择一个文件进行编辑"),
+        "editor.placeholder": ("Start writing…", "开始写作…"),
         "preview.empty": ("Preview", "预览"),
         "preview.findPlaceholder": ("Find in Preview", "在预览中查找"),
         "preview.findNoResults": ("No results", "无结果"),
@@ -400,14 +456,16 @@ extension LocalizationManager {
         "settings.desc.provider": ("Where assistant replies are generated", "助手回复的生成来源"),
         "settings.language": ("Language", "语言"),
         "lang.system": ("System", "跟随系统"),
+    ]
 
+    private static let table4: [String: (en: String, zh: String)] = [
         // AppError descriptions
-        "error.openFailed": ("Couldn't open “%@”: %@", "无法打开“%@”：%@"),
-        "error.saveFailed": ("Couldn't save “%@”: %@", "无法保存“%@”：%@"),
-        "error.deleteFailed2": ("Couldn't delete “%@”: %@", "无法删除“%@”：%@"),
-        "error.renameFailed2": ("Couldn't rename “%@”: %@", "无法重命名“%@”：%@"),
-        "error.createFailed": ("Couldn't create “%@”: %@", "无法创建“%@”：%@"),
-        "error.accessDenied": ("Access denied to “%@”.", "无权访问“%@”。"),
+        "error.openFailed": ("Couldn't open \"%@\": %@", "无法打开\"%@\"：%@"),
+        "error.saveFailed": ("Couldn't save \"%@\": %@", "无法保存\"%@\"：%@"),
+        "error.deleteFailed2": ("Couldn't delete \"%@\": %@", "无法删除\"%@\"：%@"),
+        "error.renameFailed2": ("Couldn't rename \"%@\": %@", "无法重命名\"%@\"：%@"),
+        "error.createFailed": ("Couldn't create \"%@\": %@", "无法创建\"%@\"：%@"),
+        "error.accessDenied": ("Access denied to \"%@\".", "无权访问\"%@\"。"),
         "error.previewResourceMissing": ("Preview resource missing: %@.", "缺少预览资源：%@。"),
         "error.exportFailed": ("Export to %@ failed: %@.", "导出为 %@ 失败：%@。"),
         "error.unknown": ("unknown error", "未知错误"),
@@ -418,5 +476,36 @@ extension LocalizationManager {
         "export.err.js": ("Export failed (JS): %@", "导出失败（JS）：%@"),
         "export.err.pdf": ("PDF export failed: %@", "PDF 导出失败：%@"),
         "export.err.image": ("Image export failed: %@", "图片导出失败：%@"),
+
+        // Document action bar
+        "action.export": ("Export", "导出"),
+        "action.share": ("Share", "分享"),
+
+        // Tab share / publish actions
+        "tab.shareViaLAN": ("Share via LAN", "通过局域网分享"),
+        "tab.copyShareURL": ("Copy Share URL", "复制分享链接"),
+        "tab.stopSharing": ("Stop Sharing", "停止分享"),
+        "tab.publishToGitHub": ("Publish to GitHub Gist", "发布到 GitHub Gist"),
+
+        // GitHub Gist
+        "github.gist.copyLink": ("Copy Gist Link", "复制 Gist 链接"),
+        "github.gist.openInBrowser": ("Open in Browser", "在浏览器中打开"),
+        "github.gist.publishing": ("Publishing…", "正在发布…"),
+        "github.gist.republish": ("Republish to GitHub", "重新发布到 GitHub"),
+
+        // AI inline-replace ambiguous match
+        "ai.error.replaceAmbiguous": (
+            "The selected text appears multiple times in the document. Please apply the change manually.",
+            "所选文本在文档中出现了多次，无法精确定位。请手动应用修改。"
+        ),
     ]
+
+    static let table: [String: (en: String, zh: String)] = {
+        var t = table0
+        t.merge(table1) { _, new in new }
+        t.merge(table2) { _, new in new }
+        t.merge(table3) { _, new in new }
+        t.merge(table4) { _, new in new }
+        return t
+    }()
 }

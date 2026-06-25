@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
     @Environment(AppState.self) private var state
+    @Environment(\.controlActiveState) private var controlActiveState
     @Bindable var workspaceUI: WorkspaceUIState
 
     /// Shared namespace so the focus toggle can "fly" (hero / matchedGeometry)
@@ -12,6 +13,8 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
     @Namespace private var sidebarNS
     /// Transient hint shown when entering focus mode (Craft-style).
     @State private var showFocusHint = false
+    /// 鼠标悬停到顶部时浮现的退出按钮。
+    @State private var showFocusExitHover = false
 
     let onExport: (PreviewExporter.ExportFormat) -> Void
     private let sidebar: () -> Sidebar
@@ -37,10 +40,12 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
         HStack(spacing: 0) {
             if workspaceUI.showsSidebarInLayout {
                 ZStack {
-                    // Neutral canvas that the sidebar card floats on — matches the
-                    // tab bar's chrome (unselected-tab) background so the sidebar
-                    // and toolbar areas read as one coherent surface.
-                    theme.chromeBackground
+                    // Canvas behind the floating sidebar card — matches the editor
+                    // window background so the gutter around the card reads as part
+                    // of the window, not as a transparent hole to the desktop.
+                    // SidebarVibrancyView blends behind the window at the compositor
+                    // level and doesn't need this layer to be transparent.
+                    theme.windowBackground
                         .ignoresSafeArea()
 
                     // Floating sidebar card — rounded corners, translucent
@@ -54,23 +59,18 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
                         .scrollContentBackground(.hidden)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(.regularMaterial)
-                        )
-                        // Soft vertical tint over the material — mimics the
-                        // luminance gradient of Craft's native sidebar vibrancy.
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(
-                                    LinearGradient(
-                                        colors: theme.isDark
-                                            ? [Color.white.opacity(0.06), Color.clear,
-                                               Color.black.opacity(0.05)]
-                                            : [Color.white.opacity(0.45), Color.clear,
-                                               Color.black.opacity(0.035)],
-                                        startPoint: .top, endPoint: .bottom
-                                    )
-                                )
+                            // 原生 NSVisualEffectView sidebar material：
+                            // 聚焦时带强调色光泽，失焦时自动去饱和，和 Finder/Craft 一致。
+                            ZStack {
+                                SidebarVibrancyView()
+                                // 浅色主题叠一层半透明白，避免桌面深色透进来；
+                                // 窗口激活时略薄让 vibrancy 强调色透出来，失焦时加厚变灰。
+                                if !theme.isDark {
+                                    Color.white.opacity(controlActiveState == .key ? 0.60 : 0.78)
+                                        .animation(.easeInOut(duration: 0.2), value: controlActiveState)
+                                }
+                            }
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         // Hairline border with a top-lit highlight → a subtle
@@ -80,22 +80,22 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
                                 .strokeBorder(
                                     LinearGradient(
                                         colors: theme.isDark
-                                            ? [Color.white.opacity(0.18),
-                                               Color.white.opacity(0.04)]
-                                            : [Color.white.opacity(0.95),
-                                               Color.white.opacity(0.30)],
+                                            ? [Color.white.opacity(0.22),
+                                               Color.white.opacity(0.05)]
+                                            : [Color.white.opacity(1.0),
+                                               Color.white.opacity(0.40)],
                                         startPoint: .top, endPoint: .bottom
                                     ),
                                     lineWidth: 1
                                 )
                                 .blendMode(.plusLighter)
                         )
-                        .shadow(color: .black.opacity(theme.isDark ? 0.45 : 0.16),
-                                radius: 9, x: 0, y: 2)
-                        // Very soft outer glow — kept faint so it doesn't wash the
-                        // thin canvas margins (which must match the tab-bar chrome).
-                        .shadow(color: Color.white.opacity(theme.isDark ? 0.05 : 0.18),
-                                radius: 4, x: 0, y: 0)
+                        .shadow(color: .black.opacity(theme.isDark ? 0.55 : 0.22),
+                                radius: 18, x: 0, y: 6)
+                        .shadow(color: .black.opacity(theme.isDark ? 0.25 : 0.08),
+                                radius: 4, x: 0, y: 1)
+                        .shadow(color: Color.white.opacity(theme.isDark ? 0.06 : 0.25),
+                                radius: 6, x: 0, y: 0)
                         .padding(.leading, 9)
                         .padding(.trailing, 5)
                         .padding(.top, 6)
@@ -127,7 +127,7 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
                     // so the window stays movable and traffic lights have clearance.
                     Color.clear.frame(height: 38)
                 } else {
-                    TopToolbar(workspaceUI: workspaceUI, onExport: onExport, focusNS: focusNS)
+                    TopToolbar(workspaceUI: workspaceUI, focusNS: focusNS)
                 }
 
                 HStack(spacing: 0) {
@@ -135,36 +135,69 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
                         theme.windowBackground
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                        HStack(spacing: 0) {
-                            if workspaceUI.showsEditor {
-                                editor()
-                                    .frame(maxWidth: .infinity)
-                            }
+                        switch workspaceUI.activeMainView {
+                        case .todos:
+                            TodoMainView()
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        case .calendar:
+                            CalendarMainView()
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        case .document:
+                            ZStack {
+                                if state.showingDiffReview {
+                                    // AI diff 审阅：接管整个文档区域，动画过渡
+                                    DiffReviewOverlay()
+                                        .environment(state)
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                        .transition(
+                                            .asymmetric(
+                                                insertion: .opacity.combined(with: .scale(scale: 0.985, anchor: .center)),
+                                                removal:   .opacity
+                                            )
+                                        )
+                                } else {
+                                    HStack(spacing: 0) {
+                                        if workspaceUI.showsEditor {
+                                            // 专注模式：iA Writer 风格居中窄列（仅独占编辑器时）
+                                            if workspaceUI.isFocusMode && !workspaceUI.showsPreview {
+                                                Spacer(minLength: 0)
+                                                editor().frame(maxWidth: 740)
+                                                Spacer(minLength: 0)
+                                            } else {
+                                                editor().frame(maxWidth: .infinity)
+                                            }
+                                        }
 
-                            if workspaceUI.showsEditor && workspaceUI.showsPreview {
-                                theme.separator
-                                    .opacity(theme.isDark ? 0.36 : 0.2)
-                                    .frame(width: 1)
-                            }
+                                        if workspaceUI.showsEditor && workspaceUI.showsPreview {
+                                            theme.separator
+                                                .opacity(theme.isDark ? 0.36 : 0.2)
+                                                .frame(width: 1)
+                                        }
 
-                            if workspaceUI.showsPreview {
-                                preview()
-                                    .frame(maxWidth: .infinity)
-                            }
+                                        if workspaceUI.showsPreview {
+                                            preview()
+                                                .frame(maxWidth: .infinity)
+                                        }
 
-                            if !workspaceUI.hasVisibleWorkspacePane {
-                                theme.windowBackground
+                                        if !workspaceUI.hasVisibleWorkspacePane {
+                                            theme.windowBackground
+                                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                        }
+                                    }
                                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                    .transition(.opacity)
+                                }
                             }
+                            .animation(.spring(response: 0.35, dampingFraction: 0.88), value: state.showingDiffReview)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .animation(.easeInOut(duration: 0.22), value: workspaceUI.activeMainView)
                     // Focus toggle flies here (hero) when focus mode is on.
                     .overlay(alignment: .topTrailing) {
                         if workspaceUI.isFocusMode {
                             FocusToggleButton(workspaceUI: workspaceUI)
-                                .matchedGeometryEffect(id: "focusToggle", in: focusNS)
                                 .padding(.top, 12)
                                 .padding(.trailing, 14)
                         }
@@ -174,6 +207,12 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
                             FocusHintToast()
                                 .padding(.top, 14)
                                 .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+                    }
+                    // 鼠标移到顶部时浮现的退出按钮（专注模式悬浮触发区）
+                    .overlay(alignment: .top) {
+                        if workspaceUI.isFocusMode {
+                            FocusExitHoverZone(workspaceUI: workspaceUI)
                         }
                     }
                     // Floating AI assistant launcher — pinned to the bottom-trailing
@@ -189,13 +228,7 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
                             .animation(DS.Motion.fast, value: state.showingAIAssistant)
                     }
 
-                    if !workspaceUI.isFocusMode {
-                        RightPanelRail(workspaceUI: workspaceUI)
-                    }
 
-                    if workspaceUI.showsRightPanelInLayout {
-                        RightPanelHost(workspaceUI: workspaceUI)
-                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -236,19 +269,8 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
             .keyboardShortcut("b", modifiers: [.command, .option])
 
             Button("") {
-                withAnimation(DS.Motion.fast) {
-                    workspaceUI.rightPanel = .search
-                }
-            }
-            .keyboardShortcut("f", modifiers: [.command, .shift])
-
-            Button("") {
-                withAnimation(DS.Motion.fast) {
-                    if workspaceUI.isFocusMode {
-                        workspaceUI.isFocusMode = false
-                    } else {
-                        workspaceUI.closeRightPanel()
-                    }
+                if workspaceUI.isFocusMode {
+                    withAnimation(DS.Motion.fast) { workspaceUI.isFocusMode = false }
                 }
             }
             .keyboardShortcut(.escape, modifiers: [])
@@ -263,10 +285,7 @@ private struct TopToolbar: View {
     @Environment(AppState.self) private var state
     @Environment(\.sidebarToggleNS) private var sidebarNS
     @Bindable var workspaceUI: WorkspaceUIState
-    let onExport: (PreviewExporter.ExportFormat) -> Void
     let focusNS: Namespace.ID
-
-    @State private var showSharePopover = false
 
     private var theme: PreviewTheme { state.themeStore.current }
 
@@ -290,17 +309,10 @@ private struct TopToolbar: View {
             tabZone
                 .frame(maxWidth: .infinity)
 
-            // Right: action buttons
-            ToolbarActionGroup(
-                workspaceUI: workspaceUI,
-                showSharePopover: $showSharePopover,
-                onExport: onExport,
-                focusNS: focusNS
-            )
-            .fixedSize(horizontal: true, vertical: false)
+            ToolbarActionGroup(workspaceUI: workspaceUI, focusNS: focusNS)
         }
         .frame(height: 44)
-        .background(theme.chromeBackground, ignoresSafeAreaEdges: .top)
+        .background(.bar, ignoresSafeAreaEdges: .top)  // macOS 原生 toolbar material：聚焦时鲜艳，失焦时变灰
         .background(NonDraggableView())
         .overlay(alignment: .bottom) {
             theme.separator.opacity(theme.isDark ? 0.3 : 0.12).frame(height: 1)
@@ -323,62 +335,10 @@ private struct TopToolbar: View {
 private struct ToolbarActionGroup: View {
     @Environment(AppState.self) private var state
     @Bindable var workspaceUI: WorkspaceUIState
-    @Binding var showSharePopover: Bool
-    let onExport: (PreviewExporter.ExportFormat) -> Void
     let focusNS: Namespace.ID
 
     var body: some View {
-        HStack(spacing: 2) {
-            ChromeButton(
-                systemName: "wand.and.stars",
-                help: "HTML 美化"
-            ) {
-                state.showingBeautifySheet = true
-            }
-            .disabled(state.selectedTab == nil)
-
-            Divider().frame(height: 14).padding(.horizontal, 2)
-
-            ChromeButton(
-                systemName: "scope",
-                help: L("tooltip.focusMode"),
-                isActive: workspaceUI.isFocusMode
-            ) {
-                withAnimation(DS.Motion.springFast) { workspaceUI.toggleFocusMode() }
-            }
-            .matchedGeometryEffect(id: "focusToggle", in: focusNS)
-
-            ChromeMenuButton(
-                systemName: "square.and.arrow.up",
-                help: L("export.title"),
-                isDisabled: !state.previewExporter.isExportAvailable,
-                items: exportItems
-            )
-
-            Divider().frame(height: 14).padding(.horizontal, 2)
-
-            ChromeButton(
-                systemName: "doc.text",
-                help: workspaceUI.showsEditor ? L("tooltip.hideEditor") : L("tooltip.showEditor"),
-                isActive: workspaceUI.showsEditor
-            ) { workspaceUI.toggleEditor() }
-            .keyboardShortcut("m", modifiers: [.command, .shift])
-
-            ChromeButton(
-                systemName: "sidebar.right",
-                help: workspaceUI.showsPreview ? L("tooltip.hidePreview") : L("tooltip.showPreview"),
-                isActive: workspaceUI.showsPreview
-            ) { workspaceUI.togglePreview() }
-            .keyboardShortcut("v", modifiers: [.command, .shift])
-        }
-        .padding(.trailing, 8)
-    }
-
-    private var exportItems: [(title: String, action: () -> Void)] {
-        let isHTML = state.previewMode == .html
-        return isHTML
-            ? [(L("export.markdown"), { onExport(.markdown) }), (L("export.pdf"), { onExport(.pdf) }), (L("export.image"), { onExport(.image) })]
-            : [(L("export.html"), { onExport(.html) }), (L("export.pdf"), { onExport(.pdf) }), (L("export.image"), { onExport(.image) })]
+        EmptyView()
     }
 }
 
@@ -442,6 +402,9 @@ struct DocStats {
 private struct StatusBarHost: View {
     @Environment(AppState.self) private var state
     @State private var showStatsPopover = false
+    /// 控制"已保存" chip 的显隐，保存成功后显示，2 秒后自动淡出。
+    @State private var showSavedChip = false
+    @State private var savedChipTask: Task<Void, Never>? = nil
 
     var body: some View {
         let theme = state.themeStore.current
@@ -494,10 +457,38 @@ private struct StatusBarHost: View {
                 }
             }
 
+            // "已保存"短暂提示 chip
+            if showSavedChip {
+                statusDivider(theme)
+                HStack(spacing: 3) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Color.green.opacity(0.8))
+                    Text(L("statusBar.saved"))
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 8)
+                .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .leading)))
+            }
+
             Spacer()
+
+            // 分享状态（右对齐）
+            ShareStatusChip(state: state, theme: theme)
+        }
+        .animation(DS.Motion.fast, value: showSavedChip)
+        .onChange(of: state.lastSavedAt) { _, _ in
+            savedChipTask?.cancel()
+            showSavedChip = true
+            savedChipTask = Task {
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
+                showSavedChip = false
+            }
         }
         .frame(height: 22)
-        .background(theme.chromeBackground)
+        .background(.bar)  // 与 tab bar 保持一致的 material
         .overlay(alignment: .top) {
             Color.black.opacity(0.06).frame(height: 1)
         }
@@ -523,6 +514,73 @@ private struct StatusBarHost: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 10)
+    }
+}
+
+// MARK: - Share Status Chip
+
+/// 状态栏右侧的分享状态指示器。
+/// - LAN 分享进行中：显示 wifi 图标（accent 色），点击复制当前文件链接
+/// - GitHub Gist 有上次发布链接：显示云图标，点击复制链接
+/// - 两者都无：不显示
+private struct ShareStatusChip: View {
+    let state: AppState
+    let theme: PreviewTheme
+    @State private var isHovered = false
+
+    var lanURL: String? {
+        guard state.shareServer.isRunning,
+              let tab = state.selectedTab else { return nil }
+        return state.shareServer.shareURLForFile(tab.url)
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // LAN 分享状态
+            if state.shareServer.isRunning {
+                Button {
+                    if let url = lanURL {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(url, forType: .string)
+                    }
+                } label: {
+                    shareChipLabel(icon: "wifi", text: L("statusBar.sharing"))
+                }
+                .buttonStyle(.plain)
+                .help(lanURL.map { L("statusBar.copyLANLink") + "\n" + $0 }
+                      ?? L("statusBar.sharing"))
+            }
+
+            // GitHub Gist 上次发布链接
+            if let gistURL = state.githubGistManager.lastResultURL {
+                if state.shareServer.isRunning {
+                    theme.separator.frame(width: 1, height: 10).opacity(0.5).padding(.horizontal, 6)
+                }
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(gistURL, forType: .string)
+                } label: {
+                    shareChipLabel(icon: "cloud", text: "Gist")
+                }
+                .buttonStyle(.plain)
+                .help(L("statusBar.copyGistLink") + "\n" + gistURL)
+            }
+        }
+        .animation(DS.Motion.fast, value: state.shareServer.isRunning)
+        .animation(DS.Motion.fast, value: state.githubGistManager.lastResultURL != nil)
+    }
+
+    private func shareChipLabel(icon: String, text: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .symbolRenderingMode(.hierarchical)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(Color.appAccent)
+            Text(text)
+                .font(.system(size: 10.5))
+                .foregroundStyle(Color.appAccent.opacity(0.85))
+        }
+        .padding(.horizontal, 8)
     }
 }
 
@@ -641,6 +699,47 @@ private struct FocusToggleButton: View {
                 breathe = true
             }
         }
+    }
+}
+
+/// 专注模式下鼠标移到顶部时浮现的退出按钮（Escape 已有快捷键，此处提供鼠标路径）。
+private struct FocusExitHoverZone: View {
+    @Bindable var workspaceUI: WorkspaceUIState
+    @State private var isHovered = false
+
+    var body: some View {
+        Color.clear
+            .frame(height: 44)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .onHover { isHovered = $0 }
+            .overlay(alignment: .topLeading) {
+                if isHovered {
+                    Button {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            workspaceUI.isFocusMode = false
+                        }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "xmark.circle")
+                                .font(.system(size: 12, weight: .medium))
+                            Text(L("tooltip.exitFocus"))
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(.regularMaterial, in: Capsule())
+                        .shadow(color: .black.opacity(0.12), radius: 6, x: 0, y: 2)
+                    }
+                    .buttonStyle(.plain)
+                    // 留出 macOS 流量灯宽度
+                    .padding(.leading, 86)
+                    .padding(.top, 8)
+                    .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .topLeading)))
+                }
+            }
+            .animation(.easeOut(duration: 0.18), value: isHovered)
     }
 }
 

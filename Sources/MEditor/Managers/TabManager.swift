@@ -62,6 +62,7 @@ final class TabManager {
     var onRecordModDate: ((URL) -> Void)?
     /// Surface an error to the user.
     var onReport: ((AppError) -> Void)?
+    var onDidSave: (() -> Void)?
 
     // MARK: - Init
 
@@ -210,6 +211,7 @@ final class TabManager {
             try fileService.writeFile(at: tab.url, content: tab.content)
             tab.isModified = false
             if tab.id == selectedTabID { onSyncPreview?(tab) }
+            onDidSave?()
         } catch {
             onReport?(.fileWrite(tab.url, underlying: error))
         }
