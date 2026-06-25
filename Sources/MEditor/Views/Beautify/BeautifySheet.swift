@@ -47,8 +47,9 @@ struct BeautifySheet: View {
                     newHTML: generatedHTML,
                     existingURL: htmlURL,
                     onConfirm: {
-                        saveHTML(to: htmlURL, overwrite: true)
+                        // 用户确认覆盖 → 关 Sheet，走 DiffReview 对比后落盘
                         showDiffSheet = false
+                        presentDiffReview(target: htmlURL)
                     },
                     onCancel: { showDiffSheet = false }
                 )
@@ -347,10 +348,20 @@ struct BeautifySheet: View {
 
     private func handleSave() {
         guard let url = targetHTMLURL else { return }
-        // Route through diff-review overlay: show MD vs HTML preview before saving.
+
+        // 文件已存在 → 弹覆盖确认 Sheet
+        if FileManager.default.fileExists(atPath: url.path) {
+            showDiffSheet = true
+            return
+        }
+
+        // 文件不存在 → 走 DiffReviewOverlay 对比后保存
+        presentDiffReview(target: url)
+    }
+
+    private func presentDiffReview(target: URL) {
         let markdown = state.selectedTab?.content ?? ""
         let html     = generatedHTML
-        let target   = url
         dismiss()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
             state.diffReview.present(
