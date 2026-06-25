@@ -148,59 +148,89 @@ struct InlineEditBar: View {
 
     private func triggerAction(_ action: InlineEditAction) {
         guard !selectedText.isEmpty else { return }
+        guard state.pluginManager.isBuiltinEnabled(BuiltinSkills.ID.inlineEditor) else {
+            state.showToast(L("ai.error.notConfigured"), icon: "exclamationmark.triangle")
+            return
+        }
 
         isLoading    = true
         loadingLabel = action.rawValue
 
-        // Save editor selection range before focus is lost
-        let savedRange = state.editorSelectedRange
+        // 保留选区位置
+        let savedRange  = state.editorSelectedRange
         state.pendingReplaceRange = savedRange
 
-        // Full document as context for diff review
         let fullContent = state.selectedTab?.content ?? selectedText
 
-        // Helper: splice `replacement` into `fullContent` at `savedRange`
         func spliced(_ replacement: String) -> String {
             guard let swiftRange = Range(savedRange, in: fullContent) else {
-                // Fallback: string search
                 return fullContent.replacingOccurrences(of: selectedText, with: replacement, options: .literal)
             }
             return fullContent.replacingCharacters(in: swiftRange, with: replacement)
         }
 
-        // Enter diff mode immediately
+        // 进入 diff 流式模式
         state.diffReview.beginStreaming(original: fullContent, actionLabel: action.rawValue)
 
-        var accumulated = ""
-        let task = agent.process(
-            text: selectedText,
-            action: action,
-            settings: settings,
-            pluginManager: state.pluginManager,
-            onChunk: { chunk in
-                accumulated += chunk
-                state.diffReview.streamedContent = spliced(accumulated)
-            },
-            onComplete: { _, error in
-                isLoading    = false
-                loadingLabel = ""
+        // 用 AgentRunner 执行（可访问 read_document / search_document 等工具）
+        let config  = AIConfig.current(settings)
+        let context = AgentContext(appState: state)
+        let tools   = BuiltinAgentTools.all
 
-                if let error {
-                    state.diffReview.dismiss()
-                    state.showToast(error.localizedDescription, icon: "exclamationmark.triangle")
-                    return
-                }
+        // 系统 prompt = 内置 inlineEditor skill + 用户插件附加
+        var systemPrompt = BuiltinSkills.inlineEditor
+        let extra = state.pluginManager.userSkillsPrompt()
+        if !extra.isEmpty { systemPrompt += "\n\n---\n\n# 附加技能\n\n" + extra }
 
-                let modified = spliced(accumulated)
-                state.diffReview.commitStreamWithModified(modified) { merged in
-                    if let tab = state.selectedTab {
-                        tab.content = merged
-                        tab.contentRevision &+= 1   // 通知编辑器刷新视图
-                        state.scheduleDebounceSave()
-                    }
+        let userMsg = action.userInstruction(for: selectedText,
+                                              document: state.selectedTab?.content)
+
+        agentRunner = AgentRunner()
+
+        // 监听流式 streaming chunks → diff preview
+        agentRunner.onChunk = { [weak state] chunk in
+            guard let state else { return }
+            // 流式中间结果 — 拼接到 diff 预览
+            let current = state.diffReview.streamedContent ?? fullContent
+            // 仅当 chunk 是最终文本时替换（AgentRunner 目前一次性输出）
+            state.diffReview.streamedContent = spliced(chunk)
+        }
+
+        agentRunner.onComplete = { [weak state, weak agentRunner] in
+            guard let state else { return }
+            let runner = agentRunner
+            isLoading    = false
+            loadingLabel = ""
+
+            if let err = runner?.error {
+                state.diffReview.dismiss()
+                state.showToast(err, icon: "exclamationmark.triangle")
+                return
+            }
+
+            let finalText = runner?.finalText ?? ""
+            guard !finalText.isEmpty else {
+                state.diffReview.dismiss()
+                state.showToast("AI 未返回内容", icon: "exclamationmark.triangle")
+                return
+            }
+
+            let modified = spliced(finalText)
+            state.diffReview.commitStreamWithModified(modified) { merged in
+                if let tab = state.selectedTab {
+                    tab.content = merged
+                    tab.contentRevision &+= 1
+                    state.scheduleDebounceSave()
                 }
             }
+        }
+
+        agentRunner.run(
+            systemPrompt: systemPrompt,
+            userMessage: userMsg,
+            tools: tools,
+            config: config,
+            context: context
         )
-        state.diffReview.activeStreamTask = task
     }
 }
