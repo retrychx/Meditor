@@ -28,6 +28,18 @@ struct EditorView: View {
                         theme: state.themeStore.current
                     )
                     .equatable()
+                    .onAppear  { state.isEditorMounted = true  }
+                    .onDisappear { state.isEditorMounted = false }
+
+                    // 空文档占位提示（居中显示，不拦截点击）
+                    if tab.content.isEmpty {
+                        Text(L("editor.placeholder"))
+                            .font(.system(size: 17))
+                            .foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                            .allowsHitTesting(false)
+                            .transition(.opacity)
+                    }
 
                     if state.editorSelectedText.count > 5 {
                         InlineEditBar(selectedText: state.editorSelectedText)
