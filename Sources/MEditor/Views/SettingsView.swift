@@ -314,10 +314,44 @@ struct SettingsView: View {
                     }
                 }
 
+                // MARK: InternalCalendar 集成
+                internal_calendarSection
+
                 // MARK: Claude Code 集成
                 claudeMonitorSection
             }
             .padding(DS.Space.lg)
+        }
+    }
+
+    // MARK: - InternalCalendar 集成
+
+    private var internal_calendarSection: some View {
+        settingsGroup(title: "InternalCalendar 日程集成") {
+            settingsRow(label: "启用 InternalCalendar 日程", subtitle: "在日历视图中合并显示 InternalCalendar 日程") {
+                Toggle("", isOn: bindableSettings.internal_calendarEnabled)
+                    .labelsHidden()
+            }
+            if settings.internal_calendarEnabled {
+                settingsRow(label: "本地代理地址", subtitle: "InternalCalendar MCP proxy 地址") {
+                    TextField("http://127.0.0.1:30001/rest", text: bindableSettings.internal_calendarProxyURL)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 280)
+                        .font(.system(size: 12, design: .monospaced))
+                }
+                settingsRow(label: "查询日程路径", subtitle: "mcp-proxy-path header 值") {
+                    TextField("/office-im-chat/calendar/...", text: bindableSettings.internal_calendarCalendarPath)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 280)
+                        .font(.system(size: 12, design: .monospaced))
+                }
+                settingsRow(label: "创建日程路径", subtitle: "mcp-proxy-path header 值") {
+                    TextField("/office-im-chat/calendar/...", text: bindableSettings.internal_calendarCreatePath)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 280)
+                        .font(.system(size: 12, design: .monospaced))
+                }
+            }
         }
     }
 

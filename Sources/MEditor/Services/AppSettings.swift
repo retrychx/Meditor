@@ -33,6 +33,11 @@ final class AppSettings {
         static let aiCLIPath = "MEditor.aiCLIPath"
         static let userDocPathBookmark = "MEditor.userDocPathBookmark"
         static let appDocPathBookmark  = "MEditor.appDocPathBookmark"
+        // InternalCalendar 集成
+        static let internal_calendarEnabled        = "MEditor.internal_calendarEnabled"
+        static let internal_calendarProxyURL       = "MEditor.internal_calendarProxyURL"
+        static let internal_calendarCalendarPath   = "MEditor.internal_calendarCalendarPath"
+        static let internal_calendarCreatePath     = "MEditor.internal_calendarCreatePath"
         // Claude Code 监听
         static let claudeMonitorEnabled   = "MEditor.claudeMonitorEnabled"
         static let claudeMonitorCustomPath = "MEditor.claudeMonitorCustomPath"
@@ -145,6 +150,28 @@ final class AppSettings {
             defaults.set(claudeMonitorFileExts, forKey: Key.claudeMonitorFileExts)
             NotificationCenter.default.post(name: .claudeMonitorSettingsChanged, object: nil)
         }
+    }
+
+    // MARK: - InternalCalendar
+
+    /// 是否启用 InternalCalendar 日程集成。
+    var internal_calendarEnabled: Bool {
+        didSet { defaults.set(internal_calendarEnabled, forKey: Key.internal_calendarEnabled) }
+    }
+
+    /// InternalCalendar 本地代理地址（默认 http://127.0.0.1:30001/rest）。
+    var internal_calendarProxyURL: String {
+        didSet { defaults.set(internal_calendarProxyURL, forKey: Key.internal_calendarProxyURL) }
+    }
+
+    /// 查询日程的 mcp-proxy-path。
+    var internal_calendarCalendarPath: String {
+        didSet { defaults.set(internal_calendarCalendarPath, forKey: Key.internal_calendarCalendarPath) }
+    }
+
+    /// 创建日程的 mcp-proxy-path。
+    var internal_calendarCreatePath: String {
+        didSet { defaults.set(internal_calendarCreatePath, forKey: Key.internal_calendarCreatePath) }
     }
 
     /// 解析 `claudeMonitorFileExts` 为扩展名数组（小写无点）。
@@ -260,5 +287,9 @@ final class AppSettings {
         claudeMonitorEnabled    = d.object(forKey: Key.claudeMonitorEnabled) != nil ? d.bool(forKey: Key.claudeMonitorEnabled) : false
         claudeMonitorCustomPath = d.string(forKey: Key.claudeMonitorCustomPath) ?? ""
         claudeMonitorFileExts   = d.string(forKey: Key.claudeMonitorFileExts) ?? "md,txt"
+        internal_calendarEnabled      = d.object(forKey: Key.internal_calendarEnabled) != nil ? d.bool(forKey: Key.internal_calendarEnabled) : true
+        internal_calendarProxyURL     = d.string(forKey: Key.internal_calendarProxyURL)     ?? "http://127.0.0.1:30001/rest"
+        internal_calendarCalendarPath = d.string(forKey: Key.internal_calendarCalendarPath) ?? "/office-im-chat/calendar/schedule/getScheduleList.do"
+        internal_calendarCreatePath   = d.string(forKey: Key.internal_calendarCreatePath)   ?? "/office-im-chat/calendar/schedule/createSchedule.do"
     }
 }
