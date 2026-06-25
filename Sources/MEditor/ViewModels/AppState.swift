@@ -74,6 +74,9 @@ final class AppState {
     var cursorColumn: Int = 1
     /// 最近一次保存成功的时间，用于状态栏短暂显示"已保存"提示。
     var lastSavedAt: Date? = nil
+    /// NativeEditorView 出现时置 true，消失时置 false。
+    /// 用于 insertIntoEditor 判断走光标插入路径还是追加路径。
+    var isEditorMounted: Bool = false
     var editorVisibleLine: Int = 0
     var previewVisibleLine: Int = 0
     var editorScrollCommand: ScrollSyncCommand = .idle
@@ -98,27 +101,29 @@ final class AppState {
     }
 
     func insertIntoEditor(_ text: String) {
-        // 编辑器已隐藏（仅预览 + AI 模式），直接写入 tab.content
-        // 避免走 NativeEditorView.insertText 路径（视图未渲染时是死路）
-        guard let tab = selectedTab else {
+        guard let tab = selectedTab else { return }
+
+        if isEditorMounted {
+            // 编辑器可见：走 nonce 路径，在光标处插入（保留光标位置）
             aiUI.requestInsert(text)
-            return
-        }
-        if tab.language == .html {
-            // HTML 文件：插入到 </body> 之前，保持结构合法
-            let bodyClose = "</body>"
-            if let range = tab.content.range(of: bodyClose, options: .caseInsensitive) {
-                tab.content.replaceSubrange(range, with: "\n" + text + "\n" + bodyClose)
-            } else {
-                // 没有 </body>，直接追加
-                tab.content += "\n" + text
-            }
         } else {
-            // Markdown 及其他文本：追加到末尾
-            let separator = tab.content.isEmpty ? "" : "\n\n"
-            tab.content += separator + text
+            // 编辑器隐藏（纯预览 / AI 模式）：直接追加到 tab.content
+            if tab.language == .html {
+                // HTML 文件：插入到 </body> 之前，保持结构合法
+                let bodyClose = "</body>"
+                if let range = tab.content.range(of: bodyClose, options: .caseInsensitive) {
+                    tab.content.replaceSubrange(range, with: "\n" + text + "\n" + bodyClose)
+                } else {
+                    tab.content += "\n" + text
+                }
+            } else {
+                // Markdown 及其他文本：追加到末尾
+                let separator = tab.content.isEmpty ? "" : "\n\n"
+                tab.content += separator + text
+            }
+            tab.contentRevision &+= 1   // 触发编辑器（如果稍后显示）刷新内容
+            scheduleDebounceSave()
         }
-        scheduleDebounceSave()
     }
 
     func replaceInEditor(_ text: String) {
