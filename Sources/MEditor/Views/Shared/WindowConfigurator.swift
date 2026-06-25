@@ -48,11 +48,13 @@ struct WindowConfigurator: NSViewRepresentable {
             // strip above the tab bar, so we avoid it.
             w.toolbar = nil
 
+
             // Shrink the titlebar container to sidebar width so the
             // traffic lights only occupy the left column.
             // The tab bar area (right of sidebar) becomes fully clickable.
             DispatchQueue.main.async {
                 self.constrainTitlebarToSidebar(w)
+                self.installDoubleClickZoom(w)
             }
         }
 
@@ -118,6 +120,54 @@ struct WindowConfigurator: NSViewRepresentable {
                 btn.setFrameOrigin(NSPoint(x: x, y: y))
             }
         }
+
+        // MARK: - Double-click zoom
+
+        /// Installs a double-click gesture on the tab-bar / chrome area so that
+        /// double-clicking the top of the window zooms it (standard macOS behaviour).
+        /// This is needed because the system titlebar is shrunk to 80 px (traffic
+        /// lights only), so the normal title-bar double-click zone doesn't cover the
+        /// full width.
+        private func installDoubleClickZoom(_ w: NSWindow) {
+            guard let contentView = w.contentView else { return }
+            // Walk up to the window's root view (superview of contentView).
+            guard let root = contentView.superview else { return }
+
+            // Remove any previously installed recognizer to avoid duplicates.
+            root.gestureRecognizers
+                .filter { $0 is ChromeDoubleClickZoom }
+                .forEach { root.removeGestureRecognizer($0) }
+
+            let gr = ChromeDoubleClickZoom(window: w)
+            root.addGestureRecognizer(gr)
+        }
+    }
+}
+
+/// An `NSClickGestureRecognizer` that triggers `window.zoom(_:)` on double-click,
+/// but only when the click lands in the top chrome strip (≤ 52 pt from top).
+private final class ChromeDoubleClickZoom: NSClickGestureRecognizer {
+    private weak var zoomWindow: NSWindow?
+
+    init(window: NSWindow) {
+        self.zoomWindow = window
+        super.init(target: nil, action: nil)
+        numberOfClicksRequired = 2
+        target = self
+        action = #selector(handleDoubleClick)
+        // Don't eat single clicks — let them pass through.
+        delaysPrimaryMouseButtonEvents = false
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    @objc private func handleDoubleClick(_ sender: NSGestureRecognizer) {
+        guard let v = sender.view else { return }
+        let loc = sender.location(in: v)
+        // Only trigger zoom when the click is in the top chrome strip.
+        let chromeHeight: CGFloat = 52
+        guard loc.y >= v.bounds.height - chromeHeight else { return }
+        zoomWindow?.zoom(nil)
     }
 }
 

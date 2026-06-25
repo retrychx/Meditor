@@ -6,7 +6,7 @@ struct SettingsView: View {
     @Environment(AppState.self) private var state
     private let loc = LocalizationManager.shared
     @State private var selectedTab: SettingsTab = .general
-    @State private var gitlabTokenInput = ""
+    @State private var githubTokenInput = ""
     @State private var aiKeyInput = ""
     @State private var aiHasKey = AIKeychain.hasKey
     @State private var aiModels: [String] = []
@@ -173,41 +173,39 @@ struct SettingsView: View {
             VStack(spacing: 0) {
                 settingsGroup(title: L("theme.title")) {
                     settingsRow(label: L("theme.title"), subtitle: L("settings.desc.theme")) {
-                        Picker("", selection: Binding(
-                            get: { state.themeStore.current },
-                            set: { state.themeStore.current = $0 }
-                        )) {
-                            ForEach(PreviewTheme.allCases, id: \.self) { t in
-                                Text(t.displayName).tag(t)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 120)
+                        SettingsMenu(
+                            selection: Binding(
+                                get: { state.themeStore.current },
+                                set: { state.themeStore.current = $0 }
+                            ),
+                            options: PreviewTheme.allCases.map { ($0, $0.displayName) }
+                        )
+                        .frame(width: 170)
                     }
                     rowDivider
                     settingsRow(label: L("ai.accentStyle"), subtitle: L("settings.desc.accent")) {
-                        Picker("", selection: Binding(
-                            get: { AIAccentStyle.current(settings) },
-                            set: { settings.aiAccentStyle = $0.rawValue }
-                        )) {
-                            ForEach(AIAccentStyle.allCases) { s in
-                                Text(L(s.labelKey)).tag(s)
-                            }
-                        }
-                        .labelsHidden()
+                        SettingsMenu(
+                            selection: Binding(
+                                get: { AIAccentStyle.current(settings) },
+                                set: { settings.aiAccentStyle = $0.rawValue }
+                            ),
+                            options: AIAccentStyle.allCases.map { ($0, L($0.labelKey)) }
+                        )
                         .frame(width: 170)
                     }
                 }
 
                 settingsGroup(title: L("settings.section.language")) {
                     settingsRow(label: L("settings.language"), subtitle: L("settings.desc.language")) {
-                        Picker("", selection: languageBinding) {
-                            Text(L("lang.system")).tag(AppLanguage.system)
-                            Text("English").tag(AppLanguage.english)
-                            Text("中文").tag(AppLanguage.chinese)
-                        }
-                        .labelsHidden()
-                        .frame(width: 120)
+                        SettingsMenu(
+                            selection: languageBinding,
+                            options: [
+                                (.system, L("lang.system")),
+                                (.english, "English"),
+                                (.chinese, "中文")
+                            ]
+                        )
+                        .frame(width: 170)
                     }
                 }
 
@@ -231,14 +229,16 @@ struct SettingsView: View {
                     if settings.autoSave {
                         rowDivider
                         settingsRow(label: L("settings.interval")) {
-                            Picker("", selection: bindableSettings.autoSaveInterval) {
-                                Text(L("settings.secondsFormat", 10)).tag(10)
-                                Text(L("settings.secondsFormat", 30)).tag(30)
-                                Text(L("settings.secondsFormat", 60)).tag(60)
-                                Text(L("settings.secondsFormat", 120)).tag(120)
-                            }
-                            .labelsHidden()
-                            .frame(width: 90)
+                            SettingsMenu(
+                                selection: bindableSettings.autoSaveInterval,
+                                options: [
+                                    (10, L("settings.secondsFormat", 10)),
+                                    (30, L("settings.secondsFormat", 30)),
+                                    (60, L("settings.secondsFormat", 60)),
+                                    (120, L("settings.secondsFormat", 120))
+                                ]
+                            )
+                            .frame(width: 130)
                         }
                     }
                 }
@@ -254,14 +254,14 @@ struct SettingsView: View {
             VStack(spacing: 0) {
                 settingsGroup(title: L("ai.section.mode")) {
                     settingsStackedRow(label: L("ai.provider"), subtitle: L("settings.desc.provider")) {
-                        Picker("", selection: bindableSettings.aiProvider) {
-                            Text(L("ai.provider.disabled")).tag(AIProviderKind.disabled.rawValue)
-                            Text(L("ai.mode.local")).tag(AIProviderKind.claudeCLI.rawValue)
-                            Text(L("ai.mode.remote")).tag(AIProviderKind.openai.rawValue)
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .frame(maxWidth: .infinity)
+                        SettingsMenu(
+                            selection: bindableSettings.aiProvider,
+                            options: [
+                                (AIProviderKind.disabled.rawValue, L("ai.provider.disabled")),
+                                (AIProviderKind.claudeCLI.rawValue, L("ai.mode.local")),
+                                (AIProviderKind.openai.rawValue, L("ai.mode.remote"))
+                            ]
+                        )
                     }
                 }
 
@@ -270,8 +270,8 @@ struct SettingsView: View {
                         settingsStackedRow(label: L("ai.cliPath"), subtitle: L("ai.cliHint")) {
                             HStack(spacing: 8) {
                                 TextField("/usr/local/bin/claude", text: bindableSettings.aiCLIPath)
-                                    .textFieldStyle(.roundedBorder)
-                                    .frame(maxWidth: .infinity)
+                                    .textFieldStyle(.plain)
+                                    .settingsField()
                                 Button(action: detectCLI) {
                                     if aiDetecting {
                                         ProgressView().controlSize(.small)
@@ -286,28 +286,26 @@ struct SettingsView: View {
                 } else if settings.aiProvider == AIProviderKind.openai.rawValue {
                     settingsGroup(title: L("ai.section.remote")) {
                         settingsStackedRow(label: L("ai.preset")) {
-                            Picker("", selection: Binding<String>(
-                                get: { AIPresets.match(settings.aiBaseURL)?.id ?? "custom" },
-                                set: { id in
-                                    guard let p = AIPresets.all.first(where: { $0.id == id }) else { return }
-                                    settings.aiBaseURL = p.baseURL
-                                    aiModels = p.models
-                                    if !p.models.contains(settings.aiModel) {
-                                        settings.aiModel = p.models.first ?? settings.aiModel
+                            SettingsMenu(
+                                selection: Binding<String>(
+                                    get: { AIPresets.match(settings.aiBaseURL)?.id ?? "custom" },
+                                    set: { id in
+                                        guard let p = AIPresets.all.first(where: { $0.id == id }) else { return }
+                                        settings.aiBaseURL = p.baseURL
+                                        aiModels = p.models
+                                        if !p.models.contains(settings.aiModel) {
+                                            settings.aiModel = p.models.first ?? settings.aiModel
+                                        }
                                     }
-                                }
-                            )) {
-                                ForEach(AIPresets.all) { Text($0.name).tag($0.id) }
-                                Text(L("ai.preset.custom")).tag("custom")
-                            }
-                            .labelsHidden()
-                            .frame(maxWidth: .infinity)
+                                ),
+                                options: AIPresets.all.map { ($0.id, $0.name) } + [("custom", L("ai.preset.custom"))]
+                            )
                         }
                         rowDivider
                         settingsStackedRow(label: L("ai.baseURL")) {
                             TextField("https://api.openai.com/v1", text: bindableSettings.aiBaseURL)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(maxWidth: .infinity)
+                                .textFieldStyle(.plain)
+                                .settingsField()
                         }
                         rowDivider
                         settingsStackedRow(label: L("ai.apiKey")) { aiKeyField }
@@ -315,8 +313,79 @@ struct SettingsView: View {
                         settingsStackedRow(label: L("ai.model")) { aiModelField }
                     }
                 }
+
+                // MARK: Claude Code 集成
+                claudeMonitorSection
             }
             .padding(DS.Space.lg)
+        }
+    }
+
+    // MARK: - Claude Code 监听
+
+    private var claudeMonitorSection: some View {
+        settingsGroup(title: "Claude Code 集成") {
+            settingsRow(label: "监听会话文件", subtitle: "Claude Code 生成文件时自动提示开启") {
+                Toggle("", isOn: bindableSettings.claudeMonitorEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+            }
+
+            if settings.claudeMonitorEnabled {
+                rowDivider
+
+                settingsStackedRow(
+                    label: "监听目录",
+                    subtitle: "空则使用默认的 ~/.claude/projects/"
+                ) {
+                    HStack(spacing: 8) {
+                        TextField("~/.claude/projects/", text: bindableSettings.claudeMonitorCustomPath)
+                            .textFieldStyle(.plain)
+                            .settingsField()
+                        Button("选择…") { selectClaudeMonitorDir() }
+                    }
+                }
+
+                rowDivider
+
+                settingsStackedRow(
+                    label: "文件类型",
+                    subtitle: "逗号分隔，如 md,txt"
+                ) {
+                    TextField("md,txt", text: bindableSettings.claudeMonitorFileExts)
+                        .textFieldStyle(.plain)
+                        .settingsField()
+                }
+
+                rowDivider
+
+                HStack(spacing: 6) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    Text("监听目录：\"\(settings.claudeMonitorDirectory.path)\"")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+            }
+        }
+    }
+
+    private func selectClaudeMonitorDir() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "选择"
+        panel.message = "选择 Claude Code 输出文件目录"
+        if panel.runModal() == .OK, let url = panel.url {
+            settings.claudeMonitorCustomPath = url.path
         }
     }
 
@@ -340,17 +409,16 @@ struct SettingsView: View {
                 Text("•••••••• " + L("gitlab.tokenConfigured"))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
-                Spacer(minLength: 8)
+                    .settingsField()
                 Button(L("gitlab.clearToken")) {
                     AIKeychain.clear(); aiKeyInput = ""; aiHasKey = false
                 }
             }
-            .frame(maxWidth: .infinity)
         } else {
             HStack(spacing: 8) {
                 SecureField("sk-…", text: $aiKeyInput)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: .infinity)
+                    .textFieldStyle(.plain)
+                    .settingsField()
                 Button(L("gitlab.saveConfig")) {
                     AIKeychain.save(aiKeyInput); aiKeyInput = ""; aiHasKey = AIKeychain.hasKey
                 }
@@ -365,14 +433,13 @@ struct SettingsView: View {
             let models = candidateModels
             if models.isEmpty {
                 TextField("gpt-4o-mini", text: bindableSettings.aiModel)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: .infinity)
+                    .textFieldStyle(.plain)
+                    .settingsField()
             } else {
-                Picker("", selection: bindableSettings.aiModel) {
-                    ForEach(models, id: \.self) { Text($0).tag($0) }
-                }
-                .labelsHidden()
-                .frame(maxWidth: .infinity)
+                SettingsMenu(
+                    selection: bindableSettings.aiModel,
+                    options: models.map { ($0, $0) }
+                )
             }
             Button(action: refreshModels) {
                 if aiLoadingModels {
@@ -651,71 +718,59 @@ struct SettingsView: View {
         ScrollView {
             VStack(spacing: 0) {
                 settingsGroup(title: L("settings.section.lanShare")) {
-                    settingsRow(label: L("settings.port")) {
+                    settingsStackedRow(label: L("settings.port"), subtitle: L("settings.portHint")) {
                         TextField("", value: bindableSettings.sharePort, format: .number)
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 72)
+                            .textFieldStyle(.plain)
+                            .settingsField()
+                            .frame(width: 120)
                     }
-                    rowDivider
-                    HStack {
-                        Text(L("settings.portHint"))
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                    }
-                    .padding(.horizontal, DS.Space.lg)
-                    .padding(.vertical, DS.Space.sm)
                 }
 
-                gitlabSettingsGroup
+                githubGistSettingsGroup
             }
             .padding(DS.Space.lg)
         }
+        .onAppear { state.githubGistManager.refreshTokenStatus() }
     }
 
     @ViewBuilder
-    private var gitlabSettingsGroup: some View {
-        let mgr = state.gitlabShareManager
-        settingsGroup(title: L("gitlab.title")) {
-            settingsStackedRow(label: L("gitlab.host")) {
-                TextField("gitlab.example.com", text: Binding(
-                    get: { mgr.host }, set: { mgr.host = $0 }))
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: .infinity)
-            }
-            rowDivider
-            settingsStackedRow(label: L("gitlab.token")) {
+    private var githubGistSettingsGroup: some View {
+        let mgr = state.githubGistManager
+        settingsGroup(title: L("github.gist.title")) {
+            settingsStackedRow(label: L("github.gist.token")) {
                 if mgr.hasToken {
                     HStack(spacing: 8) {
-                        Text("•••••••• " + L("gitlab.tokenConfigured"))
+                        Text("•••••••• " + L("github.gist.tokenConfigured"))
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
-                        Spacer(minLength: 8)
-                        Button(L("gitlab.clearToken")) { mgr.clearToken() }
+                            .settingsField()
+                        Button(L("github.gist.clearToken")) { mgr.clearToken() }
                     }
-                    .frame(maxWidth: .infinity)
                 } else {
                     HStack(spacing: 8) {
-                        SecureField("glpat-…", text: $gitlabTokenInput)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(maxWidth: .infinity)
-                        Button(L("gitlab.saveConfig")) {
-                            mgr.saveToken(gitlabTokenInput)
-                            gitlabTokenInput = ""
+                        SecureField("ghp_…", text: $githubTokenInput)
+                            .textFieldStyle(.plain)
+                            .settingsField()
+                        Button(L("github.gist.saveToken")) {
+                            mgr.saveToken(githubTokenInput)
+                            githubTokenInput = ""
                         }
-                        .disabled(mgr.host.isEmpty || gitlabTokenInput.isEmpty)
+                        .disabled(githubTokenInput.isEmpty)
                     }
                 }
             }
             rowDivider
-            settingsStackedRow(label: L("gitlab.visibility.internal") + " / " + L("gitlab.visibility.private")) {
-                Picker("", selection: Binding(
-                    get: { mgr.visibility }, set: { mgr.visibility = $0 })) {
-                    Text(L("gitlab.visibility.internal")).tag("internal")
-                    Text(L("gitlab.visibility.private")).tag("private")
-                }
-                .labelsHidden()
-                .frame(maxWidth: .infinity)
+            settingsStackedRow(label: L("github.gist.visibility")) {
+                SettingsMenu(
+                    selection: Binding(
+                        get: { mgr.isPublic ? "public" : "secret" },
+                        set: { mgr.isPublic = ($0 == "public") }
+                    ),
+                    options: [
+                        ("secret", L("github.gist.secret")),
+                        ("public", L("github.gist.public"))
+                    ]
+                )
             }
         }
     }
@@ -830,6 +885,73 @@ struct SettingsView: View {
             get: { loc.language },
             set: { loc.language = $0 }
         )
+    }
+}
+
+// MARK: - Unified settings controls
+
+/// One visual language for every value control (text fields + dropdowns):
+/// a rounded, hairline-bordered, fixed-height field.
+private struct SettingsFieldStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .font(.system(size: 13))
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.primary.opacity(0.045))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
+            )
+    }
+}
+
+private extension View {
+    func settingsField() -> some View { modifier(SettingsFieldStyle()) }
+}
+
+/// Dropdown styled identically to the text fields (replaces native popup pickers
+/// so the whole settings form reads as one consistent control set).
+private struct SettingsMenu<Value: Hashable>: View {
+    @Binding var selection: Value
+    let options: [(value: Value, label: String)]
+
+    private var currentLabel: String {
+        options.first { $0.value == selection }?.label ?? ""
+    }
+
+    var body: some View {
+        Menu {
+            ForEach(options.indices, id: \.self) { i in
+                let opt = options[i]
+                Button { selection = opt.value } label: {
+                    if opt.value == selection {
+                        Label(opt.label, systemImage: "checkmark")
+                    } else {
+                        Text(opt.label)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text(currentLabel)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Spacer(minLength: 6)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .settingsField()
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
     }
 }
 

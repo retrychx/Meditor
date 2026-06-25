@@ -20,15 +20,24 @@ final class FileService: FileServiceProtocol {
 
     // MARK: - Directory scanning
 
+    /// Dot-prefixed names that should never appear in the file tree.
+    private static let hiddenNames: Set<String> = [
+        ".git", ".svn", ".hg", ".DS_Store", ".Trash",
+        ".build", ".swp", ".lock", "node_modules"
+    ]
+
     /// Load immediate children of a directory (one level only).
     func loadImmediateChildren(of directory: URL) -> [FileItem] {
         guard let urls = try? fm.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: [.isDirectoryKey, .localizedNameKey],
-            options: [.skipsHiddenFiles]
+            options: []
         ) else { return [] }
 
         let items = urls.compactMap { url -> FileItem? in
+            let name = url.lastPathComponent
+            guard !Self.hiddenNames.contains(name) else { return nil }
+
             guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey]),
                   let isDir = values.isDirectory
             else { return nil }
@@ -53,13 +62,18 @@ final class FileService: FileServiceProtocol {
         guard let enumerator = fm.enumerator(
             at: directory,
             includingPropertiesForKeys: indexedResourceKeys,
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            options: [.skipsPackageDescendants]
         ) else {
             return []
         }
 
         var files: [FileItem] = []
         for case let url as URL in enumerator {
+            let name = url.lastPathComponent
+            if Self.hiddenNames.contains(name) {
+                enumerator.skipDescendants()
+                continue
+            }
             guard let values = try? url.resourceValues(forKeys: Set(indexedResourceKeys)) else { continue }
             if values.isDirectory == true { continue }
             guard values.isRegularFile == true else { continue }

@@ -19,15 +19,19 @@ struct WebPreviewView: NSViewRepresentable {
     var exporter: PreviewExporter? = nil
     var rootURL: URL? = nil
     var findController: PreviewFindController? = nil
+    var onSelectionChange: ((String) -> Void)? = nil
+
+    static let selectionHandlerName = "selectionHandler"
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(findController: findController)
+        Coordinator(findController: findController, onSelectionChange: onSelectionChange)
     }
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         let userContent = WKUserContentController()
         userContent.add(context.coordinator, name: "copyHandler")
+        userContent.add(context.coordinator, name: Self.selectionHandlerName)
         config.userContentController = userContent
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
@@ -48,6 +52,7 @@ struct WebPreviewView: NSViewRepresentable {
         }
         context.coordinator.rootURL = rootURL
         context.coordinator.findController = findController
+        context.coordinator.onSelectionChange = onSelectionChange
         findController?.register(webView: webView, for: .html)
         context.coordinator.applyLoad(fileURL: fileURL, reloadToken: reloadToken)
     }
@@ -57,6 +62,7 @@ struct WebPreviewView: NSViewRepresentable {
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "copyHandler")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: WebPreviewView.selectionHandlerName)
         coordinator.findController?.register(webView: nil, for: .html)
         coordinator.webView = nil
     }
@@ -67,11 +73,13 @@ extension WebPreviewView {
         weak var webView: WKWebView?
         var rootURL: URL?
         var findController: PreviewFindController?
+        var onSelectionChange: ((String) -> Void)?
         private var lastFileURL: URL?
         private var lastReloadToken: Int = -1
 
-        init(findController: PreviewFindController? = nil) {
+        init(findController: PreviewFindController? = nil, onSelectionChange: ((String) -> Void)? = nil) {
             self.findController = findController
+            self.onSelectionChange = onSelectionChange
         }
 
         /// Load the file only when something actually changed.
@@ -91,23 +99,41 @@ extension WebPreviewView {
                 return
             }
 
-            // Grant read access to the project root (or file's parent) so that
-            // relative resources (images, css, js) referenced in the HTML
-            // resolve correctly — even when paths traverse up to sibling dirs.
-            let readAccess = rootURL ?? fileURL.deletingLastPathComponent()
-            webView.loadFileURL(fileURL, allowingReadAccessTo: readAccess)
+            // For HTML files: read content and load via loadHTMLString with a
+            // synthetic https base URL. This allows external CDN scripts (echarts,
+            // etc.) to load — WKWebView blocks external network requests from
+            // file:// pages due to sandbox restrictions, but not from https:// pages.
+            // Relative local resources won't resolve this way, but HTML report files
+            // that embed CDN dependencies need network access to render correctly.
+            if let htmlString = try? String(contentsOf: fileURL, encoding: .utf8) {
+                let baseURL = URL(string: "https://localhost/")
+                webView.loadHTMLString(htmlString, baseURL: baseURL)
+            } else {
+                // Fallback: file URL load (works for local-only resources)
+                let readAccess = rootURL ?? fileURL.deletingLastPathComponent()
+                webView.loadFileURL(fileURL, allowingReadAccessTo: readAccess)
+            }
         }
     }
 }
 
 extension WebPreviewView.Coordinator {
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == "copyHandler",
-              let body = message.body as? [String: Any],
-              let text = body["text"] as? String else { return }
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setString(text, forType: .string)
+        switch message.name {
+        case "copyHandler":
+            guard let body = message.body as? [String: Any],
+                  let text = body["text"] as? String else { return }
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            pb.setString(text, forType: .string)
+        case "selectionHandler":
+            let text = ((message.body as? [String: Any])?["text"] as? String) ?? ""
+            DispatchQueue.main.async {
+                self.onSelectionChange?(text)
+            }
+        default:
+            break
+        }
     }
 }
 
@@ -146,5 +172,25 @@ extension WebPreviewView.Coordinator {
         })();
         """
         webView.evaluateJavaScript(js, completionHandler: nil)
+
+        let selectionJS = """
+        (function() {
+            if (document.querySelector('[data-meditor-sel]')) return;
+            var marker = document.createElement('meta');
+            marker.setAttribute('data-meditor-sel', '1');
+            document.head.appendChild(marker);
+            var _lastSel = '';
+            document.addEventListener('selectionchange', function() {
+                var sel = window.getSelection();
+                var text = sel ? sel.toString().trim() : '';
+                if (text === _lastSel) return;
+                _lastSel = text;
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.selectionHandler) {
+                    window.webkit.messageHandlers.selectionHandler.postMessage({ text: text });
+                }
+            });
+        })();
+        """
+        webView.evaluateJavaScript(selectionJS, completionHandler: nil)
     }
 }

@@ -361,7 +361,7 @@ actor UsageObserver {
 
 **里程碑：**
 - [ ] ⌘K 命令面板 UI
-- [ ] IntentClassifier（接入公司内网 LLM）
+- [ ] IntentClassifier（接入内网 LLM）
 - [ ] 串行 Capability 执行引擎
 - [ ] 执行过程的进度展示和错误处理
 

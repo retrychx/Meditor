@@ -26,6 +26,7 @@ struct MarkdownWebPreview: View {
     /// Preview font size in px (from settings).
     var fontSize: Int = 15
     var findController: PreviewFindController? = nil
+    var onSelectionChange: ((String) -> Void)? = nil
 
     var body: some View {
         MarkdownWebView(
@@ -39,7 +40,8 @@ struct MarkdownWebPreview: View {
             exporter: exporter,
             sourceURL: sourceURL,
             fontSize: fontSize,
-            findController: findController
+            findController: findController,
+            onSelectionChange: onSelectionChange
         )
     }
 }
@@ -66,18 +68,21 @@ private struct MarkdownWebView: NSViewRepresentable {
     let sourceURL: URL?
     let fontSize: Int
     let findController: PreviewFindController?
+    var onSelectionChange: ((String) -> Void)? = nil
 
     static let scrollHandlerName = "scrollHandler"
     static let copyHandlerName = "copyHandler"
     static let tocHandlerName = "tocHandler"
     static let perfHandlerName = "perfHandler"
+    static let selectionHandlerName = "selectionHandler"
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
             onVisibleLineChange: onVisibleLineChange,
             onTOCUpdate: onTOCUpdate,
             exporter: exporter,
-            findController: findController
+            findController: findController,
+            onSelectionChange: onSelectionChange
         )
     }
 
@@ -90,6 +95,7 @@ private struct MarkdownWebView: NSViewRepresentable {
             uc.add(context.coordinator, name: Self.copyHandlerName)
             uc.add(context.coordinator, name: Self.tocHandlerName)
             uc.add(context.coordinator, name: Self.perfHandlerName)
+            uc.add(context.coordinator, name: Self.selectionHandlerName)
             pooled.navigationDelegate = context.coordinator
             context.coordinator.webView = pooled
             context.coordinator.lastContentRevision = contentRevision
@@ -103,6 +109,9 @@ private struct MarkdownWebView: NSViewRepresentable {
             if let baseURL = sourceURL?.deletingLastPathComponent().absoluteString {
                 pooled.evaluateJavaScript(JSBridge.call("setBaseURL", args: [baseURL]), completionHandler: nil)
             }
+            // Pooled WebView skips didFinish, so inject the selection listener here.
+            // The JS is idempotent (guarded by _meditorSelListenerInstalled).
+            pooled.evaluateJavaScript(Coordinator.selectionListenerJS, completionHandler: nil)
             context.coordinator.scheduleContentUpdate(content, revision: contentRevision, immediately: true)
             return pooled
         }
@@ -114,6 +123,7 @@ private struct MarkdownWebView: NSViewRepresentable {
         userContent.add(context.coordinator, name: Self.copyHandlerName)
         userContent.add(context.coordinator, name: Self.tocHandlerName)
         userContent.add(context.coordinator, name: Self.perfHandlerName)
+        userContent.add(context.coordinator, name: Self.selectionHandlerName)
         config.userContentController = userContent
 
         let webView = WKWebView(frame: .zero, configuration: config)
@@ -134,6 +144,7 @@ private struct MarkdownWebView: NSViewRepresentable {
         coordinator.onVisibleLineChange = onVisibleLineChange
         coordinator.onTOCUpdate = onTOCUpdate
         coordinator.findController = findController
+        coordinator.onSelectionChange = onSelectionChange
         findController?.register(webView: webView, for: .markdown)
 
         // Theme changed: swap stylesheet via JS; re-render handled by bridge.
@@ -190,6 +201,7 @@ private struct MarkdownWebView: NSViewRepresentable {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: copyHandlerName)
         webView.configuration.userContentController.removeScriptMessageHandler(forName: tocHandlerName)
         webView.configuration.userContentController.removeScriptMessageHandler(forName: perfHandlerName)
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: selectionHandlerName)
         if coordinator.exporter?.webView === webView {
             coordinator.exporter?.webView = nil
         }
@@ -312,6 +324,28 @@ extension MarkdownWebView {
         var onTOCUpdate: (([TOCItem]) -> Void)?
         weak var exporter: PreviewExporter?
         var findController: PreviewFindController?
+        var onSelectionChange: ((String) -> Void)?
+
+        /// JS snippet that installs a `selectionchange` listener and forwards
+        /// selected text to the native `selectionHandler` message handler.
+        /// Idempotent: guard flag `_meditorSelListenerInstalled` prevents
+        /// double-registration when injected into a reused (pooled) WebView.
+        static let selectionListenerJS = """
+        (function() {
+            if (window._meditorSelListenerInstalled) return;
+            window._meditorSelListenerInstalled = true;
+            var _lastSel = '';
+            document.addEventListener('selectionchange', function() {
+                var sel = window.getSelection();
+                var text = sel ? sel.toString().trim() : '';
+                if (text === _lastSel) return;
+                _lastSel = text;
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.selectionHandler) {
+                    window.webkit.messageHandlers.selectionHandler.postMessage({ text: text });
+                }
+            });
+        })();
+        """
 
         var lastContentRevision: Int = 0
         var lastTheme: PreviewTheme = .github
@@ -379,11 +413,13 @@ extension MarkdownWebView {
         init(onVisibleLineChange: ((Int) -> Void)? = nil,
              onTOCUpdate: (([TOCItem]) -> Void)? = nil,
              exporter: PreviewExporter? = nil,
-             findController: PreviewFindController? = nil) {
+             findController: PreviewFindController? = nil,
+             onSelectionChange: ((String) -> Void)? = nil) {
             self.onVisibleLineChange = onVisibleLineChange
             self.onTOCUpdate = onTOCUpdate
             self.exporter = exporter
             self.findController = findController
+            self.onSelectionChange = onSelectionChange
         }
 
         deinit {
@@ -474,33 +510,15 @@ extension MarkdownWebView {
 
         /// Copy mermaid.min.js into the preview cache dir on first need.
         private static var mermaidProvisioned = false
-        static func ensureMermaidProvisioned(at cacheDir: URL) {
+        static func ensureMermaidProvisioned(at cacheDir: URL, onReady: (() -> Void)? = nil) {
             guard !mermaidProvisioned else { return }
             let dst = cacheDir.appendingPathComponent("mermaid.min.js")
             let fm = FileManager.default
             if fm.fileExists(atPath: dst.path) { mermaidProvisioned = true; return }
             guard let root = PreviewResourceLocator.resourcesRoot() else { return }
-            // Bundle stores gzipped (0.9MB vs 3.2MB). Decompress on first use.
-            let gzSrc = root.appendingPathComponent("mermaid.min.js.gz")
-            if fm.fileExists(atPath: gzSrc.path) {
-                let proc = Process()
-                proc.executableURL = URL(fileURLWithPath: "/usr/bin/gunzip")
-                proc.arguments = ["-k", "-c", gzSrc.path]
-                let pipe = Pipe()
-                proc.standardOutput = pipe
-                try? proc.run()
-                proc.waitUntilExit()
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                if !data.isEmpty {
-                    try? data.write(to: dst)
-                    mermaidProvisioned = true
-                    return
-                }
-            }
-            // Fallback: uncompressed copy (dev builds)
-            let plainSrc = root.appendingPathComponent("mermaid.min.js")
-            if fm.fileExists(atPath: plainSrc.path) {
-                try? fm.copyItem(at: plainSrc, to: dst)
+            let src = root.appendingPathComponent("mermaid.min.js")
+            if fm.fileExists(atPath: src.path) {
+                try? fm.copyItem(at: src, to: dst)
             }
             mermaidProvisioned = true
         }
@@ -531,6 +549,9 @@ extension MarkdownWebView.Coordinator: WKNavigationDelegate {
             webView.evaluateJavaScript("document.documentElement.style.setProperty('--preview-font-size','\(fs)px');", completionHandler: nil)
         }
         flushPendingScripts()
+        // Inject selection listener so the native side gets notified when the
+        // user selects text in the preview (used by PreviewInlineEditBar).
+        webView.evaluateJavaScript(MarkdownWebView.Coordinator.selectionListenerJS, completionHandler: nil)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -555,6 +576,8 @@ extension MarkdownWebView.Coordinator: WKScriptMessageHandler {
             handleTOCMessage(message)
         case MarkdownWebView.perfHandlerName:
             handlePerfMessage(message)
+        case MarkdownWebView.selectionHandlerName:
+            handleSelectionMessage(message)
         default:
             break
         }
@@ -587,6 +610,14 @@ extension MarkdownWebView.Coordinator: WKScriptMessageHandler {
             return TOCItem(level: level, title: title, line: line)
         }
         onTOCUpdate?(tocItems)
+    }
+
+    private func handleSelectionMessage(_ message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any] else { return }
+        let text = (body["text"] as? String) ?? ""
+        DispatchQueue.main.async {
+            self.onSelectionChange?(text)
+        }
     }
 
     private func handlePerfMessage(_ message: WKScriptMessage) {

@@ -20,6 +20,7 @@ struct BeautifySheet: View {
 
     @State private var tokenOverrides: [String: String] = [:]
     @State private var showCustomize: Bool = false
+    @State private var previewSelectedText: String = ""
 
     private let agent = BeautifyAgent()
 
@@ -51,6 +52,7 @@ struct BeautifySheet: View {
                     },
                     onCancel: { showDiffSheet = false }
                 )
+                .presentationBackground(.regularMaterial)
             }
         }
         .overlay(alignment: .top) {
@@ -77,7 +79,7 @@ struct BeautifySheet: View {
         HStack {
             Image(systemName: "wand.and.stars")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.purple)
+                .foregroundStyle(Color.appAccent)
             Text("HTML 美化")
                 .font(.system(size: 15, weight: .semibold))
             Spacer()
@@ -208,7 +210,7 @@ struct BeautifySheet: View {
             VStack(spacing: 10) {
                 Image(systemName: "wand.and.stars")
                     .font(.system(size: 32))
-                    .foregroundStyle(.purple.opacity(0.4))
+                    .foregroundStyle(Color.appAccent.opacity(0.45))
                 Text("选择主题后点击「生成」")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
@@ -216,8 +218,25 @@ struct BeautifySheet: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ZStack(alignment: .topTrailing) {
-                HTMLStringWebView(html: generatedHTML, revision: htmlRevision)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                HTMLStringWebView(html: generatedHTML, revision: htmlRevision, onSelectionChange: { text in
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        previewSelectedText = text
+                    }
+                })
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .bottom) {
+                    if !previewSelectedText.isEmpty {
+                        PreviewInlineEditBar(
+                            selectedText: previewSelectedText,
+                            onDismiss: {
+                                withAnimation(.easeInOut(duration: 0.18)) {
+                                    previewSelectedText = ""
+                                }
+                            }
+                        )
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
                 if isGenerating {
                     HStack(spacing: 6) {
                         ProgressView().scaleEffect(0.7)
@@ -328,10 +347,24 @@ struct BeautifySheet: View {
 
     private func handleSave() {
         guard let url = targetHTMLURL else { return }
-        if FileManager.default.fileExists(atPath: url.path) {
-            showDiffSheet = true
-        } else {
-            saveHTML(to: url, overwrite: false)
+        // Route through diff-review overlay: show MD vs HTML preview before saving.
+        let markdown = state.selectedTab?.content ?? ""
+        let html     = generatedHTML
+        let target   = url
+        dismiss()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            state.diffReview.present(
+                original: markdown,
+                modified: html,
+                mode: .markdownVsHTML,
+                onFinalize: { finalHTML in
+                    do {
+                        try finalHTML.write(to: target, atomically: true, encoding: .utf8)
+                    } catch {
+                        state.errorMessage = error.localizedDescription
+                    }
+                }
+            )
         }
     }
 
@@ -442,7 +475,7 @@ private struct ThemeCard: View {
             .padding(.vertical, 12)
             .background(
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(isSelected ? Color.purple : Color.primary.opacity(0.06))
+                    .fill(isSelected ? Color.appAccent : Color.primary.opacity(0.06))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
@@ -460,9 +493,32 @@ private struct ThemeCard: View {
 struct HTMLStringWebView: NSViewRepresentable {
     let html: String
     let revision: Int
+    var onSelectionChange: ((String) -> Void)? = nil
+
+    private static let selectionHandlerName = "selectionHandler"
+
+    private static let selectionJS = """
+    (function() {
+        var _lastSel = '';
+        document.addEventListener('selectionchange', function() {
+            var sel = window.getSelection();
+            var text = sel ? sel.toString().trim() : '';
+            if (text === _lastSel) return;
+            _lastSel = text;
+            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.selectionHandler) {
+                window.webkit.messageHandlers.selectionHandler.postMessage({ text: text });
+            }
+        });
+    })();
+    """
 
     func makeNSView(context: Context) -> WKWebView {
-        let webView = WKWebView()
+        let config = WKWebViewConfiguration()
+        let userContent = WKUserContentController()
+        userContent.add(context.coordinator, name: Self.selectionHandlerName)
+        userContent.addUserScript(WKUserScript(source: Self.selectionJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        config.userContentController = userContent
+        let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
         context.coordinator.webView = webView
         webView.loadHTMLString(html, baseURL: nil)
@@ -470,15 +526,33 @@ struct HTMLStringWebView: NSViewRepresentable {
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
+        context.coordinator.onSelectionChange = onSelectionChange
         guard revision != context.coordinator.lastRevision else { return }
         context.coordinator.lastRevision = revision
         webView.loadHTMLString(html, baseURL: nil)
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: HTMLStringWebView.selectionHandlerName)
+    }
 
-    final class Coordinator {
+    func makeCoordinator() -> Coordinator { Coordinator(onSelectionChange: onSelectionChange) }
+
+    final class Coordinator: NSObject, WKScriptMessageHandler {
         weak var webView: WKWebView?
         var lastRevision = -1
+        var onSelectionChange: ((String) -> Void)?
+
+        init(onSelectionChange: ((String) -> Void)? = nil) {
+            self.onSelectionChange = onSelectionChange
+        }
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.name == "selectionHandler" else { return }
+            let text = ((message.body as? [String: Any])?["text"] as? String) ?? ""
+            DispatchQueue.main.async {
+                self.onSelectionChange?(text)
+            }
+        }
     }
 }

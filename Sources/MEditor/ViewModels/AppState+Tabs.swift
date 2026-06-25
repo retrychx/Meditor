@@ -46,7 +46,10 @@ extension AppState {
     func closeTab(_ tabID: UUID)                                 { tabManager.closeTab(tabID) }
     func confirmCloseTab(save: Bool)                             { tabManager.confirmCloseTab(save: save) }
     func performCloseTab(_ tabID: UUID)                          { tabManager.performCloseTab(tabID) }
-    func updateTabContent(_ tabID: UUID, content: String)        { tabManager.updateTabContent(tabID, content: content) }
+    func updateTabContent(_ tabID: UUID, content: String) {
+        tabManager.updateTabContent(tabID, content: content)
+        if AppSettings.shared.autoSave { scheduleDebounceSave() }
+    }
     func saveTab(_ tab: EditorTab)                               { tabManager.saveTab(tab) }
     func saveCurrentTab()                                        { tabManager.saveCurrentTab() }
     func selectTab(_ id: UUID)                                   { tabManager.selectTab(id) }

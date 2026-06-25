@@ -147,8 +147,93 @@ final class PluginManager {
         guard let content = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         let name = url.deletingLastPathComponent().lastPathComponent
         let description = extractDescription(from: content)
+        let commands = extractCommands(from: content)
         return PluginSkill(id: id, name: name, description: description,
-                           skillPath: url, isEnabled: isEnabled, source: .manual)
+                           skillPath: url, isEnabled: isEnabled, source: .manual,
+                           commands: commands)
+    }
+
+    private func extractCommands(from content: String) -> [SkillCommand] {
+        // Parse YAML front-matter for a commands: list
+        // Format:
+        // commands:
+        //   - name: seo_optimize
+        //     trigger: "SEO 优化"
+        //     icon: magnifyingglass
+        //     description: ...
+        //     tools: [read_document, write_document]
+        var commands: [SkillCommand] = []
+        guard let frontMatter = extractFrontMatter(from: content) else { return commands }
+
+        let lines = frontMatter.components(separatedBy: "\n")
+        var inCommands = false
+        var currentCmd: [String: String] = [:]
+        var currentTools: [String] = []
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed == "commands:" { inCommands = true; continue }
+            if inCommands {
+                if trimmed.hasPrefix("- ") || trimmed.hasPrefix("-\t") {
+                    // New command entry
+                    if !currentCmd.isEmpty {
+                        commands.append(makeCommand(from: currentCmd, tools: currentTools))
+                    }
+                    currentCmd = [:]
+                    currentTools = []
+                    let rest = String(trimmed.dropFirst(2))
+                    if let kv = parseYAMLLine(rest) { currentCmd[kv.0] = kv.1 }
+                } else if trimmed.hasPrefix("  ") || trimmed.hasPrefix("\t") {
+                    let inner = trimmed.trimmingCharacters(in: .whitespaces)
+                    if inner.hasPrefix("tools:") {
+                        let toolStr = inner.dropFirst("tools:".count).trimmingCharacters(in: .whitespaces)
+                        let cleaned = toolStr.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+                        currentTools = cleaned.components(separatedBy: ",").map {
+                            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                        }.filter { !$0.isEmpty }
+                    } else if let kv = parseYAMLLine(inner) {
+                        currentCmd[kv.0] = kv.1
+                    }
+                } else {
+                    // End of commands block
+                    break
+                }
+            }
+        }
+        if !currentCmd.isEmpty {
+            commands.append(makeCommand(from: currentCmd, tools: currentTools))
+        }
+        return commands
+    }
+
+    private func makeCommand(from dict: [String: String], tools: [String]) -> SkillCommand {
+        SkillCommand(
+            name:         dict["name"] ?? "command",
+            trigger:      dict["trigger"] ?? dict["name"] ?? "操作",
+            icon:         dict["icon"] ?? "sparkles",
+            description:  dict["description"] ?? "",
+            allowedTools: tools
+        )
+    }
+
+    private func parseYAMLLine(_ line: String) -> (String, String)? {
+        let parts = line.split(separator: ":", maxSplits: 1)
+        guard parts.count == 2 else { return nil }
+        let key = parts[0].trimmingCharacters(in: .whitespaces)
+        let value = parts[1].trimmingCharacters(in: .whitespaces)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"\'" ))
+        return (key, value)
+    }
+
+    private func extractFrontMatter(from content: String) -> String? {
+        guard content.hasPrefix("---") else { return nil }
+        let lines = content.components(separatedBy: "\n")
+        var end = -1
+        for (i, line) in lines.dropFirst().enumerated() {
+            if line.trimmingCharacters(in: .whitespaces) == "---" { end = i + 1; break }
+        }
+        guard end > 0 else { return nil }
+        return lines[1..<end].joined(separator: "\n")
     }
 
     private func extractDescription(from content: String) -> String {

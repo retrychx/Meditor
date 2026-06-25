@@ -53,7 +53,7 @@ struct FileRow: View {
             Image(systemName: "folder.fill")
                 .symbolRenderingMode(.hierarchical)
                 .font(.system(size: 13))
-                .foregroundStyle(Color.orange.opacity(0.85))
+                .foregroundStyle(Color(nsColor: .systemOrange))
         } else {
             Image(systemName: iconName)
                 .symbolRenderingMode(.hierarchical)
@@ -86,14 +86,12 @@ struct FileRow: View {
 
     @ViewBuilder
     private var rowBackground: some View {
-        // Native sidebar-style selection: a subtle neutral highlight that reads
-        // well on the translucent material, no white pill / drop shadow.
-        RoundedRectangle(cornerRadius: 6, style: .continuous)
+        RoundedRectangle(cornerRadius: 5, style: .continuous)
             .fill(
                 isSelected
-                    ? AnyShapeStyle(Color.primary.opacity(0.10))
+                    ? AnyShapeStyle(Color(nsColor: .selectedContentBackgroundColor).opacity(0.15))
                     : isHovered
-                        ? AnyShapeStyle(Color.primary.opacity(0.05))
+                        ? AnyShapeStyle(Color(nsColor: .unemphasizedSelectedContentBackgroundColor))
                         : AnyShapeStyle(Color.clear)
             )
             .padding(.horizontal, 4)

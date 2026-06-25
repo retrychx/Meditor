@@ -11,8 +11,17 @@ struct InlineEditBar: View {
 
     @State private var isLoading:    Bool   = false
     @State private var loadingLabel: String = ""
+    @State private var showAgentPanel = false
+    @State private var agentRunner    = AgentRunner()
 
     private let agent = InlineEditAgent()
+
+    /// Plugin skill commands from enabled manual skills
+    private var pluginCommands: [(skill: PluginSkill, command: SkillCommand)] {
+        state.pluginManager.skills
+            .filter { $0.isEnabled && $0.source == .manual && !$0.commands.isEmpty }
+            .flatMap { skill in skill.commands.map { (skill, $0) } }
+    }
 
     var body: some View {
         HStack(spacing: 2) {
@@ -39,6 +48,16 @@ struct InlineEditBar: View {
                 ForEach(InlineEditAction.allCases) { action in
                     actionButton(action)
                 }
+
+                // Plugin command buttons (from enabled Skill.md with commands:)
+                if !pluginCommands.isEmpty {
+                    Divider()
+                        .frame(height: 14)
+                        .padding(.horizontal, 4)
+                    ForEach(pluginCommands, id: \.command.id) { (skill, cmd) in
+                        pluginCommandButton(skill: skill, command: cmd)
+                    }
+                }
             }
         }
         .padding(.horizontal, 6)
@@ -46,6 +65,18 @@ struct InlineEditBar: View {
         .background(.regularMaterial, in: Capsule())
         .overlay(Capsule().strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+        .overlay(alignment: .bottom) {
+            if showAgentPanel {
+                AgentResultPanel(runner: agentRunner) {
+                    showAgentPanel = false
+                }
+                .environment(state)
+                .frame(width: 480)
+                .offset(y: -60)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showAgentPanel)
     }
 
     // MARK: - Action button
@@ -68,6 +99,52 @@ struct InlineEditBar: View {
     }
 
     // MARK: - Trigger
+
+    // MARK: - Plugin command button
+
+    private func pluginCommandButton(skill: PluginSkill, command: SkillCommand) -> some View {
+        Button { triggerPluginCommand(skill: skill, command: command) } label: {
+            HStack(spacing: 4) {
+                Image(systemName: command.icon)
+                    .font(.system(size: 10, weight: .medium))
+                Text(command.trigger)
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .foregroundStyle(Color.appAccent)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(Color.appAccent.opacity(0.08), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(command.description.isEmpty ? command.trigger : command.description)
+    }
+
+    private func triggerPluginCommand(skill: PluginSkill, command: SkillCommand) {
+        guard !selectedText.isEmpty else { return }
+        guard let skillContent = try? String(contentsOf: skill.skillPath, encoding: .utf8) else { return }
+
+        // Determine which tools are available
+        let allTools: [any AgentTool] = BuiltinAgentTools.all
+        let tools: [any AgentTool] = command.allowedTools.isEmpty
+            ? allTools
+            : allTools.filter { command.allowedTools.contains($0.spec.name) }
+
+        let config = AIConfig.current(settings)
+        let context = AgentContext(appState: state)
+
+        let userMsg = "Selected text:\n\n\(selectedText)\n\nFull document:\n\n\(state.selectedTab?.content ?? "")"
+
+        agentRunner = AgentRunner()
+        showAgentPanel = true
+
+        agentRunner.run(
+            systemPrompt: skillContent,
+            userMessage: userMsg,
+            tools: tools,
+            config: config,
+            context: context
+        )
+    }
 
     private func triggerAction(_ action: InlineEditAction) {
         guard !selectedText.isEmpty else { return }

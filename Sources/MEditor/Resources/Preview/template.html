@@ -16,6 +16,12 @@
 <!-- Vendor: marked for Markdown parsing (sync — needed immediately) -->
 <script src="marked.min.js"></script>
 
+<!-- highlight.js: load synchronously so hljs is available on first render -->
+<script src="highlight.min.js"></script>
+
+<!-- mermaid.js: load synchronously so diagrams render on first pass -->
+<script src="mermaid.min.js"></script>
+
 <!-- MEditor scripts -->
 <script src="scripts/render.js"></script>
 <script src="scripts/bridge.js"></script>
@@ -25,14 +31,6 @@
 <script>
   document.addEventListener('DOMContentLoaded', function () {
     window.MEditor.boot({{INITIAL_CONTENT_JSON}});
-    // Pre-parse hljs during idle so it's ready before user scrolls to code.
-    if (typeof window.requestIdleCallback === 'function') {
-      window.requestIdleCallback(function () {
-        var s = document.createElement('script');
-        s.src = 'highlight.min.js';
-        document.head.appendChild(s);
-      }, { timeout: 2000 });
-    }
   });
 </script>
 </body>

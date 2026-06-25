@@ -17,7 +17,6 @@ enum FileAction: Hashable {
 struct FileSidebar: View {
     @Environment(AppState.self) private var state
     @Environment(WorkspaceUIState.self) private var workspaceUI
-
     @State private var searchText = ""
     @State private var expandedPaths: Set<String> = {
         Set(UserDefaults.standard.stringArray(forKey: "sidebar.expandedPaths") ?? [])
@@ -38,7 +37,8 @@ struct FileSidebar: View {
     @State private var userDocFiles: [URL] = []
     @State private var appDocFiles: [URL] = []
     @State private var userDocExpanded = true
-    @State private var appDocExpanded = true
+    @State private var appDocExpanded  = true
+    @State private var looseExpanded   = true
 
     private var displayedTree: [FileItem] {
         guard !searchText.isEmpty else { return state.fileTree }
@@ -68,18 +68,14 @@ struct FileSidebar: View {
                 .padding(.top, 6)
                 .padding(.bottom, 8)
 
-            // ── Content ──
-            if searchText.isEmpty {
-                mainContent
-            } else {
-                searchResultsView
-            }
+            // ── 始终显示文件树 ──
+            if searchText.isEmpty { mainContent } else { searchResultsView }
 
-            // ── Pinned app views (Tasks / Calendar) ──
-            // These are app-level views, not files, so they live pinned at the
-            // bottom — visually separated from the file tree above.
+            // ── Pinned app views (Tasks / Calendar Tab 切换条) ──
             if searchText.isEmpty {
-                PinnedViewsBar()
+                PinnedViewsBar(activeMainView: workspaceUI.activeMainView) { newView in
+                    workspaceUI.activeMainView = newView
+                }
             }
 
             // ── Bottom toolbar ──
@@ -159,6 +155,37 @@ struct FileSidebar: View {
                     }
                 } header: {
                     CraftSectionHeader(title: "App 文档")
+                }
+                .listRowInsets(.init(top: 1, leading: 12, bottom: 1, trailing: 12))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            }
+
+            // 散文件 section（不属于任何 Workspace 的独立文件）
+            if !state.looseFiles.files.isEmpty {
+                Section(isExpanded: $looseExpanded) {
+                    ForEach(state.looseFiles.files) { file in
+                        LooseFileRow(
+                            file: file,
+                            isSelected: state.selectedTab?.url == file.url
+                        )
+                        .onTapGesture { state.openLooseFile(file.url) }
+                        .contextMenu {
+                            Button("在 Finder 中显示") {
+                                NSWorkspace.shared.activateFileViewerSelecting([file.url])
+                            }
+                            Button("复制路径") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(file.url.path, forType: .string)
+                            }
+                            Divider()
+                            Button("从列表移除", role: .destructive) {
+                                state.looseFiles.remove(file.id)
+                            }
+                        }
+                    }
+                } header: {
+                    CraftSectionHeader(title: "散文件")
                 }
                 .listRowInsets(.init(top: 1, leading: 12, bottom: 1, trailing: 12))
                 .listRowBackground(Color.clear)
@@ -356,7 +383,7 @@ private struct SpaceSwitcherRow: View {
                     .frame(width: 26, height: 26)
                 Image(systemName: "folder.fill")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Color(nsColor: .systemOrange))
             }
 
             Text(state.rootURL?.lastPathComponent ?? "MEditor")
@@ -488,21 +515,69 @@ private struct CraftSectionHeader: View {
 }
 
 private struct PinnedViewsBar: View {
+    let activeMainView: ActiveMainView
+    let onSelect: (ActiveMainView) -> Void
+
     var body: some View {
         VStack(spacing: 0) {
             Divider().opacity(0.3)
-            VStack(spacing: 1) {
-                TopNavEntry(icon: "checkmark.circle", label: L("sidebar.tasks"))
-                TopNavEntry(icon: "calendar", label: L("sidebar.calendar"))
+            HStack(spacing: 0) {
+                PinnedTabButton(
+                    icon: "checkmark.circle",
+                    label: L("sidebar.tasks"),
+                    isSelected: activeMainView == .todos
+                ) { onSelect(activeMainView == .todos ? .document : .todos) }
+
+                PinnedTabButton(
+                    icon: "calendar",
+                    label: L("sidebar.calendar"),
+                    isSelected: activeMainView == .calendar
+                ) { onSelect(activeMainView == .calendar ? .document : .calendar) }
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(.vertical, 4)
         }
+    }
+}
+
+private struct PinnedTabButton: View {
+    let icon: String
+    let label: String
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .symbolRenderingMode(.hierarchical)
+                    .font(.system(size: 13))
+                    .foregroundStyle(isSelected ? Color.appAccent : .secondary)
+                Text(label)
+                    .font(.system(size: 13))
+                    .foregroundStyle(isSelected ? Color.appAccent : .primary)
+                Spacer()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isSelected
+                          ? Color.appAccent.opacity(0.12)
+                          : isHovered ? Color.primary.opacity(0.05) : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .animation(DS.Motion.micro, value: isHovered)
+        .animation(DS.Motion.fast, value: isSelected)
     }
 }
 
 private struct SidebarBottomBar: View {
     @Environment(AppState.self) private var state
+    @Environment(WorkspaceUIState.self) private var workspaceUI
     let onNewFile: () -> Void
     let onNewFolder: () -> Void
 
@@ -515,6 +590,14 @@ private struct SidebarBottomBar: View {
                 Spacer()
                 SidebarIconButton(icon: "folder.badge.plus", help: L("sidebar.newFolder"), action: onNewFolder)
                     .disabled(state.rootURL == nil)
+                // 专注模式切换
+                SidebarIconButton(
+                    icon: workspaceUI.isFocusMode ? "scope" : "scope",
+                    help: workspaceUI.isFocusMode ? L("tooltip.exitFocus") : L("tooltip.focusMode"),
+                    isActive: workspaceUI.isFocusMode
+                ) {
+                    withAnimation(DS.Motion.springFast) { workspaceUI.toggleFocusMode() }
+                }
                 SidebarIconButton(icon: "gearshape", help: L("menu.preferences")) {
                     state.showingSettings = true
                 }
@@ -530,6 +613,7 @@ private struct SidebarBottomBar: View {
 private struct SidebarIconButton: View {
     let icon: String
     let help: String
+    var isActive: Bool = false
     let action: () -> Void
     @State private var isHovered = false
 
@@ -538,11 +622,17 @@ private struct SidebarIconButton: View {
             Image(systemName: icon)
                 .symbolRenderingMode(.hierarchical)
                 .font(.system(size: 14))
-                .foregroundStyle(Color.secondary.opacity(isHovered ? 1 : 0.55))
+                .foregroundStyle(
+                    isActive ? Color.appAccent
+                    : Color.secondary.opacity(isHovered ? 1 : 0.55)
+                )
                 .frame(width: 30, height: 30)
                 .background(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(isHovered ? Color.primary.opacity(0.07) : Color.clear)
+                        .fill(
+                            isActive ? Color.appAccent.opacity(0.12)
+                            : isHovered ? Color.primary.opacity(0.07) : Color.clear
+                        )
                 )
         }
         .buttonStyle(.plain)
@@ -592,5 +682,44 @@ private struct DocFileRow: View {
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
         .animation(DS.Motion.micro, value: isHovered)
+    }
+}
+
+// MARK: - LooseFileRow
+
+/// 侧边栏「散文件」区的单行条目。
+private struct LooseFileRow: View {
+    let file: LooseFile
+    let isSelected: Bool
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            // 来源图标
+            Image(systemName: file.source == .claude ? "sparkles" : "doc.text")
+                .font(.system(size: 11))
+                .foregroundStyle(file.source == .claude ? Color.appAccent : .secondary)
+                .frame(width: 14)
+
+            // 文件名
+            Text(file.name)
+                .font(.system(size: 13))
+                .foregroundStyle(isSelected ? Color.white : .primary)
+                .lineLimit(1)
+
+            Spacer()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isSelected
+                    ? Color.appAccent
+                    : (isHovered ? Color.primary.opacity(0.07) : Color.clear))
+        )
+        .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
+        .animation(DS.Motion.micro, value: isHovered)
+        .help(file.url.path)
     }
 }

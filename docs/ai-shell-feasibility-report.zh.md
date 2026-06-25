@@ -512,7 +512,7 @@ MEditor ⌘K → 输入"润色" → AI 改写当前文档 ✅
 | ai-assistant 同时运行 | 需要 | Phase 1-2 依赖，Phase 3 后可独立 |
 | MEditor 暴露本地 API | 需新开发 | Phase 1 的核心工作 |
 | GitLab 内网可访问 | 需确认 | 通常满足 |
-| 公司内网 LLM 接入 | 需确认 | ai-assistant 已配置则直接复用 |
+| 内网 LLM 接入 | 需确认 | ai-assistant 已配置则直接复用 |
 
 ---
 

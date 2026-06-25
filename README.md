@@ -75,6 +75,16 @@ swift build
 swift run
 ```
 
+### Run tests
+
+```bash
+# Uses the full Xcode toolchain automatically
+./scripts/test.sh
+
+# Short alias
+make test
+```
+
 ### Create a proper .app bundle
 
 ```bash

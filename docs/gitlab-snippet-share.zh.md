@@ -21,7 +21,7 @@ MEditor 目前的"分享"功能基于内置 `NWListener` HTTP 服务，仅支持
 1. 一键将当前文档上传为 GitLab Snippet
 2. 自动生成可分享的内网链接
 3. 链接永久有效，收到方无需安装任何软件
-4. 数据完全留在公司 GitLab，零安全风险
+4. 数据完全留在组织 GitLab，零安全风险
 
 ---
 
@@ -32,11 +32,11 @@ MEditor 目前的"分享"功能基于内置 `NWListener` HTTP 服务，仅支持
 | 局域网分享（现有） | ✅ 极高 | — | 临时 | 无 |
 | ngrok 穿透 | ⚠️ 低（经第三方） | 低 | 临时 | ngrok 账号 |
 | GitHub Gist | ✅ 高 | 低 | 永久 | GitHub 账号 |
-| **GitLab Snippet（推荐）** | **✅ 极高（内网）** | **低** | **永久** | **公司 GitLab Token** |
+| **GitLab Snippet（推荐）** | **✅ 极高（内网）** | **低** | **永久** | **组织 GitLab Token** |
 | 自建云服务 | ✅ 极高 | 高 | 永久 | 服务器 |
 
 **选择 GitLab Snippet 的原因：**
-- 数据在公司内部 GitLab，符合安全规范
+- 数据在组织内部 GitLab，符合安全规范
 - 同事均有账号，可直接访问内部 Snippet
 - GitLab REST API 简单，实现成本低
 - 无需额外基础设施
@@ -74,7 +74,7 @@ MEditor 目前的"分享"功能基于内置 `NWListener` HTTP 服务，仅支持
 | 选项 | 说明 |
 |------|------|
 | **标题** | 默认使用文件名（不含扩展名），可修改 |
-| **可见性** | Internal（公司内部可访问）/ Private（仅自己） |
+| **可见性** | Internal（组织内部可访问）/ Private（仅自己） |
 | **更新模式** | 同文件再次分享时：新建 or 更新已有 Snippet |
 
 ### 3.3 Token 管理

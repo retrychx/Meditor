@@ -49,7 +49,9 @@
     var blocks = content.split(/\n{2,}/);
 
     // Fallback: link reference definitions are cross-block state.
-    if (blocks.length <= 2 || /^\[.+\]:\s/m.test(content)) {
+    // Also fallback if content has fenced code blocks with blank lines inside —
+    // splitting on \n\n would break those blocks.
+    if (blocks.length <= 2 || /^\[.+\]:\s/m.test(content) || /^```[\s\S]*?\n\n[\s\S]*?^```/m.test(content)) {
       return renderMarkdown(content);
     }
 
@@ -148,20 +150,9 @@
     return out;
   }
 
-  // hljs lazy loading + idle-batched highlighting
-  var highlightLoadPromise = null;
+  // hljs is loaded synchronously in template.html — always available
   function loadHighlightIfNeeded() {
-    if (typeof window.hljs !== 'undefined') return Promise.resolve();
-    if (highlightLoadPromise) return highlightLoadPromise;
-    highlightLoadPromise = new Promise(function (resolve, reject) {
-      var script = document.createElement('script');
-      script.src = 'highlight.min.js';
-      script.async = true;
-      script.onload = resolve;
-      script.onerror = function () { highlightLoadPromise = null; reject(); };
-      document.head.appendChild(script);
-    });
-    return highlightLoadPromise;
+    return Promise.resolve();
   }
 
   function highlightCodeBlocks(rootEl) {
@@ -234,19 +225,9 @@
   }
 
   // Mermaid
-  var mermaidLoadPromise = null;
+  // mermaid is loaded synchronously in template.html — always available
   function loadMermaidIfNeeded() {
-    if (typeof window.mermaid !== 'undefined') return Promise.resolve();
-    if (mermaidLoadPromise) return mermaidLoadPromise;
-    mermaidLoadPromise = new Promise(function (resolve, reject) {
-      var script = document.createElement('script');
-      script.src = 'mermaid.min.js';
-      script.async = true;
-      script.onload = resolve;
-      script.onerror = function () { mermaidLoadPromise = null; reject(); };
-      document.head.appendChild(script);
-    });
-    return mermaidLoadPromise;
+    return Promise.resolve();
   }
 
   function configureMermaidFromTheme() {

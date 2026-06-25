@@ -3,6 +3,23 @@ import XCTest
 
 @MainActor
 final class AIConversationTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        clearPersistedSessions()
+    }
+
+    override func tearDown() {
+        clearPersistedSessions()
+        super.tearDown()
+    }
+
+    private func clearPersistedSessions() {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("MEditor", isDirectory: true)
+        let fileURL = base.appendingPathComponent("ai-sessions.json")
+        try? FileManager.default.removeItem(at: fileURL)
+    }
+
     func testStartsEmpty() {
         let conv = AIConversation()
         XCTAssertTrue(conv.messages.isEmpty)

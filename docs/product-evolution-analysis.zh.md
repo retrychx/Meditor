@@ -47,7 +47,7 @@
 **实现路径（渐进）：**
 ```
 第一步：右键菜单 → 调用系统级 AI API（macOS 26 Writing Tools）
-第二步：接入自定义 API Endpoint（公司内网 LLM）
+第二步：接入自定义 API Endpoint（内网 LLM）
 第三步：工作区上下文感知（跨文件参考）
 ```
 
@@ -79,7 +79,7 @@
 ```
 GitLab Snippet（已设计）
     ↓
-内部文档平台发布（SDoc / Confluence 适配器）
+内部文档平台发布（内部文档平台 / Confluence 适配器）
     ↓
 MR 关联：文档变更 → 自动触发 MR 评论
     ↓

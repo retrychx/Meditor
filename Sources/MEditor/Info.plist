@@ -87,6 +87,10 @@
 		</dict>
 	</array>
 
+	<!-- Calendar access for the sidebar calendar view -->
+	<key>NSCalendarsUsageDescription</key>
+	<string>MEditor needs calendar access to display upcoming events in the sidebar.</string>
+
 	<!-- macOS Dock -->
 	<key>LSUIElement</key>
 	<false/>

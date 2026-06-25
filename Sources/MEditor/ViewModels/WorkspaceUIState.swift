@@ -1,19 +1,13 @@
 import Observation
 import SwiftUI
 
+enum ActiveMainView {
+    case document, todos, calendar
+}
+
 @MainActor
 @Observable
 final class WorkspaceUIState {
-    enum RightPanelKind: String, CaseIterable, Identifiable {
-        case insert
-        case pageInfo
-        case comments
-        case share
-        case search
-
-        var id: String { rawValue }
-    }
-
     var showsSidebar: Bool {
         didSet { AppSettings.shared.showSidebarOnLaunch = showsSidebar }
     }
@@ -28,7 +22,7 @@ final class WorkspaceUIState {
 
     var sidebarWidth: CGFloat
     var isFocusMode = false
-    var rightPanel: RightPanelKind?
+    var activeMainView: ActiveMainView = .document
 
     init() {
         let settings = AppSettings.shared
@@ -36,21 +30,18 @@ final class WorkspaceUIState {
         self.showsEditor = settings.showEditorOnLaunch
         self.showsPreview = settings.showPreviewOnLaunch
         self.sidebarWidth = 260
-        self.rightPanel = nil
     }
 
     init(
         showsSidebar: Bool,
         showsEditor: Bool,
         showsPreview: Bool,
-        sidebarWidth: CGFloat = 260,
-        rightPanel: RightPanelKind? = nil
+        sidebarWidth: CGFloat = 260
     ) {
         self.showsSidebar = showsSidebar
         self.showsEditor = showsEditor
         self.showsPreview = showsPreview
         self.sidebarWidth = sidebarWidth
-        self.rightPanel = rightPanel
     }
 
     var hasVisibleWorkspacePane: Bool {
@@ -59,10 +50,6 @@ final class WorkspaceUIState {
 
     var showsSidebarInLayout: Bool {
         showsSidebar && !isFocusMode
-    }
-
-    var showsRightPanelInLayout: Bool {
-        rightPanel != nil && !isFocusMode
     }
 
     var clampedSidebarWidth: CGFloat {
@@ -79,14 +66,6 @@ final class WorkspaceUIState {
 
     func togglePreview() {
         showsPreview.toggle()
-    }
-
-    func toggleRightPanel(_ panel: RightPanelKind) {
-        rightPanel = rightPanel == panel ? nil : panel
-    }
-
-    func closeRightPanel() {
-        rightPanel = nil
     }
 
     func toggleFocusMode() {

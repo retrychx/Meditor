@@ -293,13 +293,24 @@ struct AIClient {
 
                     let process = Process()
                     process.executableURL = URL(fileURLWithPath: config.cliPath)
-                    // `-p` = print mode (non-interactive, prints the reply and exits).
-                    process.arguments = ["-p", prompt]
+                    // `-p` = print mode (non-interactive). The prompt is fed via
+                    // stdin (not argv) so content starting with "-"/"---" isn't
+                    // mis-parsed as a CLI option.
+                    process.arguments = ["-p"]
 
-                    // GUI apps don't inherit the user's shell PATH, so the CLI may
-                    // fail to find `node`/deps. Prepend common install locations.
+                    // GUI 应用不继承 shell 环境，需要从 login shell 读取关键变量
+                    // （包括 ANTHROPIC_BASE_URL 等自定义代理地址）
                     var env = ProcessInfo.processInfo.environment
                     let home = FileManager.default.homeDirectoryForCurrentUser.path
+
+                    // 从 login shell 读取完整环境（包含 .zshrc/.bashrc 里的配置）
+                    if let shellEnv = Self.loginShellEnvironment() {
+                        for (key, value) in shellEnv {
+                            env[key] = value
+                        }
+                    }
+
+                    // 额外补充常见安装路径
                     let extra = [
                         "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin",
                         "\(home)/.local/bin", "\(home)/.bun/bin",
@@ -312,12 +323,20 @@ struct AIClient {
 
                     let outPipe = Pipe()
                     let errPipe = Pipe()
+                    let inPipe = Pipe()
                     process.standardOutput = outPipe
                     process.standardError = errPipe
+                    process.standardInput = inPipe
 
                     try Task.checkCancellation()
                     try process.run()
                     box.process = process
+
+                    // Feed the prompt via stdin, then close it so the CLI proceeds.
+                    if let data = prompt.data(using: .utf8) {
+                        inPipe.fileHandleForWriting.write(data)
+                    }
+                    try? inPipe.fileHandleForWriting.close()
 
                     // `claude -p` writes the complete reply then exits — block until
                     // EOF. `availableData` is non-blocking and exits early if the
@@ -349,6 +368,53 @@ struct AIClient {
                 box.process?.terminate()
             }
         }
+    }
+}
+
+// MARK: - Login shell environment
+
+extension AIClient {
+    /// 通过 login shell 获取用户完整环境变量。
+    /// GUI 应用不继承 .zshrc/.profile，主要用于读取
+    /// ANTHROPIC_BASE_URL、ANTHROPIC_AUTH_TOKEN 等自定义代理配置。
+    ///
+    /// 结果在进程生命周期内只采集一次（shell 环境在运行时不会改变），
+    /// 后续调用直接返回缓存，避免每次 AI 对话都 spawn 子进程。
+    static func loginShellEnvironment() -> [String: String]? {
+        // nonisolated(unsafe)：只写一次，后续只读；最多在首次并发时多
+        // spawn 一次 shell，结果幂等，可接受。
+        if let cached = _cachedShellEnv { return cached }
+        let env = _collectShellEnvironment()
+        _cachedShellEnv = env
+        return env
+    }
+
+    // MARK: Private
+
+    /// 进程级缓存，避免重复 spawn login shell。
+    nonisolated(unsafe) private static var _cachedShellEnv: [String: String]? = nil
+
+    private static func _collectShellEnvironment() -> [String: String]? {
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: shell)
+        p.arguments = ["-l", "-c", "env"]
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = Pipe()   // 丢弃 stderr
+        guard (try? p.run()) != nil else { return nil }
+        p.waitUntilExit()
+        guard p.terminationStatus == 0 else { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard let text = String(data: data, encoding: .utf8) else { return nil }
+        var result: [String: String] = [:]
+        for line in text.components(separatedBy: "\n") {
+            guard let eq = line.firstIndex(of: "=") else { continue }
+            let key = String(line[line.startIndex ..< eq])
+            let value = String(line[line.index(after: eq)...])
+            result[key] = value
+        }
+        return result.isEmpty ? nil : result
     }
 }
 
@@ -401,8 +467,9 @@ extension AIClient {
     private static func loginShellWhich(_ tool: String) async -> String? {
         await withCheckedContinuation { cont in
             DispatchQueue.global().async {
+                let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
                 let p = Process()
-                p.executableURL = URL(fileURLWithPath: "/bin/zsh")
+                p.executableURL = URL(fileURLWithPath: shell)
                 p.arguments = ["-lc", "command -v \(tool)"]
                 let pipe = Pipe()
                 p.standardOutput = pipe

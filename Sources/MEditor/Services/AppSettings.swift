@@ -2,10 +2,11 @@ import Foundation
 import Observation
 
 extension Notification.Name {
-    static let autoSaveSettingsChanged = Notification.Name("MEditor.autoSaveSettingsChanged")
-    static let previewFontSizeChanged = Notification.Name("MEditor.previewFontSizeChanged")
-    static let editorFontSizeChanged = Notification.Name("MEditor.editorFontSizeChanged")
-    static let docPathChanged = Notification.Name("MEditor.docPathChanged")
+    static let autoSaveSettingsChanged    = Notification.Name("MEditor.autoSaveSettingsChanged")
+    static let previewFontSizeChanged     = Notification.Name("MEditor.previewFontSizeChanged")
+    static let editorFontSizeChanged      = Notification.Name("MEditor.editorFontSizeChanged")
+    static let docPathChanged             = Notification.Name("MEditor.docPathChanged")
+    static let claudeMonitorSettingsChanged = Notification.Name("MEditor.claudeMonitorSettingsChanged")
 }
 
 /// Centralized app preferences, persisted via UserDefaults.
@@ -24,8 +25,7 @@ final class AppSettings {
         static let showSidebarOnLaunch = "MEditor.showSidebarOnLaunch"
         static let autoSave = "MEditor.autoSave"
         static let autoSaveInterval = "MEditor.autoSaveInterval"
-        static let gitlabHost = "MEditor.gitlabHost"
-        static let gitlabVisibility = "MEditor.gitlabVisibility"
+        static let githubGistPublic = "MEditor.githubGistPublic"
         static let aiAccentStyle = "MEditor.aiAccentStyle"
         static let aiProvider = "MEditor.aiProvider"
         static let aiBaseURL = "MEditor.aiBaseURL"
@@ -33,6 +33,10 @@ final class AppSettings {
         static let aiCLIPath = "MEditor.aiCLIPath"
         static let userDocPathBookmark = "MEditor.userDocPathBookmark"
         static let appDocPathBookmark  = "MEditor.appDocPathBookmark"
+        // Claude Code 监听
+        static let claudeMonitorEnabled   = "MEditor.claudeMonitorEnabled"
+        static let claudeMonitorCustomPath = "MEditor.claudeMonitorCustomPath"
+        static let claudeMonitorFileExts  = "MEditor.claudeMonitorFileExts"
     }
 
     /// LAN share server port (default 8899).
@@ -87,14 +91,9 @@ final class AppSettings {
         }
     }
 
-    /// GitLab host for Snippet sharing (e.g. gitlab.example.com). Empty = unset.
-    var gitlabHost: String {
-        didSet { defaults.set(gitlabHost, forKey: Key.gitlabHost) }
-    }
-
-    /// Default snippet visibility: "internal" or "private".
-    var gitlabVisibility: String {
-        didSet { defaults.set(gitlabVisibility, forKey: Key.gitlabVisibility) }
+    /// Whether new GitHub Gists are created as public (true) or secret (false).
+    var githubGistPublic: Bool {
+        didSet { defaults.set(githubGistPublic, forKey: Key.githubGistPublic) }
     }
 
     /// AI assistant accent style: "system" (app accent) or "shadcn" (mono black/white).
@@ -120,6 +119,50 @@ final class AppSettings {
     /// Absolute path to the local `claude` CLI binary.
     var aiCLIPath: String {
         didSet { defaults.set(aiCLIPath, forKey: Key.aiCLIPath) }
+    }
+
+    // MARK: - Claude Code 监听
+
+    /// 是否启用 Claude Code 会话文件监听功能。
+    var claudeMonitorEnabled: Bool {
+        didSet {
+            defaults.set(claudeMonitorEnabled, forKey: Key.claudeMonitorEnabled)
+            NotificationCenter.default.post(name: .claudeMonitorSettingsChanged, object: nil)
+        }
+    }
+
+    /// 自定义监听目录路径（空则使用默认的 ~/.claude/projects/）。
+    var claudeMonitorCustomPath: String {
+        didSet {
+            defaults.set(claudeMonitorCustomPath, forKey: Key.claudeMonitorCustomPath)
+            NotificationCenter.default.post(name: .claudeMonitorSettingsChanged, object: nil)
+        }
+    }
+
+    /// 要监听的文件扩展名，逗号分隔（默认 "md,txt")。
+    var claudeMonitorFileExts: String {
+        didSet {
+            defaults.set(claudeMonitorFileExts, forKey: Key.claudeMonitorFileExts)
+            NotificationCenter.default.post(name: .claudeMonitorSettingsChanged, object: nil)
+        }
+    }
+
+    /// 解析 `claudeMonitorFileExts` 为扩展名数组（小写无点）。
+    var claudeMonitorExtensions: [String] {
+        claudeMonitorFileExts
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".")) }
+            .filter { !$0.isEmpty }
+    }
+
+    /// 实际监听目录：自定义路径优先，空则回退到默认 ~/.claude/projects/。
+    var claudeMonitorDirectory: URL {
+        let custom = claudeMonitorCustomPath.trimmingCharacters(in: .whitespaces)
+        if !custom.isEmpty {
+            return URL(fileURLWithPath: (custom as NSString).expandingTildeInPath)
+        }
+        return URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent(".claude/projects", isDirectory: true)
     }
 
     // MARK: - Document paths
@@ -207,12 +250,15 @@ final class AppSettings {
         showSidebarOnLaunch = d.object(forKey: Key.showSidebarOnLaunch) != nil ? d.bool(forKey: Key.showSidebarOnLaunch) : true
         autoSave = d.bool(forKey: Key.autoSave)
         autoSaveInterval = d.integer(forKey: Key.autoSaveInterval) != 0 ? d.integer(forKey: Key.autoSaveInterval) : 30
-        gitlabHost = d.string(forKey: Key.gitlabHost) ?? ""
-        gitlabVisibility = d.string(forKey: Key.gitlabVisibility) ?? "internal"
+        githubGistPublic = d.bool(forKey: Key.githubGistPublic)  // default false = secret
         aiAccentStyle = d.string(forKey: Key.aiAccentStyle) ?? "system"
         aiProvider = d.string(forKey: Key.aiProvider) ?? "disabled"
         aiBaseURL = d.string(forKey: Key.aiBaseURL) ?? "https://api.openai.com/v1"
         aiModel = d.string(forKey: Key.aiModel) ?? "gpt-4o-mini"
         aiCLIPath = d.string(forKey: Key.aiCLIPath) ?? "/usr/local/bin/claude"
+        // Claude Code 监听
+        claudeMonitorEnabled    = d.object(forKey: Key.claudeMonitorEnabled) != nil ? d.bool(forKey: Key.claudeMonitorEnabled) : false
+        claudeMonitorCustomPath = d.string(forKey: Key.claudeMonitorCustomPath) ?? ""
+        claudeMonitorFileExts   = d.string(forKey: Key.claudeMonitorFileExts) ?? "md,txt"
     }
 }
