@@ -31,6 +31,11 @@ enum InlineEditAction: String, CaseIterable, Identifiable {
     }
 
     private func userInstruction(for text: String) -> String {
+        userInstruction(for: text, document: nil)
+    }
+
+    /// 带完整文档上下文的指令（供 AgentRunner 调用）。
+    func userInstruction(for text: String, document: String?) -> String {
         let prefix: String
         switch self {
         case .rewrite:   prefix = "改写以下文本，改善表达方式和逻辑，保持原意："
@@ -38,7 +43,11 @@ enum InlineEditAction: String, CaseIterable, Identifiable {
         case .condense:  prefix = "精简以下文本，去除冗余，保留核心信息："
         case .translate: prefix = "翻译以下文本（中英互译），保持原有 Markdown 格式和风格："
         }
-        return "\(prefix)\n\n\(text)"
+        var msg = "\(prefix)\n\n\(text)"
+        if let doc = document, !doc.isEmpty, doc != text {
+            msg += "\n\n---\n以下是完整文档上下文（仅供参考，只输出处理后的选中部分）：\n\n\(doc)"
+        }
+        return msg
     }
 }
 

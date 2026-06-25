@@ -16,6 +16,11 @@ final class AgentRunner {
     var finalText: String = ""
     var error: String? = nil
 
+    /// 流式 chunk 回调（主线程，可选）
+    var onChunk: (@MainActor (String) -> Void)? = nil
+    /// 完成回调（主线程，isRunning 已设为 false）
+    var onComplete: (@MainActor () -> Void)? = nil
+
     // MARK: - Config
 
     private let maxSteps = 12
@@ -137,6 +142,7 @@ final class AgentRunner {
                     // AI is done
                     updateLastThinking(to: nil)
                     finalText = response.text
+                    await onChunk?(response.text)
 
                     messages.append(AgentMessage(role: .assistant, content: response.text))
                     addStep(.text(response.text))
