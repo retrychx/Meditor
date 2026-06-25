@@ -1,6 +1,6 @@
 # MEditor UI v3 Implementation Plan
 
-基于 [design-spec-v3.md](/Users/10298434/Documents/shein/research/Meditor/docs/design-spec-v3.md) 的前端落地清单。
+基于 [design-spec-v3.md](design-spec-v3.md) 的前端落地清单。
 
 目标不是记录所有想法，而是给实现提供明确的阶段、模块、依赖关系和验收标准。
 

@@ -26,7 +26,7 @@ struct TemplatePickerSheet: View {
             footer
         }
         .frame(width: 580, height: 480)
-        .background(DS.Color.editorBg)
+        .background(.clear)
         .onAppear { searchFocused = true }
     }
 

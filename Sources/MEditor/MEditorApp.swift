@@ -44,7 +44,7 @@ struct MEditorApp: App {
                 .environment(appState)
                 .environment(AppSettings.shared)
         }
-        .windowStyle(.titleBar)
+        .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button(L("menu.openFolder")) {
@@ -178,6 +178,46 @@ struct MEditorApp: App {
                 .keyboardShortcut("p", modifiers: [.command, .shift])
                 .disabled(appState.rootURL == nil)
             }
+            CommandGroup(after: .appVisibility) {
+                Button("Install CLI Tool…") {
+                    installCLI()
+                }
+            }
+        }
+    }
+
+    private func installCLI() {
+        let script = """
+        #!/bin/sh
+        open -a MEditor "$@"
+        """
+        let dest = URL(fileURLWithPath: "/usr/local/bin/meditor")
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("meditor_cli")
+        do {
+            try script.write(to: tmp, atomically: true, encoding: .utf8)
+            // Use AuthorizationExecuteWithPrivileges via AppleScript to write to /usr/local/bin
+            let src = tmp.path
+            let appleScript = """
+            do shell script "mkdir -p /usr/local/bin && cp '\(src)' '\(dest.path)' && chmod +x '\(dest.path)'" with administrator privileges
+            """
+            var error: NSDictionary?
+            NSAppleScript(source: appleScript)?.executeAndReturnError(&error)
+            if error == nil {
+                let alert = NSAlert()
+                alert.messageText = "CLI Tool Installed"
+                alert.informativeText = "You can now use `meditor .` in Terminal to open folders."
+                alert.runModal()
+            } else {
+                let alert = NSAlert()
+                alert.messageText = "Installation Failed"
+                alert.informativeText = error?["NSAppleScriptErrorMessage"] as? String ?? "Unknown error"
+                alert.runModal()
+            }
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Installation Failed"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
         }
     }
 

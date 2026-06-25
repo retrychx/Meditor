@@ -60,11 +60,11 @@ NativeEditorView（实时替换选中内容）或 PreviewPanel（侧边对比）
 enum AIEndpoint {
     case appleWritingTools          // 系统内置，无需 Key
     case openAI(key: String)        // OpenAI API
-    case custom(url: URL, key: String)  // 公司内网 LLM ← 最重要
+    case custom(url: URL, key: String)  // 内网 LLM ← 最重要
 }
 ```
 
-设置页允许填入公司内网 LLM 地址，数据完全不出内网。这是面向企业用户的关键设计。
+设置页允许填入内网 LLM 地址，数据完全不出内网。这是面向企业用户的关键设计。
 
 #### 层次三：工作区上下文感知 AI（4-8周）
 
@@ -342,7 +342,7 @@ struct DocumentComment: Codable {
 
 ```swift
 protocol DocumentPublisher {
-    var name: String { get }           // "GitLab Snippet" / "SDoc" / "Confluence"
+    var name: String { get }           // "GitLab Snippet" / "内部文档平台" / "Confluence"
     var icon: String { get }
     
     func publish(
@@ -359,7 +359,7 @@ protocol DocumentPublisher {
 
 // 具体实现
 class GitLabSnippetPublisher: DocumentPublisher { ... }
-class SDocPublisher: DocumentPublisher { ... }         // 公司内部 SDoc
+class InternalDocPublisher: DocumentPublisher { ... }         // 组织内部 内部文档平台
 class ConfluencePublisher: DocumentPublisher { ... }
 ```
 
@@ -382,7 +382,7 @@ class ConfluencePublisher: DocumentPublisher { ... }
     ↓
 中期做：发布适配器接口设计 + GitLab 实现
     ↓
-长期做：SDoc / 其他平台适配器
+长期做：内部文档平台 / 其他平台适配器
 ```
 
 ---

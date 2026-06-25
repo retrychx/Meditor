@@ -1,0 +1,222 @@
+import Foundation
+import Observation
+
+// MARK: - DiffReviewState
+
+@MainActor
+@Observable
+final class DiffReviewState {
+
+    // MARK: Presentation
+
+    var isPresented  = false
+    var isLoading    = false
+    var loadingLabel = ""
+
+    // MARK: Streaming phase
+
+    /// True while AI is generating (before paragraph diff is computed).
+    var isStreaming      = false
+    /// Accumulated streaming text shown live in the right pane.
+    var streamedContent = ""
+    /// Human-readable label of the action being performed (e.g. "改写").
+    var streamingAction = ""
+    /// Held so `dismiss()` can cancel an in-flight stream.
+    var activeStreamTask: Task<Void, Never>? = nil
+
+    // MARK: Content
+
+    var originalContent: String = ""
+    var modifiedContent: String = ""
+    var diffs: [ParagraphDiff] = []
+    var mode: DiffReviewMode = .markdownVsMarkdown
+
+    // MARK: Derived
+
+    var pendingCount: Int { diffs.filter { $0.status == .pending }.count }
+    var hasPending:   Bool { pendingCount > 0 }
+
+    // MARK: Write-back
+
+    /// Called with the final merged content once all diffs are resolved.
+    /// - markdownVsMarkdown: receives the merged Markdown string.
+    /// - markdownVsHTML: receives `modifiedContent` (the generated HTML).
+    var onFinalize: ((String) -> Void)?
+
+    // MARK: Streaming entry point
+
+    /// Activate diff mode immediately and start streaming phase.
+    /// Call `appendStreamChunk(_:)` for each chunk, then `commitStream(onFinalize:)` when done.
+    func beginStreaming(original: String, actionLabel: String) {
+        originalContent = original
+        streamedContent = ""
+        streamingAction = actionLabel
+        modifiedContent = ""
+        diffs           = []
+        isStreaming     = true
+        onFinalize      = nil
+        isPresented     = true
+    }
+
+    func appendStreamChunk(_ chunk: String) {
+        streamedContent += chunk
+    }
+
+    /// Switch from streaming phase to paragraph-diff review phase.
+    func commitStream(onFinalize: @escaping (String) -> Void) {
+        isStreaming     = false
+        modifiedContent = streamedContent
+        self.onFinalize = onFinalize
+        diffs = ParagraphDiffer.diff(original: originalContent, modified: streamedContent)
+    }
+
+    /// Like commitStream but uses an externally-computed modified string
+    /// (e.g. full document with AI result spliced in).
+    func commitStreamWithModified(_ modified: String, onFinalize: @escaping (String) -> Void) {
+        isStreaming     = false
+        modifiedContent = modified
+        self.onFinalize = onFinalize
+        diffs = ParagraphDiffer.diff(original: originalContent, modified: modified)
+    }
+
+    // MARK: Present
+
+    func present(
+        original: String,
+        modified: String,
+        mode: DiffReviewMode = .markdownVsMarkdown,
+        selectedOriginal: String? = nil,
+        selectedModified: String? = nil,
+        onFinalize: ((String) -> Void)? = nil
+    ) {
+        self.originalContent = original
+        self.modifiedContent = modified
+        self.mode            = mode
+        self.onFinalize      = onFinalize
+        self.isStreaming      = false
+        self.streamedContent  = ""
+        self.streamingAction  = ""
+        guard mode == .markdownVsMarkdown else { self.diffs = []; self.isPresented = true; return }
+
+        if let selOrig = selectedOriginal, let selMod = selectedModified {
+            // Diff only the selected region
+            let selDiffs = ParagraphDiffer.diff(original: selOrig, modified: selMod)
+            let fullOrigBlocks = ParagraphDiffer.splitParagraphs(original)
+            let fullModBlocks  = ParagraphDiffer.splitParagraphs(modified)
+            let selOrigBlocks  = ParagraphDiffer.splitParagraphs(selOrig)
+            let selModBlocks   = ParagraphDiffer.splitParagraphs(selMod)
+            // Find where selected region starts in full document
+            let origOffset = fullOrigBlocks.firstIndex(where: { selOrigBlocks.first == $0 }) ?? 0
+            let modOffset  = fullModBlocks.firstIndex(where: { selModBlocks.first == $0 }) ?? 0
+            self.diffs = selDiffs.map { d in
+                ParagraphDiff(
+                    id: d.id,
+                    originalIndex: d.originalIndex >= 0 ? d.originalIndex + origOffset : -1,
+                    modifiedIndex: d.modifiedIndex >= 0 ? d.modifiedIndex + modOffset  : -1,
+                    original: d.original,
+                    modified: d.modified,
+                    status: d.status
+                )
+            }
+        } else {
+            self.diffs = ParagraphDiffer.diff(original: original, modified: modified)
+        }
+        self.isPresented = true
+    }
+
+    // MARK: Diff actions
+
+    func accept(_ id: UUID) {
+        guard let i = diffs.firstIndex(where: { $0.id == id }) else { return }
+        diffs[i].status = .accepted
+        checkAutoFinish()
+    }
+
+    func skip(_ id: UUID) {
+        guard let i = diffs.firstIndex(where: { $0.id == id }) else { return }
+        diffs[i].status = .skipped
+        checkAutoFinish()
+    }
+
+    func acceptAll() {
+        for i in diffs.indices { diffs[i].status = .accepted }
+        finalize()
+    }
+
+    func skipAll() {
+        for i in diffs.indices { diffs[i].status = .skipped }
+        dismiss()
+    }
+
+    // MARK: Merged content
+
+    func mergedContent() -> String {
+        guard mode == .markdownVsMarkdown else { return modifiedContent }
+
+        var blocks = ParagraphDiffer.splitParagraphs(originalContent)
+
+        // Apply accepted substitutions/deletions in reverse index order
+        // so that earlier-index operations don't shift later indices.
+        let sorted = diffs
+            .filter { $0.status == .accepted }
+            .sorted { $0.originalIndex > $1.originalIndex }
+
+        var additions: [(modfIndex: Int, text: String)] = []
+
+        for diff in sorted {
+            if diff.originalIndex >= 0 {
+                if diff.modified.isEmpty {
+                    // Deletion
+                    if diff.originalIndex < blocks.count {
+                        blocks.remove(at: diff.originalIndex)
+                    }
+                } else {
+                    // Substitution
+                    if diff.originalIndex < blocks.count {
+                        blocks[diff.originalIndex] = diff.modified
+                    }
+                }
+            } else if !diff.modified.isEmpty {
+                // Pure addition — collect and insert after all deletions/substitutions
+                additions.append((modfIndex: diff.modifiedIndex, text: diff.modified))
+            }
+        }
+
+        // Insert additions at their modified-side positions (best-effort)
+        for add in additions.sorted(by: { $0.modfIndex < $1.modfIndex }) {
+            let idx = min(add.modfIndex, blocks.count)
+            blocks.insert(add.text, at: idx)
+        }
+
+        return blocks.joined(separator: "\n\n")
+    }
+
+    // MARK: Dismiss
+
+    func dismiss() {
+        activeStreamTask?.cancel()
+        activeStreamTask = nil
+        isPresented      = false
+        isLoading        = false
+        isStreaming      = false
+        loadingLabel     = ""
+        streamedContent  = ""
+        streamingAction  = ""
+        diffs            = []
+        originalContent  = ""
+        modifiedContent  = ""
+        onFinalize       = nil
+    }
+
+    // MARK: Private
+
+    private func checkAutoFinish() {
+        if !hasPending { finalize() }
+    }
+
+    private func finalize() {
+        let content = mode == .markdownVsMarkdown ? mergedContent() : modifiedContent
+        onFinalize?(content)
+        dismiss()
+    }
+}

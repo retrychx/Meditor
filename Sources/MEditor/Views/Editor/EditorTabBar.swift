@@ -38,6 +38,13 @@ struct EditorTabBar: View {
                         Button(L("tab.showInFinder")) {
                             NSWorkspace.shared.activateFileViewerSelecting([tab.url])
                         }
+                        Divider()
+                        Button(L("menu.saveAsTemplate")) {
+                            state.selectedTab.map { _ in
+                                state.showingSaveTemplate = true
+                            }
+                        }
+                        .disabled(state.selectedTab == nil)
                     }
                 }
             }
@@ -96,15 +103,17 @@ private struct TabItem: View {
     @ViewBuilder
     private var tabBackground: some View {
         if isSelected {
-            // Craft: white (light) or dark-card (dark) rounded pill, subtle shadow
+            // 选中态：更实的卡片 + 更强的阴影，在磨砂背景上明显凸起
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isDark ? Color(white: 0.22) : Color.white)
-                .shadow(color: .black.opacity(isDark ? 0.3 : 0.1), radius: 4, x: 0, y: 1)
+                .fill(isDark ? Color(white: 0.26) : Color.white)
+                .shadow(color: .black.opacity(isDark ? 0.45 : 0.18), radius: 6, x: 0, y: 2)
+                .shadow(color: .black.opacity(isDark ? 0.2 : 0.06), radius: 1, x: 0, y: 0)
                 .padding(.horizontal, 2)
                 .padding(.vertical, 4)
         } else if isHovered {
+            // 悬浮态：比之前更明显
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(0.06))
+                .fill(Color.primary.opacity(isDark ? 0.14 : 0.10))
                 .padding(.horizontal, 2)
                 .padding(.vertical, 4)
         }

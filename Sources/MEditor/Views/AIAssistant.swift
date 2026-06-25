@@ -19,9 +19,9 @@ private struct AISuggestion: Identifiable {
 
 // MARK: - Chat / input panel
 
-/// The assistant page revealed by the hero overlay: a brand greeting, a
-/// suggestions / transcript body, and a compose card. No network is performed —
-/// replies are a local UI preview placeholder (the app is offline by design).
+/// 浮现于编辑器上方的 AI 助手面板。
+/// 支持多 provider：OpenAI 兼容接口（远程）或本地 Claude CLI（复用登录态）。
+/// 通过 AppSettings 配置 provider；未配置时显示引导界面。
 struct AIAssistantPanel: View {
     @Environment(AppState.self) private var state
     let onClose: () -> Void

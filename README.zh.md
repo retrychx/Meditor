@@ -69,6 +69,16 @@ swift build
 swift run
 ```
 
+### 运行测试
+
+```bash
+# 自动使用完整 Xcode toolchain
+./scripts/test.sh
+
+# 更短的别名
+make test
+```
+
 ### 生成 .app 包
 
 ```bash

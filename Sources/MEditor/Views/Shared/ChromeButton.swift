@@ -16,6 +16,7 @@ struct ChromeButton: View {
                 .symbolRenderingMode(.hierarchical)
                 .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(isActive ? Color.appAccent : Color.primary.opacity(isHovered ? 0.65 : 0.35))
+                .symbolEffect(.bounce, value: isActive)
                 .frame(width: 28, height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)

@@ -49,6 +49,7 @@ struct ContentView: View {
             BeautifySheet()
                 .environment(state)
                 .environment(settings)
+                .presentationBackground(.regularMaterial)
         }
         .sheet(isPresented: Binding(
             get: { state.showingQuickOpen },
@@ -57,6 +58,7 @@ struct ContentView: View {
             QuickOpenSheet()
                 .environment(state)
                 .environment(workspaceUI)
+                .presentationBackground(.regularMaterial)
         }
         .sheet(isPresented: Binding(
             get: { state.showingTemplatePicker },
@@ -66,6 +68,7 @@ struct ContentView: View {
                 state.createFromTemplate(template)
             }
             .environment(state)
+            .presentationBackground(.regularMaterial)
         }
         .alert(L("template.saveTitle"), isPresented: Binding(
             get: { state.showingSaveTemplate },
@@ -161,6 +164,7 @@ struct ContentView: View {
         } message: {
             Text("All open tabs will be closed. Unsaved changes will be lost.")
         }
+        // Diff review is now inline inside AppShell's document area (no overlay).
     }
 
     private var welcomeScreen: some View {
@@ -184,6 +188,14 @@ struct ContentView: View {
         } preview: {
             previewColumn
         }
+        .toastOverlay(message: Binding(
+            get: { state.toastMessage },
+            set: { state.toastMessage = $0 }
+        ))
+        .claudeFilePromptOverlay(prompt: Binding(
+            get: { state.claudeFilePrompt },
+            set: { state.claudeFilePrompt = $0 }
+        ))
     }
 
     private var sidebarColumn: some View {

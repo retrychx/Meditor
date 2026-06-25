@@ -44,7 +44,7 @@ struct QuickOpenSheet: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
-            .background(Color(nsColor: .windowBackgroundColor))
+            .background(.ultraThinMaterial)
 
             Divider()
 
@@ -259,51 +259,6 @@ struct QuickOpenSheet: View {
                 keywords: ["preview", "render", "web"]
             ) {
                 workspaceUI.togglePreview()
-            },
-            CommandPaletteItem(
-                id: "open-insert-panel",
-                title: L("quickOpen.openInsertPanel"),
-                subtitle: L("quickOpen.openInsertPanelDesc"),
-                icon: "plus",
-                keywords: ["insert", "new", "template", "create"]
-            ) {
-                workspaceUI.rightPanel = .insert
-            },
-            CommandPaletteItem(
-                id: "open-page-info",
-                title: L("quickOpen.openPageInfo"),
-                subtitle: L("quickOpen.openPageInfoDesc"),
-                icon: "info.circle",
-                keywords: ["info", "metadata", "details", "page"]
-            ) {
-                workspaceUI.rightPanel = .pageInfo
-            },
-            CommandPaletteItem(
-                id: "open-comments",
-                title: L("quickOpen.openComments"),
-                subtitle: L("quickOpen.openCommentsDesc"),
-                icon: "bubble.left",
-                keywords: ["comments", "discussion", "notes"]
-            ) {
-                workspaceUI.rightPanel = .comments
-            },
-            CommandPaletteItem(
-                id: "open-share-panel",
-                title: L("quickOpen.openSharePanel"),
-                subtitle: L("quickOpen.openSharePanelDesc"),
-                icon: "square.and.arrow.up",
-                keywords: ["share", "lan", "publish", "network"]
-            ) {
-                workspaceUI.rightPanel = .share
-            },
-            CommandPaletteItem(
-                id: "open-search-results",
-                title: L("quickOpen.openSearchResults"),
-                subtitle: L("quickOpen.openSearchResultsDesc"),
-                icon: "magnifyingglass.circle",
-                keywords: ["search", "results", "global"]
-            ) {
-                workspaceUI.rightPanel = .search
             },
             CommandPaletteItem(
                 id: "open-folder",

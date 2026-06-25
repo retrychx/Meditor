@@ -7,6 +7,8 @@ import Observation
 final class AIUIState {
     /// Current editor selection text, forwarded to the AI as context.
     var editorSelectedText: String = ""
+    /// Current preview selection text (for preview-side inline edit).
+    var previewSelectedText: String = ""
     /// Text to insert at the current caret position (driven by AI panel).
     var editorInsertText: String = ""
     /// Monotonic nonce so the same text can be inserted more than once.

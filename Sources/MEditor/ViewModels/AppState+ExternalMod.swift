@@ -70,7 +70,15 @@ extension AppState {
         }
     }
 
-    private func autoSaveModifiedTabs() {
+    func autoSaveModifiedTabs() {
         for tab in tabManager.openTabs where tab.isModified { saveTab(tab) }
+    }
+
+    /// 内容变化后防抖 2 秒再保存，避免每次击键都写磁盘。
+    func scheduleDebounceSave() {
+        debounceSaveTimer?.invalidate()
+        debounceSaveTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.autoSaveModifiedTabs() }
+        }
     }
 }

@@ -4,6 +4,7 @@ import Combine
 
 struct PreviewPanel: View {
     @Environment(AppState.self) private var state
+    @Environment(WorkspaceUIState.self) private var workspaceUI
     @State private var fontSize: Int = AppSettings.shared.previewFontSize
     @State private var tocItems: [TOCItem] = []
     @State private var activeTOCIndex: Int = -1
@@ -13,7 +14,8 @@ struct PreviewPanel: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            if showsMarkdown {
+            // 仅在有标题条目时展示 TOC，避免空白占位区域。
+            if showsMarkdown && !tocItems.isEmpty {
                 TOCOutlineView(
                     items: tocItems,
                     theme: state.themeStore.current,
@@ -60,16 +62,41 @@ struct PreviewPanel: View {
                         exporter: state.previewExporter,
                         sourceURL: state.selectedTab?.url,
                         fontSize: fontSize,
-                        findController: state.previewFindController
+                        findController: state.previewFindController,
+                        onSelectionChange: { text in
+                            withAnimation(DS.Motion.fast) {
+                                state.previewSelectedText = text
+                            }
+                        }
                     )
+                    .overlay(alignment: .bottom) {
+                        if !state.previewSelectedText.isEmpty {
+                            PreviewInlineEditBar(selectedText: state.previewSelectedText)
+                                .transition(AnyTransition.move(edge: .bottom).combined(with: .opacity))
+                        }
+                    }
                 } else if showsHTML {
                     WebPreviewView(
                         fileURL: state.previewHTMLFileURL,
                         reloadToken: state.previewReloadToken,
                         exporter: state.previewExporter,
                         rootURL: state.rootURL,
-                        findController: state.previewFindController
+                        findController: state.previewFindController,
+                        onSelectionChange: { text in
+                            withAnimation(DS.Motion.fast) {
+                                state.previewSelectedText = text
+                            }
+                        }
                     )
+                    .overlay(alignment: .bottom) {
+                        if !state.previewSelectedText.isEmpty {
+                            PreviewInlineEditBar(
+                                selectedText: state.previewSelectedText,
+                                onDismiss: { state.previewSelectedText = "" }
+                            )
+                            .transition(AnyTransition.move(edge: .bottom).combined(with: .opacity))
+                        }
+                    }
                 } else {
                     emptyState
                         .background(Color(nsColor: .textBackgroundColor))
@@ -92,6 +119,14 @@ struct PreviewPanel: View {
                     }
                     .padding(.top, 12)
                     .padding(.horizontal, 12)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if state.previewMode != .empty && !state.previewFindController.isPresented
+                    && !workspaceUI.isFocusMode {
+                    DocumentActionBar()
+                        .padding(.top, 12)
+                        .padding(.trailing, 12)
                 }
             }
         }

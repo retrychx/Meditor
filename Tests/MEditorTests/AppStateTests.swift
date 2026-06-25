@@ -3,98 +3,6 @@ import XCTest
 
 // MARK: - Mock
 
-class MockFileService: FileServiceProtocol {
-    private var files: [URL: String] = [:]
-    private var children: [URL: [FileItem]] = [:]
-    private let lock = NSLock()
-
-    func setFile(_ url: URL, content: String) {
-        lock.lock()
-        files[url] = content
-        lock.unlock()
-    }
-
-    func fileContent(at url: URL) -> String? {
-        lock.lock()
-        defer { lock.unlock() }
-        return files[url]
-    }
-
-    func setChildren(_ items: [FileItem], for directory: URL) {
-        lock.lock()
-        children[directory] = items
-        lock.unlock()
-    }
-
-    func loadImmediateChildren(of directory: URL) -> [FileItem] {
-        lock.lock()
-        defer { lock.unlock() }
-        return children[directory] ?? []
-    }
-
-    func loadChildren(for item: FileItem) -> [FileItem] {
-        lock.lock()
-        let childs = children[item.url] ?? []
-        lock.unlock()
-        item.children = childs
-        return childs
-    }
-
-    func loadAllFiles(under directory: URL) -> [FileItem] {
-        lock.lock()
-        defer { lock.unlock() }
-        return children[directory] ?? []
-    }
-
-    func readFile(at url: URL) throws -> String {
-        guard let content = fileContent(at: url) else {
-            throw NSError(domain: "mock", code: 1, userInfo: [NSLocalizedDescriptionKey: "File not found"])
-        }
-        return content
-    }
-
-    func writeFile(at url: URL, content: String) throws {
-        setFile(url, content: content)
-    }
-
-    func createFile(at url: URL, content: String) throws {
-        setFile(url, content: content)
-    }
-
-    func createDirectory(at url: URL) throws {}
-
-    func moveItem(from source: URL, to destination: URL) throws {
-        if let content = files[source] {
-            files[destination] = content
-            files.removeValue(forKey: source)
-        }
-    }
-
-    func removeItem(at url: URL) throws {
-        files.removeValue(forKey: url)
-    }
-
-    func fileExists(at url: URL) -> Bool {
-        // Check in-memory store first; fall back to real filesystem so
-        // session-restore tests that write to /tmp can resolve directories.
-        if files[url] != nil { return true }
-        return FileManager.default.fileExists(atPath: url.path)
-    }
-
-    func fileExists(at url: URL, isDirectory: inout Bool) -> Bool {
-        if files[url] != nil { isDirectory = false; return true }
-        var d: ObjCBool = false
-        let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &d)
-        isDirectory = d.boolValue
-        return exists
-    }
-
-    func attributes(at url: URL) -> [FileAttributeKey: Any]? {
-        if let content = files[url] { return [.size: Int64(content.utf8.count)] }
-        return try? FileManager.default.attributesOfItem(atPath: url.path)
-    }
-}
-
 final class MockFileWatcher: FileWatcherServiceProtocol {
     private(set) var watchedURLs: [URL] = []
     private(set) var startCallCount = 0
@@ -115,7 +23,6 @@ final class MockFileWatcher: FileWatcherServiceProtocol {
 
 final class DelayedFileService: MockFileService {
     var readDelay: TimeInterval = 0.15
-    var readError: Error?
 
     override func readFile(at url: URL) throws -> String {
         Thread.sleep(forTimeInterval: readDelay)
