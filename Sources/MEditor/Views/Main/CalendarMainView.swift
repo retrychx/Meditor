@@ -345,7 +345,15 @@ struct CalendarMainView: View {
         let sc = internal_calendarEvents.filter { e in
             e.startDate < dayEnd && e.endDate > dayStart
         }.map { CalendarEventItem.internal_calendar($0) }
-        return (ek + sc).sorted { $0.startDate < $1.startDate }
+
+        // 去重：InternalCalendar 事件若与 EK 事件 name+时间吻合则跳过（系统日历已同步该条目）
+        let ekKeys = Set(ek.map { "\($0.title)|\(Int($0.startDate.timeIntervalSince1970 / 60))" })
+        let dedupedSC = sc.filter { item in
+            let key = "\(item.title)|\(Int(item.startDate.timeIntervalSince1970 / 60))"
+            return !ekKeys.contains(key)
+        }
+
+        return (ek + dedupedSC).sorted { $0.startDate < $1.startDate }
     }
 
     private func navigate(by delta: Int) {
@@ -454,7 +462,7 @@ private struct EventPill: View {
                     .fill(Color(hex: event.colorHex))
                     .frame(width: 6, height: 6)
             }
-            Text(event.title ?? "（无标题）")
+            Text(event.title)
                 .font(.system(size: compact ? 9.5 : 12))
                 .foregroundStyle(compact ? Color.white : Color.primary)
                 .lineLimit(1)
@@ -583,112 +591,6 @@ private struct EventRow: View {
 
 }
 
-// MARK: - Event Detail Popover
-
-private struct EventDetailPopover: View {
-    let event: EKEvent
-    let onDismiss: () -> Void
-    @State private var showDeleteConfirm = false
-    private let service = CalendarService.shared
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(event.title)
-                        .font(.system(size: 15, weight: .semibold))
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(Color(cgColor: event.calendar.cgColor))
-                            .frame(width: 8, height: 8)
-                        Text(event.calendar.title)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Spacer()
-                Button { onDismiss() } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.tertiary)
-                        .font(.system(size: 16))
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(16)
-
-            Divider()
-
-            // Details
-            VStack(alignment: .leading, spacing: 10) {
-                detailRow(icon: "clock", text: timeText)
-                if let location = event.location, !location.isEmpty {
-                    detailRow(icon: "mappin", text: location)
-                }
-                if let notes = event.notes, !notes.isEmpty {
-                    detailRow(icon: "note.text", text: notes)
-                }
-            }
-            .padding(16)
-
-            // Actions
-            if event.calendar.allowsContentModifications {
-                Divider()
-                HStack {
-                    Button(role: .destructive) {
-                        showDeleteConfirm = true
-                    } label: {
-                        Label("删除", systemImage: "trash")
-                            .font(.system(size: 12))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.red)
-                    .confirmationDialog("确认删除此事件？", isPresented: $showDeleteConfirm) {
-                        Button("删除", role: .destructive) {
-                            service.deleteEvent(event)
-                            onDismiss()
-                        }
-                        Button("取消", role: .cancel) {}
-                    }
-                    Spacer()
-                    Button {
-                        // 在系统日历中打开
-                        if let url = URL(string: "ical://") { NSWorkspace.shared.open(url) }
-                    } label: {
-                        Label("在日历中查看", systemImage: "arrow.up.right.square")
-                            .font(.system(size: 12))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.appAccent)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-            }
-        }
-        .frame(width: 300)
-    }
-
-    private func detailRow(icon: String, text: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .frame(width: 16)
-            Text(text)
-                .font(.system(size: 13))
-                .foregroundStyle(.primary)
-        }
-    }
-
-    private var timeText: String {
-        if event.isAllDay {
-            let fmt = DateFormatter(); fmt.dateStyle = .medium; fmt.timeStyle = .none
-            return fmt.string(from: event.startDate)
-        }
-        let fmt = DateFormatter(); fmt.dateStyle = .medium; fmt.timeStyle = .short
-        return "\(fmt.string(from: event.startDate)) – \(DateFormatter().apply { $0.timeStyle = .short; $0.dateStyle = .none }.string(from: event.endDate))"
-    }
-}
 
 // MARK: - Create Event Sheet
 
