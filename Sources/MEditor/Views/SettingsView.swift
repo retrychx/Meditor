@@ -334,19 +334,19 @@ struct SettingsView: View {
             }
             if settings.internal_calendarEnabled {
                 settingsRow(label: "本地代理地址", subtitle: "InternalCalendar MCP proxy 地址") {
-                    TextField("http://127.0.0.1:30001/rest", text: bindableSettings.internal_calendarProxyURL)
+                    TextField("本地代理地址", text: bindableSettings.internal_calendarProxyURL)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 280)
                         .font(.system(size: 12, design: .monospaced))
                 }
                 settingsRow(label: "查询日程路径", subtitle: "mcp-proxy-path header 值") {
-                    TextField("/office-im-chat/calendar/...", text: bindableSettings.internal_calendarCalendarPath)
+                    TextField("查询接口路径", text: bindableSettings.internal_calendarCalendarPath)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 280)
                         .font(.system(size: 12, design: .monospaced))
                 }
                 settingsRow(label: "创建日程路径", subtitle: "mcp-proxy-path header 值") {
-                    TextField("/office-im-chat/calendar/...", text: bindableSettings.internal_calendarCreatePath)
+                    TextField("创建接口路径", text: bindableSettings.internal_calendarCreatePath)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 280)
                         .font(.system(size: 12, design: .monospaced))

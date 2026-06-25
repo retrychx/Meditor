@@ -287,9 +287,9 @@ final class AppSettings {
         claudeMonitorEnabled    = d.object(forKey: Key.claudeMonitorEnabled) != nil ? d.bool(forKey: Key.claudeMonitorEnabled) : false
         claudeMonitorCustomPath = d.string(forKey: Key.claudeMonitorCustomPath) ?? ""
         claudeMonitorFileExts   = d.string(forKey: Key.claudeMonitorFileExts) ?? "md,txt"
-        internal_calendarEnabled      = d.object(forKey: Key.internal_calendarEnabled) != nil ? d.bool(forKey: Key.internal_calendarEnabled) : true
-        internal_calendarProxyURL     = d.string(forKey: Key.internal_calendarProxyURL)     ?? "http://127.0.0.1:30001/rest"
-        internal_calendarCalendarPath = d.string(forKey: Key.internal_calendarCalendarPath) ?? "/office-im-chat/calendar/schedule/getScheduleList.do"
-        internal_calendarCreatePath   = d.string(forKey: Key.internal_calendarCreatePath)   ?? "/office-im-chat/calendar/schedule/createSchedule.do"
+        internal_calendarEnabled      = d.object(forKey: Key.internal_calendarEnabled) != nil ? d.bool(forKey: Key.internal_calendarEnabled) : false
+        internal_calendarProxyURL     = d.string(forKey: Key.internal_calendarProxyURL)     ?? ""
+        internal_calendarCalendarPath = d.string(forKey: Key.internal_calendarCalendarPath) ?? ""
+        internal_calendarCreatePath   = d.string(forKey: Key.internal_calendarCreatePath)   ?? ""
     }
 }
