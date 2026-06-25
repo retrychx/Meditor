@@ -15,10 +15,12 @@ struct CalendarMainView: View {
     @State private var viewMode: CalendarViewMode = .month
     @State private var referenceDate: Date = Date()
     @State private var events: [EKEvent] = []
+    @State private var internal_calendarEvents: [InternalCalendarEvent] = []
+    @State private var internal_calendarAvailable = false
     @State private var authStatus: EKAuthorizationStatus = .notDetermined
     @State private var isLoading = false
     @State private var selectedDate: Date? = nil
-    @State private var selectedEvent: EKEvent? = nil
+    @State private var selectedEvent: CalendarEventItem? = nil
     @State private var showCreateSheet = false
     @State private var createForDate: Date? = nil
     @State private var calendarFilter: Set<String> = []     // empty = all
@@ -67,8 +69,8 @@ struct CalendarMainView: View {
         .sheet(isPresented: $showCreateSheet, onDismiss: { Task { await reload() } }) {
             CreateEventSheet(defaultDate: createForDate ?? Date(), calendars: allCalendars)
         }
-        .popover(item: $selectedEvent, arrowEdge: .trailing) { event in
-            EventDetailPopover(event: event) {
+        .popover(item: $selectedEvent, arrowEdge: .trailing) { item in
+            EventDetailPopoverItem(item: item) {
                 selectedEvent = nil
                 Task { await reload() }
             }
@@ -267,7 +269,7 @@ struct CalendarMainView: View {
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 2) {
-                        ForEach(dayEvents, id: \.eventIdentifier) { event in
+                        ForEach(dayEvents) { event in
                             EventRow(event: event)
                                 .onTapGesture { selectedEvent = event }
                         }
@@ -333,15 +335,17 @@ struct CalendarMainView: View {
 
     // MARK: - Helpers
 
-    private func eventsOn(_ date: Date) -> [EKEvent] {
+    private func eventsOn(_ date: Date) -> [CalendarEventItem] {
         let cal = Calendar.current
-        return events.filter { event in
-            let start = event.startDate!
-            let end   = event.endDate!
-            let dayStart = cal.startOfDay(for: date)
-            let dayEnd   = cal.date(byAdding: .day, value: 1, to: dayStart)!
-            return start < dayEnd && end > dayStart
-        }
+        let dayStart = cal.startOfDay(for: date)
+        let dayEnd   = cal.date(byAdding: .day, value: 1, to: dayStart)!
+        let ek = events.filter { event in
+            event.startDate < dayEnd && event.endDate > dayStart
+        }.map { CalendarEventItem.ek($0) }
+        let sc = internal_calendarEvents.filter { e in
+            e.startDate < dayEnd && e.endDate > dayStart
+        }.map { CalendarEventItem.internal_calendar($0) }
+        return (ek + sc).sorted { $0.startDate < $1.startDate }
     }
 
     private func navigate(by delta: Int) {
@@ -357,6 +361,7 @@ struct CalendarMainView: View {
     private func load() async {
         authStatus = EKEventStore.authorizationStatus(for: .event)
         allCalendars = service.allCalendars()
+        internal_calendarAvailable = await InternalCalendarCalendarService.shared.isAvailable
         if authStatus == .fullAccess { await reload() }
     }
 
@@ -365,6 +370,9 @@ struct CalendarMainView: View {
         isLoading = true
         let (s, e) = visibleRange
         events = service.fetchEvents(from: s, to: e)
+        if internal_calendarAvailable {
+            internal_calendarEvents = (try? await InternalCalendarCalendarService.shared.fetchEvents(from: s, to: e)) ?? []
+        }
         isLoading = false
     }
 }
@@ -376,7 +384,7 @@ private struct MonthDayCell: View {
     let isCurrentMonth: Bool
     let isToday: Bool
     let isSelected: Bool
-    let events: [EKEvent]
+    let events: [CalendarEventItem]
     @State private var isHovered = false
 
     var body: some View {
@@ -404,7 +412,7 @@ private struct MonthDayCell: View {
 
             // Event dots / pills
             VStack(alignment: .leading, spacing: 2) {
-                ForEach(events.prefix(3), id: \.eventIdentifier) { event in
+                ForEach(Array(events.prefix(3))) { event in
                     EventPill(event: event, compact: true)
                 }
                 if events.count > 3 {
@@ -436,14 +444,14 @@ private struct MonthDayCell: View {
 // MARK: - Event Pill
 
 private struct EventPill: View {
-    let event: EKEvent
+    let event: CalendarEventItem
     let compact: Bool
 
     var body: some View {
         HStack(spacing: 3) {
             if !compact {
                 Circle()
-                    .fill(Color(cgColor: event.calendar.cgColor))
+                    .fill(Color(hex: event.colorHex))
                     .frame(width: 6, height: 6)
             }
             Text(event.title ?? "（无标题）")
@@ -455,7 +463,7 @@ private struct EventPill: View {
         .padding(.vertical, compact ? 1.5 : 3)
         .background(
             RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(Color(cgColor: event.calendar.cgColor).opacity(compact ? 0.85 : 0.15))
+                .fill(Color(hex: event.colorHex).opacity(compact ? 0.85 : 0.15))
         )
     }
 }
@@ -464,8 +472,8 @@ private struct EventPill: View {
 
 private struct WeekDaySection: View {
     let date: Date
-    let events: [EKEvent]
-    let onSelectEvent: (EKEvent) -> Void
+    let events: [CalendarEventItem]
+    let onSelectEvent: (CalendarEventItem) -> Void
     let onCreateEvent: () -> Void
 
     private var isToday: Bool { Calendar.current.isDateInToday(date) }
@@ -495,7 +503,7 @@ private struct WeekDaySection: View {
                         .foregroundStyle(.tertiary)
                         .padding(.vertical, 8)
                 } else {
-                    ForEach(events, id: \.eventIdentifier) { event in
+                    ForEach(events) { event in
                         EventRow(event: event)
                             .onTapGesture { onSelectEvent(event) }
                     }
@@ -530,18 +538,18 @@ private struct WeekDaySection: View {
 // MARK: - Event Row
 
 private struct EventRow: View {
-    let event: EKEvent
+    let event: CalendarEventItem
     @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 8) {
             Rectangle()
-                .fill(Color(cgColor: event.calendar.cgColor))
+                .fill(Color(hex: event.colorHex))
                 .frame(width: 3)
                 .cornerRadius(2)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(event.title ?? "（无标题）")
+                Text(event.title)
                     .font(.system(size: 13))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
@@ -550,7 +558,7 @@ private struct EventRow: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            if let notes = event.notes, !notes.isEmpty {
+            if event.notes != nil {
                 Image(systemName: "note.text")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
@@ -572,6 +580,7 @@ private struct EventRow: View {
         fmt.dateStyle = .none
         return "\(fmt.string(from: event.startDate)) – \(fmt.string(from: event.endDate))"
     }
+
 }
 
 // MARK: - Event Detail Popover
@@ -587,7 +596,7 @@ private struct EventDetailPopover: View {
             // Header
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(event.title ?? "（无标题）")
+                    Text(event.title)
                         .font(.system(size: 15, weight: .semibold))
                     HStack(spacing: 6) {
                         Circle()
@@ -817,6 +826,174 @@ private extension DateFormatter {
     }
 }
 
+// MARK: - CalendarEventItem
+
+enum CalendarEventItem: Identifiable {
+    case ek(EKEvent)
+    case internal_calendar(InternalCalendarEvent)
+
+    var id: String {
+        switch self {
+        case .ek(let e):    return e.eventIdentifier ?? UUID().uuidString
+        case .internal_calendar(let e): return "internal_calendar-\(e.id)"
+        }
+    }
+    var title: String {
+        switch self {
+        case .ek(let e):    return e.title ?? "（无标题）"
+        case .internal_calendar(let e): return e.name
+        }
+    }
+    var startDate: Date {
+        switch self {
+        case .ek(let e):    return e.startDate
+        case .internal_calendar(let e): return e.startDate
+        }
+    }
+    var endDate: Date {
+        switch self {
+        case .ek(let e):    return e.endDate
+        case .internal_calendar(let e): return e.endDate
+        }
+    }
+    var isAllDay: Bool {
+        switch self {
+        case .ek(let e):    return e.isAllDay
+        case .internal_calendar(let e): return e.isAllDay
+        }
+    }
+    var colorHex: String {
+        switch self {
+        case .ek(let e):
+            let c = e.calendar.cgColor
+            let comps = c?.components ?? [0.4, 0.6, 1.0, 1.0]
+            let r = Int((comps.count > 0 ? comps[0] : 0) * 255)
+            let g = Int((comps.count > 1 ? comps[1] : 0) * 255)
+            let b = Int((comps.count > 2 ? comps[2] : 0) * 255)
+            return String(format: "%02X%02X%02X", r, g, b)
+        case .internal_calendar(let e): return e.colorHex.trimmingCharacters(in: .init(charactersIn: "#"))
+        }
+    }
+    var source: String {
+        switch self {
+        case .ek:    return "system"
+        case .internal_calendar: return "internal_calendar"
+        }
+    }
+    var notes: String? {
+        switch self {
+        case .ek(let e):    return e.notes
+        case .internal_calendar(let e): return e.desc.isEmpty ? nil : e.desc
+        }
+    }
+    var location: String? {
+        switch self {
+        case .ek(let e):    return e.location
+        case .internal_calendar(let e): return e.location.isEmpty ? nil : e.location
+        }
+    }
+}
+
 extension EKEvent: @retroactive Identifiable {
     public var id: String { eventIdentifier ?? UUID().uuidString }
+}
+
+// MARK: - EventDetailPopoverItem (wraps EKEvent or InternalCalendarEvent detail)
+
+private struct EventDetailPopoverItem: View {
+    let item: CalendarEventItem
+    let onDismiss: () -> Void
+    @State private var showDeleteConfirm = false
+    private let service = CalendarService.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(Color(hex: item.colorHex))
+                            .frame(width: 10, height: 10)
+                        Text(item.title)
+                            .font(.system(size: 15, weight: .semibold))
+                    }
+                    if item.source == "internal_calendar" {
+                        Label("InternalCalendar 日程", systemImage: "message.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                Button { onDismiss() } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                        .font(.system(size: 16))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(16)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 10) {
+                detailRow(icon: "clock", text: timeText)
+                if let loc = item.location, !loc.isEmpty {
+                    detailRow(icon: "mappin", text: loc)
+                }
+                if let notes = item.notes, !notes.isEmpty {
+                    detailRow(icon: "note.text", text: notes)
+                }
+            }
+            .padding(16)
+
+            // Actions — only for EKEvent
+            if case .ek(let event) = item, event.calendar.allowsContentModifications {
+                Divider()
+                HStack {
+                    Button(role: .destructive) {
+                        showDeleteConfirm = true
+                    } label: {
+                        Label("删除", systemImage: "trash")
+                            .font(.system(size: 12))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.red)
+                    .confirmationDialog("确认删除此事件？", isPresented: $showDeleteConfirm) {
+                        Button("删除", role: .destructive) {
+                            service.deleteEvent(event)
+                            onDismiss()
+                        }
+                        Button("取消", role: .cancel) {}
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+            }
+        }
+        .frame(width: 300)
+    }
+
+    private func detailRow(icon: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+            Text(text)
+                .font(.system(size: 13))
+                .foregroundStyle(.primary)
+        }
+    }
+
+    private var timeText: String {
+        if item.isAllDay {
+            let fmt = DateFormatter(); fmt.dateStyle = .medium; fmt.timeStyle = .none
+            return fmt.string(from: item.startDate)
+        }
+        let fmt = DateFormatter(); fmt.dateStyle = .medium; fmt.timeStyle = .short
+        let efmt = DateFormatter(); efmt.timeStyle = .short; efmt.dateStyle = .none
+        return "\(fmt.string(from: item.startDate)) – \(efmt.string(from: item.endDate))"
+    }
 }
