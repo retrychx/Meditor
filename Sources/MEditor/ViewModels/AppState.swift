@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import OSLog
+import SwiftUI
 
 enum EditorLanguage: String {
     case markdown
@@ -34,7 +35,7 @@ final class AppState {
     let fileTreeManager: FileTreeManager
     let previewManager: PreviewManager
     let shareManager: ShareManager
-    let gitlabShareManager: GitLabShareManager
+    let githubGistManager: GitHubGistManager
     let templateManager: TemplateManager
     let pluginManager: PluginManager
 
@@ -58,10 +59,21 @@ final class AppState {
 
     let aiUI = AIUIState()
 
+    // MARK: - Diff Review State
+
+    let diffReview = DiffReviewState()
+    /// 多一层直接属性，避免嵌套 @Observable 被 SwiftUI 漏追踪的问题
+    var showingDiffReview: Bool {
+        get { diffReview.isPresented }
+        set { diffReview.isPresented = newValue }
+    }
+
     // MARK: - Cursor / Status bar
 
     var cursorLine: Int = 1
     var cursorColumn: Int = 1
+    /// 最近一次保存成功的时间，用于状态栏短暂显示"已保存"提示。
+    var lastSavedAt: Date? = nil
     var editorVisibleLine: Int = 0
     var previewVisibleLine: Int = 0
     var editorScrollCommand: ScrollSyncCommand = .idle
@@ -86,11 +98,66 @@ final class AppState {
     }
 
     func insertIntoEditor(_ text: String) {
-        aiUI.requestInsert(text)
+        // 编辑器已隐藏（仅预览 + AI 模式），直接写入 tab.content
+        // 避免走 NativeEditorView.insertText 路径（视图未渲染时是死路）
+        guard let tab = selectedTab else {
+            aiUI.requestInsert(text)
+            return
+        }
+        if tab.language == .html {
+            // HTML 文件：插入到 </body> 之前，保持结构合法
+            let bodyClose = "</body>"
+            if let range = tab.content.range(of: bodyClose, options: .caseInsensitive) {
+                tab.content.replaceSubrange(range, with: "\n" + text + "\n" + bodyClose)
+            } else {
+                // 没有 </body>，直接追加
+                tab.content += "\n" + text
+            }
+        } else {
+            // Markdown 及其他文本：追加到末尾
+            let separator = tab.content.isEmpty ? "" : "\n\n"
+            tab.content += separator + text
+        }
+        scheduleDebounceSave()
     }
 
     func replaceInEditor(_ text: String) {
         aiUI.requestReplace(text)
+    }
+
+    var previewSelectedText: String {
+        get { aiUI.previewSelectedText }
+        set { aiUI.previewSelectedText = newValue }
+    }
+
+    @discardableResult
+    func replaceInMarkdownSource(original: String, replacement: String) -> Bool {
+        guard let tab = selectedTab else { return false }
+        let content = tab.content
+
+        // 找到所有出现位置
+        var ranges: [Range<String.Index>] = []
+        var searchStart = content.startIndex
+        while let found = content.range(of: original, range: searchStart..<content.endIndex) {
+            ranges.append(found)
+            searchStart = found.upperBound
+            // 超过 2 个就没必要继续找了
+            if ranges.count > 1 { break }
+        }
+
+        guard !ranges.isEmpty else { return false }
+
+        if ranges.count > 1 {
+            // 文本在文档中出现多次，无法精确定位，提示用户手动处理
+            let msg = L("ai.error.replaceAmbiguous")
+            setError(msg)
+            return false
+        }
+
+        tab.content.replaceSubrange(ranges[0], with: replacement)
+        // AI 内联改写后触发自动保存
+        scheduleDebounceSave()
+        return true
     }
 
     var currentFileSize: String {
@@ -102,7 +169,17 @@ final class AppState {
     // MARK: - UI overlay
 
     var errorMessage: String?
-    var showingQuickOpen = false
+    var toastMessage: ToastMessage?
+
+    func showToast(_ text: String, icon: String? = nil) {
+        withAnimation(DS.Motion.fast) {
+            toastMessage = ToastMessage(text, icon: icon)
+        }
+    }
+
+    var showingQuickOpen = false {
+        didSet { if showingQuickOpen { showingBeautifySheet = false } }
+    }
     var showingSettings = false
     var showingCloseProjectConfirmation = false
     var showingAIAssistant: Bool {
@@ -111,7 +188,9 @@ final class AppState {
     }
     var externallyModifiedTab: EditorTab?
     var showingReloadPrompt = false
-    var showingBeautifySheet = false
+    var showingBeautifySheet = false {
+        didSet { if showingBeautifySheet { showingQuickOpen = false } }
+    }
     var showingInlineEdit = false
 
     // MARK: - Services
@@ -121,6 +200,16 @@ final class AppState {
     let themeStore: PreviewThemeStore
     let sessionStore: SessionStore
 
+    // MARK: - 散文件 & Claude 监听
+
+    let looseFiles = LooseFilesStore()
+
+    /// Claude 创建文件时弹出的提示（有按钮的 Toast）
+    var claudeFilePrompt: ClaudeFilePrompt? = nil
+
+    @ObservationIgnored private let claudeMonitor = ClaudeSessionMonitor()
+    @ObservationIgnored private var claudeMonitorObserver: Any?
+
     // MARK: - Internal bookkeeping
 
     @ObservationIgnored private(set) var accessRefCounts: [URL: Int] = [:]
@@ -128,6 +217,8 @@ final class AppState {
     @ObservationIgnored private var sessionPersistScheduled = false
     @ObservationIgnored var autoSaveTimer: Timer?
     @ObservationIgnored var autoSaveObserver: Any?
+    /// 输入停止后 2 秒触发保存的防抖计时器。
+    @ObservationIgnored var debounceSaveTimer: Timer?
     /// Mod-dates for open files; used by AppState+ExternalMod.
     @ObservationIgnored var externalModDates: [URL: Date] = [:]
 
@@ -147,18 +238,92 @@ final class AppState {
         self.fileTreeManager = FileTreeManager(fileService: fileService)
         self.previewManager  = PreviewManager()
         self.shareManager    = ShareManager()
-        self.gitlabShareManager = GitLabShareManager()
+        self.githubGistManager = GitHubGistManager()
         self.templateManager = TemplateManager()
         self.pluginManager   = PluginManager()
         wireTabManagerCallbacks()
         setupAutoSaveTimer()
         pluginManager.load()
+        setupClaudeMonitor()
     }
 
     deinit {
         autoSaveTimer?.invalidate()
+        debounceSaveTimer?.invalidate()
         if let obs = autoSaveObserver { NotificationCenter.default.removeObserver(obs) }
         for url in accessRefCounts.keys { url.stopAccessingSecurityScopedResource() }
+    }
+
+    // MARK: - Claude 监听配置
+
+    private func setupClaudeMonitor() {
+        // 注册事件回调（无论开关状态如何均只注册一次）
+        claudeMonitor.onFileCreated = { [weak self] event in
+            guard let self else { return }
+            self.handleClaudeFileCreated(event)
+        }
+
+        // 仅开启时启动
+        let settings = AppSettings.shared
+        if settings.claudeMonitorEnabled {
+            claudeMonitor.start(
+                directory: settings.claudeMonitorDirectory,
+                extensions: settings.claudeMonitorExtensions
+            )
+        }
+
+        // 设置变更时重启监听（只注册一次，存储 token 防止重复注册）
+        claudeMonitorObserver = NotificationCenter.default.addObserver(
+            forName: .claudeMonitorSettingsChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.restartClaudeMonitorIfNeeded()
+        }
+    }
+
+    private func restartClaudeMonitorIfNeeded() {
+        let settings = AppSettings.shared
+        claudeMonitor.stop()
+        if settings.claudeMonitorEnabled {
+            claudeMonitor.start(
+                directory: settings.claudeMonitorDirectory,
+                extensions: settings.claudeMonitorExtensions
+            )
+        }
+    }
+
+    private func handleClaudeFileCreated(_ event: ClaudeFileEvent) {
+        // 如果文件已经在散文件列表，不重复提示
+        guard !looseFiles.contains(event.fileURL) else { return }
+        withAnimation(DS.Motion.fast) {
+            claudeFilePrompt = ClaudeFilePrompt(
+                fileURL: event.fileURL,
+                onAccept: { [weak self] in
+                    guard let self else { return }
+                    self.claudeFilePrompt = nil
+                    self.looseFiles.add(event.fileURL, source: .claude)
+                    self.openLooseFile(event.fileURL)
+                },
+                onDismiss: { [weak self] in
+                    self?.claudeFilePrompt = nil
+                }
+            )
+        }
+    }
+
+    /// 打开一个散文件（Tab 已打开则跳转，否则新建 Tab）。
+    func openLooseFile(_ url: URL) {
+        // 如果已有 Tab 则跳转
+        if let existing = openTabs.first(where: { $0.url == url }) {
+            selectedTabID = existing.id
+            return
+        }
+        let item = FileItem(url: url, isDirectory: false)
+        openFile(item)
+        // 确保在散文件列表中有记录
+        looseFiles.add(url, source: .manual)
     }
 
     // MARK: - TabManager callback wiring
@@ -183,6 +348,7 @@ final class AppState {
         tabManager.onRequiresDirectFileAccess = { [weak self] url in self?.requiresDirectFileAccess(url) ?? true }
         tabManager.onRecordModDate           = { [weak self] url in self?.recordModDate(for: url) }
         tabManager.onReport                  = { [weak self] err in self?.report(err) }
+        tabManager.onDidSave                 = { [weak self] in self?.lastSavedAt = Date() }
     }
 
     // MARK: - Shared helpers (used by multiple extensions)
