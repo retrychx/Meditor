@@ -124,8 +124,8 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
             VStack(spacing: 0) {
                 if workspaceUI.isFocusMode {
                     Color.clear.frame(height: 38)
-                } else if workspaceUI.activeMainView == .calendar {
-                    // Calendar has its own toolbar — skip the global one
+                } else if workspaceUI.activeMainView != .document {
+                    // Calendar / Todos 有各自的头部栏 — 跳过全局 TopToolbar（含文件 tab 栏）
                     Color.clear.frame(height: 0)
                 } else {
                     TopToolbar(workspaceUI: workspaceUI, focusNS: focusNS)
