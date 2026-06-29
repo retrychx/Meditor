@@ -43,27 +43,44 @@ final class FileTreeManager {
     // MARK: - Public API
 
     /// Immediately reload the first level of the tree and rebuild the full index.
+    /// 首层目录扫描在后台执行，避免阻塞主线程。
     func reload(rootURL: URL) {
-        let sid = PerformanceTracer.begin("ReloadFileTree", log: PerformanceTracer.fileOps)
-        defer { PerformanceTracer.end("ReloadFileTree", log: PerformanceTracer.fileOps, id: sid) }
-
         pendingReloadWork?.cancel()
-        let children = fileService.loadImmediateChildren(of: rootURL)
-        let merged = mergeChildren(children, into: fileTree)
-        fileItemMap = [:]
-        fileTree = merged
+        let sid     = PerformanceTracer.begin("ReloadFileTree", log: PerformanceTracer.fileOps)
+        let current = fileTree          // 主线程快照
+        let svc     = fileService
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let children = svc.loadImmediateChildren(of: rootURL)
+            await self?.applyReload(children: children, into: current, rootURL: rootURL, sid: sid)
+        }
+    }
+
+    @MainActor
+    private func applyReload(children: [FileItem], into existing: [FileItem], rootURL: URL, sid: OSSignpostID) {
+        let merged   = mergeChildren(children, into: existing)
+        fileItemMap  = [:]
+        fileTree     = merged
         addToMap(merged)
-        // Mark index stale — rebuilt lazily when QuickOpen actually needs it.
-        indexStale = true
+        indexStale        = true
         lastIndexedRootURL = rootURL
+        PerformanceTracer.end("ReloadFileTree", log: PerformanceTracer.fileOps, id: sid)
     }
 
     /// Fresh open: load and assign in one step, bypassing merge so SwiftUI
     /// sees a single [] → [items] transition with no intermediate empty render.
+    /// IO 在后台执行，完成后回到主线程更新树。
     func reloadFresh(rootURL: URL) {
         pendingReloadWork?.cancel()
         fileIndexGeneration &+= 1
-        let children = fileService.loadImmediateChildren(of: rootURL)
+        let svc     = fileService
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let children = svc.loadImmediateChildren(of: rootURL)
+            await self?.applyReloadFresh(children: children, rootURL: rootURL)
+        }
+    }
+
+    @MainActor
+    private func applyReloadFresh(children: [FileItem], rootURL: URL) {
         // Still merge to reuse existing FileItem instances when reopening the
         // same folder — avoids DisclosureGroup node destruction/recreation.
         let merged = mergeChildren(children, into: fileTree)
@@ -186,12 +203,10 @@ final class FileTreeManager {
         let existingMap = Dictionary(uniqueKeysWithValues: existing.map { ($0.url, $0) })
         return fresh.map { newItem in
             guard let old = existingMap[newItem.url] else { return newItem }
-            // If this directory was expanded, re-scan its children from disk so
-            // externally-added/deleted files show up without a manual refresh.
+            // 已展开的目录：标记为 stale，让用户再次展开时通过 loadChildrenIfNeeded 异步刷新。
+            // 不在 mergeChildren 里内联同步读磁盘，避免 FSEvent reload 时採集所有展开目录。
             if old.isDirectory && old.childrenLoaded {
-                let freshKids = fileService.loadImmediateChildren(of: old.url)
-                old.children = mergeChildren(freshKids, into: old.children ?? [])
-                addToMap(old.children ?? [])
+                old.childrenLoaded = false   // 下次展开时重新加载
             }
             return old
         }
