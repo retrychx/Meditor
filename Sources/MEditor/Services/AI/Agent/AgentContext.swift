@@ -296,35 +296,107 @@ final class AgentContext: AgentContextProtocol {
     }
 
     /// 全工作区关键词搜索，返回匹配行（带文件名+行号）
-    func searchWorkspace(query: String, extensions: [String] = ["md", "txt", "markdown"]) -> [String] {
-        let files = listWorkspaceFiles(extensions: extensions)
-        let root = workspaceURL?.path ?? ""
+    func searchWorkspace(query: String, extensions: [String] = ["md", "txt", "markdown"]) async -> [String] {
+        guard let root = workspaceURL else { return [] }
+
+        // 优先走系统 grep（纯字面字符串，速度快 10-50x）
+        if let results = await grepSearch(query: query, extensions: extensions, root: root) {
+            return results
+        }
+
+        // Fallback：Swift 实现（含特殊字符 / grep 不可用时）
+        let files    = listWorkspaceFiles(extensions: extensions)
+        let rootPath = root.path
+        return await Task.detached(priority: .userInitiated) {
+            Self.swiftSearch(query: query, files: files, rootPath: rootPath)
+        }.value
+    }
+
+    // MARK: - Search internals
+
+    /// 系统 grep 快路径。成功返回结果数组，不可用时返回 nil（让调用方 fallback）。
+    private func grepSearch(query: String, extensions: [String], root: URL) async -> [String]? {
+        // 只有纯字面字符串才走 grep，避免 query 被误当正则
+        let unsafeForGrep = CharacterSet(charactersIn: ".+*?^${}[]|()\\")
+        guard query.unicodeScalars.allSatisfy({ !unsafeForGrep.contains($0) }),
+              !query.isEmpty
+        else { return nil }
+
+        let includes = extensions.flatMap { ["--include", "*.\($0)"] }
+        let args: [String] = ["-r", "-n", "-i", "--max-count=5"] + includes + [query, root.path]
+
+        return await Task.detached(priority: .userInitiated) {
+            let proc = Process()
+            proc.executableURL    = URL(fileURLWithPath: "/usr/bin/grep")
+            proc.arguments        = args
+            proc.standardOutput   = Pipe()
+            proc.standardError    = Pipe()   // 静默权限错误等
+
+            guard (try? proc.run()) != nil else { return nil }
+            let outPipe = proc.standardOutput as! Pipe
+            let data    = outPipe.fileHandleForReading.readDataToEndOfFile()
+            proc.waitUntilExit()
+
+            // exit 0 = 找到，exit 1 = 未找到，其他 = 真正的错误
+            guard proc.terminationStatus <= 1,
+                  let raw = String(data: data, encoding: .utf8)
+            else { return nil }
+
+            let prefix = root.path.hasSuffix("/") ? root.path : root.path + "/"
+            return raw
+                .components(separatedBy: "\n")
+                .filter  { !$0.isEmpty }
+                .prefix(100)
+                .map     { $0.hasPrefix(prefix) ? String($0.dropFirst(prefix.count)) : $0 }
+                .map     { $0 }   // Array<Substring> → Array<String>
+        }.value
+    }
+
+    /// Swift 纯实现：逐行流式处理（enumerateLines 避免整文件切数组）。
+    /// 支持 Task 取消、per-file 限额、大文件跳过。
+    private nonisolated static func swiftSearch(
+        query: String, files: [URL], rootPath: String
+    ) -> [String] {
+        let lowerQuery  = query.lowercased()
+        let maxTotal    = 100
+        let maxPerFile  = 5         // 单文件最多 5 条，避免大文件独占配额
+        let maxFileSize = 1_000_000 // 1 MB：超大文件交给 grep，Swift 实现跳过
+
         var results: [String] = []
         var skipped: [String] = []
 
         for url in files {
-            guard let data = try? Data(contentsOf: url) else { continue }
+            guard !Task.isCancelled, results.count < maxTotal else { break }
 
-            // 非 UTF-8 文件记录但不崩溃
-            guard let content = String(data: data, encoding: .utf8) else {
+            // 超大文件跳过（grep 路径已处理过，不需要在这里强行读）
+            if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+               size > maxFileSize { continue }
+
+            guard let data = try? Data(contentsOf: url) else { continue }
+            guard let content = String(data: data, encoding: .utf8)
+                             ?? String(data: data, encoding: .isoLatin1)
+            else {
                 skipped.append(url.lastPathComponent)
                 continue
             }
 
-            let relPath = url.path.hasPrefix(root)
-                ? String(url.path.dropFirst(root.count + 1))
+            let relPath = url.path.hasPrefix(rootPath)
+                ? String(url.path.dropFirst(rootPath.count + 1))
                 : url.lastPathComponent
-            let lines = content.components(separatedBy: "\n")
-            for (idx, line) in lines.enumerated() {
-                if line.localizedCaseInsensitiveContains(query) {
-                    results.append("\(relPath):\(idx + 1): \(line)")
-                }
+
+            var lineNum   = 0
+            var fileCount = 0
+            content.enumerateLines { line, stop in
+                lineNum += 1
+                guard line.lowercased().contains(lowerQuery) else { return }
+                results.append("\(relPath):\(lineNum): \(line)")
+                fileCount += 1
+                if fileCount >= maxPerFile || results.count >= maxTotal { stop = true }
             }
-            if results.count >= 100 { break }
         }
 
         if !skipped.isEmpty {
-            results.append("⚠️ 以下文件非 UTF-8 编码，已跳过：\(skipped.joined(separator: ", "))")
+            results.append("⚠️ 以下文件无法解码，已跳过：\(skipped.joined(separator: ", "))")
         }
         return results
     }
