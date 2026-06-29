@@ -107,7 +107,8 @@ final class AgentRunner {
                     self.error     = "操作超时（\(Int(self.timeoutSeconds))s），请重试或简化任务"
                     self.isRunning = false
                     self.runTask   = nil
-                    self.onComplete?()
+                    // onComplete 不在此处调用 —— _run 的 cleanup 必然执行并统一触发
+                    // (group.cancelAll 后 withTaskGroup 会等待 _run 响应取消并结束)
                 }
                 group.cancelAll()
             }
