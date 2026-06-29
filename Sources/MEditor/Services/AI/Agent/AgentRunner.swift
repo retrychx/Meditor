@@ -29,6 +29,9 @@ final class AgentRunner {
     private let backendFactory: @Sendable (AIConfig) -> any AgentBackend
     private var runTask: Task<Void, Never>? = nil
 
+    /// 总执行超时（秒），0 = 不限。默认 5 分钟。
+    var timeoutSeconds: TimeInterval = 300
+
     /// lastThinkingIndex 缓存，O(1) 更新/删除 thinking step
     private var lastThinkingIndex: Int? = nil
 
@@ -82,7 +85,32 @@ final class AgentRunner {
 
         runTask = Task { [weak self] in
             guard let self else { return }
-            await self._run(messages: messages, tools: tools, config: config, context: context)
+            guard self.timeoutSeconds > 0 else {
+                await self._run(messages: messages, tools: tools, config: config, context: context)
+                return
+            }
+            // 两个 Task 赛跑：_run 和超时计时器，任一完成则 cancel 另一个
+            await withTaskGroup(of: Bool.self) { group in
+                group.addTask {
+                    await self._run(messages: messages, tools: tools, config: config, context: context)
+                    return false   // 正常完成
+                }
+                group.addTask {
+                    do {
+                        try await Task.sleep(for: .seconds(self.timeoutSeconds))
+                    } catch {
+                        return false   // 被 cancel：主任务已完成，不触发超时
+                    }
+                    return true   // 超时
+                }
+                if let timedOut = await group.next(), timedOut, self.isRunning {
+                    self.error     = "操作超时（\(Int(self.timeoutSeconds))s），请重试或简化任务"
+                    self.isRunning = false
+                    self.runTask   = nil
+                    self.onComplete?()
+                }
+                group.cancelAll()
+            }
         }
     }
 
@@ -131,7 +159,18 @@ final class AgentRunner {
                         addToolCall(id: call.id, name: call.name, args: prettyArgs(call.arguments))
 
                         var result: AgentToolResult
-                        if let tool = tools.first(where: { $0.spec.name == call.name }) {
+                        if call.name == "_parse_error" {
+                            // ClaudeCLIBackend 注入的占位工具：JSON 解析失败，让 AI 看到错误后重试
+                            let args     = call.arguments
+                            let original = args["original_tool"]?.stringValue ?? "unknown"
+                            let rawArgs  = args["raw_arguments"]?.stringValue ?? ""
+                            result = AgentToolResult(
+                                toolCallID: call.id,
+                                toolName:   original,
+                                content: "❌ Tool call '\(original)' failed: arguments JSON could not be parsed.\nRaw: \(rawArgs.prefix(200))\nPlease retry with properly formatted JSON arguments.",
+                                isError: true
+                            )
+                        } else if let tool = tools.first(where: { $0.spec.name == call.name }) {
                             do {
                                 let output = try await tool.execute(arguments: call.arguments, context: context)
                                 result = AgentToolResult(toolCallID: call.id, toolName: call.name, content: output)

@@ -21,7 +21,12 @@ struct ReadDocumentTool: AgentTool {
 
     func execute(arguments: [String: AnySendableValue], context: any AgentContextProtocol) async throws -> String {
         if let filename = arguments["filename"]?.stringValue, !filename.isEmpty {
-            guard let url = await context.resolveExistingFile(filename) else {
+            let resolved = await context.resolveFile(filename)
+            guard case .found(let url) = resolved else {
+                if case .ambiguous(let urls) = resolved {
+                    let list = urls.prefix(5).map { "  - \($0.path)" }.joined(separator: "\n")
+                    return "⚠️ 找到 \(urls.count) 个同名文件「\(filename)」，请提供更精确的路径：\n\(list)"
+                }
                 return "未找到文件：\(filename)"
             }
             let content = try await context.readFile(at: url)
@@ -54,7 +59,14 @@ struct WriteDocumentTool: AgentTool {
         }
         if let filename = arguments["filename"]?.stringValue, !filename.isEmpty {
             // 已存在则用其绝对路径覆盖（避免裸文件名在根目录误建新文件）；否则按给定路径新建
-            let target = await context.resolveExistingFile(filename)?.path ?? filename
+            let resolved = await context.resolveFile(filename)
+            if case .ambiguous(let urls) = resolved {
+                let list = urls.prefix(5).map { "  - \($0.path)" }.joined(separator: "\n")
+                return "⚠️ 找到 \(urls.count) 个同名文件「\(filename)」，请提供更精确的路径：\n\(list)"
+            }
+            // found 则用其绝对路径覆盖（避免裸文件名在根目录误建新文件）；notFound 则按给定路径新建
+            let target: String
+            if case .found(let foundURL) = resolved { target = foundURL.path } else { target = filename }
             let url = try await context.writeFile(name: target, content: content)
             return "✅ 已写入文件：\(url.lastPathComponent)（\(content.count) 字符）"
         }
@@ -88,17 +100,22 @@ struct PatchDocumentTool: AgentTool {
         let replaceAll = arguments["replace_all"]?.boolValue ?? false
 
         if let filename = arguments["filename"]?.stringValue, !filename.isEmpty {
-            guard await context.resolveExistingFile(filename) != nil else {
-                return "⚠️ 未找到文件：\(filename)"
+            do {
+                let count = try await context.patchFile(name: filename, find: find, replace: replace, all: replaceAll)
+                return "✅ 已在 \(filename) 替换 \(count) 处"
+            } catch let e as PatchNotFoundError {
+                return e.errorDescription ?? "⚠️ 未找到匹配文本"
+            } catch AgentContextError.fileNotFound(let name) {
+                return "⚠️ 未找到文件：\(name)"
             }
-            let count = try await context.patchFile(name: filename, find: find, replace: replace, all: replaceAll)
-            if count == 0 { return "⚠️ 未在 \(filename) 中找到匹配文本：「\(find.prefix(80))」" }
-            return "✅ 已在 \(filename) 替换 \(count) 处"
         }
 
-        let count = try await context.patchDocument(find: find, replace: replace, all: replaceAll)
-        if count == 0 { return "⚠️ 未找到匹配文本：「\(find.prefix(80))」" }
-        return "✅ 已替换 \(count) 处"
+        do {
+            let count = try await context.patchDocument(find: find, replace: replace, all: replaceAll)
+            return "✅ 已替换 \(count) 处"
+        } catch let e as PatchNotFoundError {
+            return e.errorDescription ?? "⚠️ 未找到匹配文本"
+        }
     }
 }
 
@@ -124,7 +141,12 @@ struct SearchDocumentTool: AgentTool {
 
         let content: String
         if let filename = arguments["filename"]?.stringValue, !filename.isEmpty {
-            guard let url = await context.resolveExistingFile(filename) else {
+            let resolved = await context.resolveFile(filename)
+            guard case .found(let url) = resolved else {
+                if case .ambiguous(let urls) = resolved {
+                    let list = urls.prefix(5).map { "  - \($0.path)" }.joined(separator: "\n")
+                    return "⚠️ 找到 \(urls.count) 个同名文件「\(filename)」，请提供更精确的路径：\n\(list)"
+                }
                 return "未找到文件：\(filename)"
             }
             // 用完整内容搜索（不走 readFile 的 64KB 截断），避免大文件后半段漏搜
