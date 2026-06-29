@@ -47,7 +47,7 @@ struct EditorView: View {
                     }
                     }
 
-                    if state.editorSelectedText.count > 5 {
+                    if !state.editorSelectedText.isEmpty {
                         InlineEditBar(selectedText: state.editorSelectedText)
                             .environment(state)
                             .padding(.bottom, 14)

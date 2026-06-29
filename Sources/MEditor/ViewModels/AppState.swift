@@ -186,6 +186,11 @@ final class AppState {
     var errorMessage: String?
     var toastMessage: ToastMessage?
 
+    /// 打开 AI 面板，并将选中文本预填到输入框。
+    func openAssistantWithSelection(_ text: String) {
+        aiUI.openAssistantWithSelection(text)
+    }
+
     func showToast(_ text: String, icon: String? = nil) {
         withAnimation(DS.Motion.fast) {
             toastMessage = ToastMessage(text, icon: icon)

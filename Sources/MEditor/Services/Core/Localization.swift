@@ -121,6 +121,22 @@ extension LocalizationManager {
         "ai.section.suggestions": ("Suggestions", "建议"),
         "ai.section.yourPrompts": ("Your prompts", "你的提示"),
         "ai.createCustomPrompt": ("Create custom prompt", "创建自定义提示"),
+
+        // @mention 功能入口
+        "ai.section.mention": ("Reference context", "引用上下文"),
+        "ai.mention.currentHint": ("Inject current document into the conversation", "将当前文档内容注入对话"),
+        "ai.mention.workspaceHint": ("Inject workspace file list", "将工作区文件列表注入对话"),
+        "ai.mention.file": ("@file", "引用文件"),
+        "ai.mention.fileHint": ("Type @ to pick any file in the workspace", "输入 @ 选择工作区任意文件"),
+
+        // @mention 首次引导卡片
+        "ai.mention.cardTitle": ("Reference files with @mention", "@mention 引用文件"),
+        "ai.mention.cardBody": ("Type @ in the input box to reference files, directories, or the full workspace. The AI will read their content before responding.",
+                                "在输入框中输入 @ 可引用文件、目录或整个工作区，AI 会先读取内容再回复。"),
+
+        // InlineEditBar 问 AI 按钒
+        "ai.askAI": ("Ask AI", "问 AI"),
+        "ai.askAIHint": ("Open AI assistant with this selection pre-loaded", "将选中文本带入 AI 助手对话"),
         "ai.previewReply": (
             "The AI service isn't connected yet — this is a UI preview. Hook up a model provider to enable real responses.",
             "AI 服务尚未连接 —— 这是界面预览。接入模型服务后即可获得真实回复。"

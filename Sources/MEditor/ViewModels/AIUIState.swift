@@ -23,6 +23,9 @@ final class AIUIState {
     /// Monotonic nonce so the same text can be replaced more than once.
     var editorReplaceNonce: Int = 0
 
+    /// 待消费的内联选区提示：AI 面板打开时自动带入该文本并预填输入框。
+    var pendingSelectionPrompt: String? = nil
+
     func requestInsert(_ text: String) {
         editorInsertText = text
         editorInsertNonce += 1
@@ -31,5 +34,11 @@ final class AIUIState {
     func requestReplace(_ text: String) {
         editorReplaceText = text
         editorReplaceNonce += 1
+    }
+
+    /// 打开 AI 面板，并把选中文本预填到输入框。
+    func openAssistantWithSelection(_ text: String) {
+        pendingSelectionPrompt = text
+        showingAssistant = true
     }
 }
