@@ -29,11 +29,19 @@ enum PatchEngine {
                 let replaced = haystack.replacingOccurrences(of: needle, with: replace)
                 guard replaced != haystack else { continue }
                 let count = haystack.components(separatedBy: needle).count - 1
-                // 尽量保留原始换行风格
-                let out = idx == 0
-                    ? replaced
-                    : original.replacingOccurrences(of: find, with: replace)
-                return (out, count)
+                if idx == 0 {
+                    return (replaced, count)
+                }
+                // 归一化候选：先尝试在 original 上做字面替换（保留原始风格）
+                let outDirect = original.replacingOccurrences(of: find, with: replace)
+                if outDirect != original {
+                    // original 里能直接替换，复用字面结果
+                    let realCount = original.components(separatedBy: find).count - 1
+                    return (outDirect, realCount)
+                }
+                // original 字面不匹配（仅归一化后匹配）：用归一化版本作为最终内容
+                // count 已按归一化 haystack 计算，此处返回替换后的归一化文本
+                return (replaced, count)
             } else {
                 guard let range = haystack.range(of: needle, options: .literal) else { continue }
                 if idx == 0 {
