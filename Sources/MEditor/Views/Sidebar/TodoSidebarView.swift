@@ -3,10 +3,8 @@ import SwiftUI
 /// 侧边栏待办列表视图：扫描工作区 .md 文件中的 checkbox 并展示为可交互列表。
 struct TodoSidebarView: View {
     @Environment(AppState.self) private var state
-    @State private var todos: [TodoItem] = []
-    @State private var isLoading = false
-
     private var theme: PreviewTheme { state.themeStore.current }
+    private var store: TodoStore { state.todoStore }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -15,7 +13,7 @@ struct TodoSidebarView: View {
         }
         .background(.clear)
         .task(id: state.rootURL) {
-            await reload()
+            await store.reload(rootURL: state.rootURL)
         }
     }
 
@@ -27,11 +25,11 @@ struct TodoSidebarView: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(theme.craftPrimary)
             Spacer()
-            if isLoading {
+            if store.isLoading {
                 ProgressView().controlSize(.mini)
             } else {
                 Button {
-                    Task { await reload() }
+                    Task { await store.reload(rootURL: state.rootURL) }
                 } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 11))
@@ -51,7 +49,7 @@ struct TodoSidebarView: View {
     private var content: some View {
         if state.rootURL == nil {
             emptyMessage(L("todo.noRoot"), icon: "folder.badge.questionmark")
-        } else if todos.isEmpty && !isLoading {
+        } else if store.todos.isEmpty && !store.isLoading {
             emptyMessage(L("todo.empty"), icon: "checkmark.circle")
         } else {
             todoList
@@ -60,8 +58,8 @@ struct TodoSidebarView: View {
 
     private var todoList: some View {
         List {
-            let pending = todos.filter { !$0.isChecked }
-            let done = todos.filter { $0.isChecked }
+            let pending = store.todos.filter { !$0.isChecked }
+            let done    = store.todos.filter { $0.isChecked }
 
             if !pending.isEmpty {
                 Section(header: CraftSectionLabel(title: "待办 (\(pending.count))")) {
@@ -107,13 +105,6 @@ struct TodoSidebarView: View {
 
     // MARK: - Actions
 
-    private func reload() async {
-        guard let root = state.rootURL else { todos = []; return }
-        isLoading = true
-        todos = await TodoScanner.scan(rootURL: root)
-        isLoading = false
-    }
-
     private func jumpTo(_ item: TodoItem) {
         let fileItem = FileItem(url: item.fileURL, isDirectory: false)
         state.openFile(fileItem)
@@ -123,12 +114,17 @@ struct TodoSidebarView: View {
     }
 
     private func toggle(_ item: TodoItem) {
-        guard let idx = todos.firstIndex(where: { $0.id == item.id }) else { return }
-        do {
-            try TodoScanner.toggle(item: item)
-            todos[idx].isChecked.toggle()
-        } catch {
-            state.setError(error.localizedDescription)
+        Task {
+            do {
+                try await store.toggle(item)
+                if let tab = state.selectedTab, tab.url == item.fileURL,
+                   let newContent = try? String(contentsOf: item.fileURL, encoding: .utf8) {
+                    tab.content = newContent
+                    tab.contentRevision &+= 1
+                }
+            } catch {
+                state.setError(error.localizedDescription)
+            }
         }
     }
 }

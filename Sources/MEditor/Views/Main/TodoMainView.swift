@@ -3,9 +3,9 @@ import SwiftUI
 /// 全宽待办主视图 — 点击底部 tab 的"待办"后替换主内容区。
 struct TodoMainView: View {
     @Environment(AppState.self) private var state
-    @State private var todos: [TodoItem] = []
-    @State private var isLoading = false
     @State private var showingAddTodo = false
+
+    private var store: TodoStore { state.todoStore }
 
     private var theme: PreviewTheme { state.themeStore.current }
 
@@ -17,7 +17,7 @@ struct TodoMainView: View {
         }
         .background(theme.windowBackground)
         .task(id: state.rootURL) {
-            await reload()
+            await store.reload(rootURL: state.rootURL)
         }
         .sheet(isPresented: $showingAddTodo) {
             AddTodoSheet(theme: theme) { text, fileURL in
@@ -41,7 +41,7 @@ struct TodoMainView: View {
 
             Spacer()
 
-            if isLoading {
+            if store.isLoading {
                 ProgressView().controlSize(.small)
             } else {
                 Button {
@@ -55,7 +55,7 @@ struct TodoMainView: View {
                 .help("新增待办")
 
                 Button {
-                    Task { await reload() }
+                    Task { await store.reload(rootURL: state.rootURL) }
                 } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 13))
@@ -75,7 +75,7 @@ struct TodoMainView: View {
     private var content: some View {
         if state.rootURL == nil {
             emptyMessage(L("todo.noRoot"), icon: "folder.badge.questionmark")
-        } else if todos.isEmpty && !isLoading {
+        } else if store.todos.isEmpty && !store.isLoading {
             emptyMessage(L("todo.empty"), icon: "checkmark.circle")
         } else {
             todoList
@@ -84,8 +84,8 @@ struct TodoMainView: View {
 
     private var todoList: some View {
         List {
-            let pending = todos.filter { !$0.isChecked }
-            let done = todos.filter { $0.isChecked }
+            let pending = store.todos.filter { !$0.isChecked }
+            let done    = store.todos.filter { $0.isChecked }
 
             if !pending.isEmpty {
                 Section(header: sectionHeader("待办 (\(pending.count))")) {
@@ -144,13 +144,6 @@ struct TodoMainView: View {
 
     // MARK: - Actions
 
-    private func reload() async {
-        guard let root = state.rootURL else { todos = []; return }
-        isLoading = true
-        todos = await TodoScanner.scan(rootURL: root)
-        isLoading = false
-    }
-
     private func jumpTo(_ item: TodoItem) {
         let fileItem = FileItem(url: item.fileURL, isDirectory: false)
         state.openFile(fileItem)
@@ -160,31 +153,33 @@ struct TodoMainView: View {
     }
 
     private func toggle(_ item: TodoItem) {
-        guard let idx = todos.firstIndex(where: { $0.id == item.id }) else { return }
-        do {
-            try TodoScanner.toggle(item: item)
-            todos[idx].isChecked.toggle()
-        } catch {
-            state.setError(error.localizedDescription)
+        Task {
+            do {
+                try await store.toggle(item)
+                // 如果该文件当前已打开，同步编辑器内容
+                if let tab = state.selectedTab, tab.url == item.fileURL,
+                   let newContent = try? String(contentsOf: item.fileURL, encoding: .utf8) {
+                    tab.content = newContent
+                    tab.contentRevision &+= 1
+                }
+            } catch {
+                state.setError(error.localizedDescription)
+            }
         }
     }
 
-    /// 将一条新待办写入指定文件末尾，并刷新列表。
     private func addTodo(text: String, to fileURL: URL) {
-        let line = "\n- [ ] \(text)"
-        do {
-            let existing = (try? String(contentsOf: fileURL, encoding: .utf8)) ?? ""
-            let newContent = existing + line
-            try newContent.write(to: fileURL, atomically: true, encoding: .utf8)
-            // 如果当前正在编辑该文件，同步更新编辑器内容
-            if let tab = state.selectedTab, tab.url == fileURL {
-                tab.content = newContent
-                tab.contentRevision &+= 1
+        Task {
+            do {
+                let newContent = try await store.addTodo(text: text, to: fileURL)
+                if let tab = state.selectedTab, tab.url == fileURL {
+                    tab.content = newContent
+                    tab.contentRevision &+= 1
+                }
+                state.showToast("已新增待办", icon: "checkmark.circle")
+            } catch {
+                state.setError(error.localizedDescription)
             }
-            state.showToast("已新增待办", icon: "checkmark.circle")
-            Task { await reload() }
-        } catch {
-            state.setError(error.localizedDescription)
         }
     }
 }
