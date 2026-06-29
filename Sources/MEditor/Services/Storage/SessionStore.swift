@@ -39,7 +39,9 @@ final class SessionStore: SessionStoreProtocol {
     /// Each `bookmarkData(options:...)` invocation triggers a synchronous XPC
     /// round-trip to the scoped-bookmark agent — caching eliminates this for
     /// URLs that haven't changed between saves.
+    /// 通过 cacheLock 保护，支持主线程（clear）和幺灵队列（_saveNow）并发访问。
     private var bookmarkCache: [URL: Data] = [:]
+    private let cacheLock = NSLock()
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
@@ -76,7 +78,7 @@ final class SessionStore: SessionStoreProtocol {
 
         // Prune cache entries for URLs no longer in the session.
         let activeURLs = Set(openTabURLs.map(\.standardizedFileURL) + [rootURL?.standardizedFileURL].compactMap { $0 })
-        bookmarkCache = bookmarkCache.filter { activeURLs.contains($0.key) }
+        cacheLock.withLock { bookmarkCache = bookmarkCache.filter { activeURLs.contains($0.key) } }
 
         guard let encoded = try? JSONEncoder().encode(session) else { return }
         self.userDefaults.set(encoded, forKey: Self.userDefaultsKey)
@@ -115,6 +117,7 @@ final class SessionStore: SessionStoreProtocol {
         pendingSave?.cancel()
         pendingSave = nil
         userDefaults.removeObject(forKey: Self.userDefaultsKey)
+        cacheLock.withLock { bookmarkCache = [:] }
     }
 
     // MARK: - Internal
@@ -131,7 +134,7 @@ final class SessionStore: SessionStoreProtocol {
     }
 
     private func cachedBookmarkData(for url: URL) -> BookmarkLookup {
-        if let cached = bookmarkCache[url] {
+        if let cached = cacheLock.withLock({ bookmarkCache[url] }) {
             PerformanceTracer.event("SessionBookmarkCacheHit", log: PerformanceTracer.session)
             return .hit(cached)
         }
@@ -144,7 +147,7 @@ final class SessionStore: SessionStoreProtocol {
             PerformanceTracer.event("SessionBookmarkCreateFailed", log: PerformanceTracer.session)
             return .failed
         }
-        bookmarkCache[url] = data
+        cacheLock.withLock { bookmarkCache[url] = data }
         return .generated(data)
     }
 

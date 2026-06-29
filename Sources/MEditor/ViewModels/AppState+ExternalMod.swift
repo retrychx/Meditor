@@ -11,20 +11,49 @@ extension AppState {
     }
 
     func checkExternalModifications() {
-        for tab in tabManager.openTabs where !tab.isModified {
-            let url = tab.url
-            guard let attrs = fileService.attributes(at: url),
-                  let diskDate = attrs[.modificationDate] as? Date else { continue }
-            let known = externalModDates[url]
-            if let known, diskDate > known {
-                externalModDates[url] = diskDate
-                externallyModifiedTab = tab
-                showingReloadPrompt = true
-                return
-            } else if known == nil {
-                externalModDates[url] = diskDate
+        // 属性读取放到后台，避免主线程对每个 tab 同步访问磁盘。
+        let snapshot: [(tab: EditorTab, url: URL)] = tabManager.openTabs
+            .filter { !$0.isModified }
+            .map    { ($0, $0.url) }
+        let knownDates = externalModDates          // value copy
+        let svc = fileService
+
+        Task.detached(priority: .utility) { [weak self] in
+            var updated: [URL: Date] = [:]
+            var modifiedURL: URL? = nil
+
+            for (_, url) in snapshot {
+                guard let attrs = svc.attributes(at: url),
+                      let diskDate = attrs[.modificationDate] as? Date else { continue }
+                let known = knownDates[url]
+                if let known, diskDate > known {
+                    updated[url] = diskDate
+                    modifiedURL  = url
+                    break   // 一次只弹一个提示
+                } else if known == nil {
+                    updated[url] = diskDate
+                }
             }
+
+            guard !updated.isEmpty else { return }
+            await self?.applyExternalModCheck(updated: updated, modifiedURL: modifiedURL, snapshot: snapshot)
         }
+    }
+
+    @MainActor
+    private func applyExternalModCheck(
+        updated: [URL: Date],
+        modifiedURL: URL?,
+        snapshot: [(tab: EditorTab, url: URL)]
+    ) {
+        for (url, date) in updated { externalModDates[url] = date }
+        guard let url = modifiedURL,
+              let tab = snapshot.first(where: { $0.url == url })?.tab,
+              tabManager.openTabs.contains(where: { $0.id == tab.id }),
+              !tab.isModified   // 就地再检查一次，防止异步间用户已编辑
+        else { return }
+        externallyModifiedTab = tab
+        showingReloadPrompt   = true
     }
 
     func reloadExternallyModifiedTab() {
