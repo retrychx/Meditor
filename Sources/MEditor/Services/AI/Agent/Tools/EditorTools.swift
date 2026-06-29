@@ -19,7 +19,7 @@ struct InsertAtCursorTool: AgentTool {
             throw AgentError.executionError("缺少 text 参数")
         }
         await context.insertIntoDocument(text)
-        return "✅ 内容已插入（\(text.count) 字符）"
+        return "[OK] 内容已插入（\(text.count) 字符）"
     }
 }
 
@@ -42,14 +42,14 @@ struct OpenFileTool: AgentTool {
             throw AgentError.executionError("缺少 filename 参数")
         }
         let opened = await context.openFile(named: filename)
-        guard opened else { return "⚠️ 未找到文件：\(filename)" }
+        guard opened else { return "[!] 未找到文件：\(filename)" }
         // 编辑器内容是异步加载的，open 之后 selectedTab.content 仍可能为空，
         // 因此这里直接从磁盘读回内容一并返回，避免 agent 误以为"已看到内容"而产生幻觉。
         if let url = await context.resolveExistingFile(filename),
            let content = try? await context.readFile(at: url) {
-            return "✅ 已在编辑器中打开：\(filename)\n\n# \(filename)\n\n\(content)"
+            return "[OK] 已在编辑器中打开：\(filename)\n\n# \(filename)\n\n\(content)"
         }
-        return "✅ 已在编辑器中打开：\(filename)"
+        return "[OK] 已在编辑器中打开：\(filename)"
     }
 }
 

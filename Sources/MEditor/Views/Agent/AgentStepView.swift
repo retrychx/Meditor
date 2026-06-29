@@ -144,7 +144,7 @@ struct AgentStepView: View {
     private func resultSummary(_ raw: String) -> String {
         var s = raw
         // 去掉表情前缀
-        for prefix in ["✅ ", "⚠️ ", "❌ "] {
+        for prefix in ["[OK] ", "[!] ", "[X] "] {
             if s.hasPrefix(prefix) { s = String(s.dropFirst(prefix.count)) }
         }
         let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)

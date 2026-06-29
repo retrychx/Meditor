@@ -693,7 +693,7 @@ struct AIAssistantPanel: View {
 
             if let err = errText, !err.isEmpty {
                 if let idx = convo.messages.firstIndex(where: { $0.id == replyID }) {
-                    convo.messages[idx].text = "⚠️ \(err)"
+                    convo.messages[idx].text = "错误：\(err)"
                 }
             } else if !finalText.isEmpty {
                 if let idx = convo.messages.firstIndex(where: { $0.id == replyID }) {

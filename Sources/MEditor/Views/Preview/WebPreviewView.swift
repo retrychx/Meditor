@@ -212,7 +212,7 @@ extension WebPreviewView.Coordinator: WKUIDelegate {
             DispatchQueue.main.async {
                 menu.addItem(.separator())
                 let addItem = NSMenuItem(
-                    title: "📌 新增为待办",
+                    title: "新增为待办",
                     action: #selector(WebPreviewView.Coordinator.handleAddTodo(_:)),
                     keyEquivalent: ""
                 )

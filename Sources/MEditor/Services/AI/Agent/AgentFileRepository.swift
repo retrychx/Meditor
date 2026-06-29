@@ -218,7 +218,7 @@ final class DefaultAgentFileRepository: AgentFileRepository {
             }
         }
         if !skipped.isEmpty {
-            results.append("⚠️ 以下文件无法解码，已跳过：\(skipped.joined(separator: ", "))")
+            results.append("[!] 以下文件无法解码，已跳过：\(skipped.joined(separator: ", "))")
         }
         return results
     }

@@ -168,7 +168,7 @@ final class AgentRunner {
                             result = AgentToolResult(
                                 toolCallID: call.id,
                                 toolName:   original,
-                                content: "❌ Tool call '\(original)' failed: arguments JSON could not be parsed.\nRaw: \(rawArgs.prefix(200))\nPlease retry with properly formatted JSON arguments.",
+                                content: "[X] Tool call '\(original)' failed: arguments JSON could not be parsed.\nRaw: \(rawArgs.prefix(200))\nPlease retry with properly formatted JSON arguments.",
                                 isError: true
                             )
                         } else if let tool = tools.first(where: { $0.spec.name == call.name }) {
