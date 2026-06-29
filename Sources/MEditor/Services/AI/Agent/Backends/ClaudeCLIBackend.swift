@@ -8,39 +8,49 @@ struct ClaudeCLIBackend: AgentBackend {
     // MARK: - Intent
 
     private enum Intent {
-        case readOnly, editing, fileManage, command, mixed
+        case fileManage  // 明确的文件创建/目录操作
+        case command     // 明确的命令执行
+        case mixed       // 其余情况（安全干默）
     }
 
-    /// 根据最后一条用户消息推断意图
+    /// 根据最近 3 条用户消息推断意图（保守策略：宁可 mixed 也不误杀工具）
     private func inferIntent(from messages: [AgentMessage]) -> Intent {
-        let text = messages.last(where: { $0.role == .user })?.content.lowercased() ?? ""
-        if text.contains("run") || text.contains("execute") || text.contains("命令") || text.contains("运行") { return .command }
-        if text.contains("create") || text.contains("新建") || text.contains("mkdir") || text.contains("创建") { return .fileManage }
-        if text.contains("read") || text.contains("list") || text.contains("show")
-           || text.contains("查看") || text.contains("列出") || text.contains("显示") { return .readOnly }
-        if text.contains("edit") || text.contains("patch") || text.contains("write")
-           || text.contains("replace") || text.contains("修改") || text.contains("替换") || text.contains("编辑") { return .editing }
+        let text = messages
+            .filter { $0.role == .user }
+            .suffix(3)
+            .map { $0.content.lowercased() }
+            .joined(separator: " ")
+
+        // command：要求精确词组，避免 "runtime" / "run through" 误触
+        let commandPhrases = ["run command", "run script", "execute command", "bash ", "shell ",
+                              "运行命令", "执行命令", "执行脚本"]
+        if commandPhrases.contains(where: { text.contains($0) }) { return .command }
+
+        // fileManage：明确的文件创建/目录操作
+        let fileManagePhrases = ["create file", "new file", "mkdir", "create directory",
+                                 "新建文件", "创建文件", "创建目录", "新建目录"]
+        if fileManagePhrases.contains(where: { text.contains($0) }) { return .fileManage }
+
+        // 其余情况统一 mixed，不强制分类（风险大于收益）
         return .mixed
     }
 
-    /// 按意图过滤工具，减少 system prompt token 占用
+    /// 按意图过滤工具。
+    /// 原则：只排除「当前意图绝对用不到」的重型工具；
+    /// 核心读写工具（read/patch/write）始终保留，防止 AI 读完文件想修改时无工具可用。
+    /// 过滤后为空时自动回退全量（防止自定义工具全被剔除）。
     private func selectTools(_ tools: [any AgentTool], intent: Intent) -> [any AgentTool] {
+        let excluded: Set<String>
         switch intent {
-        case .readOnly:
-            let names: Set<String> = ["read_document", "list_files", "search_workspace", "search_document"]
-            return tools.filter { names.contains($0.spec.name) }
-        case .editing:
-            let excluded: Set<String> = ["create_file", "create_directory", "run_command"]
-            return tools.filter { !excluded.contains($0.spec.name) }
-        case .fileManage:
-            let names: Set<String> = ["create_file", "write_file", "list_files", "create_directory", "open_file", "read_document"]
-            return tools.filter { names.contains($0.spec.name) }
-        case .command:
-            let names: Set<String> = ["run_command", "read_document", "list_files"]
-            return tools.filter { names.contains($0.spec.name) }
-        case .mixed:
+        case .command:                           // 执行命令：不排除任何工具（AI 可能需要先读文件）
+            return tools
+        case .fileManage:                        // 文件管理：排除命令执行
+            excluded = ["run_command"]
+        case .mixed:                             // 混合：不排除
             return tools
         }
+        let result = tools.filter { !excluded.contains($0.spec.name) }
+        return result.isEmpty ? tools : result   // 空结果时回退全量
     }
 
     // MARK: - complete
