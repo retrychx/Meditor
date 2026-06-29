@@ -92,6 +92,25 @@ struct AgentToolSpec: Sendable {
         ]
     }
 
+    /// 紧凑单行签名：ClaudeCLI system prompt 专用，比 XML 省 ~70% token。
+    /// 格式：`name(param: type, optional?: type)  description`
+    var compactCLIDescription: String {
+        let params = parameters.orderedProperties.map { (key, schema) -> String in
+            let req = parameters.required.contains(key)
+            let t: String
+            switch schema.type {
+            case "string":  t = "str"
+            case "boolean": t = "bool"
+            case "array":   t = "[str]"
+            case "integer", "number": t = "num"
+            default:        t = schema.type
+            }
+            return req ? "\(key): \(t)" : "\(key)?: \(t)"
+        }.joined(separator: ", ")
+        let sig = params.isEmpty ? name : "\(name)(\(params))"
+        return "  \(sig)\n    ↳ \(description)"
+    }
+
     // Claude XML-style tool description
     var claudeXMLDescription: String {
         var lines = ["<tool>", "<name>\(name)</name>", "<description>\(description)</description>"]

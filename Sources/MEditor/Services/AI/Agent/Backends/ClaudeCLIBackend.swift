@@ -5,6 +5,46 @@ import Foundation
 struct ClaudeCLIBackend: AgentBackend {
     let config: AIConfig
 
+    // MARK: - Intent
+
+    private enum Intent {
+        case readOnly, editing, fileManage, command, mixed
+    }
+
+    /// 根据最后一条用户消息推断意图
+    private func inferIntent(from messages: [AgentMessage]) -> Intent {
+        let text = messages.last(where: { $0.role == .user })?.content.lowercased() ?? ""
+        if text.contains("run") || text.contains("execute") || text.contains("命令") || text.contains("运行") { return .command }
+        if text.contains("create") || text.contains("新建") || text.contains("mkdir") || text.contains("创建") { return .fileManage }
+        if text.contains("read") || text.contains("list") || text.contains("show")
+           || text.contains("查看") || text.contains("列出") || text.contains("显示") { return .readOnly }
+        if text.contains("edit") || text.contains("patch") || text.contains("write")
+           || text.contains("replace") || text.contains("修改") || text.contains("替换") || text.contains("编辑") { return .editing }
+        return .mixed
+    }
+
+    /// 按意图过滤工具，减少 system prompt token 占用
+    private func selectTools(_ tools: [any AgentTool], intent: Intent) -> [any AgentTool] {
+        switch intent {
+        case .readOnly:
+            let names: Set<String> = ["read_document", "list_files", "search_workspace", "search_document"]
+            return tools.filter { names.contains($0.spec.name) }
+        case .editing:
+            let excluded: Set<String> = ["create_file", "create_directory", "run_command"]
+            return tools.filter { !excluded.contains($0.spec.name) }
+        case .fileManage:
+            let names: Set<String> = ["create_file", "write_file", "list_files", "create_directory", "open_file", "read_document"]
+            return tools.filter { names.contains($0.spec.name) }
+        case .command:
+            let names: Set<String> = ["run_command", "read_document", "list_files"]
+            return tools.filter { names.contains($0.spec.name) }
+        case .mixed:
+            return tools
+        }
+    }
+
+    // MARK: - complete
+
     func complete(
         messages: [AgentMessage],
         tools: [any AgentTool]
@@ -12,6 +52,9 @@ struct ClaudeCLIBackend: AgentBackend {
         var systemPrompt = messages.first(where: { $0.role == .system })?.content ?? ""
 
         if !tools.isEmpty {
+            let intent   = inferIntent(from: messages)
+            let selected = selectTools(tools, intent: intent)
+
             systemPrompt += """
 
 
@@ -19,23 +62,19 @@ struct ClaudeCLIBackend: AgentBackend {
 
 ## Available Tools
 
-You have access to the following tools. To call a tool, output EXACTLY this XML block on its own line — nothing before or after on the same line:
+To call a tool, output EXACTLY this XML block on its own line:
 
 <tool_call>
 <name>TOOL_NAME</name>
 <arguments>{"key": "value"}</arguments>
 </tool_call>
 
-IMPORTANT:
-- The <arguments> block MUST contain valid JSON.
-- Wait for the tool result before continuing.
-- When finished, output your final response as normal text.
-- NEVER refuse a tool call by saying you lack permissions — use the tool directly.
+Rules: arguments MUST be valid JSON • wait for result before continuing • never refuse a tool call.
 
-### Tools:
+### Tools (name(required: type, optional?: type) → description):
 
 """
-            systemPrompt += tools.map { $0.spec.claudeXMLDescription }.joined(separator: "\n\n")
+            systemPrompt += selected.map { $0.spec.compactCLIDescription }.joined(separator: "\n")
         }
 
         // Build conversation text (skip system message, already in systemPrompt)

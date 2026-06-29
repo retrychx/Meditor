@@ -130,7 +130,7 @@ struct InlineEditBar: View {
             : allTools.filter { command.allowedTools.contains($0.spec.name) }
 
         let config = AIConfig.current(settings, scene: .inline)   // plugin 命令也属于内联编辑场景
-        let context = AgentContext(appState: state)
+        let context = AgentContext.make(appState: state)
 
         let userMsg = "Selected text:\n\n\(selectedText)\n\nFull document:\n\n\(state.selectedTab?.content ?? "")"
 
@@ -174,7 +174,7 @@ struct InlineEditBar: View {
 
         // 用 AgentRunner 执行（可访问 read_document / search_document 等工具）
         let config  = AIConfig.current(settings, scene: .inline)   // 内联编辑专用模型
-        let context = AgentContext(appState: state)
+        let context = AgentContext.make(appState: state)
         let tools   = BuiltinAgentTools.all
 
         // 系统 prompt = 内置 inlineEditor skill + 用户插件附加
