@@ -4,16 +4,18 @@ import Foundation
 
 enum AIProviderKind: String, CaseIterable, Identifiable, Sendable {
     case disabled
-    case openai      // OpenAI-compatible /chat/completions (OpenAI, Ollama, LM Studio, vLLM, gateways…)
-    case claudeCLI   // local `claude` CLI subprocess (reuses existing Claude Code auth)
+    case openai      // OpenAI-compatible /chat/completions（OpenAI, Ollama, OpenRouter, 各类代理…）
+    case anthropic   // Anthropic Messages API 直连（api.anthropic.com 或兼容实现）
+    case claudeCLI   // 本地 claude CLI 子进程（复用 Claude Code auth，降级方案）
 
     var id: String { rawValue }
 
     var labelKey: String {
         switch self {
-        case .disabled:  return "ai.provider.disabled"
-        case .openai:    return "ai.provider.openai"
-        case .claudeCLI: return "ai.provider.claudeCLI"
+        case .disabled:   return "ai.provider.disabled"
+        case .openai:     return "ai.provider.openai"
+        case .anthropic:  return "ai.provider.anthropic"
+        case .claudeCLI:  return "ai.provider.claudeCLI"
         }
     }
 }
@@ -25,12 +27,20 @@ enum AIProviderKind: String, CaseIterable, Identifiable, Sendable {
 struct AIProviderPreset: Identifiable {
     let id: String
     let name: String
+    let kind: AIProviderKind  // 选中此 Preset 时自动设置 provider kind
     let baseURL: String
     let models: [String]
+
+    init(id: String, name: String, kind: AIProviderKind = .openai, baseURL: String, models: [String]) {
+        self.id = id; self.name = name; self.kind = kind; self.baseURL = baseURL; self.models = models
+    }
 }
 
 enum AIPresets {
     static let all: [AIProviderPreset] = [
+        .init(id: "anthropic", name: "Anthropic Claude", kind: .anthropic,
+              baseURL: "https://api.anthropic.com/v1",
+              models: ["claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-3-5"]),
         .init(id: "openai", name: "OpenAI", baseURL: "https://api.openai.com/v1",
               models: ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "o3", "o3-mini", "o1"]),
         .init(id: "deepseek", name: "DeepSeek", baseURL: "https://api.deepseek.com/v1",
@@ -45,6 +55,8 @@ enum AIPresets {
               models: ["openai/gpt-4o", "anthropic/claude-3.7-sonnet", "google/gemini-2.0-flash-001", "deepseek/deepseek-chat"]),
         .init(id: "groq", name: "Groq", baseURL: "https://api.groq.com/openai/v1",
               models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]),
+        .init(id: "anthropic", name: "Anthropic Claude", baseURL: "https://api.anthropic.com/v1",
+              models: ["claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-3-5"]),
         .init(id: "ollama", name: "Ollama · 本地", baseURL: "http://localhost:11434/v1",
               models: ["llama3.1", "qwen2.5", "mistral", "gemma2", "phi3"])
     ]
@@ -131,9 +143,10 @@ struct AIConfig: Sendable {
 
     var isConfigured: Bool {
         switch kind {
-        case .disabled:  return false
-        case .openai:    return !baseURL.isEmpty && !model.isEmpty
-        case .claudeCLI: return !cliPath.isEmpty
+        case .disabled:   return false
+        case .openai:     return !baseURL.isEmpty && !model.isEmpty
+        case .anthropic:  return !apiKey.isEmpty && !model.isEmpty
+        case .claudeCLI:  return !cliPath.isEmpty
         }
     }
 }
@@ -172,9 +185,10 @@ struct AIClient {
 
     func stream(_ messages: [AIMessage]) -> AsyncThrowingStream<String, Error> {
         switch config.kind {
-        case .disabled:  return previewStream()
-        case .openai:    return openAIStream(messages)
-        case .claudeCLI: return claudeCLIStream(messages)
+        case .disabled:   return previewStream()
+        case .openai:     return openAIStream(messages)
+        case .anthropic:  return openAIStream(messages)  // AIClient 仅用于聊天流，Anthropic 的工具调用由 RestAgentBackend 处理
+        case .claudeCLI:  return claudeCLIStream(messages)
         }
     }
 

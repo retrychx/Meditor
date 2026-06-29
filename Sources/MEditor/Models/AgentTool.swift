@@ -73,6 +73,25 @@ struct AgentToolSpec: Sendable {
         ]
     }
 
+    // Anthropic Messages API tool format
+    var anthropicDict: [String: Any] {
+        var props: [String: Any] = [:]
+        for (key, schema) in parameters.orderedProperties {
+            var p: [String: Any] = ["type": schema.type, "description": schema.description]
+            if let enums = schema.enumValues { p["enum"] = enums }
+            props[key] = p
+        }
+        return [
+            "name": name,
+            "description": description,
+            "input_schema": [
+                "type": "object",
+                "properties": props,
+                "required": parameters.required
+            ] as [String: Any]
+        ]
+    }
+
     // Claude XML-style tool description
     var claudeXMLDescription: String {
         var lines = ["<tool>", "<name>\(name)</name>", "<description>\(description)</description>"]
@@ -135,6 +154,23 @@ struct AgentToolCall: Sendable {
             self.arguments = Self.convert(obj)
         } else {
             self.arguments = [:]
+        }
+    }
+
+    /// 将强类型 arguments 还原为 [String: Any]（用于序列化回 wire format）
+    var argumentsDict: [String: Any] {
+        arguments.reduce(into: [String: Any]()) { $0[$1.key] = unwrapValue($1.value) }
+    }
+
+    private func unwrapValue(_ v: AnySendableValue) -> Any {
+        switch v {
+        case .string(let s):  return s
+        case .bool(let b):    return b
+        case .int(let i):     return i
+        case .double(let d):  return d
+        case .null:           return NSNull()
+        case .array(let arr): return arr.map { unwrapValue($0) }
+        case .dict(let d):    return d.reduce(into: [String: Any]()) { $0[$1.key] = unwrapValue($1.value) }
         }
     }
 
