@@ -236,6 +236,8 @@ final class AgentContext: AgentContextProtocol {
             } else {
                 state.showToast("已更新 \(filename)", icon: "checkmark.circle")
             }
+            // 方案 A：AI 写盘后，若正在预览这个 HTML 文件则强制刷新
+            state.reloadHTMLPreviewIfShowing(target)
         }
         return target
     }
