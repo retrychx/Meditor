@@ -59,16 +59,29 @@ final class AIConversation {
     }()
 
     init() {
-        if let data = try? Data(contentsOf: Self.fileURL),
-           let saved = try? JSONDecoder().decode([AISession].self, from: data),
-           !saved.isEmpty {
-            sessions = saved
-            activeID = saved[0].id
-        } else {
-            let fresh = AISession()
-            sessions = [fresh]
-            activeID = fresh.id
-        }
+        // 先以空会话快速完成 init，避免主线程同步读磁盘。
+        // 真实数据通过 loadFromDisk() 在 Task 中异步加载。
+        let fresh = AISession()
+        sessions  = [fresh]
+        activeID  = fresh.id
+        Task { await self.loadFromDisk() }
+    }
+
+    /// 从磁盘异步加载持久化会话。仅在 init 后首次调用。
+    private func loadFromDisk() async {
+        let url = Self.fileURL
+        // 文件读取放到后台线程，避免阻塞 MainActor
+        let result: [AISession]? = await Task.detached(priority: .utility) {
+            guard let data  = try? Data(contentsOf: url),
+                  let saved = try? JSONDecoder().decode([AISession].self, from: data),
+                  !saved.isEmpty
+            else { return nil }
+            return saved
+        }.value
+        guard let saved = result else { return }
+        // 回到 MainActor 更新状态
+        sessions = saved
+        activeID = saved[0].id
     }
 
     // MARK: Active session access

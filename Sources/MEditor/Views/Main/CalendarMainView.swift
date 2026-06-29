@@ -35,7 +35,6 @@ struct CalendarMainView: View {
         case .month:
             let comps = cal.dateComponents([.year, .month], from: referenceDate)
             let first = cal.date(from: comps)!
-            let last  = cal.date(byAdding: DateComponents(month: 1, day: -1), to: first)!
             // Extend to grid edges (Mon..Sun)
             let gridStart = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: first))!
             let gridEnd   = cal.date(byAdding: .day, value: 42, to: gridStart)!

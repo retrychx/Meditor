@@ -683,8 +683,6 @@ struct AIAssistantPanel: View {
             }
         }
 
-        let docWriteTools: Set<String> = ["write_document", "patch_document", "write_file", "create_file", "insert_at_cursor"]
-
         // 完成回调
         runner.onComplete = { [weak convo, weak runner] in
             guard let convo else { return }

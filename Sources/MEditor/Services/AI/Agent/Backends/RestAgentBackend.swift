@@ -66,7 +66,7 @@ struct RestAgentBackend: AgentBackend {
 
         var req = URLRequest(url: url)
         req.httpMethod    = "POST"
-        req.timeoutInterval = 120
+        req.timeoutInterval = config.requestTimeoutSeconds
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if !config.apiKey.isEmpty {
             req.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
@@ -95,7 +95,7 @@ struct RestAgentBackend: AgentBackend {
 
         var req = URLRequest(url: url)
         req.httpMethod    = "POST"
-        req.timeoutInterval = 120
+        req.timeoutInterval = config.requestTimeoutSeconds
         req.setValue("application/json",  forHTTPHeaderField: "Content-Type")
         req.setValue(config.apiKey,       forHTTPHeaderField: "x-api-key")
         req.setValue("2023-06-01",        forHTTPHeaderField: "anthropic-version")

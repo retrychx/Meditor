@@ -55,8 +55,6 @@ enum AIPresets {
               models: ["openai/gpt-4o", "anthropic/claude-3.7-sonnet", "google/gemini-2.0-flash-001", "deepseek/deepseek-chat"]),
         .init(id: "groq", name: "Groq", baseURL: "https://api.groq.com/openai/v1",
               models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]),
-        .init(id: "anthropic", name: "Anthropic Claude", baseURL: "https://api.anthropic.com/v1",
-              models: ["claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-3-5"]),
         .init(id: "ollama", name: "Ollama · 本地", baseURL: "http://localhost:11434/v1",
               models: ["llama3.1", "qwen2.5", "mistral", "gemma2", "phi3"])
     ]
@@ -114,6 +112,8 @@ struct AIConfig: Sendable {
     var cliPath: String
     var cliModel: String    // Claude CLI --model 参数（空则用 CLI 默认）
     var apiKey: String      // resolved from Keychain
+    /// 单次 HTTP 请求超时（秒）。推理模型可能需要较长的思考时间。默认 300s。
+    var requestTimeoutSeconds: TimeInterval
 
     @MainActor
     static func current(_ s: AppSettings, scene: AIScene = .chat) -> AIConfig {
@@ -132,12 +132,13 @@ struct AIConfig: Sendable {
             model = s.aiModel.trimmingCharacters(in: .whitespaces)
         }
         return AIConfig(
-            kind:     AIProviderKind(rawValue: s.aiProvider) ?? .disabled,
-            baseURL:  s.aiBaseURL.trimmingCharacters(in: .whitespaces),
-            model:    model,
-            cliPath:  s.aiCLIPath.trimmingCharacters(in: .whitespaces),
-            cliModel: s.aiCLIModel.trimmingCharacters(in: .whitespaces),
-            apiKey:   AIKeychain.load() ?? ""
+            kind:                  AIProviderKind(rawValue: s.aiProvider) ?? .disabled,
+            baseURL:               s.aiBaseURL.trimmingCharacters(in: .whitespaces),
+            model:                 model,
+            cliPath:               s.aiCLIPath.trimmingCharacters(in: .whitespaces),
+            cliModel:              s.aiCLIModel.trimmingCharacters(in: .whitespaces),
+            apiKey:                AIKeychain.load() ?? "",
+            requestTimeoutSeconds: s.aiRequestTimeout
         )
     }
 
@@ -187,7 +188,7 @@ struct AIClient {
         switch config.kind {
         case .disabled:   return previewStream()
         case .openai:     return openAIStream(messages)
-        case .anthropic:  return openAIStream(messages)  // AIClient 仅用于聊天流，Anthropic 的工具调用由 RestAgentBackend 处理
+        case .anthropic:  return anthropicStream(messages)   // 需要 x-api-key 和 anthropic-version 头
         case .claudeCLI:  return claudeCLIStream(messages)
         }
     }
@@ -235,6 +236,85 @@ struct AIClient {
         AsyncThrowingStream { continuation in
             continuation.yield(L("ai.previewReply"))
             continuation.finish()
+        }
+    }
+
+    // MARK: Anthropic SSE
+
+    /// Anthropic Messages API 流式实现。
+    /// 认证头与 OpenAI 不同：x-api-key + anthropic-version。
+    private func anthropicStream(_ messages: [AIMessage]) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    guard config.isConfigured else { throw AIError.notConfigured }
+                    let base     = config.baseURL.isEmpty ? "https://api.anthropic.com/v1" : config.baseURL
+                    let endpoint = (base.hasSuffix("/") ? base : base + "/") + "messages"
+                    guard let url = URL(string: endpoint) else { throw AIError.badURL }
+
+                    var req = URLRequest(url: url)
+                    req.httpMethod    = "POST"
+                    req.timeoutInterval = 60
+                    req.setValue("application/json",        forHTTPHeaderField: "Content-Type")
+                    req.setValue("text/event-stream",       forHTTPHeaderField: "Accept")
+                    req.setValue(config.apiKey,             forHTTPHeaderField: "x-api-key")
+                    req.setValue("2023-06-01",              forHTTPHeaderField: "anthropic-version")
+
+                    // system 单独提取，其余转成 user/assistant 交替格式
+                    let system = messages.first(where: { $0.role == .system })?.content ?? ""
+                    let convo: [[String: Any]] = messages
+                        .filter { $0.role != .system }
+                        .map    { ["role": $0.role.rawValue, "content": $0.content] }
+
+                    var body: [String: Any] = [
+                        "model":      config.model,
+                        "max_tokens": 8096,
+                        "stream":     true,
+                        "messages":   convo
+                    ]
+                    if !system.isEmpty { body["system"] = system }
+                    req.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+                    let session = URLSession(configuration: {
+                        let c = URLSessionConfiguration.default
+                        c.timeoutIntervalForRequest  = 60
+                        c.timeoutIntervalForResource = 600
+                        return c
+                    }())
+
+                    let (bytes, response) = try await session.bytes(for: req)
+                    guard let http = response as? HTTPURLResponse else {
+                        throw AIError.network("invalid response")
+                    }
+                    guard (200..<300).contains(http.statusCode) else {
+                        var body = ""
+                        for try await line in bytes.lines { body += line; if body.count > 500 { break } }
+                        throw AIError.server(http.statusCode, body)
+                    }
+
+                    // Anthropic SSE 格式：event: content_block_delta + data: {...}
+                    for try await line in bytes.lines {
+                        guard line.hasPrefix("data:") else { continue }
+                        let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+                        if payload == "[DONE]" { break }
+                        // {"type":"content_block_delta","delta":{"type":"text_delta","text":"..."}}
+                        if let data   = payload.data(using: .utf8),
+                           let obj    = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                           let delta  = obj["delta"] as? [String: Any],
+                           let text   = delta["text"] as? String {
+                            continuation.yield(text)
+                        }
+                    }
+                    continuation.finish()
+                } catch is CancellationError {
+                    continuation.finish()
+                } catch let e as AIError {
+                    continuation.finish(throwing: e)
+                } catch {
+                    continuation.finish(throwing: AIError.network(error.localizedDescription))
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 
@@ -433,9 +513,15 @@ extension AIClient {
     /// 结果在进程生命周期内只采集一次（shell 环境在运行时不会改变），
     /// 后续调用直接返回缓存，避免每次 AI 对话都 spawn 子进程。
     static func loginShellEnvironment() -> [String: String]? {
-        // nonisolated(unsafe)：只写一次，后续只读；最多在首次并发时多
-        // spawn 一次 shell，结果幂等，可接受。
-        if let cached = _cachedShellEnv { return cached }
+        // 先不加锁读一次：缓存已就绪的情况直接返回，零开销。
+        _shellEnvLock.lock()
+        if let cached = _cachedShellEnv { _shellEnvLock.unlock(); return cached }
+        _shellEnvLock.unlock()
+
+        // 加锁后再检查一次（防止并发双入口），然后采集并缓存。
+        _shellEnvLock.lock()
+        defer { _shellEnvLock.unlock() }
+        if let cached = _cachedShellEnv { return cached }   // double-checked
         let env = _collectShellEnvironment()
         _cachedShellEnv = env
         return env
@@ -445,6 +531,8 @@ extension AIClient {
 
     /// 进程级缓存，避免重复 spawn login shell。
     nonisolated(unsafe) private static var _cachedShellEnv: [String: String]? = nil
+    /// 保护 _cachedShellEnv 首次并发写入。
+    private static let _shellEnvLock = NSLock()
 
     private static func _collectShellEnvironment() -> [String: String]? {
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
