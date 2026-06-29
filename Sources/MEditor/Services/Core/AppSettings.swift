@@ -33,8 +33,9 @@ final class AppSettings {
         static let aiCLIPath = "MEditor.aiCLIPath"
         static let aiCLIModel    = "MEditor.aiCLIModel"
         static let aiAgentModel     = "MEditor.aiAgentModel"
-        static let aiAgentMaxSteps  = "MEditor.aiAgentMaxSteps"
-        static let aiInlineModel = "MEditor.aiInlineModel"
+        static let aiAgentMaxSteps    = "MEditor.aiAgentMaxSteps"
+        static let aiRequestTimeout   = "MEditor.aiRequestTimeout"
+        static let aiInlineModel      = "MEditor.aiInlineModel"
         static let userDocPathBookmark = "MEditor.userDocPathBookmark"
         static let appDocPathBookmark  = "MEditor.appDocPathBookmark"
         // InternalCalendar 集成
@@ -143,6 +144,11 @@ final class AppSettings {
     /// Agent 最大执行步数（默认 30）。
     var aiAgentMaxSteps: Int {
         didSet { defaults.set(aiAgentMaxSteps, forKey: Key.aiAgentMaxSteps) }
+    }
+
+    /// 单次 HTTP 请求超时（秒）。默认 300s，适配推理模型长思考。
+    var aiRequestTimeout: TimeInterval {
+        didSet { defaults.set(aiRequestTimeout, forKey: Key.aiRequestTimeout) }
     }
 
     /// 内联编辑（改写/扩写/精简/翻译）专用模型（空则回退到 aiModel）。
@@ -311,6 +317,8 @@ final class AppSettings {
         aiAgentModel    = d.string(forKey: Key.aiAgentModel) ?? ""
         let rawMaxSteps = d.integer(forKey: Key.aiAgentMaxSteps)
         aiAgentMaxSteps = (rawMaxSteps >= 5 && rawMaxSteps <= 100) ? rawMaxSteps : 30
+        let rawTimeout  = d.double(forKey: Key.aiRequestTimeout)
+        aiRequestTimeout = rawTimeout >= 30 ? rawTimeout : 300   // 默认 300s
         aiInlineModel = d.string(forKey: Key.aiInlineModel) ?? ""
         // Claude Code 监听
         claudeMonitorEnabled    = d.object(forKey: Key.claudeMonitorEnabled) != nil ? d.bool(forKey: Key.claudeMonitorEnabled) : false
