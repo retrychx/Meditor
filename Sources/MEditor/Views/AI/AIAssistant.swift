@@ -292,7 +292,12 @@ struct AIAssistantPanel: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 ForEach(runner.steps) { step in
                                     AgentStepView(step: step)
+                                        .transition(.asymmetric(
+                                            insertion: .move(edge: .bottom).combined(with: .opacity),
+                                            removal:   .opacity
+                                        ))
                                 }
+                                .animation(DS.Motion.spring, value: runner.steps.count)
                             }
                             .padding(.horizontal, 4)
                             .padding(.vertical, 6)
@@ -305,6 +310,9 @@ struct AIAssistantPanel: View {
                                     .foregroundStyle(theme.craftSecondary)
                                 TypingDots(color: theme.craftSecondary)
                             }
+                        } else {
+                            // 流式输出中：在最后一条消息下方显示闪烁光标
+                            StreamingCursorView()
                         }
                     }
                     if let pending = convo.pendingCommand {
@@ -987,4 +995,25 @@ private struct AICircleButton: View {
 private struct MentionPickerHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+// MARK: - StreamingCursorView
+
+/// 流式输出期间显示的闪烁光标，告知用户 AI 正在写内容。
+private struct StreamingCursorView: View {
+    @State private var visible = true
+
+    var body: some View {
+        Text("◍")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .opacity(visible ? 0.8 : 0.1)
+            .padding(.leading, 2)
+            .padding(.vertical, 2)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) {
+                    visible = false
+                }
+            }
+    }
 }
