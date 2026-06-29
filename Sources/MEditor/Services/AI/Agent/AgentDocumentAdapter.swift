@@ -108,11 +108,9 @@ final class AppStateDocumentAdapter: AgentDocumentAdapter {
     func notifyFileCreated(_ url: URL) {
         guard let state = appState else { return }
         state.reloadFileTree()
-        DispatchQueue.main.async { [weak state] in
-            guard let state else { return }
-            state.openFile(FileItem(url: url, isDirectory: false))
-            state.showToast("已创建 \(url.lastPathComponent)", icon: "doc.badge.plus")
-        }
+        // 已在 @MainActor，无需 DispatchQueue.main.async
+        state.openFile(FileItem(url: url, isDirectory: false))
+        state.showToast("已创建 \(url.lastPathComponent)", icon: "doc.badge.plus")
     }
 
     func notifyFileWritten(_ url: URL, content: String, isNew: Bool) {
@@ -128,11 +126,9 @@ final class AppStateDocumentAdapter: AgentDocumentAdapter {
         state.reloadHTMLPreviewIfShowing(url)
         let filename = url.lastPathComponent
         if isNew {
-            DispatchQueue.main.async { [weak state] in
-                guard let state else { return }
-                state.openFile(FileItem(url: url, isDirectory: false))
-                state.showToast("已创建 \(filename)", icon: "doc.badge.plus")
-            }
+            // 已在 @MainActor，无需 DispatchQueue.main.async
+            state.openFile(FileItem(url: url, isDirectory: false))
+            state.showToast("已创建 \(filename)", icon: "doc.badge.plus")
         } else {
             state.showToast("已更新 \(filename)", icon: "checkmark.circle")
         }
