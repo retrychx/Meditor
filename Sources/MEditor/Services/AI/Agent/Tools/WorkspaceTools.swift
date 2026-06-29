@@ -52,7 +52,7 @@ struct ReadFileTool: AgentTool {
         guard case .found(let url) = resolved else {
             if case .ambiguous(let urls) = resolved {
                 let list = urls.prefix(5).map { "  - \($0.path)" }.joined(separator: "\n")
-                return "⚠️ 找到 \(urls.count) 个同名文件「\(filename)」，请提供更精确的路径：\n\(list)"
+                return "[!] 找到 \(urls.count) 个同名文件「\(filename)」，请提供更精确的路径：\n\(list)"
             }
             return "未找到文件：\(filename)"
         }
@@ -83,9 +83,9 @@ struct CreateFileTool: AgentTool {
         let content = arguments["content"]?.stringValue ?? ""
         do {
             let url = try await context.createFile(name: filename, content: content)
-            return "✅ 已创建文件：\(url.lastPathComponent)（\(content.count) 字符）"
+            return "[OK] 已创建文件：\(url.lastPathComponent)（\(content.count) 字符）"
         } catch AgentContextError.fileAlreadyExists(let name) {
-            return "⚠️ 文件已存在：\(name)，如需覆盖请用 write_file"
+            return "[!] 文件已存在：\(name)，如需覆盖请用 write_file"
         }
     }
 }
@@ -110,7 +110,7 @@ struct WriteFileTool: AgentTool {
               let content  = arguments["content"]?.stringValue
         else { throw AgentError.executionError("缺少 filename 或 content 参数") }
         let url = try await context.writeFile(name: filename, content: content)
-        return "✅ 已写入文件：\(url.lastPathComponent)（\(content.count) 字符）"
+        return "[OK] 已写入文件：\(url.lastPathComponent)（\(content.count) 字符）"
     }
 }
 
@@ -133,7 +133,7 @@ struct CreateDirectoryTool: AgentTool {
             throw AgentError.executionError("缺少 path 参数")
         }
         let url = try await context.createDirectory(name: path)
-        return "✅ 已创建目录：\(url.path)"
+        return "[OK] 已创建目录：\(url.path)"
     }
 }
 

@@ -26,7 +26,7 @@ struct RunCommandTool: AgentTool {
 
         // 执行前确认（会话级授权）
         let approved = await context.confirmCommandExecution(command, cwd: resolvedCwd)
-        guard approved else { return "⚠️ 用户已拒绝执行该命令：\(command)" }
+        guard approved else { return "[!] 用户已拒绝执行该命令：\(command)" }
 
         return await Self.runViaLoginShell(command: command, cwd: resolvedCwd)
     }
@@ -47,7 +47,7 @@ struct RunCommandTool: AgentTool {
             do {
                 try process.run()
             } catch {
-                return "❌ 无法启动命令：\(error.localizedDescription)"
+                return "[X] 无法启动命令：\(error.localizedDescription)"
             }
             let data = outPipe.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
@@ -58,7 +58,7 @@ struct RunCommandTool: AgentTool {
                 output = String(output.prefix(maxBytes)) + "\n…（输出过长已截断）"
             }
             let status = process.terminationStatus
-            let header = status == 0 ? "✅ 命令完成（exit 0）" : "⚠️ 命令退出码 \(status)"
+            let header = status == 0 ? "[OK] 命令完成（exit 0）" : "[!] 命令退出码 \(status)"
             return "\(header)\n$ \(command)\n\n\(output.isEmpty ? "(无输出)" : output)"
         }.value
     }

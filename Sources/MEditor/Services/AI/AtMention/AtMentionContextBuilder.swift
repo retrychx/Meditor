@@ -36,7 +36,7 @@ enum AtMentionContextBuilder {
         }
 
         if skipped > 0 {
-            sections.append("⚠️ [\(skipped) more @mention(s) were omitted to stay within context limits]")
+            sections.append("[!] [\(skipped) more @mention(s) were omitted to stay within context limits]")
         }
 
         guard !sections.isEmpty else { return "" }

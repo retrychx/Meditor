@@ -6,7 +6,7 @@ struct PatchNotFoundError: LocalizedError {
     let find: String
     let nearbyContext: String
     var errorDescription: String? {
-        "⚠️ 未找到匹配文本：「\(find.prefix(60))」\n\n\(nearbyContext)\n\n建议：请用 read_document 重新读取文件内容，确认目标文本后再 patch。"
+        "[!] 未找到匹配文本：「\(find.prefix(60))」\n\n\(nearbyContext)\n\n建议：请用 read_document 重新读取文件内容，确认目标文本后再 patch。"
     }
 }
 
