@@ -1,9 +1,30 @@
 import SwiftUI
 
-/// Displays a single agent execution step (thinking / tool call / result).
+// MARK: - ShakeEffect
+
+/// 轻微水平抗动，用于工具调用失败时的视觉反馈。
+struct ShakeEffect: GeometryEffect {
+    var amount: CGFloat = 4
+    var shakesPerUnit = 3
+    var animatableData: CGFloat
+    func effectValue(size: CGSize) -> ProjectionTransform {
+        .init(CGAffineTransform(
+            translationX: amount * sin(animatableData * .pi * CGFloat(shakesPerUnit)), y: 0
+        ))
+    }
+}
+
+// MARK: - AgentStepView
+
+/// 展示单个执行步骤（thinking / tool call / done），带入场、状态过渡、错误抗动动画。
 struct AgentStepView: View {
     let step: AgentRunnerStep
     @Environment(AppState.self) private var state
+
+    // MARK: - Animation state
+    @State private var pulsing      = false   // thinking 呼吸灯
+    @State private var resultShown  = false   // 工具结果文字展开
+    @State private var errorShake: CGFloat = 0 // 错误抗动进度
 
     var body: some View {
         Group {
@@ -11,15 +32,29 @@ struct AgentStepView: View {
             case .thinking(let label, _):
                 thinkingView(label: label)
             case .toolCall(_, let name, let args):
-                toolCallView(name: name, args: args, done: false, isError: false, result: nil)
+                toolCallView(name: name, args: args)
             case .toolCallDone(_, let name, _, let result, let isError):
-                toolCallView(name: name, args: "", done: true, isError: isError, result: result)
+                toolCallView(name: name, args: "", result: result, isError: isError)
             }
+        }
+        .modifier(ShakeEffect(animatableData: errorShake))
+        // 工具状态变化（toolCall → toolCallDone）时触发动画
+        .onChange(of: step.isDone) { _, isDone in
+            guard isDone else { return }
+            withAnimation(DS.Motion.spring) { resultShown = true }
+            if step.isError {
+                withAnimation(.easeInOut(duration: 0.35)) { errorShake = 1 }
+            }
+        }
+        // 首次展示时如果已是 done（历史步骤回放）
+        .onAppear {
+            if step.isDone { resultShown = true }
         }
     }
 
     // MARK: - Thinking
 
+    @ViewBuilder
     private func thinkingView(label: String) -> some View {
         HStack(spacing: 8) {
             ProgressView().scaleEffect(0.7).controlSize(.small)
@@ -30,6 +65,10 @@ struct AgentStepView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        // 呼吸灯：整行 opacity 0.55↔1.0 循环
+        .opacity(pulsing ? 0.55 : 1.0)
+        .onAppear { withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { pulsing = true } }
+        .onDisappear { pulsing = false }
     }
 
     // MARK: - Tool Call
@@ -114,34 +153,49 @@ struct AgentStepView: View {
         return firstLine.count > 80 ? String(firstLine.prefix(80)) + "…" : firstLine
     }
 
-    private func toolCallView(name: String, args: String, done: Bool, isError: Bool, result: String?) -> some View {
-        let label = toolLabel(name: name, args: args)
+    /// `args` 在 done=true 时为空，利用 `resultShown` 控制结果文字的展开动画。
+    @ViewBuilder
+    private func toolCallView(
+        name: String,
+        args: String,
+        result: String? = nil,
+        isError: Bool = false
+    ) -> some View {
+        let done   = step.isDone
+        let label  = toolLabel(name: name, args: args)
         let accent: Color = done ? (isError ? .red : label.accent) : label.accent
 
-        return VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
+                // 图标：调用中 → 成功/失败，颜色平滑过渡
                 Image(systemName: done
                       ? (isError ? "xmark.circle.fill" : "checkmark.circle.fill")
                       : label.icon)
                     .font(.system(size: 11.5))
                     .foregroundStyle(accent)
+                    .animation(DS.Motion.standard, value: done)
+
                 Text(label.text)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
+
                 if !done {
                     ProgressView().scaleEffect(0.6).controlSize(.mini)
+                        .transition(.opacity)
                 }
                 Spacer(minLength: 0)
             }
 
-            if let result, !result.isEmpty {
+            // 结果文字：状态变为 done 后混入展开
+            if let result, !result.isEmpty, resultShown {
                 let summary = resultSummary(result)
                 if !summary.isEmpty {
                     Text(summary)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
         }
@@ -152,9 +206,11 @@ struct AgentStepView: View {
             accent.opacity(0.07),
             in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
+        .animation(DS.Motion.standard, value: accent)   // 背景颜色平滑过渡
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(accent.opacity(0.22), lineWidth: 1)
+                .animation(DS.Motion.standard, value: accent)
         )
     }
 
@@ -205,11 +261,16 @@ struct AgentResultPanel: View {
             // Steps
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
-                    LazyVStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 8) {
                         ForEach(runner.steps) { step in
                             AgentStepView(step: step)
                                 .environment(state)
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: .bottom).combined(with: .opacity),
+                                    removal:   .opacity
+                                ))
                         }
+                        .animation(DS.Motion.spring, value: runner.steps.count)
 
                         if let err = runner.error {
                             HStack(spacing: 6) {
@@ -224,7 +285,7 @@ struct AgentResultPanel: View {
                             .padding(.vertical, 8)
                         }
 
-                        // 滚动锚点
+                        // 滚动锤点
                         Color.clear.frame(height: 1).id("agentBottom")
                     }
                     .padding(12)
