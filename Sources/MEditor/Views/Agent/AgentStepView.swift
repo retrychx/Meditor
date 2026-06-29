@@ -140,15 +140,21 @@ struct AgentStepView: View {
         }
     }
 
-    /// 工具结果摘要：去掉 ✅/⚠️ 前缀，截断长文本
+    /// 从结果字符串前缀推断 SF Symbol 图标名（nil = 不显示额外图标）
+    private func resultIcon(from raw: String) -> (name: String, color: Color)? {
+        if raw.hasPrefix("[OK] ")  { return ("checkmark.circle",          .green)  }
+        if raw.hasPrefix("[!] ")   { return ("exclamationmark.triangle",   .orange) }
+        if raw.hasPrefix("[X] ")   { return ("xmark.circle",               .red)    }
+        return nil
+    }
+
+    /// 工具结果摘要：去掉文字前缀，截断长文本
     private func resultSummary(_ raw: String) -> String {
         var s = raw
-        // 去掉表情前缀
         for prefix in ["[OK] ", "[!] ", "[X] "] {
-            if s.hasPrefix(prefix) { s = String(s.dropFirst(prefix.count)) }
+            if s.hasPrefix(prefix) { s = String(s.dropFirst(prefix.count)); break }
         }
         let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
-        // 多行内容只展示第一行
         let firstLine = trimmed.components(separatedBy: "\n").first ?? trimmed
         return firstLine.count > 80 ? String(firstLine.prefix(80)) + "…" : firstLine
     }
@@ -187,15 +193,23 @@ struct AgentStepView: View {
                 Spacer(minLength: 0)
             }
 
-            // 结果文字：状态变为 done 后混入展开
+            // 结果行：状态变为 done 后展开
             if let result, !result.isEmpty, resultShown {
                 let summary = resultSummary(result)
+                let icon    = resultIcon(from: result)
                 if !summary.isEmpty {
-                    Text(summary)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        if let icon {
+                            Image(systemName: icon.name)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(icon.color.opacity(0.85))
+                        }
+                        Text(summary)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
         }

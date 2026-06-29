@@ -677,6 +677,7 @@ extension MarkdownWebView.Coordinator: WKUIDelegate {
                     action: #selector(MarkdownWebView.Coordinator.handleAddTodo(_:)),
                     keyEquivalent: ""
                 )
+                addItem.image = NSImage(systemSymbolName: "checkmark.circle", accessibilityDescription: nil)
                 addItem.target = self
                 addItem.representedObject = selectedText
                 menu.addItem(addItem)
