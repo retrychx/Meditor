@@ -42,10 +42,10 @@ enum TodoScanner {
                     let checkbox = nsLine.substring(with: checkboxRange)
                     let text = nsLine.substring(with: textRange)
                     items.append(TodoItem(
-                        id: UUID(),
-                        text: text,
+                        id:        TodoItem.stableID(fileURL: url, lineIndex: lineIndex),
+                        text:      text,
                         isChecked: checkbox == "x",
-                        fileURL: url,
+                        fileURL:   url,
                         lineIndex: lineIndex
                     ))
                 }
@@ -55,19 +55,22 @@ enum TodoScanner {
     }
 
     /// 在文件的指定行切换 checkbox 状态（`- [ ]` ↔ `- [x]`），然后写回文件。
+    /// 用正则 range 定位 checkbox 内容，只替换第一个匹配项，避免全行字符串替换的潜在误伤。
     static func toggle(item: TodoItem) throws {
         var lines = (try String(contentsOf: item.fileURL, encoding: .utf8))
             .components(separatedBy: "\n")
         guard item.lineIndex < lines.count else { return }
 
-        let original = lines[item.lineIndex]
-        let updated: String
-        if item.isChecked {
-            updated = original.replacingOccurrences(of: "- [x] ", with: "- [ ] ")
-                              .replacingOccurrences(of: "- [X] ", with: "- [ ] ")
-        } else {
-            updated = original.replacingOccurrences(of: "- [ ] ", with: "- [x] ")
-        }
+        let original   = lines[item.lineIndex]
+        let cbRegex    = try! NSRegularExpression(pattern: #"-\s*\[(x|X| )\]"#)
+        let nsOriginal = original as NSString
+        guard let match = cbRegex.firstMatch(
+            in: original, range: NSRange(location: 0, length: nsOriginal.length)
+        ) else { return }                       // 本行并没有 checkbox，安全跳过
+
+        let innerRange  = match.range(at: 1)   // 单个字符：x/X/空格
+        let replacement = item.isChecked ? " " : "x"
+        let updated     = nsOriginal.replacingCharacters(in: innerRange, with: replacement)
         lines[item.lineIndex] = updated
         try lines.joined(separator: "\n").write(to: item.fileURL, atomically: true, encoding: .utf8)
     }

@@ -44,6 +44,9 @@ final class AppState {
     @ObservationIgnored
     private(set) lazy var aiConversation: AIConversation = AIConversation()
 
+    /// 全局待办状态，两个 Todo 视图共享同一份数据。
+    let todoStore = TodoStore()
+
     // MARK: - Core shared state
 
     var rootURL: URL? {
@@ -469,6 +472,7 @@ final class AppState {
     // MARK: - Todo helpers
 
     /// 将一条新待办写入当前编辑文件末尾（md）；无打开文件时写入 rootURL/inbox.md。
+    /// 磁盘写入在后台执行，完成后同步编辑器内容。
     func appendTodoToCurrentFile(_ text: String) {
         let targetURL: URL
         if let tab = selectedTab, tab.url.pathExtension.lowercased() == "md" {
@@ -479,20 +483,18 @@ final class AppState {
             showToast("请先打开一个工作区", icon: "exclamationmark.triangle")
             return
         }
-
-        let line = "\n- [ ] \(text)"
-        do {
-            let existing = (try? String(contentsOf: targetURL, encoding: .utf8)) ?? ""
-            let newContent = existing + line
-            try newContent.write(to: targetURL, atomically: true, encoding: .utf8)
-            // 如果当前正在编辑该文件，同步更新 tab 内容
-            if let tab = selectedTab, tab.url == targetURL {
-                tab.content = newContent
-                tab.contentRevision &+= 1
+        Task {
+            do {
+                let newContent = try await todoStore.addTodo(text: text, to: targetURL)
+                // 同步编辑器
+                if let tab = selectedTab, tab.url == targetURL {
+                    tab.content = newContent
+                    tab.contentRevision &+= 1
+                }
+                showToast("已新增待办到 \(targetURL.lastPathComponent)", icon: "checkmark.circle")
+            } catch {
+                setError(error.localizedDescription)
             }
-            showToast("已新增待办到 \(targetURL.lastPathComponent)", icon: "checkmark.circle")
-        } catch {
-            setError(error.localizedDescription)
         }
     }
 }
