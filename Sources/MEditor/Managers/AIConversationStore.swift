@@ -192,15 +192,22 @@ final class AIConversation {
     // MARK: Persistence
 
     func persist() {
-        // Debounce + encode/write off the main thread (mirrors SessionStore).
+        // Debounce: 只在真正要写盘时才拟快照 sessions，避免每次调用都复制整个数组。
         persistWork?.cancel()
-        let snapshot = sessions
-        let url = Self.fileURL
-        let work = DispatchWorkItem {
-            guard let data = try? JSONEncoder().encode(snapshot) else { return }
-            try? FileManager.default.createDirectory(
-                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? data.write(to: url, options: .atomic)
+        let url  = Self.fileURL
+        let work = DispatchWorkItem { [weak self] in
+            // 在工作项实际执行时打快照，这时已经在防抖窗口末尾，数据是最新的
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let snapshot = self.sessions
+                let fileURL  = url
+                DispatchQueue.global(qos: .utility).async {
+                    guard let data = try? JSONEncoder().encode(snapshot) else { return }
+                    try? FileManager.default.createDirectory(
+                        at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try? data.write(to: fileURL, options: .atomic)
+                }
+            }
         }
         persistWork = work
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.4, execute: work)

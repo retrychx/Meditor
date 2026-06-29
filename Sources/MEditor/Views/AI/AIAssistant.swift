@@ -367,7 +367,9 @@ struct AIAssistantPanel: View {
                 scrollToEnd(proxy)
             }
             .onChange(of: convo.messages.last?.text) { _, _ in
-                if atBottom { scrollToEnd(proxy) }
+                // 流式输出时每个 token 都会触发，用 async 让 SwiftUI 先完成当前帧再滚动。
+                // 不需要额外节流：延迟到主队列尾部本身就具备天然合并效果。
+                if atBottom { DispatchQueue.main.async { scrollToEnd(proxy) } }
             }
             .onChange(of: convo.agentRunner?.steps.count) { _, _ in
                 // 新增 step 时无条件滚动（不检查 atBottom）：
@@ -651,12 +653,36 @@ struct AIAssistantPanel: View {
         let context = AgentContext.make(appState: state)
         let tools   = BuiltinAgentTools.all
 
-        // 拼接 system prompt（文档上下文 + skills + @mention 注入）
+        // @mention 所需的主线程上下文快照（不能在 Task.detached 里访问 MainActor 属性）
+        let docName    = state.selectedTab?.name
+        let docContent = state.selectedTab?.content
+        let wsRoot     = state.rootURL
+        let wsFiles    = Array(state.fileItemMap.values)
+
         let userTurnCount = convo.messages.filter { $0.role == .user }.count
-        var sysContent    = systemContext(includeFullDoc: userTurnCount == 1)
-        // 注入 @mention 上下文（总是附加，即使 includeFullDoc=false）
-        let mentionCtx = AtMentionContextBuilder.build(tokens: mentionTokens, appState: state)
-        if !mentionCtx.isEmpty { sysContent += mentionCtx }
+        let baseSys = systemContext(includeFullDoc: userTurnCount == 1)
+
+        Task {
+            // @mention IO 在后台执行
+            let mentionCtx = await AtMentionContextBuilder.build(
+                tokens: mentionTokens,
+                currentDocName: docName,
+                currentDocContent: docContent,
+                workspaceRoot: wsRoot,
+                workspaceFiles: wsFiles
+            )
+            var sysContent = baseSys
+            if !mentionCtx.isEmpty { sysContent += mentionCtx }
+            launchAgentRunner(sysContent: sysContent, config: config, context: context, tools: tools)
+        }
+    }
+
+    private func launchAgentRunner(
+        sysContent: String,
+        config: AIConfig,
+        context: AgentContext,
+        tools: [any AgentTool]
+    ) {
 
         // 把历史对话转成 AgentMessage 格式
         var agentMessages: [AgentMessage] = [
