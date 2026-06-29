@@ -33,6 +33,8 @@ struct NativeEditorView: NSViewRepresentable {
     var onSelectionChange: ((String) -> Void)? = nil
     /// Reports the current NSRange selection (used to save range before sheet opens).
     var onRangeChange: ((NSRange) -> Void)? = nil
+    /// Slash AI 命令回调，由 EditorView 封装 AppState 操作。
+    var onSlashAIAction: ((SlashAIAction, String, NSRange) -> Void)? = nil
     /// Text to insert at the caret / over the selection (driven by the AI panel).
     var insertText: String = ""
     /// Monotonic token so the same insert can be requested more than once.
@@ -143,6 +145,7 @@ struct NativeEditorView: NSViewRepresentable {
         context.coordinator.onVisibleTopLineChange = onVisibleTopLineChange
         context.coordinator.onSelectionChange = onSelectionChange
         context.coordinator.onRangeChange = onRangeChange
+        context.coordinator.onSlashAIAction = onSlashAIAction
         context.coordinator.highlighter.language = language
 
         guard let textView = scrollView.documentView as? NSTextView else { return }
