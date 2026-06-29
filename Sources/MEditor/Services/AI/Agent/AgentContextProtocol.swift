@@ -38,7 +38,7 @@ protocol AgentContextProtocol: AnyObject {
     func createDirectory(name: String) throws -> URL
     @discardableResult
     func openFile(named name: String) -> Bool
-    func searchWorkspace(query: String, extensions: [String]) -> [String]
+    func searchWorkspace(query: String, extensions: [String]) async -> [String]
 
     /// 请求用户确认执行某条命令（会话级授权：首次确认后本会话不再询问）。
     /// 返回 true 表示允许执行。
