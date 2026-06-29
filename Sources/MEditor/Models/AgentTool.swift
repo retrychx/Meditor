@@ -1,23 +1,44 @@
 import Foundation
 
-// MARK: - Tool Schema (JSON Schema subset for OpenAI function calling)
+// MARK: - Tool Property Schema
 
-struct ToolPropertySchema: Codable, Sendable {
+struct ToolPropertySchema: Sendable {
     var type: String
     var description: String
     var enumValues: [String]?
+}
 
-    enum CodingKeys: String, CodingKey {
-        case type, description
-        case enumValues = "enum"
+// MARK: - Tool Parameter Schema（有序 properties，保证传给 AI 的字段顺序稳定）
+
+struct ToolParameterSchema: Sendable {
+    var type: String = "object"
+    /// 有序键值对，避免 Dictionary 随机顺序影响模型对参数的理解
+    var orderedProperties: [(key: String, schema: ToolPropertySchema)]
+    var required: [String]
+
+    init(
+        type: String = "object",
+        properties: [(key: String, schema: ToolPropertySchema)] = [],
+        required: [String] = []
+    ) {
+        self.type = type
+        self.orderedProperties = properties
+        self.required = required
+    }
+
+    /// 便捷初始化：接受 [String: ToolPropertySchema] 并按 key 字母排序（兼容旧调用）
+    init(
+        type: String = "object",
+        properties: [String: ToolPropertySchema],
+        required: [String] = []
+    ) {
+        self.type = type
+        self.orderedProperties = properties.sorted { $0.key < $1.key }.map { ($0.key, $0.value) }
+        self.required = required
     }
 }
 
-struct ToolParameterSchema: Codable, Sendable {
-    var type: String = "object"
-    var properties: [String: ToolPropertySchema] = [:]
-    var required: [String] = []
-}
+// MARK: - Agent Tool Spec
 
 struct AgentToolSpec: Sendable {
     var name: String
@@ -33,7 +54,7 @@ struct AgentToolSpec: Sendable {
     // Serialize to OpenAI tool format
     var openAIDict: [String: Any] {
         var props: [String: Any] = [:]
-        for (key, schema) in parameters.properties {
+        for (key, schema) in parameters.orderedProperties {
             var p: [String: Any] = ["type": schema.type, "description": schema.description]
             if let enums = schema.enumValues { p["enum"] = enums }
             props[key] = p
@@ -55,9 +76,9 @@ struct AgentToolSpec: Sendable {
     // Claude XML-style tool description
     var claudeXMLDescription: String {
         var lines = ["<tool>", "<name>\(name)</name>", "<description>\(description)</description>"]
-        if !parameters.properties.isEmpty {
+        if !parameters.orderedProperties.isEmpty {
             lines.append("<parameters>")
-            for (key, schema) in parameters.properties {
+            for (key, schema) in parameters.orderedProperties {
                 lines.append("  <parameter>")
                 lines.append("    <name>\(key)</name>")
                 lines.append("    <type>\(schema.type)</type>")
@@ -75,11 +96,35 @@ struct AgentToolSpec: Sendable {
 }
 
 // MARK: - Tool Call (from AI response)
+// 用强类型 AnySendableValue 替代 [String: Any]，消除 @unchecked Sendable
 
-struct AgentToolCall: @unchecked Sendable {
+enum AnySendableValue: Sendable {
+    case string(String)
+    case bool(Bool)
+    case int(Int)
+    case double(Double)
+    case array([AnySendableValue])
+    case dict([String: AnySendableValue])
+    case null
+
+    var stringValue: String? {
+        if case .string(let s) = self { return s }
+        return nil
+    }
+    var boolValue: Bool? {
+        if case .bool(let b) = self { return b }
+        return nil
+    }
+    var intValue: Int? {
+        if case .int(let i) = self { return i }
+        return nil
+    }
+}
+
+struct AgentToolCall: Sendable {
     var id: String
     var name: String
-    var arguments: [String: Any]
+    var arguments: [String: AnySendableValue]
 
     // Parse arguments from JSON string
     init(id: String, name: String, argumentsJSON: String) {
@@ -87,16 +132,37 @@ struct AgentToolCall: @unchecked Sendable {
         self.name = name
         if let data = argumentsJSON.data(using: .utf8),
            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            self.arguments = obj
+            self.arguments = Self.convert(obj)
         } else {
             self.arguments = [:]
         }
     }
 
-    init(id: String, name: String, arguments: [String: Any] = [:]) {
+    init(id: String, name: String, arguments: [String: AnySendableValue] = [:]) {
         self.id = id
         self.name = name
         self.arguments = arguments
+    }
+
+    /// 递归将 [String: Any] 转换为 [String: AnySendableValue]
+    static func convert(_ dict: [String: Any]) -> [String: AnySendableValue] {
+        var result: [String: AnySendableValue] = [:]
+        for (key, value) in dict {
+            result[key] = convertValue(value)
+        }
+        return result
+    }
+
+    private static func convertValue(_ value: Any) -> AnySendableValue {
+        switch value {
+        case let s as String:  return .string(s)
+        case let b as Bool:    return .bool(b)
+        case let i as Int:     return .int(i)
+        case let d as Double:  return .double(d)
+        case let arr as [Any]: return .array(arr.map { convertValue($0) })
+        case let dict as [String: Any]: return .dict(convert(dict))
+        default: return .null
+        }
     }
 }
 
@@ -120,23 +186,21 @@ struct AgentToolResult: Sendable {
 
 protocol AgentTool: Sendable {
     var spec: AgentToolSpec { get }
-    func execute(arguments: [String: Any], context: AgentContext) async throws -> String
+    func execute(arguments: [String: AnySendableValue], context: any AgentContextProtocol) async throws -> String
 }
 
-// MARK: - Agent Step (for UI display)
+// MARK: - Agent Runner Step（独立为 Model，不再混入 Runner）
 
-enum AgentStep: Identifiable {
-    case thinking
-    case toolCall(name: String, args: String)
-    case toolResult(name: String, content: String, isError: Bool)
-    case text(String)
+enum AgentRunnerStep: Identifiable, Sendable {
+    case thinking(label: String, id: UUID = UUID())
+    case toolCall(id: String, name: String, args: String)
+    case toolCallDone(id: String, name: String, args: String, result: String, isError: Bool)
 
     var id: String {
         switch self {
-        case .thinking:                         return "thinking"
-        case .toolCall(let n, _):               return "call-\(n)-\(UUID().uuidString)"
-        case .toolResult(let n, _, _):          return "result-\(n)-\(UUID().uuidString)"
-        case .text(let t):                      return "text-\(t.prefix(20))"
+        case .thinking(_, let uid):              return uid.uuidString
+        case .toolCall(let id, _, _):            return "call-\(id)"
+        case .toolCallDone(let id, _, _, _, _):  return "done-\(id)"
         }
     }
 }
@@ -153,12 +217,12 @@ enum AgentError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .noDocument:           return "没有打开的文档"
-        case .noWorkspace:          return "没有打开工作区"
-        case .toolNotFound(let n):  return "工具未找到：\(n)"
-        case .maxStepsExceeded:     return "Agent 执行步数超限"
-        case .parseError(let m):    return "解析错误：\(m)"
-        case .executionError(let m):return "执行错误：\(m)"
+        case .noDocument:            return "没有打开的文档"
+        case .noWorkspace:           return "没有打开工作区"
+        case .toolNotFound(let n):   return "工具未找到：\(n)"
+        case .maxStepsExceeded:      return "Agent 执行步数超限"
+        case .parseError(let m):     return "解析错误：\(m)"
+        case .executionError(let m): return "执行错误：\(m)"
         }
     }
 }

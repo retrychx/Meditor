@@ -2,6 +2,13 @@ import SwiftUI
 import AppKit
 import os
 
+// MARK: - EditorViewProtocol
+// NativeEditorView 是 EditorViewProtocol 的 macOS 实现。
+// 所有对外暴露的属性/回调均与 Protocols/EditorViewProtocol.swift 中的定义保持一致。
+// 注意：NSViewRepresentable 与 protocol EditorViewProtocol: View 存在关联类型冲突，
+// 无法在运行时做类型擦除，因此 NativeEditorView 以文档契约方式符合协议，
+// 不做 Swift 静态 conformance 声明。未来 iOS/visionOS 实现请对照协议补齐全部成员。
+
 /// A native NSTextView-based code editor with basic syntax highlighting.
 /// Avoids WKWebView/CDN/JS bridge complexity.
 struct NativeEditorView: NSViewRepresentable {

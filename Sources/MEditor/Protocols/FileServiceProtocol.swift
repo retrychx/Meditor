@@ -5,6 +5,7 @@ protocol FileServiceProtocol: AnyObject {
     func loadImmediateChildren(of directory: URL) -> [FileItem]
     func loadChildren(for item: FileItem) -> [FileItem]
     func loadAllFiles(under directory: URL) -> [FileItem]
+    func loadAllItems(under directory: URL) -> [FileItem]
 
     // File I/O
     func readFile(at url: URL) throws -> String

@@ -20,11 +20,12 @@ struct WebPreviewView: NSViewRepresentable {
     var rootURL: URL? = nil
     var findController: PreviewFindController? = nil
     var onSelectionChange: ((String) -> Void)? = nil
+    var onAddTodo: ((String) -> Void)? = nil
 
     static let selectionHandlerName = "selectionHandler"
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(findController: findController, onSelectionChange: onSelectionChange)
+        Coordinator(findController: findController, onSelectionChange: onSelectionChange, onAddTodo: onAddTodo)
     }
 
     func makeNSView(context: Context) -> WKWebView {
@@ -37,6 +38,7 @@ struct WebPreviewView: NSViewRepresentable {
         webView.setValue(false, forKey: "drawsBackground")
         webView.autoresizingMask = [.width, .height]
         webView.navigationDelegate = context.coordinator
+        webView.uiDelegate = context.coordinator
 
         context.coordinator.webView = webView
         context.coordinator.rootURL = rootURL
@@ -53,6 +55,7 @@ struct WebPreviewView: NSViewRepresentable {
         context.coordinator.rootURL = rootURL
         context.coordinator.findController = findController
         context.coordinator.onSelectionChange = onSelectionChange
+        context.coordinator.onAddTodo = onAddTodo
         findController?.register(webView: webView, for: .html)
         context.coordinator.applyLoad(fileURL: fileURL, reloadToken: reloadToken)
     }
@@ -74,12 +77,14 @@ extension WebPreviewView {
         var rootURL: URL?
         var findController: PreviewFindController?
         var onSelectionChange: ((String) -> Void)?
+        var onAddTodo: ((String) -> Void)?
         private var lastFileURL: URL?
         private var lastReloadToken: Int = -1
 
-        init(findController: PreviewFindController? = nil, onSelectionChange: ((String) -> Void)? = nil) {
+        init(findController: PreviewFindController? = nil, onSelectionChange: ((String) -> Void)? = nil, onAddTodo: ((String) -> Void)? = nil) {
             self.findController = findController
             self.onSelectionChange = onSelectionChange
+            self.onAddTodo = onAddTodo
         }
 
         /// Load the file only when something actually changed.
@@ -192,5 +197,36 @@ extension WebPreviewView.Coordinator {
         })();
         """
         webView.evaluateJavaScript(selectionJS, completionHandler: nil)
+    }
+}
+
+// MARK: - WKUIDelegate (右键菜单：新增为待办)
+
+extension WebPreviewView.Coordinator: WKUIDelegate {
+    func webView(_ webView: WKWebView, willOpenMenu menu: NSMenu, with event: NSEvent) {
+        webView.evaluateJavaScript("window.getSelection().toString().trim()") { [weak self, weak menu] result, _ in
+            guard let self = self,
+                  let menu = menu,
+                  let selectedText = result as? String,
+                  !selectedText.isEmpty else { return }
+            DispatchQueue.main.async {
+                menu.addItem(.separator())
+                let addItem = NSMenuItem(
+                    title: "📌 新增为待办",
+                    action: #selector(WebPreviewView.Coordinator.handleAddTodo(_:)),
+                    keyEquivalent: ""
+                )
+                addItem.target = self
+                addItem.representedObject = selectedText
+                menu.addItem(addItem)
+            }
+        }
+    }
+
+    @objc func handleAddTodo(_ sender: NSMenuItem) {
+        guard let text = sender.representedObject as? String else { return }
+        DispatchQueue.main.async {
+            self.onAddTodo?(text)
+        }
     }
 }

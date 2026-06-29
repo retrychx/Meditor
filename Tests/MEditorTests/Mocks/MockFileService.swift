@@ -51,6 +51,12 @@ class MockFileService: FileServiceProtocol {
         return children[directory] ?? []
     }
 
+    func loadAllItems(under directory: URL) -> [FileItem] {
+        lock.lock()
+        defer { lock.unlock() }
+        return children[directory] ?? []
+    }
+
     func readFile(at url: URL) throws -> String {
         if let error = readError { throw error }
         if let content = fileContent(at: url) { return content }

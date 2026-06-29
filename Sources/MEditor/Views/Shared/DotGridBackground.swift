@@ -30,5 +30,6 @@ struct DotGridBackground: View {
                 }
             }
         }
+        .drawingGroup()  // 提升到 Metal 离屏渲染，避免主线程逐帧重绘
     }
 }

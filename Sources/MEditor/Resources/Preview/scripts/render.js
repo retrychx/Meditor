@@ -49,9 +49,10 @@
     var blocks = content.split(/\n{2,}/);
 
     // Fallback: link reference definitions are cross-block state.
-    // Also fallback if content has fenced code blocks with blank lines inside —
-    // splitting on \n\n would break those blocks.
-    if (blocks.length <= 2 || /^\[.+\]:\s/m.test(content) || /^```[\s\S]*?\n\n[\s\S]*?^```/m.test(content)) {
+    // Also fallback if content has fenced code blocks — splitting on \n\n
+    // would break fences that contain blank lines, causing # comments inside
+    // code blocks to be rendered as headings and corrupting TOC line mapping.
+    if (blocks.length <= 2 || /^\[.+\]:\s/m.test(content) || /^```/.test(content)) {
       return renderMarkdown(content);
     }
 

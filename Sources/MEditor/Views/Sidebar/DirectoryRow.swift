@@ -9,21 +9,20 @@ import SwiftUI
 struct SidebarTreeNode: View {
     let item: FileItem
     let searchText: String
-    let expandedPaths: Set<String>
-    let onExpandedChange: (FileItem, Bool) -> Void
     let onAction: (FileAction) -> Void
     let onTap: (FileItem) -> Void
 
     @Environment(AppState.self) private var state
+    @Environment(WorkspaceUIState.self) private var workspaceUI
 
-    private var isExpanded: Bool { expandedPaths.contains(item.url.path) }
+    private var isExpanded: Bool { workspaceUI.expandedPaths.contains(item.url.path) }
 
     var body: some View {
         if item.isDirectory {
             DisclosureGroup(
                 isExpanded: Binding(
                     get: { isExpanded },
-                    set: { onExpandedChange(item, $0) }
+                    set: { workspaceUI.setExpanded(item, $0) }
                 )
             ) {
                 if item.isLoadingChildren {
@@ -37,8 +36,6 @@ struct SidebarTreeNode: View {
                         SidebarTreeNode(
                             item: child,
                             searchText: searchText,
-                            expandedPaths: expandedPaths,
-                            onExpandedChange: onExpandedChange,
                             onAction: onAction,
                             onTap: onTap
                         )
@@ -52,16 +49,14 @@ struct SidebarTreeNode: View {
                     onAction: onAction
                 )
                 .help(item.url.path)
-                // Pull the label closer to the disclosure chevron — the default
-                // DisclosureGroup chevron-to-label gap is a touch wide.
                 .padding(.leading, -6)
-                .contentShape(Rectangle())
-                .onTapGesture { onTap(item) }
             }
             .listRowSeparator(.hidden)
-            .animation(.spring(response: 0.25, dampingFraction: 0.85), value: isExpanded)
             .onAppear {
                 if isExpanded { state.loadChildrenIfNeeded(for: item) }
+            }
+            .onChange(of: isExpanded) { _, expanded in
+                if expanded { state.loadChildrenIfNeeded(for: item) }
             }
         } else {
             FileRow(

@@ -5,6 +5,7 @@ struct TodoMainView: View {
     @Environment(AppState.self) private var state
     @State private var todos: [TodoItem] = []
     @State private var isLoading = false
+    @State private var showingAddTodo = false
 
     private var theme: PreviewTheme { state.themeStore.current }
 
@@ -17,6 +18,11 @@ struct TodoMainView: View {
         .background(theme.windowBackground)
         .task(id: state.rootURL) {
             await reload()
+        }
+        .sheet(isPresented: $showingAddTodo) {
+            AddTodoSheet(theme: theme) { text, fileURL in
+                addTodo(text: text, to: fileURL)
+            }
         }
     }
 
@@ -38,6 +44,16 @@ struct TodoMainView: View {
             if isLoading {
                 ProgressView().controlSize(.small)
             } else {
+                Button {
+                    showingAddTodo = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(theme.craftSecondary)
+                }
+                .buttonStyle(.plain)
+                .help("新增待办")
+
                 Button {
                     Task { await reload() }
                 } label: {
@@ -97,7 +113,8 @@ struct TodoMainView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .scrollIndicators(.hidden)
+        .scrollIndicators(.automatic)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func sectionHeader(_ title: String) -> some View {
@@ -151,6 +168,25 @@ struct TodoMainView: View {
             state.setError(error.localizedDescription)
         }
     }
+
+    /// 将一条新待办写入指定文件末尾，并刷新列表。
+    private func addTodo(text: String, to fileURL: URL) {
+        let line = "\n- [ ] \(text)"
+        do {
+            let existing = (try? String(contentsOf: fileURL, encoding: .utf8)) ?? ""
+            let newContent = existing + line
+            try newContent.write(to: fileURL, atomically: true, encoding: .utf8)
+            // 如果当前正在编辑该文件，同步更新编辑器内容
+            if let tab = state.selectedTab, tab.url == fileURL {
+                tab.content = newContent
+                tab.contentRevision &+= 1
+            }
+            state.showToast("已新增待办", icon: "checkmark.circle")
+            Task { await reload() }
+        } catch {
+            state.setError(error.localizedDescription)
+        }
+    }
 }
 
 // MARK: - Row
@@ -193,5 +229,120 @@ private struct TodoMainRow: View {
         .onHover { isHovered = $0 }
         .onTapGesture { onTap() }
         .animation(DS.Motion.micro, value: isHovered)
+    }
+}
+
+// MARK: - AddTodoSheet
+
+struct AddTodoSheet: View {
+    let theme: PreviewTheme
+    /// 回调：(待办文本, 目标文件URL)
+    let onAdd: (String, URL) -> Void
+
+    @Environment(AppState.self) private var state
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var todoText: String = ""
+    @FocusState private var textFieldFocused: Bool
+
+    /// 可写入的目标文件：当前打开的 md 文件，否则 rootURL/inbox.md
+    private var targetFileURL: URL? {
+        if let tab = state.selectedTab, tab.url.pathExtension.lowercased() == "md" {
+            return tab.url
+        }
+        if let root = state.rootURL {
+            return root.appendingPathComponent("inbox.md")
+        }
+        return nil
+    }
+
+    private var targetFileName: String {
+        targetFileURL?.lastPathComponent ?? "未知文件"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            // 标题
+            HStack {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(Color.appAccent)
+                Text("新增待办")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(theme.craftPrimary)
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(theme.craftSecondary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            // 输入框
+            VStack(alignment: .leading, spacing: 6) {
+                Text("待办内容")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(theme.craftSecondary)
+                TextField("输入待办事项…", text: $todoText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14))
+                    .foregroundStyle(theme.craftPrimary)
+                    .focused($textFieldFocused)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                    .onSubmit { confirmAdd() }
+            }
+
+            // 目标文件提示
+            HStack(spacing: 5) {
+                Image(systemName: "doc.text")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                Text("将写入：")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                Text(targetFileName)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.appAccent.opacity(0.8))
+            }
+
+            // 按钮区
+            HStack {
+                Spacer()
+                Button("取消") {
+                    dismiss()
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.craftSecondary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(Color.primary.opacity(0.06), in: Capsule())
+
+                Button("添加") {
+                    confirmAdd()
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(todoText.trimmingCharacters(in: .whitespaces).isEmpty ? Color.appAccent.opacity(0.4) : Color.appAccent, in: Capsule())
+                .disabled(todoText.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(24)
+        .frame(width: 360)
+        .background(theme.windowBackground)
+        .onAppear { textFieldFocused = true }
+    }
+
+    private func confirmAdd() {
+        let trimmed = todoText.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, let fileURL = targetFileURL else { return }
+        onAdd(trimmed, fileURL)
+        dismiss()
     }
 }

@@ -87,7 +87,8 @@ struct TodoSidebarView: View {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
-        .scrollIndicators(.hidden)
+        .scrollIndicators(.automatic)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func emptyMessage(_ text: String, icon: String) -> some View {

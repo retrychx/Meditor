@@ -67,6 +67,9 @@ struct PreviewPanel: View {
                             withAnimation(DS.Motion.fast) {
                                 state.previewSelectedText = text
                             }
+                        },
+                        onAddTodo: { text in
+                            state.appendTodoToCurrentFile(text)
                         }
                     )
                     .overlay(alignment: .bottom) {
@@ -86,6 +89,9 @@ struct PreviewPanel: View {
                             withAnimation(DS.Motion.fast) {
                                 state.previewSelectedText = text
                             }
+                        },
+                        onAddTodo: { text in
+                            state.appendTodoToCurrentFile(text)
                         }
                     )
                     .overlay(alignment: .bottom) {
@@ -169,8 +175,14 @@ struct PreviewPanel: View {
     }
 
     private func resetTOCIfNeeded() {
-        guard state.selectedTab?.language == .markdown else { return }
-        tocItems = []
+        // Do NOT clear tocItems immediately — keeping stale items prevents the
+        // TOC panel from collapsing and re-expanding (which causes layout jank).
+        // The items will be replaced by onTOCUpdate when the new content renders.
+        guard state.selectedTab?.language == .markdown else {
+            tocItems = []
+            activeTOCIndex = -1
+            return
+        }
         activeTOCIndex = -1
     }
 

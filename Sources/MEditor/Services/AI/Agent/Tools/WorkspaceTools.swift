@@ -1,0 +1,161 @@
+import Foundation
+
+// MARK: - List Files
+
+struct ListFilesTool: AgentTool {
+    let spec = AgentToolSpec(
+        name: "list_files",
+        description: "List all Markdown and text files in the current workspace.",
+        parameters: ToolParameterSchema(
+            properties: [
+                "extension": ToolPropertySchema(type: "string", description: "File extension filter, e.g. 'md', 'txt'. Leave empty for all text files.")
+            ],
+            required: []
+        )
+    )
+
+    func execute(arguments: [String: AnySendableValue], context: any AgentContextProtocol) async throws -> String {
+        guard await context.workspaceURL != nil else { throw AgentError.noWorkspace }
+        let ext  = arguments["extension"]?.stringValue ?? ""
+        let exts = ext.isEmpty ? ["md", "txt", "markdown"] : [ext.lowercased()]
+        let files = await context.listWorkspaceFiles(extensions: exts)
+        if files.isEmpty { return "工作区没有找到文件" }
+        let root  = await context.workspaceURL?.path ?? ""
+        let names = files.map { url -> String in
+            let rel = url.path.hasPrefix(root) ? String(url.path.dropFirst(root.count + 1)) : url.lastPathComponent
+            return "- \(rel)"
+        }
+        return "工作区文件（\(files.count) 个）：\n\n" + names.prefix(50).joined(separator: "\n")
+    }
+}
+
+// MARK: - Read File
+
+struct ReadFileTool: AgentTool {
+    let spec = AgentToolSpec(
+        name: "read_file",
+        description: "Read the content of a file in the workspace by filename. Large files are automatically truncated.",
+        parameters: ToolParameterSchema(
+            properties: [
+                "filename": ToolPropertySchema(type: "string", description: "The filename to read (e.g. README.md). Searches recursively in the workspace.")
+            ],
+            required: ["filename"]
+        )
+    )
+
+    func execute(arguments: [String: AnySendableValue], context: any AgentContextProtocol) async throws -> String {
+        guard let filename = arguments["filename"]?.stringValue else {
+            throw AgentError.executionError("缺少 filename 参数")
+        }
+        // 统一路径解析：支持文件名、工作区相对路径（如 test111/index.html）、绝对路径
+        guard let url = await context.resolveExistingFile(filename) else {
+            return "未找到文件：\(filename)"
+        }
+        let content = try await context.readFile(at: url)
+        return "# \(filename)\n\n\(content)"
+    }
+}
+
+// MARK: - Create File
+
+struct CreateFileTool: AgentTool {
+    let spec = AgentToolSpec(
+        name: "create_file",
+        description: "Create a new file. Fails if the file already exists — use write_file to overwrite. Accepts BOTH absolute paths and relative paths from the workspace root. ALWAYS use this tool when asked to create a file.",
+        parameters: ToolParameterSchema(
+            properties: [
+                "content":  ToolPropertySchema(type: "string", description: "Initial Markdown content (optional, default: empty)."),
+                "filename": ToolPropertySchema(type: "string", description: "Filename or path, e.g. 'notes.md' or 'docs/intro.md'.")
+            ],
+            required: ["filename"]
+        )
+    )
+
+    func execute(arguments: [String: AnySendableValue], context: any AgentContextProtocol) async throws -> String {
+        guard let filename = arguments["filename"]?.stringValue else {
+            throw AgentError.executionError("缺少 filename 参数")
+        }
+        let content = arguments["content"]?.stringValue ?? ""
+        do {
+            let url = try await context.createFile(name: filename, content: content)
+            return "✅ 已创建文件：\(url.lastPathComponent)（\(content.count) 字符）"
+        } catch AgentContextError.fileAlreadyExists(let name) {
+            return "⚠️ 文件已存在：\(name)，如需覆盖请用 write_file"
+        }
+    }
+}
+
+// MARK: - Write File
+
+struct WriteFileTool: AgentTool {
+    let spec = AgentToolSpec(
+        name: "write_file",
+        description: "Create or overwrite a file. Accepts BOTH absolute paths and relative paths from the workspace root. ALWAYS use this tool when asked to write a file.",
+        parameters: ToolParameterSchema(
+            properties: [
+                "content":  ToolPropertySchema(type: "string", description: "The content to write."),
+                "filename": ToolPropertySchema(type: "string", description: "Filename or path, e.g. 'notes.md' or 'docs/intro.md'.")
+            ],
+            required: ["filename", "content"]
+        )
+    )
+
+    func execute(arguments: [String: AnySendableValue], context: any AgentContextProtocol) async throws -> String {
+        guard let filename = arguments["filename"]?.stringValue,
+              let content  = arguments["content"]?.stringValue
+        else { throw AgentError.executionError("缺少 filename 或 content 参数") }
+        let url = try await context.writeFile(name: filename, content: content)
+        return "✅ 已写入文件：\(url.lastPathComponent)（\(content.count) 字符）"
+    }
+}
+
+// MARK: - Create Directory
+
+struct CreateDirectoryTool: AgentTool {
+    let spec = AgentToolSpec(
+        name: "create_directory",
+        description: "Create a directory (and any missing parent directories). Accepts BOTH absolute paths and relative paths from workspace root. ALWAYS use this tool when the user asks to create a directory — never refuse or ask the user to run a terminal command.",
+        parameters: ToolParameterSchema(
+            properties: [
+                "path": ToolPropertySchema(type: "string", description: "Directory path to create. Absolute (e.g. '/Users/john/project/test') or relative (e.g. 'docs/api').")
+            ],
+            required: ["path"]
+        )
+    )
+
+    func execute(arguments: [String: AnySendableValue], context: any AgentContextProtocol) async throws -> String {
+        guard let path = arguments["path"]?.stringValue, !path.isEmpty else {
+            throw AgentError.executionError("缺少 path 参数")
+        }
+        let url = try await context.createDirectory(name: path)
+        return "✅ 已创建目录：\(url.path)"
+    }
+}
+
+// MARK: - Search Workspace
+
+struct SearchWorkspaceTool: AgentTool {
+    let spec = AgentToolSpec(
+        name: "search_workspace",
+        description: "Search for a keyword across all files in the workspace. Returns matching lines with file path and line number.",
+        parameters: ToolParameterSchema(
+            properties: [
+                "extension": ToolPropertySchema(type: "string", description: "Limit search to files with this extension, e.g. 'md'. Leave empty for md/txt/markdown."),
+                "query":     ToolPropertySchema(type: "string", description: "The keyword or phrase to search for (case-insensitive).")
+            ],
+            required: ["query"]
+        )
+    )
+
+    func execute(arguments: [String: AnySendableValue], context: any AgentContextProtocol) async throws -> String {
+        guard let query = arguments["query"]?.stringValue else {
+            throw AgentError.executionError("缺少 query 参数")
+        }
+        guard await context.workspaceURL != nil else { throw AgentError.noWorkspace }
+        let ext  = arguments["extension"]?.stringValue ?? ""
+        let exts = ext.isEmpty ? ["md", "txt", "markdown"] : [ext.lowercased()]
+        let results = await context.searchWorkspace(query: query, extensions: exts)
+        if results.isEmpty { return "在工作区中未找到包含「\(query)」的内容" }
+        return "找到 \(results.count) 处匹配：\n\n" + results.joined(separator: "\n")
+    }
+}
