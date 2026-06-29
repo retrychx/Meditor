@@ -45,8 +45,8 @@ struct InlineEditBar: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
             } else {
-                // 快速内联操作
-                ForEach(InlineEditAction.allCases) { action in
+                // 快速内联操作（根据内容类型动态调整）
+                ForEach(contextualActions) { action in
                     actionButton(action)
                 }
 
@@ -85,6 +85,36 @@ struct InlineEditBar: View {
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showAgentPanel)
+    }
+
+    // MARK: - 内容感知动作列表
+
+    /// 根据选中内容类型返回最相关的 AI 操作，最多 4 个。
+    private var contextualActions: [InlineEditAction] {
+        let t = selectedText.trimmingCharacters(in: .whitespaces)
+
+        // 代码块：显示解释 + 注释 + 精简
+        if t.hasPrefix("```") || t.hasPrefix("    ") {
+            return [.explainCode, .addComments, .condense]
+        }
+
+        // 标题：显示扩写章节 + 改写
+        if t.hasPrefix("#") {
+            return [.expandSection, .rewrite]
+        }
+
+        // 列表：显示整理 + 扩写
+        let lines = t.components(separatedBy: "\n").filter { !$0.isEmpty }
+        let isListLike = lines.count >= 2 && lines.prefix(3).allSatisfy {
+            $0.hasPrefix("- ") || $0.hasPrefix("* ") || $0.hasPrefix("+ ") ||
+            $0.range(of: #"^\d+\. "#, options: .regularExpression) != nil
+        }
+        if isListLike {
+            return [.organizeList, .expand, .condense]
+        }
+
+        // 默认：标准四个操作
+        return [.rewrite, .expand, .condense, .translate]
     }
 
     // MARK: - Ask AI button

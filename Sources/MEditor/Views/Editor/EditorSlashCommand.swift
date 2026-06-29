@@ -6,6 +6,19 @@ struct SlashCommandExpansion {
     let cursorOffset: Int?
 }
 
+// MARK: - AI 命令类型
+
+enum SlashAIAction {
+    /// 在光标处继续写作
+    case continueWriting
+    /// 改善光标所在段落
+    case improveCurrentParagraph
+    /// 总结光标以上内容
+    case summarizeAbove
+    /// 内联回答一个问题（以 /ask 命令类型）
+    case ask(String)
+}
+
 struct SlashCommandItem: Identifiable, Equatable {
     let id = UUID()
     let title: String
@@ -13,10 +26,31 @@ struct SlashCommandItem: Identifiable, Equatable {
     let icon: String
     let aliases: [String]
     let keywords: [String]
-    let expansion: SlashCommandExpansion
+    /// 普通命令：插入这段文本。AI 命令时为 nil。
+    let expansion: SlashCommandExpansion?
 
     static func == (lhs: SlashCommandItem, rhs: SlashCommandItem) -> Bool {
         lhs.id == rhs.id
+    }
+
+    /// 是否是 AI 驱动的命令
+    var isAICommand: Bool { expansion == nil }
+
+    // 普通命令便利初始化（保持展参为非可选，向后兼容）
+    init(title: String, subtitle: String, icon: String,
+         aliases: [String], keywords: [String],
+         expansion: SlashCommandExpansion) {
+        self.title = title; self.subtitle = subtitle; self.icon = icon
+        self.aliases = aliases; self.keywords = keywords
+        self.expansion = expansion
+    }
+
+    // AI 命令便利初始化（无 expansion）
+    init(title: String, subtitle: String, icon: String,
+         aliases: [String], keywords: [String]) {
+        self.title = title; self.subtitle = subtitle; self.icon = icon
+        self.aliases = aliases; self.keywords = keywords
+        self.expansion = nil
     }
 }
 
@@ -32,6 +66,10 @@ final class SlashCommandHandler {
 
     /// True while a slash expansion is being inserted, so delegate callbacks are ignored.
     private(set) var isApplyingCommand = false
+
+    /// AI 命令触发回调：主程序提供，处理真实的 AI 请求。
+    /// 参数：(action, contextText, insertionRange)
+    var onAIAction: ((SlashAIAction, String, NSRange) -> Void)?
 
     var isMenuVisible: Bool {
         slashPopover?.isShown == true && !slashItems.isEmpty
@@ -122,7 +160,41 @@ final class SlashCommandHandler {
                 text: "| Column | Column |\n| --- | --- |\n|  |  |",
                 cursorOffset: 36
             )
-        )
+        ),
+
+        // MARK: - AI 类命令
+        SlashCommandItem(
+            title: "AI 继续写作",
+            subtitle: "AI 从当前光标继续展开内容",
+            icon: "arrow.right.circle.fill",
+            aliases: ["/continue", "/ai-continue"],
+            keywords: ["ai", "continue", "继续", "写作"]),
+        SlashCommandItem(
+            title: "AI 优化段落",
+            subtitle: "AI 改善当前段落的表达和逻辑",
+            icon: "wand.and.stars",
+            aliases: ["/improve", "/ai-improve"],
+            keywords: ["ai", "improve", "优化", "改善"]),
+        SlashCommandItem(
+            title: "AI 总结以上",
+            subtitle: "AI 总结光标以上的所有内容",
+            icon: "text.redaction",
+            aliases: ["/summarize", "/ai-summarize"],
+            keywords: ["ai", "summarize", "总结"]),
+        SlashCommandItem(
+            title: "AI 回答问题",
+            subtitle: "AI 在光标处内联回答问题",
+            icon: "bubble.left.and.bubble.right.fill",
+            aliases: ["/ask"],
+            keywords: ["ai", "ask", "问", "回答"])
+    ]
+
+    /// AI 命令别名集合
+    static let aiAliases: Set<String> = [
+        "/continue", "/ai-continue",
+        "/improve",  "/ai-improve",
+        "/summarize","/ai-summarize",
+        "/ask"
     ]
 
     // MARK: - Public interface (called by EditorCoordinator)
@@ -237,13 +309,41 @@ final class SlashCommandHandler {
     }
 
     private func applyCommand(_ item: SlashCommandItem, in textView: NSTextView, range: NSRange) -> Bool {
+        closeMenu()
+
+        // AI 命令：删除命令文本，获取上下文，回调触发
+        if item.isAICommand {
+            isApplyingCommand = true
+            textView.insertText("", replacementRange: range)   // 删除 /command
+            isApplyingCommand = false
+
+            // 拖取光标前最多 2000 字作为上下文
+            let insertionLoc = textView.selectedRange().location
+            let nsText = textView.string as NSString
+            let contextStart = max(0, insertionLoc - 2000)
+            let contextRange = NSRange(location: contextStart, length: insertionLoc - contextStart)
+            let contextText = nsText.substring(with: contextRange)
+
+            let action: SlashAIAction
+            switch item.aliases.first ?? "" {
+            case "/continue", "/ai-continue": action = .continueWriting
+            case "/improve",  "/ai-improve":  action = .improveCurrentParagraph
+            case "/summarize","/ai-summarize":action = .summarizeAbove
+            case "/ask":                       action = .ask("")
+            default:                           action = .continueWriting
+            }
+            onAIAction?(action, contextText, NSRange(location: insertionLoc, length: 0))
+            return true
+        }
+
+        // 普通插入命令
+        guard let exp = item.expansion else { return false }
         isApplyingCommand = true
-        textView.insertText(item.expansion.text, replacementRange: range)
-        let len = (item.expansion.text as NSString).length
-        let loc = range.location + (item.expansion.cursorOffset ?? len)
+        textView.insertText(exp.text, replacementRange: range)
+        let len = (exp.text as NSString).length
+        let loc = range.location + (exp.cursorOffset ?? len)
         textView.setSelectedRange(NSRange(location: loc, length: 0))
         isApplyingCommand = false
-        closeMenu()
         return true
     }
 }

@@ -31,6 +31,12 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
     let scrollSync: EditorScrollSyncHandler
     let slashHandler = SlashCommandHandler()
 
+    /// Slash AI 命令回调：由 NativeEditorView 在 makeCoordinator 后设置。
+    var onSlashAIAction: ((SlashAIAction, String, NSRange) -> Void)? {
+        get { slashHandler.onAIAction }
+        set { slashHandler.onAIAction = newValue }
+    }
+
     private var debounceTimer: Timer?
     private var pendingAutoClose: Character?
     private static let autoPairs: [Character: Character] = [
