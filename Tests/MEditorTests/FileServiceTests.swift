@@ -64,22 +64,37 @@ final class FileServiceTests: XCTestCase {
     }
 
     func test_loadImmediateChildren_directoriesAlwaysAppear() {
-        createDir("node_modules")
+        // 普通目录（即使没有可识别扩展名）始终出现在文件树
+        createDir("assets")
         createFile("readme.md")
 
         let items = service.loadImmediateChildren(of: tempDir)
         let dirNames = items.filter(\.isDirectory).map(\.name)
-        XCTAssertTrue(dirNames.contains("node_modules"))
+        XCTAssertTrue(dirNames.contains("assets"))
     }
 
-    func test_loadImmediateChildren_skipsHiddenFiles() {
-        createFile(".hidden.md")
+    func test_loadImmediateChildren_skipsIgnoredNames() {
+        // hiddenNames 名单内的项被过滤（精确名单，而非所有点文件）
+        createFile(".DS_Store")
+        createDir("node_modules")
         createFile("visible.md")
 
         let items = service.loadImmediateChildren(of: tempDir)
         let names = items.map(\.name)
-        XCTAssertFalse(names.contains(".hidden.md"))
+        XCTAssertFalse(names.contains(".DS_Store"))
+        XCTAssertFalse(names.contains("node_modules"))
         XCTAssertTrue(names.contains("visible.md"))
+    }
+
+    func test_loadImmediateChildren_keepsDotNamesNotInIgnoreList() {
+        // 不在名单中的点目录/文件仍会出现（如 .vscode、.hidden.md）——这是当前实现的预期行为
+        createDir(".vscode")
+        createFile(".hidden.md")
+
+        let items = service.loadImmediateChildren(of: tempDir)
+        let names = items.map(\.name)
+        XCTAssertTrue(names.contains(".vscode"))
+        XCTAssertTrue(names.contains(".hidden.md"))
     }
 
     func test_loadImmediateChildren_emptyDir() {
@@ -186,5 +201,71 @@ final class FileServiceTests: XCTestCase {
         let badURL = URL(fileURLWithPath: "/nonexistent_path_xyz")
         let items = service.loadImmediateChildren(of: badURL)
         XCTAssertTrue(items.isEmpty)
+    }
+
+    // MARK: - loadAllItems (@mention 全量索引)
+    // 验证：mention 索引是文件系统全量递归扫描，与 UI 文件树是否展开无关。
+
+    func test_loadAllItems_findsDeeplyNestedFileWithoutExpansion() {
+        // 构造深层目录：a/b/c/deep.md —— 从未通过 loadChildren 展开过
+        createDir("a")
+        createDir("a/b")
+        createDir("a/b/c")
+        createFile("a/b/c/deep.md", content: "# deep")
+
+        let items = service.loadAllItems(under: tempDir)
+        let names = Set(items.map(\.name))
+
+        // 深层文件和沿途所有目录都应被索引到
+        XCTAssertTrue(names.contains("deep.md"), "深层文件应被全量扫描索引")
+        XCTAssertTrue(names.contains("a"))
+        XCTAssertTrue(names.contains("b"))
+        XCTAssertTrue(names.contains("c"))
+    }
+
+    func test_loadAllItems_includesDirectoriesAndFiles() {
+        createDir("systems")
+        createDir("systems/arms")
+        createFile("systems/arms/index.html")
+        createFile("readme.md")
+
+        let items = service.loadAllItems(under: tempDir)
+        let dirs = Set(items.filter(\.isDirectory).map(\.name))
+        let files = Set(items.filter { !$0.isDirectory }.map(\.name))
+
+        XCTAssertTrue(dirs.contains("systems"))
+        XCTAssertTrue(dirs.contains("arms"))
+        XCTAssertTrue(files.contains("index.html"))
+        XCTAssertTrue(files.contains("readme.md"))
+    }
+
+    func test_loadAllItems_skipsHiddenAndIgnoredTrees() {
+        createDir("node_modules")
+        createFile("node_modules/pkg.md")     // 应被整树跳过
+        createDir(".git")
+        createFile(".git/config.md")          // 应被整树跳过
+        createFile("keep.md")
+
+        let items = service.loadAllItems(under: tempDir)
+        let names = Set(items.map(\.name))
+
+        XCTAssertTrue(names.contains("keep.md"))
+        XCTAssertFalse(names.contains("pkg.md"), "node_modules 子树应被跳过")
+        XCTAssertFalse(names.contains("config.md"), ".git 子树应被跳过")
+    }
+
+    func test_loadAllItems_newlyAddedFileFoundOnRescan() {
+        // 模拟外部新增文件后重新建索引（FSEvents → reload → 下次 @ ensureIndexReady 重建）
+        createFile("first.md")
+        var items = service.loadAllItems(under: tempDir)
+        XCTAssertFalse(Set(items.map(\.name)).contains("later.md"))
+
+        // 外部新增一个深层文件
+        createDir("newdir")
+        createFile("newdir/later.md")
+
+        // 重新扫描即可发现（rebuildIndex 做的就是这件事）
+        items = service.loadAllItems(under: tempDir)
+        XCTAssertTrue(Set(items.map(\.name)).contains("later.md"), "重建索引后应能搜到新增文件")
     }
 }
