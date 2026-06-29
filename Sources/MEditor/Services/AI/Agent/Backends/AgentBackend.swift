@@ -99,7 +99,8 @@ enum AgentBackendFactory {
     static func make(config: AIConfig) -> any AgentBackend {
         switch config.kind {
         case .disabled:   return DisabledBackend()
-        case .openai:     return OpenAIBackend(config: config)
+        case .openai:     return RestAgentBackend(config: config, wire: .openAI)
+        case .anthropic:  return RestAgentBackend(config: config, wire: .anthropic)
         case .claudeCLI:  return ClaudeCLIBackend(config: config)
         }
     }
