@@ -1,4 +1,4 @@
-import AppKit
+import Foundation
 
 protocol HighlightServiceProtocol {
     func register(_ language: EditorLanguage, engine: SyntaxHighlightEngine)

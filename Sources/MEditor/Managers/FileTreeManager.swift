@@ -17,6 +17,8 @@ final class FileTreeManager {
     var fileTree: [FileItem] = []
     var fileItemMap: [URL: FileItem] = [:]
     var indexedFiles: [FileItem] = []
+    /// 文件 + 目录全量列表，专供 @mention 搜索，与 indexedFiles 同步构建。
+    var mentionItems: [FileItem] = []
 
     // MARK: - Private
 
@@ -27,6 +29,10 @@ final class FileTreeManager {
 
     @ObservationIgnored
     private var fileIndexGeneration = 0
+
+    /// Set to true when index is stale; rebuilt lazily on next `ensureIndexReady()` call.
+    private var indexStale = true
+    private var lastIndexedRootURL: URL?
 
     // MARK: - Init
 
@@ -42,10 +48,36 @@ final class FileTreeManager {
         defer { PerformanceTracer.end("ReloadFileTree", log: PerformanceTracer.fileOps, id: sid) }
 
         pendingReloadWork?.cancel()
-        fileItemMap = [:]
         let children = fileService.loadImmediateChildren(of: rootURL)
-        fileTree = children
-        addToMap(children)
+        let merged = mergeChildren(children, into: fileTree)
+        fileItemMap = [:]
+        fileTree = merged
+        addToMap(merged)
+        // Mark index stale — rebuilt lazily when QuickOpen actually needs it.
+        indexStale = true
+        lastIndexedRootURL = rootURL
+    }
+
+    /// Fresh open: load and assign in one step, bypassing merge so SwiftUI
+    /// sees a single [] → [items] transition with no intermediate empty render.
+    func reloadFresh(rootURL: URL) {
+        pendingReloadWork?.cancel()
+        fileIndexGeneration &+= 1
+        let children = fileService.loadImmediateChildren(of: rootURL)
+        // Still merge to reuse existing FileItem instances when reopening the
+        // same folder — avoids DisclosureGroup node destruction/recreation.
+        let merged = mergeChildren(children, into: fileTree)
+        fileItemMap = [:]
+        fileTree = merged
+        addToMap(merged)
+        lastIndexedRootURL = rootURL
+        // 打开项目时立即构建全量索引（含目录），不再延迟到 QuickOpen/@mention
+        rebuildIndex(rootURL: rootURL)
+    }
+
+    /// Ensure the full-text index is up to date. Called by QuickOpen on open.
+    func ensureIndexReady(rootURL: URL) {
+        guard indexStale || lastIndexedRootURL != rootURL || mentionItems.isEmpty else { return }
         rebuildIndex(rootURL: rootURL)
     }
 
@@ -107,9 +139,12 @@ final class FileTreeManager {
         let generation = fileIndexGeneration
         let service = fileService
         indexedFiles = []
+        mentionItems = []
+        indexStale = false
         Task.detached(priority: .utility) { [weak self] in
             let files = service.loadAllFiles(under: rootURL)
-            await self?.applyIndexedFiles(files, generation: generation, rootURL: rootURL)
+            let items = service.loadAllItems(under: rootURL)
+            await self?.applyIndexedFiles(files, items: items, generation: generation, rootURL: rootURL)
             await MainActor.run {
                 PerformanceTracer.end("RebuildFileIndex", log: PerformanceTracer.fileOps, id: sid)
             }
@@ -124,14 +159,41 @@ final class FileTreeManager {
         addToMap(children)
     }
 
-    private func applyIndexedFiles(_ files: [FileItem], generation: Int, rootURL: URL) {
-        guard generation == fileIndexGeneration else { return }
-        indexedFiles = files
+    private func applyIndexedFiles(_ files: [FileItem], items: [FileItem], generation: Int, rootURL: URL) {
+        // 始终更新 mentionItems（即使 generation 过期）：显示稍旧的数据远比空列表好
+        // indexedFiles 仍然用 generation 保护，避免过期搜索结果覆盖
+        if generation == fileIndexGeneration {
+            indexedFiles = files
+        }
+        mentionItems = items
+        onMentionItemsUpdated?()
     }
+
+    /// Called on MainActor after mentionItems is updated — used by AppState to bump its version counter
+    var onMentionItemsUpdated: (() -> Void)?
 
     private func addToMap(_ items: [FileItem]) {
         for item in items {
             fileItemMap[item.id] = item
+        }
+    }
+
+    /// Merge freshly-loaded children with existing items, preserving already-loaded
+    /// subtrees so expanded directories don't collapse on FSEvent-triggered reloads.
+    /// Returns existing FileItem instances where URLs match — same object identity
+    /// means SwiftUI skips diffing that subtree entirely.
+    private func mergeChildren(_ fresh: [FileItem], into existing: [FileItem]) -> [FileItem] {
+        let existingMap = Dictionary(uniqueKeysWithValues: existing.map { ($0.url, $0) })
+        return fresh.map { newItem in
+            guard let old = existingMap[newItem.url] else { return newItem }
+            // If this directory was expanded, re-scan its children from disk so
+            // externally-added/deleted files show up without a manual refresh.
+            if old.isDirectory && old.childrenLoaded {
+                let freshKids = fileService.loadImmediateChildren(of: old.url)
+                old.children = mergeChildren(freshKids, into: old.children ?? [])
+                addToMap(old.children ?? [])
+            }
+            return old
         }
     }
 }

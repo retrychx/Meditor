@@ -67,6 +67,13 @@ final class AppState {
         get { diffReview.isPresented }
         set { diffReview.isPresented = newValue }
     }
+    /// 每次 mentionItems 更新时递增，供 AtMentionPickerView .task(id:) 追踪变化
+    var mentionItemsVersion: Int = 0
+
+    /// @mention 搜索用的文件+目录全量列表。
+    /// 作为 AppState 的真正存储属性（非 computed 转发），确保 @Observable 能追踪变化，
+    /// 由 fileTreeManager.onMentionItemsUpdated 回调同步。
+    var mentionItems: [FileItem] = []
 
     // MARK: - Cursor / Status bar
 
@@ -183,7 +190,13 @@ final class AppState {
     }
 
     var showingQuickOpen = false {
-        didSet { if showingQuickOpen { showingBeautifySheet = false } }
+        didSet {
+            if showingQuickOpen {
+                showingBeautifySheet = false
+                // Lazily build the file index only when QuickOpen is actually opened.
+                if let root = rootURL { fileTreeManager.ensureIndexReady(rootURL: root) }
+            }
+        }
     }
     var showingSettings = false
     var showingCloseProjectConfirmation = false
@@ -204,6 +217,7 @@ final class AppState {
     let fileWatcher: any FileWatcherServiceProtocol
     let themeStore: PreviewThemeStore
     let sessionStore: SessionStore
+    let filePickerService: FilePickerServiceProtocol
 
     // MARK: - 散文件 & Claude 监听
 
@@ -233,12 +247,14 @@ final class AppState {
         fileService: FileServiceProtocol = FileService(),
         fileWatcher: any FileWatcherServiceProtocol = FileWatcherService(),
         themeStore: PreviewThemeStore = PreviewThemeStore(),
-        sessionStore: SessionStore = SessionStore()
+        sessionStore: SessionStore = SessionStore(),
+        filePicker: FilePickerServiceProtocol? = nil
     ) {
         self.fileService     = fileService
         self.fileWatcher     = fileWatcher
         self.themeStore      = themeStore
         self.sessionStore    = sessionStore
+        self.filePickerService = filePicker ?? MacFilePickerService()
         self.tabManager      = TabManager(fileService: fileService)
         self.fileTreeManager = FileTreeManager(fileService: fileService)
         self.previewManager  = PreviewManager()
@@ -250,6 +266,11 @@ final class AppState {
         setupAutoSaveTimer()
         pluginManager.load()
         setupClaudeMonitor()
+        fileTreeManager.onMentionItemsUpdated = { [weak self] in
+            guard let self else { return }
+            self.mentionItems = self.fileTreeManager.mentionItems
+            self.mentionItemsVersion &+= 1
+        }
     }
 
     deinit {
@@ -442,5 +463,35 @@ final class AppState {
         guard let tab = selectedTab else { return }
         do    { try templateManager.saveAs(name: name, content: tab.content) }
         catch { setError(error.localizedDescription) }
+    }
+
+    // MARK: - Todo helpers
+
+    /// 将一条新待办写入当前编辑文件末尾（md）；无打开文件时写入 rootURL/inbox.md。
+    func appendTodoToCurrentFile(_ text: String) {
+        let targetURL: URL
+        if let tab = selectedTab, tab.url.pathExtension.lowercased() == "md" {
+            targetURL = tab.url
+        } else if let root = rootURL {
+            targetURL = root.appendingPathComponent("inbox.md")
+        } else {
+            showToast("请先打开一个工作区", icon: "exclamationmark.triangle")
+            return
+        }
+
+        let line = "\n- [ ] \(text)"
+        do {
+            let existing = (try? String(contentsOf: targetURL, encoding: .utf8)) ?? ""
+            let newContent = existing + line
+            try newContent.write(to: targetURL, atomically: true, encoding: .utf8)
+            // 如果当前正在编辑该文件，同步更新 tab 内容
+            if let tab = selectedTab, tab.url == targetURL {
+                tab.content = newContent
+                tab.contentRevision &+= 1
+            }
+            showToast("已新增待办到 \(targetURL.lastPathComponent)", icon: "checkmark.circle")
+        } catch {
+            setError(error.localizedDescription)
+        }
     }
 }

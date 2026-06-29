@@ -248,27 +248,19 @@ struct MEditorApp: App {
     }
 
     private func openFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.message = L("panel.chooseFolder")
-
-        if panel.runModal() == .OK, let url = panel.url {
-            appState.openFolder(url)
+        Task {
+            if let url = await appState.filePickerService.pickFolder(message: L("panel.chooseFolder")) {
+                appState.openFolder(url)
+            }
         }
     }
 
     private func openFile() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.init(filenameExtension: "md")!, .init(filenameExtension: "html")!, .init(filenameExtension: "htm")!].compactMap { $0 }
-
-        if panel.runModal() == .OK, let url = panel.url {
-            let item = FileItem(url: url, isDirectory: false)
-            appState.openFile(item)
+        Task {
+            if let url = await appState.filePickerService.pickFile(title: nil, allowedExtensions: ["md", "html", "htm"]) {
+                let item = FileItem(url: url, isDirectory: false)
+                appState.openFile(item)
+            }
         }
     }
 }

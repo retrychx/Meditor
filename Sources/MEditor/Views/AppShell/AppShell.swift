@@ -123,9 +123,10 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
 
             VStack(spacing: 0) {
                 if workspaceUI.isFocusMode {
-                    // Immersive view: hide the toolbar, keep a thin draggable strip
-                    // so the window stays movable and traffic lights have clearance.
                     Color.clear.frame(height: 38)
+                } else if workspaceUI.activeMainView == .calendar {
+                    // Calendar has its own toolbar — skip the global one
+                    Color.clear.frame(height: 0)
                 } else {
                     TopToolbar(workspaceUI: workspaceUI, focusNS: focusNS)
                 }

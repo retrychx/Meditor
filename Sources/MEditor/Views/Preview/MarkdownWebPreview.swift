@@ -27,6 +27,8 @@ struct MarkdownWebPreview: View {
     var fontSize: Int = 15
     var findController: PreviewFindController? = nil
     var onSelectionChange: ((String) -> Void)? = nil
+    /// 右键菜单：将选中文字新增为待办
+    var onAddTodo: ((String) -> Void)? = nil
 
     var body: some View {
         MarkdownWebView(
@@ -41,7 +43,8 @@ struct MarkdownWebPreview: View {
             sourceURL: sourceURL,
             fontSize: fontSize,
             findController: findController,
-            onSelectionChange: onSelectionChange
+            onSelectionChange: onSelectionChange,
+            onAddTodo: onAddTodo
         )
     }
 }
@@ -69,6 +72,7 @@ private struct MarkdownWebView: NSViewRepresentable {
     let fontSize: Int
     let findController: PreviewFindController?
     var onSelectionChange: ((String) -> Void)? = nil
+    var onAddTodo: ((String) -> Void)? = nil
 
     static let scrollHandlerName = "scrollHandler"
     static let copyHandlerName = "copyHandler"
@@ -82,7 +86,8 @@ private struct MarkdownWebView: NSViewRepresentable {
             onTOCUpdate: onTOCUpdate,
             exporter: exporter,
             findController: findController,
-            onSelectionChange: onSelectionChange
+            onSelectionChange: onSelectionChange,
+            onAddTodo: onAddTodo
         )
     }
 
@@ -97,6 +102,7 @@ private struct MarkdownWebView: NSViewRepresentable {
             uc.add(context.coordinator, name: Self.perfHandlerName)
             uc.add(context.coordinator, name: Self.selectionHandlerName)
             pooled.navigationDelegate = context.coordinator
+            pooled.uiDelegate = context.coordinator
             context.coordinator.webView = pooled
             context.coordinator.lastContentRevision = contentRevision
             context.coordinator.lastTheme = theme
@@ -129,6 +135,7 @@ private struct MarkdownWebView: NSViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = context.coordinator
+        webView.uiDelegate = context.coordinator
         context.coordinator.webView = webView
         context.coordinator.lastContentRevision = contentRevision
         context.coordinator.lastTheme = theme
@@ -145,6 +152,7 @@ private struct MarkdownWebView: NSViewRepresentable {
         coordinator.onTOCUpdate = onTOCUpdate
         coordinator.findController = findController
         coordinator.onSelectionChange = onSelectionChange
+        coordinator.onAddTodo = onAddTodo
         findController?.register(webView: webView, for: .markdown)
 
         // Theme changed: swap stylesheet via JS; re-render handled by bridge.
@@ -325,6 +333,7 @@ extension MarkdownWebView {
         weak var exporter: PreviewExporter?
         var findController: PreviewFindController?
         var onSelectionChange: ((String) -> Void)?
+        var onAddTodo: ((String) -> Void)?
 
         /// JS snippet that installs a `selectionchange` listener and forwards
         /// selected text to the native `selectionHandler` message handler.
@@ -414,12 +423,14 @@ extension MarkdownWebView {
              onTOCUpdate: (([TOCItem]) -> Void)? = nil,
              exporter: PreviewExporter? = nil,
              findController: PreviewFindController? = nil,
-             onSelectionChange: ((String) -> Void)? = nil) {
+             onSelectionChange: ((String) -> Void)? = nil,
+             onAddTodo: ((String) -> Void)? = nil) {
             self.onVisibleLineChange = onVisibleLineChange
             self.onTOCUpdate = onTOCUpdate
             self.exporter = exporter
             self.findController = findController
             self.onSelectionChange = onSelectionChange
+            self.onAddTodo = onAddTodo
         }
 
         deinit {
@@ -642,6 +653,41 @@ extension MarkdownWebView.Coordinator: WKScriptMessageHandler {
             PerformanceTracer.event("PreviewJSTOCSent", log: PerformanceTracer.preview)
         default:
             break
+        }
+    }
+}
+
+// MARK: - WKUIDelegate (右键菜单：新增为待办)
+
+extension MarkdownWebView.Coordinator: WKUIDelegate {
+    /// macOS 右键菜单拦截：在默认菜单中注入"新增为待办"条目。
+    func webView(_ webView: WKWebView, willOpenMenu menu: NSMenu, with event: NSEvent) {
+        // 读取当前选中文本；evaluateJavaScript 是异步的，
+        // 但此时 JS selection 通常已经被 selectionchange 事件同步过来了。
+        // 我们从已缓存的 JS 同步获取更可靠。
+        webView.evaluateJavaScript("window.getSelection().toString().trim()") { [weak self, weak menu] result, _ in
+            guard let self = self,
+                  let menu = menu,
+                  let selectedText = result as? String,
+                  !selectedText.isEmpty else { return }
+            DispatchQueue.main.async {
+                menu.addItem(.separator())
+                let addItem = NSMenuItem(
+                    title: "📌 新增为待办",
+                    action: #selector(MarkdownWebView.Coordinator.handleAddTodo(_:)),
+                    keyEquivalent: ""
+                )
+                addItem.target = self
+                addItem.representedObject = selectedText
+                menu.addItem(addItem)
+            }
+        }
+    }
+
+    @objc func handleAddTodo(_ sender: NSMenuItem) {
+        guard let text = sender.representedObject as? String else { return }
+        DispatchQueue.main.async {
+            self.onAddTodo?(text)
         }
     }
 }

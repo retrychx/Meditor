@@ -1,0 +1,693 @@
+import SwiftUI
+import AppKit
+
+// MARK: - AtMentionComposerView
+//
+// SwiftUI wrapper around a custom NSTextView that:
+//   • Renders confirmed @mentions as tinted NSTextAttachment chips
+//   • Detects @ typed by the user → shows a floating candidate picker
+//   • Returns a plain-text representation + token list to the parent
+//
+// Architecture:
+//   AtMentionComposerView (SwiftUI)
+//     └─ AtMentionTextView (NSViewRepresentable)
+//          └─ MentionTextView : NSTextView  (AppKit, owns the rich document)
+//               └─ MentionAttachmentCell     (draws individual chips)
+
+// MARK: - Public SwiftUI wrapper
+
+struct AtMentionComposerView: NSViewRepresentable {
+
+    // MARK: Bindings / callbacks
+
+    /// Plain-text content of the composer (for persistence / canSend logic)
+    @Binding var plainText: String
+    /// Confirmed @mention tokens (read by send() to build context)
+    @Binding var mentionTokens: [AtMentionToken]
+    /// Whether the view currently has focus
+    @Binding var isFocused: Bool
+
+    /// Called when user presses Return (without Shift) → trigger send
+    var onSubmit: () -> Void
+    /// Theme so colors match the rest of the panel
+    var theme: PreviewTheme
+    /// Font size matching editor settings
+    var fontSize: CGFloat = 13.5
+
+    // MARK: NSViewRepresentable
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(plainText: $plainText,
+                    mentionTokens: $mentionTokens,
+                    isFocused: $isFocused,
+                    onSubmit: onSubmit,
+                    theme: theme,
+                    fontSize: fontSize)
+    }
+
+    // ── 返回 NSScrollView，textView 作为 documentView ──────────────────────
+    // 这是解决"太高 / 点击区域 / 滚动击穿"三个问题的根本方案：
+    // • SwiftUI frame 控制显示高度（min 22, max 120）
+    // • NSScrollView 自动处理超出内容的滚动，不溢出
+    // • 整个 scrollView 区域都可点击，hit test 正确
+    func makeNSView(context: Context) -> NSScrollView {
+        let tv = context.coordinator.textView
+
+        // textView 随宽度伸展，高度由内容决定（在 scrollView 内无限扩展）
+        tv.isVerticallyResizable   = true
+        tv.isHorizontallyResizable = false
+        tv.autoresizingMask        = [.width]
+        tv.textContainer?.widthTracksTextView  = true
+        tv.textContainer?.heightTracksTextView = false
+        tv.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
+                                                  height: CGFloat.greatestFiniteMagnitude)
+
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground        = false
+        scrollView.borderType             = .noBorder
+        scrollView.hasVerticalScroller    = true
+        scrollView.autohidesScrollers     = true
+        scrollView.hasHorizontalScroller  = false
+        scrollView.documentView           = tv
+
+        context.coordinator.scrollView = scrollView
+        context.coordinator.applyTheme(theme, fontSize: fontSize)
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        context.coordinator.applyTheme(theme, fontSize: fontSize)
+        let tv = context.coordinator.textView
+        // 外部（send 后）清空 plainText → 同步清空 textView
+        if plainText.isEmpty && !tv.string.isEmpty {
+            context.coordinator.clearAll()
+        }
+        if isFocused && tv.window?.firstResponder !== tv {
+            tv.window?.makeFirstResponder(tv)
+        }
+    }
+
+    // MARK: - Coordinator (owns NSTextView + state)
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextViewDelegate {
+
+        // MARK: State
+
+        @Binding var plainText: String
+        @Binding var mentionTokens: [AtMentionToken]
+        @Binding var isFocused: Bool
+        var onSubmit: () -> Void
+        var theme: PreviewTheme
+        var fontSize: CGFloat
+
+        let textView: MentionTextView
+        weak var scrollView: NSScrollView?
+
+        /// The query currently being typed after the most recent bare @
+        /// nil = not in mention-typing mode
+        private(set) var activeQuery: String? = nil
+        /// Character index of the @ that opened the current mention session
+        private var atSignIndex: Int? = nil
+
+        // MARK: Init
+
+        init(plainText: Binding<String>,
+             mentionTokens: Binding<[AtMentionToken]>,
+             isFocused: Binding<Bool>,
+             onSubmit: @escaping () -> Void,
+             theme: PreviewTheme,
+             fontSize: CGFloat) {
+            _plainText    = plainText
+            _mentionTokens = mentionTokens
+            _isFocused    = isFocused
+            self.onSubmit = onSubmit
+            self.theme    = theme
+            self.fontSize = fontSize
+            textView = MentionTextView()
+            super.init()
+            textView.delegate = self
+            textView.mentionCoordinator = self
+            // 监听外部发来的"确认选择"通知（从 SwiftUI popover → Coordinator）
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(handleConfirmCandidate(_:)),
+                name: .atMentionConfirmCandidate,
+                object: nil
+            )
+        }
+
+        @objc private func handleConfirmCandidate(_ n: Notification) {
+            guard let candidate = n.object as? AtMentionCandidate else { return }
+            confirmMention(candidate)
+        }
+
+        // MARK: Theme
+
+        func applyTheme(_ theme: PreviewTheme, fontSize: CGFloat) {
+            // guard：主题/字号没变就不触碰 NSTextView（避免每次 SwiftUI pass 都重设）
+            guard theme.rawValue != self.theme.rawValue || fontSize != self.fontSize else { return }
+            self.theme    = theme
+            self.fontSize = fontSize
+            textView.backgroundColor     = .clear
+            textView.textColor           = theme.foregroundNSColor
+            textView.insertionPointColor = theme.foregroundNSColor
+            textView.font                = NSFont.systemFont(ofSize: fontSize)
+            textView.typingAttributes    = baseTypingAttributes()
+        }
+
+        func baseTypingAttributes() -> [NSAttributedString.Key: Any] {
+            [
+                .font: NSFont.systemFont(ofSize: fontSize),
+                .foregroundColor: theme.foregroundNSColor
+            ]
+        }
+
+        // MARK: Insert confirmed mention chip
+
+        /// Called by the popover when the user picks a candidate.
+        func confirmMention(_ candidate: AtMentionCandidate) {
+            guard let atIdx = atSignIndex,
+                  let storage = textView.textStorage else { return }
+
+            let token = AtMentionToken(kind: candidate.kind)
+
+            // Build chip attributed string
+            let attachment = MentionAttachment(token: token, theme: theme, fontSize: fontSize)
+            let chipStr = NSAttributedString(attachment: attachment)
+
+            // Replace "@query" range with chip + trailing space
+            let currentLen = storage.length
+            let replaceStart = min(atIdx, currentLen)
+
+            // Compute the actual replace range: from @ to end of typed query
+            let nsStr = storage.string as NSString
+            var end = replaceStart
+            while end < nsStr.length && !" \n\t".contains(nsStr.character(at: end).unicodeChar) {
+                end += 1
+            }
+            let actualRange = NSRange(location: replaceStart, length: end - replaceStart)
+
+            storage.beginEditing()
+            let space = NSAttributedString(string: " ", attributes: baseTypingAttributes())
+            let combined = NSMutableAttributedString(attributedString: chipStr)
+            combined.append(space)
+            storage.replaceCharacters(in: actualRange, with: combined)
+            storage.endEditing()
+
+            // Move caret after chip + space
+            let newCaret = replaceStart + combined.length
+            textView.setSelectedRange(NSRange(location: newCaret, length: 0))
+
+            // Register token
+            mentionTokens.append(token)
+
+            // Reset mention state
+            activeQuery = nil
+            atSignIndex = nil
+
+            syncPlainText()
+            notifyChange()
+        }
+
+        func cancelMention() {
+            activeQuery = nil
+            atSignIndex = nil
+        }
+
+        // MARK: Clear
+
+        func clearAll() {
+            textView.textStorage?.setAttributedString(NSAttributedString(string: ""))
+            mentionTokens.removeAll()
+            activeQuery = nil
+            atSignIndex = nil
+            plainText = ""
+        }
+
+        // MARK: Plain text sync
+
+        /// Derives plain text: replace attachment chars with @displayName
+        func syncPlainText() {
+            guard let storage = textView.textStorage else { return }
+            let result = NSMutableString()
+            storage.enumerateAttributes(in: NSRange(location: 0, length: storage.length)) { attrs, range, _ in
+                if let attachment = attrs[.attachment] as? MentionAttachment {
+                    result.append("@\(attachment.token.displayName)")
+                } else {
+                    result.append((storage.string as NSString).substring(with: range))
+                }
+            }
+            let newText = result as String
+            // 只有内容真的变了才写 Binding（避免触发不必要的 SwiftUI 重渲染）
+            if newText != plainText { plainText = newText }
+        }
+
+        // MARK: NSTextViewDelegate
+
+        func textView(_ textView: NSTextView,
+                      shouldChangeTextIn range: NSRange,
+                      replacementString: String?) -> Bool {
+            true // let the default handling proceed; we inspect in textDidChange
+        }
+
+        func textDidChange(_ notification: Notification) {
+            syncPlainText()
+            detectMentionTrigger()
+            notifyChange()
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            // If caret moves away from the current @ query zone, cancel
+            if activeQuery != nil, let atIdx = atSignIndex {
+                let caret = textView.selectedRange().location
+                if caret <= atIdx { cancelMention() }
+            }
+        }
+
+        func textDidBeginEditing(_ notification: Notification) { isFocused = true }
+        func textDidEndEditing(_ notification: Notification)   { isFocused = false }
+
+        // MARK: Mention trigger detection
+
+        private func detectMentionTrigger() {
+            guard let storage = textView.textStorage else { return }
+            let caret = textView.selectedRange().location
+            guard caret > 0 else { cancelMention(); return }
+
+            let nsStr = storage.string as NSString
+
+            // Walk back from caret to find the nearest @ not inside an attachment
+            var scanIdx = caret - 1
+            var query = ""
+            while scanIdx >= 0 {
+                let ch = nsStr.character(at: scanIdx)
+                let scalar = Unicode.Scalar(ch)!
+                let c = Character(scalar)
+                if c == "@" {
+                    // Verify this is NOT inside an attachment range
+                    var isAttachment = false
+                    storage.enumerateAttributes(in: NSRange(location: scanIdx, length: 1)) { attrs, _, _ in
+                        if attrs[.attachment] != nil { isAttachment = true }
+                    }
+                    if !isAttachment {
+                        // Check the character before @ is whitespace / start
+                        let before = scanIdx > 0 ? nsStr.character(at: scanIdx - 1) : 32
+                        let beforeChar = Character(Unicode.Scalar(before)!)
+                        if scanIdx == 0 || " \n\t".contains(beforeChar) {
+                            // Valid mention trigger
+                            activeQuery = String(query.reversed())
+                            atSignIndex = scanIdx
+                            return
+                        }
+                    }
+                    break
+                }
+                // Bail out if we hit a space or newline (no @ before non-space)
+                if " \n\t".contains(c) { break }
+                query.append(c)
+                scanIdx -= 1
+            }
+            // No valid @ found
+            if activeQuery != nil { cancelMention() }
+        }
+
+        // 防抖计时器：避免每次按键连发多条 notification（滚键盘时可能 textDidChange + detectTrigger 各发一次）
+        @ObservationIgnored private var debounceWork: DispatchWorkItem?
+
+        private func notifyChange() {
+            debounceWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                NotificationCenter.default.post(name: .atMentionQueryChanged, object: self)
+            }
+            debounceWork = work
+            // 16ms ≈ 1 帧，足够合并同一按键产生的多次调用，又不引入可感知延迟
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.016, execute: work)
+        }
+    }
+}
+
+// MARK: - NSUInteger → unichar helper
+private extension UInt16 {
+    var unicodeChar: Character {
+        Character(Unicode.Scalar(self)!)
+    }
+}
+
+// MARK: - MentionTextView (NSTextView subclass)
+
+/// Thin NSTextView subclass:
+/// - Intercepts Return (submit) and Escape (cancel mention)
+/// - Delegates all mention logic to Coordinator
+@MainActor
+final class MentionTextView: NSTextView {
+
+    weak var mentionCoordinator: AtMentionComposerView.Coordinator?
+
+    override func keyDown(with event: NSEvent) {
+        let isPickerVisible = mentionCoordinator?.activeQuery != nil
+
+        switch event.keyCode {
+        case 36: // Return
+            if !event.modifierFlags.contains(.shift) {
+                if isPickerVisible {
+                    // 让 picker 先处理（确认高亮项）
+                    NotificationCenter.default.post(
+                        name: .atMentionKeyEvent,
+                        object: AtMentionKeyEvent.confirm
+                    )
+                } else {
+                    mentionCoordinator?.onSubmit()
+                }
+                return
+            }
+        case 53: // Escape
+            if isPickerVisible {
+                NotificationCenter.default.post(
+                    name: .atMentionKeyEvent,
+                    object: AtMentionKeyEvent.dismiss
+                )
+                mentionCoordinator?.cancelMention()
+                return
+            }
+        case 125: // ↓ — handled by moveDown override
+            break
+        case 126: // ↑ — handled by moveUp override
+            break
+        default:
+            break
+        }
+        super.keyDown(with: event)
+    }
+
+    // intrinsicContentSize 不再 override：
+    // 高度由 SwiftUI frame(minHeight:maxHeight:) 约束，NSScrollView 内容滚动。
+    // 保留 didChangeText 让 NSScrollView 在内容变化时自动滚到底部（类 Terminal 行为）。
+    override func didChangeText() {
+        super.didChangeText()
+        scrollToEndOfDocument(nil)
+    }
+
+    // 方向键需要 override moveUp/moveDown，因为 NSTextView 在 interpretKeyEvents 阶段
+    // 就消费了方向键，keyDown 里的 keyCode 判断可能不可靠。
+    override func moveUp(_ sender: Any?) {
+        guard mentionCoordinator?.activeQuery != nil else { super.moveUp(sender); return }
+        NotificationCenter.default.post(name: .atMentionKeyEvent, object: AtMentionKeyEvent.moveUp)
+        // 不调 super，阻止光标移动（否则 textViewDidChangeSelection 会取消 mention）
+    }
+
+    override func moveDown(_ sender: Any?) {
+        guard mentionCoordinator?.activeQuery != nil else { super.moveDown(sender); return }
+        NotificationCenter.default.post(name: .atMentionKeyEvent, object: AtMentionKeyEvent.moveDown)
+        // 不调 super，阻止光标移动
+    }
+}
+
+// MARK: - MentionAttachment (NSTextAttachment chip)
+
+/// A custom NSTextAttachment that draws a tinted pill for a confirmed @mention.
+final class MentionAttachment: NSTextAttachment {
+
+    let token: AtMentionToken
+    let theme: PreviewTheme
+    let fontSize: CGFloat
+
+    init(token: AtMentionToken, theme: PreviewTheme, fontSize: CGFloat) {
+        self.token    = token
+        self.theme    = theme
+        self.fontSize = fontSize
+        super.init(data: nil, ofType: nil)
+        self.attachmentCell = MentionAttachmentCell(token: token, theme: theme, fontSize: fontSize)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+}
+
+final class MentionAttachmentCell: NSTextAttachmentCell {
+
+    let token: AtMentionToken
+
+    private let hPad: CGFloat = 6
+    private let vPad: CGFloat = 2
+
+    // 所有颜色/字体只在 init 时算一次，draw/cellSize 直接用缓存
+    private let chipText: String
+    private let cachedTextAttributes: [NSAttributedString.Key: Any]
+    private let cachedForeground: NSColor
+    private let cachedBackground: NSColor
+    private let cachedBorder: NSColor
+
+    init(token: AtMentionToken, theme: PreviewTheme, fontSize: CGFloat) {
+        self.token = token
+        self.chipText = "@\(token.displayName)"
+
+        let isDir = token.kind.isDirectory
+        cachedForeground = isDir
+            ? NSColor(Color.purple.opacity(0.9))
+            : NSColor(Color.appAccent.opacity(0.9))
+        cachedBackground = isDir
+            ? NSColor(Color.purple.opacity(0.12))
+            : NSColor(Color.appAccent.opacity(0.12))
+        cachedBorder = isDir
+            ? NSColor(Color.purple.opacity(0.28))
+            : NSColor(Color.appAccent.opacity(0.28))
+        cachedTextAttributes = [
+            .font: NSFont.systemFont(ofSize: fontSize - 1, weight: .medium),
+            .foregroundColor: cachedForeground
+        ]
+        super.init(imageCell: nil)
+    }
+
+    required init(coder: NSCoder) { fatalError("not used") }
+
+    override func cellSize() -> NSSize {
+        let textSize = chipText.size(withAttributes: cachedTextAttributes)
+        return NSSize(width: textSize.width + hPad * 2 + 2, height: textSize.height + vPad * 2)
+    }
+
+    override func cellBaselineOffset() -> NSPoint {
+        NSPoint(x: 0, y: -(vPad))
+    }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
+        let path = NSBezierPath(roundedRect: cellFrame.insetBy(dx: 0.5, dy: 0.5),
+                                xRadius: 4, yRadius: 4)
+        cachedBackground.setFill()
+        path.fill()
+        cachedBorder.setStroke()
+        path.lineWidth = 0.75
+        path.stroke()
+        chipText.draw(in: cellFrame.insetBy(dx: hPad, dy: vPad),
+                      withAttributes: cachedTextAttributes)
+    }
+}
+
+// MARK: - Keyboard event enum (NSTextView → SwiftUI picker)
+
+enum AtMentionKeyEvent {
+    case moveUp, moveDown, confirm, dismiss
+}
+
+// MARK: - Notification
+
+extension Notification.Name {
+    static let atMentionQueryChanged     = Notification.Name("AtMentionQueryChanged")
+    static let atMentionConfirmCandidate = Notification.Name("AtMentionConfirmCandidate")
+    static let atMentionKeyEvent         = Notification.Name("AtMentionKeyEvent")
+}
+
+// MARK: - AtMentionPickerView (SwiftUI popover)
+
+/// The floating file picker that appears while the user is typing after @.
+struct AtMentionPickerView: View {
+    @Environment(AppState.self) private var state
+    let query: String
+    let theme: PreviewTheme
+    let onSelect: (AtMentionCandidate) -> Void
+    let onDismiss: () -> Void
+
+    @State private var highlighted = 0
+
+    /// 当前高亮项的 id（供 row 判断是否高亮，避免用 index 做 identity）
+    private func highlightedID(in list: [AtMentionCandidate]) -> AtMentionCandidate.ID? {
+        guard list.indices.contains(highlighted) else { return nil }
+        return list[highlighted].id
+    }
+
+    // 同步计算候选，直接读 state.mentionItems（AppState 存储属性，@Observable 自动追踪）
+    private var candidates: [AtMentionCandidate] {
+        AtMentionParser.candidates(
+            query: query,
+            allFiles: state.mentionItems,
+            rootURL: state.rootURL,
+            currentDocumentURL: state.selectedTab?.url
+        )
+    }
+
+    var body: some View {
+        // mentionItems 现在是 AppState 的存储属性，candidates 读取它时 @Observable 自动追踪
+        let currentCandidates = candidates
+
+        return VStack(spacing: 0) {
+            // Header
+            HStack(spacing: 5) {
+                Image(systemName: "at")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(theme.craftSecondary)
+                Text(query.isEmpty ? "引用文件或目录" : "搜索「\(query)」")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(theme.craftSecondary)
+                Spacer()
+                Text("↑↓ 导航  ↵ 确认  Esc 关闭")
+                    .font(.system(size: 10))
+                    .foregroundStyle(theme.craftSecondary.opacity(0.6))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+
+            Rectangle()
+                .fill(Color.primary.opacity(theme.isDark ? 0.12 : 0.07))
+                .frame(height: 0.5)
+
+            if currentCandidates.isEmpty {
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11))
+                    Text("没有匹配的文件")
+                        .font(.system(size: 12))
+                }
+                .foregroundStyle(theme.craftSecondary)
+                .padding(.vertical, 16)
+            } else {
+                let rowHeight: CGFloat = 40
+                // 固定上限约 5 行高度，超出则滚动，避免列表过高挤压输入框/对话区
+                let maxVisibleRows = 5
+                let listHeight = min(
+                    CGFloat(currentCandidates.count) * (rowHeight + 1) + 8,
+                    CGFloat(maxVisibleRows) * (rowHeight + 1) + 8
+                )
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical, showsIndicators: false) {
+                        VStack(spacing: 1) {
+                            ForEach(currentCandidates) { cand in
+                                AtMentionCandidateRow(
+                                    candidate: cand,
+                                    isHighlighted: cand.id == highlightedID(in: currentCandidates),
+                                    theme: theme
+                                )
+                                .frame(height: rowHeight)
+                                .id(cand.id)
+                                .onTapGesture { onSelect(cand) }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 4)
+                    }
+                    .frame(height: listHeight)
+                    .onChange(of: highlighted) { _, new in
+                        guard currentCandidates.indices.contains(new) else { return }
+                        withAnimation(DS.Motion.micro) {
+                            proxy.scrollTo(currentCandidates[new].id, anchor: .center)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(width: 300)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(theme.isDark ? Color(white: 0.15) : Color(white: 0.99))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.primary.opacity(theme.isDark ? 0.18 : 0.10), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(theme.isDark ? 0.45 : 0.16), radius: 16, x: 0, y: 6)
+        .shadow(color: .black.opacity(theme.isDark ? 0.20 : 0.06), radius: 4, x: 0, y: 2)
+        // highlight 随候选列表变化自动 clamp
+        .onChange(of: currentCandidates.count) { _, count in
+            if highlighted >= count { highlighted = max(0, count - 1) }
+        }
+        .onChange(of: query) { _, _ in highlighted = 0 }
+        .onReceive(NotificationCenter.default.publisher(for: .atMentionKeyEvent)) { notif in
+            guard let ev = notif.object as? AtMentionKeyEvent else { return }
+            switch ev {
+            case .moveUp:    moveHighlight(-1, in: currentCandidates)
+            case .moveDown:  moveHighlight(1, in: currentCandidates)
+            case .confirm:   commitHighlighted(in: currentCandidates)
+            case .dismiss:   onDismiss()
+            }
+        }
+    }
+
+    private func moveHighlight(_ delta: Int, in list: [AtMentionCandidate]) {
+        guard !list.isEmpty else { return }
+        highlighted = (highlighted + delta + list.count) % list.count
+    }
+
+    private func commitHighlighted(in list: [AtMentionCandidate]) {
+        guard list.indices.contains(highlighted) else { return }
+        onSelect(list[highlighted])
+    }
+}
+
+// MARK: - Candidate row
+
+private struct AtMentionCandidateRow: View {
+    let candidate: AtMentionCandidate
+    let isHighlighted: Bool
+    let theme: PreviewTheme
+
+    private var accentColor: Color {
+        candidate.kind.isDirectory ? .purple : Color.appAccent
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            // Icon
+            Image(systemName: candidate.icon)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(isHighlighted ? accentColor : theme.craftSecondary)
+                .frame(width: 16)
+
+            // Name + path
+            VStack(alignment: .leading, spacing: 0) {
+                Text(candidate.displayName)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(theme.craftPrimary)
+                    .lineLimit(1)
+                if !candidate.isBuiltin && candidate.relPath != candidate.displayName {
+                    let parent = (candidate.relPath as NSString).deletingLastPathComponent
+                    if !parent.isEmpty {
+                        Text(parent)
+                            .font(.system(size: 10))
+                            .foregroundStyle(theme.craftSecondary.opacity(0.7))
+                            .lineLimit(1)
+                    }
+                }
+            }
+
+            Spacer(minLength: 4)
+
+            if candidate.isBuiltin {
+                Text("内建")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(theme.craftSecondary)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(theme.craftHover))
+            }
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isHighlighted
+                      ? accentColor.opacity(0.10)
+                      : Color.clear)
+        )
+        .contentShape(Rectangle())
+        .animation(DS.Motion.micro, value: isHighlighted)
+    }
+}

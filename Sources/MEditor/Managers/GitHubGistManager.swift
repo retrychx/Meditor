@@ -1,6 +1,10 @@
 import Foundation
 import Observation
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 
 /// Coordinates publishing the current document to a GitHub Gist.
 ///
@@ -92,9 +96,7 @@ final class GitHubGistManager {
             }
             lastResultURL = url
             // Auto-copy to clipboard so the user can paste immediately.
-            let pb = NSPasteboard.general
-            pb.clearContents()
-            pb.setString(url, forType: .string)
+            Pasteboard.copy(url)
         } catch let e as GitHubGistError {
             lastError = e.errorDescription
         } catch {

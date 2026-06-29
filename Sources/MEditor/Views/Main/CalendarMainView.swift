@@ -185,7 +185,7 @@ struct CalendarMainView: View {
         let currentMonth = cal.component(.month, from: referenceDate)
 
         return VStack(spacing: 0) {
-            // Day-of-week header
+            // 星期标题行
             HStack(spacing: 0) {
                 ForEach(["日","一","二","三","四","五","六"], id: \.self) { d in
                     Text(d)
@@ -197,34 +197,32 @@ struct CalendarMainView: View {
             }
             Divider().opacity(0.3)
 
-            // Grid
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 0) {
-                ForEach(days, id: \.self) { day in
-                    MonthDayCell(
-                        date: day,
-                        isCurrentMonth: cal.component(.month, from: day) == currentMonth,
-                        isToday: cal.isDateInToday(day),
-                        isSelected: selectedDate.map { cal.isDate($0, inSameDayAs: day) } ?? false,
-                        events: eventsOn(day)
-                    )
-                    .onTapGesture {
-                        selectedDate = day
-                    }
-                    .contextMenu {
-                        Button("新建事件") {
-                            createForDate = day
-                            showCreateSheet = true
+            // 用 GeometryReader 拿到实际可用高度，平均分给 6 行
+            GeometryReader { geo in
+                let rowHeight = geo.size.height / 6
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 0) {
+                    ForEach(days, id: \.self) { day in
+                        MonthDayCell(
+                            date: day,
+                            isCurrentMonth: cal.component(.month, from: day) == currentMonth,
+                            isToday: cal.isDateInToday(day),
+                            isSelected: selectedDate.map { cal.isDate($0, inSameDayAs: day) } ?? false,
+                            events: eventsOn(day)
+                        )
+                        .frame(height: rowHeight)   // 精确等分，不留白
+                        .onTapGesture { selectedDate = day }
+                        .contextMenu {
+                            Button("新建事件") {
+                                createForDate = day
+                                showCreateSheet = true
+                            }
                         }
-                    }
-                    .overlay(alignment: .topLeading) {
-                        // Show events list when day is selected
-                        EmptyView()
                     }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // Selected day events
+            // 选中日期事件列表 — 紧跟 grid 下方
             if let sel = selectedDate {
                 Divider().opacity(0.3)
                 selectedDayEvents(for: sel)
@@ -282,30 +280,65 @@ struct CalendarMainView: View {
         .background(Color.primary.opacity(0.02))
     }
 
-    // MARK: - Week List
+    // MARK: - Week Timeline
 
     private var weekList: some View {
         let cal = Calendar.current
         let (start, end) = visibleRange
-        let days = stride(from: start, to: end, by: 86400).map { Date(timeIntervalSinceReferenceDate: $0.timeIntervalSinceReferenceDate) }
-
-        return ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(days, id: \.self) { day in
-                    WeekDaySection(
-                        date: day,
-                        events: eventsOn(day),
-                        onSelectEvent: { selectedEvent = $0 },
-                        onCreateEvent: {
-                            createForDate = day
-                            showCreateSheet = true
-                        }
-                    )
-                    Divider().opacity(0.15)
-                }
-            }
-            .padding(.bottom, 20)
+        let days = stride(from: start, to: end, by: 86400).map {
+            Date(timeIntervalSinceReferenceDate: $0.timeIntervalSinceReferenceDate)
         }
+
+        // Build events dict keyed by day start
+        var eventsByDay: [Date: [CalendarEventItem]] = [:]
+        for day in days {
+            let dayStart = cal.startOfDay(for: day)
+            eventsByDay[dayStart] = eventsOn(day)
+        }
+
+        return VStack(spacing: 0) {
+            WeekTimelineView(
+                days: days,
+                events: eventsByDay,
+                onSelectEvent: { selectedEvent = $0 },
+                onCreateEvent: { date in
+                    createForDate = date
+                    showCreateSheet = true
+                }
+            )
+        }
+    }
+
+    private func weekDayHeaders(days: [Date]) -> some View {
+        let cal = Calendar.current
+        let timeAxisWidth: CGFloat = 48
+        return HStack(spacing: 0) {
+            Color.clear.frame(width: timeAxisWidth)
+            ForEach(days, id: \.self) { day in
+                let isToday = cal.isDateInToday(day)
+                VStack(spacing: 2) {
+                    Text(weekdayLabel(day))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(isToday ? Color.appAccent : .secondary)
+                    Text("\(cal.component(.day, from: day))")
+                        .font(.system(size: 18, weight: isToday ? .bold : .light))
+                        .foregroundStyle(isToday ? Color.white : .primary)
+                        .frame(width: 32, height: 32)
+                        .background {
+                            if isToday { Circle().fill(Color.appAccent) }
+                        }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+            }
+        }
+    }
+
+    private func weekdayLabel(_ date: Date) -> String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "EEE"
+        fmt.locale = Locale.current
+        return fmt.string(from: date)
     }
 
     // MARK: - Unauthorized
@@ -434,7 +467,7 @@ private struct MonthDayCell: View {
 
             Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, minHeight: 80, maxHeight: .infinity)
+        .frame(maxWidth: .infinity)   // 高度由外部 .frame(height:) 控制
         .background(
             isSelected ? Color.appAccent.opacity(0.06) :
             isHovered  ? Color.primary.opacity(0.03) : Color.clear
@@ -485,59 +518,75 @@ private struct WeekDaySection: View {
     let onCreateEvent: () -> Void
 
     private var isToday: Bool { Calendar.current.isDateInToday(date) }
+    @State private var isHovered = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            // Date column
-            VStack(spacing: 2) {
-                Text(dayOfWeekLabel)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(isToday ? Color.appAccent : .secondary)
+        VStack(alignment: .leading, spacing: 0) {
+            // Date header row
+            HStack(spacing: 8) {
                 Text("\(Calendar.current.component(.day, from: date))")
-                    .font(.system(size: 22, weight: isToday ? .bold : .light))
-                    .foregroundStyle(isToday ? Color.appAccent : .primary)
-            }
-            .frame(width: 52)
-            .padding(.top, 12)
-            .padding(.bottom, 12)
-
-            Divider().padding(.vertical, 8)
-
-            // Events column
-            VStack(alignment: .leading, spacing: 4) {
-                if events.isEmpty {
-                    Text("无事件")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.tertiary)
-                        .padding(.vertical, 8)
-                } else {
-                    ForEach(events) { event in
-                        EventRow(event: event)
-                            .onTapGesture { onSelectEvent(event) }
+                    .font(.system(size: 15, weight: isToday ? .bold : .semibold))
+                    .foregroundStyle(isToday ? Color.white : .primary)
+                    .frame(width: 28, height: 28)
+                    .background {
+                        if isToday { Circle().fill(Color.appAccent) }
                     }
+
+                Text(dayOfWeekLabel)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(isToday ? Color.appAccent : .secondary)
+
+                Spacer()
+
+                if isHovered {
+                    Button { onCreateEvent() } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color.appAccent)
+                    }
+                    .buttonStyle(.plain)
+                    .transition(.opacity.combined(with: .scale(scale: 0.8)))
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+            .padding(.bottom, events.isEmpty ? 10 : 6)
 
-            // Add button (on hover)
-            Button {
-                onCreateEvent()
-            } label: {
-                Image(systemName: "plus.circle")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Color.appAccent.opacity(0.6))
+            if !events.isEmpty {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 2) {
+                        ForEach(events) { event in
+                            EventRow(event: event)
+                                .onTapGesture { onSelectEvent(event) }
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 8)
+                }
             }
-            .buttonStyle(.plain)
-            .padding(.top, 12)
-            .padding(.trailing, 12)
         }
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(isToday
+                    ? Color.appAccent.opacity(0.06)
+                    : isHovered ? Color.primary.opacity(0.03) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(
+                    isToday ? Color.appAccent.opacity(0.2) : Color.primary.opacity(0.06),
+                    lineWidth: isToday ? 1 : 0.5
+                )
+        )
+        .padding(.horizontal, 12)
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .onHover { v in withAnimation(DS.Motion.micro) { isHovered = v } }
     }
 
     private var dayOfWeekLabel: String {
         let fmt = DateFormatter()
-        fmt.dateFormat = "EEE"
+        fmt.dateFormat = "EEEE"
         fmt.locale = Locale.current
         return fmt.string(from: date)
     }
@@ -550,32 +599,38 @@ private struct EventRow: View {
     @State private var isHovered = false
 
     var body: some View {
-        HStack(spacing: 8) {
-            Rectangle()
-                .fill(Color(hex: event.colorHex))
-                .frame(width: 3)
-                .cornerRadius(2)
+        HStack(spacing: 0) {
+            // Color accent bar
+            Color(hex: event.colorHex)
+                .frame(width: 4)
+                .clipShape(UnevenRoundedRectangle(
+                    topLeadingRadius: 4, bottomLeadingRadius: 4,
+                    bottomTrailingRadius: 0, topTrailingRadius: 0
+                ))
 
-            VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
                 Text(event.title)
-                    .font(.system(size: 13))
+                    .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
                 Text(timeLabel)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize()
             }
-            Spacer()
-            if event.notes != nil {
-                Image(systemName: "note.text")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color(hex: event.colorHex).opacity(isHovered ? 0.14 : 0.08))
+            .clipShape(UnevenRoundedRectangle(
+                topLeadingRadius: 0, bottomLeadingRadius: 0,
+                bottomTrailingRadius: 4, topTrailingRadius: 4
+            ))
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(isHovered ? Color.primary.opacity(0.04) : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .frame(maxWidth: .infinity)
+        .fixedSize(horizontal: false, vertical: true)
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
         .animation(DS.Motion.micro, value: isHovered)
@@ -588,7 +643,6 @@ private struct EventRow: View {
         fmt.dateStyle = .none
         return "\(fmt.string(from: event.startDate)) – \(fmt.string(from: event.endDate))"
     }
-
 }
 
 

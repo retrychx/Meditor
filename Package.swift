@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "MEditor",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v14), .iOS(.v17)],
     dependencies: [],
     targets: [
         .executableTarget(

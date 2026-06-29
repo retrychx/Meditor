@@ -33,8 +33,11 @@ extension AppState {
         tabManager.selectedTabID = nil
         selectedFileID = nil
         previewManager.clear()
-        fileTreeManager.clear()
-        fileTreeManager.reload(rootURL: url)
+        // Load the tree BEFORE setting rootURL so that when ContentView switches
+        // from welcomeScreen → mainLayout, fileTree is already populated.
+        // This eliminates the empty-list flash on first render.
+        fileTreeManager.reloadFresh(rootURL: url)
+        rootURL = url
 
         fileWatcher.startWatching(urls: [url]) { [weak self] in
             guard let self else { return }
@@ -78,7 +81,9 @@ extension AppState {
     // MARK: - Cross-domain coordination
 
     func syncSidebarSelectionToTab(_ tab: EditorTab) {
-        if fileTreeManager.fileItemMap[tab.url] != nil { selectedFileID = tab.url }
+        // Always highlight the tab's file in the sidebar, regardless of whether
+        // its parent directory has been expanded (fileItemMap may not contain it yet).
+        selectedFileID = tab.url
     }
 
     func handleItemRenamed(from oldURL: URL, to newURL: URL) {

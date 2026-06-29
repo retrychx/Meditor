@@ -9,35 +9,46 @@ struct TOCOutlineView: View {
     let onSelect: (TOCItem) -> Void
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                Text("OUTLINE")
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-                    .padding(.horizontal, 10)
-                    .padding(.top, 16)
-                    .padding(.bottom, 8)
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("OUTLINE")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 16)
+                        .padding(.bottom, 8)
 
-                if items.isEmpty {
-                    TOCPlaceholder(theme: theme, isLoading: isLoading)
-                } else {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
-                        Button {
-                            onSelect(item)
-                        } label: {
-                            TOCRow(
-                                item: item,
-                                isActive: idx == activeLineIndex,
-                                previousLevel: idx > 0 ? items[idx - 1].level : nil
-                            )
+                    if items.isEmpty {
+                        TOCPlaceholder(theme: theme, isLoading: isLoading)
+                    } else {
+                        ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
+                            Button {
+                                onSelect(item)
+                            } label: {
+                                TOCRow(
+                                    item: item,
+                                    isActive: idx == activeLineIndex,
+                                    previousLevel: idx > 0 ? items[idx - 1].level : nil
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .id(idx)
                         }
-                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.top, 8)
+                .padding(.bottom, 10)
+            }
+            .onChange(of: activeLineIndex) { _, newIdx in
+                guard newIdx >= 0 else { return }
+                DispatchQueue.main.async {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        proxy.scrollTo(newIdx, anchor: .center)
                     }
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.top, 8)
-            .padding(.bottom, 10)
         }
         .background(
             RoundedRectangle(cornerRadius: 12)
@@ -47,7 +58,6 @@ struct TOCOutlineView: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(theme.separator.opacity(theme.isDark ? 0.18 : 0.12), lineWidth: 1)
         )
-        // Clip content to the rounded panel so overflowing rows/text are masked.
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .padding(.horizontal, 8)
         .padding(.vertical, 10)

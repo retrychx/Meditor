@@ -23,6 +23,8 @@ final class AIConversation {
 
     /// In-flight streaming task, so it can be cancelled (stop / new chat / switch).
     @ObservationIgnored var streamTask: Task<Void, Never>?
+    /// Agent runner for tool-calling mode (助手面板接入 AgentRunner 时使用).
+    @ObservationIgnored var agentRunner: AgentRunner?
     /// Debounced disk-persist work item.
     @ObservationIgnored private var persistWork: DispatchWorkItem?
 
@@ -111,6 +113,8 @@ final class AIConversation {
     func cancelStreaming() {
         streamTask?.cancel()
         streamTask = nil
+        agentRunner?.cancel()
+        agentRunner = nil
         isResponding = false
         persist()
     }

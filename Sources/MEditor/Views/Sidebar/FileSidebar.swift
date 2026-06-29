@@ -18,10 +18,6 @@ struct FileSidebar: View {
     @Environment(AppState.self) private var state
     @Environment(WorkspaceUIState.self) private var workspaceUI
     @State private var searchText = ""
-    @State private var expandedPaths: Set<String> = {
-        Set(UserDefaults.standard.stringArray(forKey: "sidebar.expandedPaths") ?? [])
-    }()
-
     @State private var showCreateAlert = false
     @State private var createName = ""
     @State private var createParentURL: URL?
@@ -78,6 +74,7 @@ struct FileSidebar: View {
                 }
             }
 
+
             // ── Bottom toolbar ──
             SidebarBottomBar(
                 onNewFile: {
@@ -92,6 +89,9 @@ struct FileSidebar: View {
             )
         }
         .background(.clear)
+        .onChange(of: state.selectedTabID) { _, _ in
+            expandToSelectedFile()
+        }
         .sheet(isPresented: $showCreateAlert) {
             InputDialog(
                 title: L(createIsFolder ? "menu.newFolder" : "menu.newFile"),
@@ -199,8 +199,6 @@ struct FileSidebar: View {
                         SidebarTreeNode(
                             item: item,
                             searchText: "",
-                            expandedPaths: expandedPaths,
-                            onExpandedChange: handleExpandedChange,
                             onAction: handleFileAction,
                             onTap: { selectSidebarItem($0) }
                         )
@@ -318,10 +316,18 @@ struct FileSidebar: View {
 
     private func selectSidebarItem(_ item: FileItem) { state.selectFile(item) }
 
-    private func handleExpandedChange(_ item: FileItem, _ expanded: Bool) {
-        if expanded { expandedPaths.insert(item.url.path); state.loadChildrenIfNeeded(for: item) }
-        else { expandedPaths.remove(item.url.path) }
-        UserDefaults.standard.set(Array(expandedPaths), forKey: "sidebar.expandedPaths")
+    /// Expand all ancestor directories of the currently selected tab's file
+    /// so the highlighted row is visible in the tree.
+    private func expandToSelectedFile() {
+        guard let url = state.selectedTab?.url,
+              let root = state.rootURL else { return }
+        let rootPath = root.standardizedFileURL.path
+        var dir = url.deletingLastPathComponent().standardizedFileURL
+        while dir.path.hasPrefix(rootPath), dir.path != rootPath {
+            workspaceUI.setExpanded(FileItem(url: dir, isDirectory: true), true)
+            state.loadChildrenIfNeeded(for: FileItem(url: dir, isDirectory: true))
+            dir = dir.deletingLastPathComponent().standardizedFileURL
+        }
     }
 }
 

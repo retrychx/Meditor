@@ -23,6 +23,15 @@ final class WorkspaceUIState {
     var sidebarWidth: CGFloat
     var isFocusMode = false
     var activeMainView: ActiveMainView = .document
+    var expandedPaths: Set<String> = {
+        Set(UserDefaults.standard.stringArray(forKey: "sidebar.expandedPaths") ?? [])
+    }()
+
+    func setExpanded(_ item: FileItem, _ expanded: Bool) {
+        if expanded { expandedPaths.insert(item.url.path) }
+        else { expandedPaths.remove(item.url.path) }
+        UserDefaults.standard.set(Array(expandedPaths), forKey: "sidebar.expandedPaths")
+    }
 
     init() {
         let settings = AppSettings.shared

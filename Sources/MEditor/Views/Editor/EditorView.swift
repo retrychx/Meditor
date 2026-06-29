@@ -13,6 +13,11 @@ struct EditorView: View {
                     .frame(height: 1)
 
                 ZStack(alignment: .bottom) {
+                    if tab.awaitingInitialContent {
+                        // Content not yet loaded — show skeleton to avoid empty→content flash
+                        Color.clear
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
                     EditorViewContent(
                         tabID: tab.id,
                         content: tab.content,
@@ -39,6 +44,7 @@ struct EditorView: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                             .allowsHitTesting(false)
                             .transition(.opacity)
+                    }
                     }
 
                     if state.editorSelectedText.count > 5 {
