@@ -1,6 +1,25 @@
 import Foundation
 import Observation
 
+/// 一条等待用户在 agent step 流里确认执行的命令。
+@MainActor
+final class PendingCommand: Identifiable {
+    let id = UUID()
+    let command: String
+    let cwd: String?
+    private let respond: (Bool) -> Void
+    private var answered = false
+
+    init(command: String, cwd: String?, respond: @escaping (Bool) -> Void) {
+        self.command = command
+        self.cwd = cwd
+        self.respond = respond
+    }
+
+    func approve() { guard !answered else { return }; answered = true; respond(true) }
+    func reject()  { guard !answered else { return }; answered = true; respond(false) }
+}
+
 /// Persistent, multi-session conversation state for the AI assistant.
 ///
 /// Owned by `AppState` and injected into the views (not a singleton), so it is
@@ -27,6 +46,11 @@ final class AIConversation {
     @ObservationIgnored var agentRunner: AgentRunner?
     /// Debounced disk-persist work item.
     @ObservationIgnored private var persistWork: DispatchWorkItem?
+
+    /// 待用户确认执行的命令（nil = 无）。AIAssistant 观察它显示确认条。
+    var pendingCommand: PendingCommand? = nil
+    /// 本次会话是否已授权执行命令（首次确认后置 true，之后不再逐条询问）。
+    @ObservationIgnored var commandApprovedThisSession = false
 
     private static let fileURL: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]

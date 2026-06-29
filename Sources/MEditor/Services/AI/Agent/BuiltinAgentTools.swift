@@ -25,6 +25,8 @@ enum BuiltinAgentTools {
         InsertAtCursorTool(),
         OpenFileTool(),
         GetHTMLTemplateTool(),
+        // Shell (script-based skills; gated by per-session user confirmation)
+        RunCommandTool(),
     ]
 
     static func tool(named name: String) -> (any AgentTool)? {

@@ -224,6 +224,58 @@ struct AIAssistantPanel: View {
         .buttonStyle(.plain)
     }
 
+    /// agent step 流里的「待确认执行命令」确认条。
+    @ViewBuilder
+    private func commandConfirmBar(_ pending: PendingCommand) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "terminal")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.orange)
+                Text("待确认执行命令")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(theme.craftPrimary)
+            }
+            Text(pending.command)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(theme.craftPrimary)
+                .textSelection(.enabled)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(theme.editorBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+            if let cwd = pending.cwd {
+                Text("目录：\(cwd)")
+                    .font(.system(size: 10.5, design: .monospaced))
+                    .foregroundStyle(theme.craftSecondary)
+                    .lineLimit(1)
+            }
+            HStack(spacing: 8) {
+                Spacer()
+                Button("拒绝") { pending.reject() }
+                    .buttonStyle(.bordered)
+                Button { pending.approve() } label: {
+                    Text("执行")
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(Color.appAccent)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 6)
+                        .background(Color.appAccent.opacity(0.14), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .strokeBorder(Color.appAccent.opacity(0.55), lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+            Text("确认后本次会话不再询问")
+                .font(.system(size: 10))
+                .foregroundStyle(theme.craftSecondary)
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.08)))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.orange.opacity(0.3), lineWidth: 1))
+    }
+
     private var transcriptView: some View {
         GeometryReader { outer in
             ScrollViewReader { proxy in
@@ -254,6 +306,9 @@ struct AIAssistantPanel: View {
                                 TypingDots(color: theme.craftSecondary)
                             }
                         }
+                    }
+                    if let pending = convo.pendingCommand {
+                        commandConfirmBar(pending)
                     }
                     if !convo.isResponding && convo.messages.last?.role == .assistant {
                         Button(action: regenerate) {
@@ -312,6 +367,10 @@ struct AIAssistantPanel: View {
                 // false（底部锚点已超出视口），导致 if atBottom 检查失效。
                 // 使用 async 让布局先 settle，再执行滚动。
                 DispatchQueue.main.async { scrollToEnd(proxy) }
+            }
+            .onChange(of: convo.pendingCommand?.id) { _, newID in
+                // 待确认命令出现时滚到底，避免长命令把"执行/拒绝"按钮推到视口外
+                if newID != nil { DispatchQueue.main.async { scrollToEnd(proxy) } }
             }
             .onAppear {
                 DispatchQueue.main.async { proxy.scrollTo("bottom", anchor: .bottom) }

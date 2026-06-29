@@ -1,5 +1,14 @@
 import Foundation
 
+/// patch 操作无法匹配时抛出，包含周边上下文供 AI 自我纠正
+struct PatchNotFoundError: LocalizedError {
+    let find: String
+    let nearbyContext: String
+    var errorDescription: String? {
+        "⚠️ 未找到匹配文本：「\(find.prefix(60))」\n\n\(nearbyContext)\n\n建议：请用 read_document 重新读取文件内容，确认目标文本后再 patch。"
+    }
+}
+
 /// Tool execution context — passed to every AgentTool.execute().
 /// Provides controlled access to app state so tools can read/write documents and files.
 /// Conforms to AgentContextProtocol so tools can be tested with a mock.
@@ -50,19 +59,10 @@ final class AgentContext: AgentContextProtocol {
         let original = tab.awaitingInitialContent
             ? ((try? readFile(at: tab.url)) ?? tab.content)
             : tab.content
-        let updated: String
-        let count: Int
-        if all {
-            let replaced = original.replacingOccurrences(of: find, with: replace)
-            if replaced == original { return 0 }
-            count = original.components(separatedBy: find).count - 1
-            updated = replaced
-        } else {
-            guard let range = original.range(of: find) else { return 0 }
-            var tmp = original
-            tmp.replaceSubrange(range, with: replace)
-            updated = tmp
-            count = 1
+
+        let (updated, count) = applyPatch(to: original, find: find, replace: replace, all: all)
+        if count == 0 {
+            throw PatchNotFoundError(find: find, nearbyContext: buildNearbyContext(in: original, around: find))
         }
         // 走 updateTabContent 路径：同时触发预览刷新（onSyncPreview）和自动保存
         state.updateTabContent(tab.id, content: updated)
@@ -74,30 +74,34 @@ final class AgentContext: AgentContextProtocol {
         appState?.insertIntoEditor(text)
     }
 
+    /// 请求用户确认执行命令（会话级授权）。已授权则直接放行；否则挂起等待 UI 确认。
+    func confirmCommandExecution(_ command: String, cwd: String?) async -> Bool {
+        guard let convo = appState?.aiConversation else { return false }
+        if convo.commandApprovedThisSession { return true }
+        return await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+            convo.pendingCommand = PendingCommand(command: command, cwd: cwd) { approved in
+                if approved { convo.commandApprovedThisSession = true }
+                convo.pendingCommand = nil
+                cont.resume(returning: approved)
+            }
+        }
+    }
+
     /// 文件级精准 patch：直接对磁盘上指定文件做 find→replace（不依赖激活 tab）。
     /// 完整读取文件内容（不走 readFile 的 64KB 截断，避免把大文件写坏），
     /// 替换后写回，并复用 writeFile 刷新已打开的同名 Tab / Toast / 文件树。
     @discardableResult
-    func patchFile(name: String, find: String, replace: String, all: Bool = false) throws -> Int {
+    func patchFile(name: String, find: String, replace: String, all: Bool = false) async throws -> Int {
         guard let url = resolveExistingFile(name) else {
             throw AgentContextError.fileNotFound(name)
         }
         // 基准内容：优先用已打开 Tab 的内存内容（含未保存编辑），否则完整读盘。
         // 避免直接读盘后写回，把用户在编辑器里未保存的修改覆盖掉。
-        let original = try fileContentFull(at: url)
-        let updated: String
-        let count: Int
-        if all {
-            let replaced = original.replacingOccurrences(of: find, with: replace)
-            if replaced == original { return 0 }
-            count = original.components(separatedBy: find).count - 1
-            updated = replaced
-        } else {
-            guard let range = original.range(of: find) else { return 0 }
-            var tmp = original
-            tmp.replaceSubrange(range, with: replace)
-            updated = tmp
-            count = 1
+        let original = try await fileContentFull(at: url)
+
+        let (updated, count) = applyPatch(to: original, find: find, replace: replace, all: all)
+        if count == 0 {
+            throw PatchNotFoundError(find: find, nearbyContext: buildNearbyContext(in: original, around: find))
         }
         // 用绝对路径写回：writeFile 会刷新已打开 Tab、reloadFileTree 并弹 Toast
         try writeFile(name: url.path, content: updated)
@@ -170,22 +174,24 @@ final class AgentContext: AgentContextProtocol {
 
     /// 返回指定文件"当前最准确"的完整内容（不截断）：
     /// 若该文件已在编辑器中打开且已加载完成，优先返回其内存内容（含未保存编辑）；
-    /// 否则完整读盘。用于 patch / search 等需要全文且不能丢失未保存编辑的场景。
-    func fileContentFull(at url: URL) throws -> String {
-        if let tab = openLoadedTab(for: url) {
-            return tab.content
-        }
-        // 大文件保护：避免在主线程同步读取超大文件造成 UI 卡顿 / 撑爆内存
-        if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-           size > Self.maxFullReadBytes {
-            throw AgentContextError.fileTooLarge(url.lastPathComponent, size)
-        }
-        let data = try Data(contentsOf: url)
-        guard let text = String(data: data, encoding: .utf8)
-                      ?? String(data: data, encoding: .isoLatin1) else {
-            throw AgentContextError.fileNotReadable(url.lastPathComponent)
-        }
-        return text
+    /// 否则完整读盘（后台线程，避免主线程阻塞）。
+    func fileContentFull(at url: URL) async throws -> String {
+        // 内存优先：已打开且已加载完成的 Tab，无需磁盘 IO
+        if let tab = openLoadedTab(for: url) { return tab.content }
+
+        // 后台线程做磁盘 IO，避免主线程阻塞（fileURL 是值类型，安全捕获）
+        let fileURL = url
+        return try await Task.detached(priority: .userInitiated) {
+            if let size = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+               size > AgentContext.maxFullReadBytes {
+                throw AgentContextError.fileTooLarge(fileURL.lastPathComponent, size)
+            }
+            let data = try Data(contentsOf: fileURL)
+            guard let text = String(data: data, encoding: .utf8)
+                          ?? String(data: data, encoding: .isoLatin1)
+            else { throw AgentContextError.fileNotReadable(fileURL.lastPathComponent) }
+            return text
+        }.value
     }
 
     /// 在工作区创建新文件（已存在则报错），创建后自动打开并弹出 Toast
@@ -323,6 +329,41 @@ final class AgentContext: AgentContextProtocol {
         return results
     }
 
+    /// 解析文件名/路径，区分唯一找到、多个同名、未找到三种情况。
+    func resolveFile(_ name: String) -> FileResolveResult {
+        let fm = FileManager.default
+
+        // 1. 绝对路径
+        if name.hasPrefix("/") {
+            let u = URL(fileURLWithPath: name).standardizedFileURL
+            return fm.fileExists(atPath: u.path) ? .found(u) : .notFound
+        }
+
+        // 2. 包含路径分隔符的相对路径
+        if name.contains("/"), let root = workspaceURL {
+            let u = root.appendingPathComponent(name).standardizedFileURL
+            if fm.fileExists(atPath: u.path) { return .found(u) }
+        }
+
+        // 3. 纯文件名 — 全工作区递归匹配
+        let target = (name as NSString).lastPathComponent
+        let allFiles = listWorkspaceFiles(extensions: []).filter { $0.lastPathComponent == target }
+
+        switch allFiles.count {
+        case 0: return .notFound
+        case 1: return .found(allFiles[0])
+        default:
+            let currentURL = appState?.selectedTab?.url.standardizedFileURL
+            let sorted = allFiles.sorted { a, b in
+                if a.standardizedFileURL == currentURL { return true }
+                if b.standardizedFileURL == currentURL { return false }
+                let da = a.pathComponents.count, db = b.pathComponents.count
+                return da != db ? da < db : a.path < b.path
+            }
+            return .ambiguous(sorted)
+        }
+    }
+
     // MARK: - Private
 
     /// 将相对路径解析为绝对 URL（绝对路径直接使用）
@@ -332,6 +373,89 @@ final class AgentContext: AgentContextProtocol {
         }
         let root = workspaceURL ?? URL(fileURLWithPath: NSHomeDirectory())
         return root.appendingPathComponent(name)
+    }
+
+    /// 核心 patch：三级降级匹配（字面→统一换行→去行尾空白），返回 (updated, count)
+    private func applyPatch(
+        to original: String,
+        find: String,
+        replace: String,
+        all: Bool
+    ) -> (updated: String, count: Int) {
+        // 三套 (haystack, needle) 按优先级尝试
+        let candidates: [(String, String)] = [
+            (original, find),
+            (
+                original.replacingOccurrences(of: "\r\n", with: "\n"),
+                find.replacingOccurrences(of: "\r\n", with: "\n")
+            ),
+            (normalizeWSLines(original), normalizeWSLines(find))
+        ]
+
+        for (idx, (haystack, needle)) in candidates.enumerated() {
+            if all {
+                let replaced = haystack.replacingOccurrences(of: needle, with: replace)
+                guard replaced != haystack else { continue }
+                let count = haystack.components(separatedBy: needle).count - 1
+                // 在 original 上做同样操作（保留原始换行风格）
+                let out = idx == 0
+                    ? replaced
+                    : original.replacingOccurrences(of: find, with: replace)
+                return (out, count)
+            } else {
+                guard let range = haystack.range(of: needle, options: .literal) else { continue }
+                if idx == 0 {
+                    // 字面匹配：直接在 original 上替换
+                    var tmp = original
+                    tmp.replaceSubrange(range, with: replace)
+                    return (tmp, 1)
+                } else {
+                    // 归一化策略：尝试在 original 上做字面替换（大文件安全）
+                    if let origRange = original.range(of: find, options: .literal) {
+                        var tmp = original
+                        tmp.replaceSubrange(origRange, with: replace)
+                        return (tmp, 1)
+                    }
+                    var tmp = haystack
+                    tmp.replaceSubrange(range, with: replace)
+                    return (tmp, 1)
+                }
+            }
+        }
+        return (original, 0)
+    }
+
+    /// 去掉每行行尾空白并统一换行符
+    private func normalizeWSLines(_ text: String) -> String {
+        text.replacingOccurrences(of: "\r\n", with: "\n")
+            .components(separatedBy: "\n")
+            .map { line -> String in
+                var s = line
+                while s.last == " " || s.last == "\t" { s.removeLast() }
+                return s
+            }
+            .joined(separator: "\n")
+    }
+
+    /// 找不到匹配时，返回文件中最接近的行（帮 AI 自我纠正）
+    private func buildNearbyContext(in text: String, around find: String) -> String {
+        let keyword = find
+            .components(separatedBy: "\n")
+            .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? ""
+        guard !keyword.isEmpty else { return "(无法生成上下文：find 文本为空)" }
+
+        let lines = text.components(separatedBy: "\n")
+        let lower = keyword.lowercased()
+
+        if let matchIdx = lines.indices.first(where: { lines[$0].lowercased().contains(lower) }) {
+            let start = max(0, matchIdx - 2)
+            let end   = min(lines.count - 1, matchIdx + 2)
+            let ctx = lines[start...end].enumerated()
+                .map { "L\(start + $0.offset + 1): \($0.element)" }
+                .joined(separator: "\n")
+            return "文件中最接近的内容（L\(matchIdx + 1) 附近）：\n\(ctx)"
+        }
+        return "文件中未找到包含「\(keyword.prefix(40))」的行，请重新 read_document 确认内容。"
     }
 }
 

@@ -94,17 +94,33 @@ IMPORTANT:
             let name    = nsText.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
             let argsStr = nsText.substring(with: match.range(at: 2)).trimmingCharacters(in: .whitespacesAndNewlines)
 
-            // 验证 arguments 是合法 JSON，否则跳过该工具调用
+            // 验证 arguments 是合法 JSON
             guard let argsData = argsStr.data(using: .utf8),
                   (try? JSONSerialization.jsonObject(with: argsData)) != nil
             else {
-                // 尝试修复常见问题：Claude 有时省略引号
-                let repaired = attemptJSONRepair(argsStr)
-                let id = "claude-\(calls.count)-\(name)"
-                calls.append(AgentToolCall(id: id, name: name, argumentsJSON: repaired))
+                // 尝试一种明确修复：trim + 补充外层 {}
+                let trimmed = argsStr.trimmingCharacters(in: .whitespacesAndNewlines)
+                let repairCandidates = [trimmed, "{\(trimmed)}"]
+                if let repaired = repairCandidates.first(where: {
+                    guard let d = $0.data(using: .utf8) else { return false }
+                    return (try? JSONSerialization.jsonObject(with: d)) != nil
+                }) {
+                    let id = "claude-\(calls.count)-\(name)"
+                    calls.append(AgentToolCall(id: id, name: name, argumentsJSON: repaired))
+                    continue
+                }
+                // 修复彻底失败 → 注入 _parse_error，让 AI 看到错误并重试
+                let errID = "parse-err-\(calls.count)-\(name)"
+                let safeRaw = String(argsStr.prefix(300))
+                    .replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "\"", with: "\\\"")
+                    .replacingOccurrences(of: "\n", with: "\\n")
+                    .replacingOccurrences(of: "\r", with: "\\r")
+                let errJSON = "{\"original_tool\": \"\(name)\", \"raw_arguments\": \"\(safeRaw)\", \"error\": \"Arguments JSON is malformed — please retry with valid JSON\"}"
+                calls.append(AgentToolCall(id: errID, name: "_parse_error", argumentsJSON: errJSON))
                 continue
             }
-
+            // JSON 合法
             let id = "claude-\(calls.count)-\(name)"
             calls.append(AgentToolCall(id: id, name: name, argumentsJSON: argsStr))
         }
@@ -123,19 +139,4 @@ IMPORTANT:
         ).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// 简单 JSON 修复：补充缺失的引号（仅处理最常见情况）
-    private func attemptJSONRepair(_ raw: String) -> String {
-        // 如果已经是合法 JSON 就直接返回
-        if let data = raw.data(using: .utf8),
-           (try? JSONSerialization.jsonObject(with: data)) != nil {
-            return raw
-        }
-        // 尝试包一层 {} 大括号（有时 Claude 输出裸 key: value）
-        let wrapped = "{\(raw)}"
-        if let data = wrapped.data(using: .utf8),
-           (try? JSONSerialization.jsonObject(with: data)) != nil {
-            return wrapped
-        }
-        return raw
-    }
 }

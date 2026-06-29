@@ -48,7 +48,12 @@ struct ReadFileTool: AgentTool {
             throw AgentError.executionError("缺少 filename 参数")
         }
         // 统一路径解析：支持文件名、工作区相对路径（如 test111/index.html）、绝对路径
-        guard let url = await context.resolveExistingFile(filename) else {
+        let resolved = await context.resolveFile(filename)
+        guard case .found(let url) = resolved else {
+            if case .ambiguous(let urls) = resolved {
+                let list = urls.prefix(5).map { "  - \($0.path)" }.joined(separator: "\n")
+                return "⚠️ 找到 \(urls.count) 个同名文件「\(filename)」，请提供更精确的路径：\n\(list)"
+            }
             return "未找到文件：\(filename)"
         }
         let content = try await context.readFile(at: url)
