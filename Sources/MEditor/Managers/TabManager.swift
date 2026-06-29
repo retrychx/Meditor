@@ -210,15 +210,33 @@ final class TabManager {
 
     func saveTab(_ tab: EditorTab) {
         guard tab.isModified else { return }
-        do {
-            try fileService.writeFile(at: tab.url, content: tab.content)
-            tab.isModified = false
-            if tab.id == selectedTabID { onSyncPreview?(tab) }
-            onDidWriteToDisk?(tab.url)
-            onDidSave?()
-        } catch {
-            onReport?(.fileWrite(tab.url, underlying: error))
+        // 乐观更新 UI：先清除修改标记，避免用户连续触发多次写入
+        tab.isModified = false
+        let content = tab.content
+        let url     = tab.url
+        let svc     = fileService
+        Task.detached(priority: .userInitiated) { [weak self] in
+            do {
+                try svc.writeFile(at: url, content: content)
+                await self?.didSaveTab(tab, url: url)
+            } catch {
+                // 写入失败：回滚修改标记并报错
+                await self?.didFailSaveTab(tab, url: url, error: error)
+            }
         }
+    }
+
+    @MainActor
+    private func didSaveTab(_ tab: EditorTab, url: URL) {
+        if tab.id == selectedTabID { onSyncPreview?(tab) }
+        onDidWriteToDisk?(url)
+        onDidSave?()
+    }
+
+    @MainActor
+    private func didFailSaveTab(_ tab: EditorTab, url: URL, error: Error) {
+        tab.isModified = true   // 回滚乐观更新
+        onReport?(.fileWrite(url, underlying: error))
     }
 
     func saveCurrentTab() {
