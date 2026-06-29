@@ -672,12 +672,12 @@ Rules:
         }
         // 注入 HTML 主题元信息（简短，不含完整 CSS）
         let themeName = state.themeStore.current.rawValue
-        ctx += "\n\n## HTML Theme"
-        ctx += "\nThe editor has 3 built-in preview themes: github (light), nord (dark), dracula (dark). Current: \(themeName)."
-        ctx += "\nWhen creating HTML files, use this CSS variable scheme (applied via class=\"theme-\(themeName)\" on <html>):"
-        ctx += "\n  --bg, --text, --border, --code-bg, --blockquote-border, --blockquote-text, --link, --heading, --hr, --table-bg, --table-border"
-        ctx += "\nDefault values for theme-github: --bg:#ffffff --text:#24292e --border:#e1e4e8 --code-bg:#f6f8fa --link:#0969da --heading:#1f2328"
-        ctx += "\nInline the CSS variables directly in a <style> block. Do NOT reference external .css files."
+        ctx += "\n\n## 创建 / 改版 HTML 文件"
+        ctx += "\nWhen the user asks to create a NEW HTML file, or to restyle/redesign an existing one, you MUST FIRST call the get_html_template tool to fetch MEditor's built-in HTML template, and use it as the base."
+        ctx += "\n- get_html_template styles: 'doc' (default — MEditor's standard styled document), 'craft' (modern cards), 'tufte' (serif academic), 'dark' (dark code style). If the user doesn't specify, use 'doc'."
+        ctx += "\n- Keep the template's <style> block and overall structure; just fill in / replace the body content. Do NOT invent your own CSS from scratch, and do NOT strip the template's styles into a bare semantic-HTML page unless the user explicitly asks for that."
+        ctx += "\n- Keep all CSS inlined in a <style> block; never reference external .css files."
+        ctx += "\n(Note: \(themeName) is the current PREVIEW theme — that's separate from these file templates.)"
         let selection = state.editorSelectedText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !selection.isEmpty {
             // Selected text is cheap and always relevant — include regardless of turn.
