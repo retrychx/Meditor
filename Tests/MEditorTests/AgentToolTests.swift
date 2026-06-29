@@ -87,7 +87,7 @@ final class AgentToolTests: XCTestCase {
 
     func testPatchDocument_notFound_returnsRichError() async throws {
         ctx.patchDocumentResult = .failure(
-            PatchNotFoundError(query: "MISSING", nearbyContext: "...nearby...", strategy: "literal")
+            PatchNotFoundError(find: "MISSING", nearbyContext: "...nearby...")
         )
         let tool   = PatchDocumentTool()
         let result = try await tool.execute(

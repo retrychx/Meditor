@@ -640,7 +640,7 @@ struct AIAssistantPanel: View {
         convo.isResponding = true
 
         let config  = AIConfig.current(settings, scene: .agent)
-        let context = AgentContext(appState: state)
+        let context = AgentContext.make(appState: state)
         let tools   = BuiltinAgentTools.all
 
         // 拼接 system prompt（文档上下文 + skills + @mention 注入）
