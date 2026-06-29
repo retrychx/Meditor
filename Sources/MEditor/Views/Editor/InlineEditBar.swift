@@ -45,6 +45,7 @@ struct InlineEditBar: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
             } else {
+                // 快速内联操作
                 ForEach(InlineEditAction.allCases) { action in
                     actionButton(action)
                 }
@@ -58,6 +59,13 @@ struct InlineEditBar: View {
                         pluginCommandButton(skill: skill, command: cmd)
                     }
                 }
+
+                // 问 AI 分隔线 + 按钮
+                Divider()
+                    .frame(height: 14)
+                    .padding(.horizontal, 4)
+
+                askAIButton
             }
         }
         .padding(.horizontal, 6)
@@ -77,6 +85,34 @@ struct InlineEditBar: View {
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showAgentPanel)
+    }
+
+    // MARK: - Ask AI button
+
+    /// 把选中文本带入 AI 面板，开启对话。
+    private var askAIButton: some View {
+        Button {
+            guard !selectedText.isEmpty else { return }
+            let quoted: String
+            if selectedText.count <= 200 {
+                quoted = "> \(selectedText)\n\n"
+            } else {
+                quoted = "> \(String(selectedText.prefix(200)))…\n\n"
+            }
+            state.openAssistantWithSelection(quoted)
+        } label: {
+            HStack(spacing: 4) {
+                AIAssistantOrb(size: 12)
+                Text(L("ai.askAI"))
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .foregroundStyle(AIBrand.blue)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(AIBrand.blue.opacity(0.09), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(L("ai.askAIHint"))
     }
 
     // MARK: - Action button

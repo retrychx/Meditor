@@ -36,6 +36,11 @@ struct AIAssistantPanel: View {
     @State private var mentionPickerHeight: CGFloat = 0
     @FocusState private var inputFocused: Bool
 
+    /// 首次使用引导：显示 @mention 能力提示。
+    @AppStorage("ai.hasSeenMentionHint") private var hasSeenMentionHint = false
+    /// 首次打开时显示 @mention 能力卡片。
+    @State private var showMentionTip = false
+
     private var theme: PreviewTheme { state.themeStore.current }
     private var accent: AIAccentStyle { AIAccentStyle.current(settings) }
     private var convo: AIConversation { state.aiConversation }
@@ -76,7 +81,21 @@ struct AIAssistantPanel: View {
         .background(theme.editorBackground)
         .animation(DS.Motion.springFast, value: showMentionPicker)
         .onAppear {
-            DispatchQueue.main.async { inputFocused = true }
+            DispatchQueue.main.async {
+                // 如果是内联选中文本触发，预填输入框并清除待消费标记
+                if let pending = state.aiUI.pendingSelectionPrompt {
+                    convo.input = pending
+                    state.aiUI.pendingSelectionPrompt = nil
+                }
+                inputFocused = true
+
+                // 首次打开：延迟显示 @mention 能力提示卡片
+                if !hasSeenMentionHint && convo.messages.isEmpty {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        withAnimation(DS.Motion.spring) { showMentionTip = true }
+                    }
+                }
+            }
         }
     }
 
@@ -152,7 +171,17 @@ struct AIAssistantPanel: View {
             VStack(alignment: .leading, spacing: 4) {
                 greeting
                     .padding(.top, 18)
-                    .padding(.bottom, 20)
+                    .padding(.bottom, 12)
+
+                // 首次使用时显示 @mention 能力卡片
+                if showMentionTip {
+                    mentionCapabilityCard
+                        .padding(.bottom, 8)
+                        .transition(.asymmetric(
+                            insertion: .scale(scale: 0.97, anchor: .top).combined(with: .opacity),
+                            removal: .scale(scale: 0.97, anchor: .top).combined(with: .opacity)
+                        ))
+                }
 
                 sectionHeader("ai.section.suggestions")
 
@@ -166,6 +195,25 @@ struct AIAssistantPanel: View {
                     }
                 } else {
                     showMoreRow
+                }
+
+                // @mention 快捷入口（始终显示）
+                sectionHeader("ai.section.mention")
+                    .padding(.top, 6)
+
+                mentionShortcutRow(icon: "doc.text", label: "@current",
+                                   hint: L("ai.mention.currentHint")) {
+                    insertMentionTag("@current ")
+                }
+                mentionShortcutRow(icon: "folder", label: "@workspace",
+                                   hint: L("ai.mention.workspaceHint")) {
+                    insertMentionTag("@workspace ")
+                }
+                mentionShortcutRow(icon: "doc.badge.plus", label: L("ai.mention.file"),
+                                   hint: L("ai.mention.fileHint")) {
+                    // 激活 @输入模式
+                    convo.input += "@"
+                    inputFocused = true
                 }
 
                 sectionHeader("ai.section.yourPrompts")
@@ -185,6 +233,92 @@ struct AIAssistantPanel: View {
             DotGridBackground(opacity: theme.isDark ? 0.10 : 0.18)
                 .allowsHitTesting(false)
         )
+    }
+
+    // MARK: - @mention 引导卡片
+
+    private var mentionCapabilityCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "at")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(AIBrand.blue)
+                Text(L("ai.mention.cardTitle"))
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(theme.craftPrimary)
+                Spacer()
+                Button {
+                    withAnimation(DS.Motion.fast) { showMentionTip = false }
+                    hasSeenMentionHint = true
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(theme.craftSecondary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Text(L("ai.mention.cardBody"))
+                .font(.system(size: 11.5))
+                .foregroundStyle(theme.craftSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 6) {
+                mentionTagChip("@current", color: AIBrand.blue)
+                mentionTagChip("@workspace", color: Color(hex: "10B981"))
+                mentionTagChip("@文件名", color: AIBrand.violet)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                .fill(AIBrand.blue.opacity(theme.isDark ? 0.12 : 0.07))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                .strokeBorder(AIBrand.blue.opacity(0.22), lineWidth: 1)
+        )
+        .padding(.horizontal, 8)
+    }
+
+    private func mentionTagChip(_ label: String, color: Color) -> some View {
+        Text(label)
+            .font(.system(size: 11, weight: .medium, design: .monospaced))
+            .foregroundStyle(color)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.12), in: Capsule())
+    }
+
+    private func mentionShortcutRow(icon: String, label: String, hint: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 28, height: 28)
+                    .background(AIBrand.blue.opacity(0.10), in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+                    .foregroundStyle(AIBrand.blue)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(label)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .foregroundStyle(theme.craftPrimary)
+                    Text(hint)
+                        .font(.system(size: 11))
+                        .foregroundStyle(theme.craftSecondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func insertMentionTag(_ tag: String) {
+        convo.input += tag
+        inputFocused = true
     }
 
     private var greeting: some View {
