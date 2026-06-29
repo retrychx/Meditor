@@ -52,3 +52,34 @@ struct OpenFileTool: AgentTool {
         return "✅ 已在编辑器中打开：\(filename)"
     }
 }
+
+// MARK: - Get HTML Template
+
+struct GetHTMLTemplateTool: AgentTool {
+    let spec = AgentToolSpec(
+        name: "get_html_template",
+        description: "Get MEditor's built-in HTML document template (a complete HTML document with inlined <style>). ALWAYS call this first when creating or restyling an HTML file, and use the returned template as the base — do NOT invent your own CSS or strip the template's styles. Styles: 'doc' (default — styled document), 'craft' (modern cards), 'tufte' (serif academic), 'dark' (dark code style).",
+        parameters: ToolParameterSchema(
+            properties: [
+                "style": ToolPropertySchema(type: "string", description: "Template style: doc | craft | tufte | dark. Default: doc.")
+            ],
+            required: []
+        )
+    )
+
+    func execute(arguments: [String: AnySendableValue], context: any AgentContextProtocol) async throws -> String {
+        let style = (arguments["style"]?.stringValue ?? "doc").lowercased()
+        let id: String
+        switch style {
+        case "craft": id = "html-craft"
+        case "tufte": id = "html-tufte"
+        case "dark":  id = "html-dark"
+        default:       id = "html-doc"
+        }
+        let content = await MainActor.run { TemplateStore.builtins.first { $0.id == id }?.content }
+        guard let content, !content.isEmpty else {
+            return "未找到 HTML 模板：\(style)（可用：doc / craft / tufte / dark）"
+        }
+        return "# MEditor 内建 HTML 模板（\(style)）\n\n用它作为基底，保留其 <style> 与结构，把用户内容填进去：\n\n```html\n\(content)\n```"
+    }
+}

@@ -24,6 +24,7 @@ enum BuiltinAgentTools {
         // Editor
         InsertAtCursorTool(),
         OpenFileTool(),
+        GetHTMLTemplateTool(),
     ]
 
     static func tool(named name: String) -> (any AgentTool)? {
