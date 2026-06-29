@@ -46,6 +46,9 @@ final class TabManager {
 
     /// Tell the preview manager to sync content from this tab.
     var onSyncPreview: ((EditorTab) -> Void)?
+    /// A tab's content was just written to disk (manual save / auto-save).
+    /// Used to refresh disk-backed previews (HTML) for the same file.
+    var onDidWriteToDisk: ((URL) -> Void)?
     /// Clear the preview (no active tab).
     var onClearPreview: (() -> Void)?
     /// Update the sidebar's selected file to match the given tab.
@@ -211,6 +214,7 @@ final class TabManager {
             try fileService.writeFile(at: tab.url, content: tab.content)
             tab.isModified = false
             if tab.id == selectedTabID { onSyncPreview?(tab) }
+            onDidWriteToDisk?(tab.url)
             onDidSave?()
         } catch {
             onReport?(.fileWrite(tab.url, underlying: error))

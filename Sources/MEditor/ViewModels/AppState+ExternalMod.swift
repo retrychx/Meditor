@@ -38,7 +38,10 @@ extension AppState {
                       let t = self.tabManager.openTabs.first(where: { $0.id == tabID }) else { return }
                 t.content = content; t.isModified = false
                 self.recordModDate(for: url)
-                if self.tabManager.selectedTabID == tabID { self.syncPreviewContent(from: t) }
+                if self.tabManager.selectedTabID == tabID {
+                    self.syncPreviewContent(from: t)
+                    self.previewManager.reloadHTML(url: url)
+                }
             }
         }
     }

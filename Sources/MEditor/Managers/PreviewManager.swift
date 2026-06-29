@@ -66,6 +66,16 @@ final class PreviewManager {
         return changed
     }
 
+    /// 当前正在预览的 HTML 文件在磁盘上被更新后，强制 WebView 重新加载。
+    /// HTML 预览读的是磁盘文件（保留相对资源的目录读权限），所以"内容变化"
+    /// 不会自动反映——必须在文件落盘（手动保存 / 自动保存 / AI 写盘 / 外部修改）
+    /// 后显式 bump reloadToken。仅当确实在显示该文件时才触发，避免无谓刷新。
+    func reloadHTML(url: URL) {
+        guard mode == .html,
+              htmlFileURL?.standardizedFileURL == url.standardizedFileURL else { return }
+        reloadToken &+= 1
+    }
+
     /// Sync preview content from the given tab.
     func sync(from tab: EditorTab) {
         let sid = PerformanceTracer.begin("SyncPreviewContent", log: PerformanceTracer.preview)

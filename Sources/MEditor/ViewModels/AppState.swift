@@ -375,6 +375,7 @@ final class AppState {
         tabManager.onRecordModDate           = { [weak self] url in self?.recordModDate(for: url) }
         tabManager.onReport                  = { [weak self] err in self?.report(err) }
         tabManager.onDidSave                 = { [weak self] in self?.lastSavedAt = Date() }
+        tabManager.onDidWriteToDisk          = { [weak self] url in self?.previewManager.reloadHTML(url: url) }
     }
 
     // MARK: - Shared helpers (used by multiple extensions)
