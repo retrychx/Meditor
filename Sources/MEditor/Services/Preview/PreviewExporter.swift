@@ -292,8 +292,13 @@ final class PreviewExporter: PreviewExporterProtocol {
                 let config = WKPDFConfiguration()
                 webView.createPDF(configuration: config) { pdfResult in
                     DispatchQueue.main.async {
-                        if let originalURL, let cacheDir {
+                        // 仅当原始 URL 确为 file:// 时才用 loadFileURL 恢复预览；
+                        // 否则（about:blank / loadHTMLString 来源等）loadFileURL 会抛
+                        // NSInvalidArgumentException 导致整个 app abort，这里用 reload 兜底。
+                        if let originalURL, originalURL.isFileURL, let cacheDir {
                             webView.loadFileURL(originalURL, allowingReadAccessTo: cacheDir)
+                        } else {
+                            webView.reload()
                         }
                         completion(try? pdfResult.get())
                     }
