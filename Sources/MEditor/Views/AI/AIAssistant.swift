@@ -788,6 +788,14 @@ struct AIAssistantPanel: View {
         runCompletion(mentionTokens: tokensSnapshot)
     }
 
+    /// 折叠引用文本里的多余空白/换行，供卡片单段紧凑预览（不影响发送时的原文）。
+    private static func previewText(_ raw: String) -> String {
+        raw.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
     /// 「问 AI」带入的引用选段卡片：左侧竖线 + 选段摘要 + 移除按钮。
     private func quotedContextCard(_ text: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
@@ -802,12 +810,11 @@ struct AIAssistantPanel: View {
                         .font(.system(size: 10, weight: .semibold))
                 }
                 .foregroundStyle(theme.craftSecondary)
-                Text(text)
+                Text(Self.previewText(text))
                     .font(.system(size: 11.5))
                     .foregroundStyle(theme.craftPrimary)
                     .lineLimit(2)
                     .truncationMode(.tail)
-                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
             Button {
