@@ -242,6 +242,24 @@ struct QuickOpenSheet: View {
                 workspaceUI.toggleSidebar()
             },
             CommandPaletteItem(
+                id: "toggle-editor",
+                title: L("quickOpen.toggleEditor"),
+                subtitle: L("quickOpen.toggleEditorDesc"),
+                icon: "doc.text",
+                keywords: ["editor", "edit", "source", "markdown", "编辑器", "源码"]
+            ) {
+                workspaceUI.toggleEditor()
+            },
+            CommandPaletteItem(
+                id: "toggle-preview",
+                title: L("quickOpen.togglePreview"),
+                subtitle: L("quickOpen.togglePreviewDesc"),
+                icon: "eye",
+                keywords: ["preview", "render", "预览"]
+            ) {
+                workspaceUI.togglePreview()
+            },
+            CommandPaletteItem(
                 id: "open-folder",
                 title: L("quickOpen.openFolder"),
                 subtitle: L("quickOpen.openFolderDesc"),

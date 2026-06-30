@@ -70,7 +70,11 @@ struct BeautifySheet: View {
             selectedTemplate = htmlTemplates.first(where: { $0.id == "html-craft" }) ?? htmlTemplates.first
             loadTokenOverrides()
         }
-        .onChange(of: selectedTemplate?.id) { _, _ in loadTokenOverrides() }
+        .onChange(of: selectedTemplate?.id) { _, _ in
+            loadTokenOverrides()
+            // 已生成过或正在生成 → 切换模板后自动用新模板重新生成，让选择即时生效
+            if !generatedHTML.isEmpty || isGenerating { startGeneration() }
+        }
         .onDisappear { streamTask?.cancel() }
     }
 
@@ -285,6 +289,7 @@ struct BeautifySheet: View {
                     .keyboardShortcut("s", modifiers: [.command])
             }
         }
+        .tint(Color.appAccent)
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
     }
@@ -313,6 +318,7 @@ struct BeautifySheet: View {
     private func startGeneration() {
         guard let tab = state.selectedTab, !tab.content.isEmpty,
               let template = selectedTemplate else { return }
+        streamTask?.cancel()   // 取消上一个生成任务，避免切换模板时多个流并发累加
         errorMessage = nil
         isGenerating = true
         generatedHTML = ""
@@ -335,9 +341,24 @@ struct BeautifySheet: View {
                 isGenerating = false
                 if let error {
                     errorMessage = (error as? AIError)?.errorDescription ?? error.localizedDescription
+                } else {
+                    // 部分模型会把 HTML 包进 ```html … ``` 围栏，剥掉避免污染文档/预览
+                    let stripped = Self.stripCodeFence(generatedHTML)
+                    if stripped != generatedHTML { generatedHTML = stripped; htmlRevision += 1 }
                 }
             }
         )
+    }
+
+    /// 去掉 AI 输出可能包裹的 markdown 代码围栏（```html … ```），返回纯 HTML。
+    /// 仅在确实存在围栏时改动；HTML 正文以 <!DOCTYPE/< 开头，不会误删。
+    static func stripCodeFence(_ raw: String) -> String {
+        var t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.hasPrefix("```") {
+            if let nl = t.firstIndex(of: "\n") { t = String(t[t.index(after: nl)...]) } else { t = "" }
+        }
+        if t.hasSuffix("```") { t = String(t.dropLast(3)) }
+        return t.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func stopGeneration() {
