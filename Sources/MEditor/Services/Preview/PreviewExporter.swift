@@ -130,9 +130,16 @@ final class PreviewExporter: PreviewExporterProtocol {
                 indent = indent || '';
                 var md = '';
                 el.childNodes.forEach(function(node) {
-                    if (node.nodeType === 3) { md += node.textContent; return; }
+                    if (node.nodeType === 3) {
+                        // 折叠源 HTML 的缩进/换行空白为单空格（模拟浏览器渲染），
+                        // 否则 pretty-printed HTML 的缩进会污染 markdown 行首并产生大量空行
+                        md += node.textContent.replace(/\\s+/g, ' ');
+                        return;
+                    }
                     if (node.nodeType !== 1) return;
                     var tag = node.tagName.toLowerCase();
+                    // 跳过脚本/样式/模板，避免 JS/CSS 源码混入 markdown
+                    if (tag === 'script' || tag === 'style' || tag === 'noscript' || tag === 'template') return;
                     // Preserve elements with style attribute as raw HTML
                     if (node.getAttribute('style')) {
                         md += node.outerHTML;
@@ -238,8 +245,13 @@ final class PreviewExporter: PreviewExporterProtocol {
                     completion(.failure(.javaScriptFailed("empty result")))
                     return
                 }
+                // 清理：去行尾空格、折叠 3+ 连续空行为一个空行、去首尾空白
+                let cleaned = markdown
+                    .replacingOccurrences(of: "[ \\t]+\\n", with: "\n", options: .regularExpression)
+                    .replacingOccurrences(of: "\\n{3,}", with: "\n\n", options: .regularExpression)
+                    .trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
                 do {
-                    try markdown.write(to: url, atomically: true, encoding: .utf8)
+                    try cleaned.write(to: url, atomically: true, encoding: .utf8)
                     completion(.success(url))
                 } catch {
                     completion(.failure(.javaScriptFailed(error.localizedDescription)))
