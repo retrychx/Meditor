@@ -13,6 +13,8 @@ struct SettingsView: View {
     @State private var aiLoadingModels = false
     @State private var aiDetecting = false
     @State private var skillAddMessage: String? = nil
+    @State private var installingSkillID: String? = nil
+    @State private var installedSkillIDs: Set<String> = []
     
         /// When true, the view is presented as an in-app hero overlay (not a window),
         /// so it must not mutate any NSWindow chrome.
@@ -612,9 +614,148 @@ struct SettingsView: View {
                     }
                     .padding(.top, 6)
                 }
+
+                // ── 技能库 ──
+                skillGallerySection
             }
             .padding(DS.Space.lg)
         }
+        .onAppear {
+            // 初始化已安装状态
+            installedSkillIDs = Set(
+                CuratedSkillGallery.all
+                    .filter { SkillInstaller.isInstalled($0, in: state.pluginManager) }
+                    .map(\.id)
+            )
+        }
+    }
+
+    // MARK: - Skill Gallery
+
+    private var skillGallerySection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Section header
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.appAccent)
+                Text("技能库")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text("— 一键安装到「我的技能」")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                Spacer()
+            }
+            .padding(.horizontal, 4)
+            .padding(.top, DS.Space.lg)
+            .padding(.bottom, DS.Space.sm)
+
+            // Gallery grid (2-column)
+            let columns = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
+            LazyVGrid(columns: columns, spacing: 10) {
+                ForEach(CuratedSkillGallery.all) { skill in
+                    galleryCard(skill)
+                }
+            }
+        }
+    }
+
+    private func galleryCard(_ skill: GallerySkillDef) -> some View {
+        let isInstalled = installedSkillIDs.contains(skill.id)
+        let isInstalling = installingSkillID == skill.id
+
+        return VStack(alignment: .leading, spacing: 8) {
+            // Header row
+            HStack(spacing: 8) {
+                Image(systemName: skill.icon)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(Color.appAccent)
+                    .frame(width: 22, height: 22)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(skill.name)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
+                Spacer()
+            }
+
+            // Description
+            Text(skill.description)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // Tags
+            HStack(spacing: 4) {
+                ForEach(skill.tags.prefix(2), id: \.self) { tag in
+                    Text(tag)
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(Color.primary.opacity(0.06))
+                        )
+                }
+                Spacer()
+            }
+
+            // Install button
+            Button {
+                guard !isInstalled, !isInstalling else { return }
+                installingSkillID = skill.id
+                Task {
+                    let result = await SkillInstaller.install(skill, pluginManager: state.pluginManager)
+                    switch result {
+                    case .installed, .alreadyInstalled:
+                        installedSkillIDs.insert(skill.id)
+                    case .failed(let err):
+                        skillAddMessage = "安装失败：\(err.localizedDescription)"
+                    }
+                    installingSkillID = nil
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    if isInstalling {
+                        ProgressView().controlSize(.mini)
+                    } else if isInstalled {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 10, weight: .medium))
+                    } else {
+                        Image(systemName: "plus")
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    Text(isInstalling ? "安装中…" : isInstalled ? "已安装" : "安装")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(isInstalled
+                              ? Color.primary.opacity(0.05)
+                              : Color.appAccent.opacity(0.12))
+                )
+                .foregroundStyle(isInstalled ? .secondary : Color.appAccent)
+            }
+            .buttonStyle(.plain)
+            .disabled(isInstalled || isInstalling)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.03))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
+                )
+        )
     }
 
     /// Row for a built-in skill: toggle + name/desc + "内置" badge (no delete, no path).

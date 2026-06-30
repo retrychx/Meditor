@@ -13,7 +13,86 @@ struct ClaudeCLIBackend: AgentBackend {
         case mixed       // 其余情况（安全干默）
     }
 
-    /// 根据最近 3 条用户消息推断意图（保守策略：宁可 mixed 也不误杀工具）
+    // MARK: - IntentScorer
+
+    /// 基于权重评分的意图分类器。
+    ///
+    /// 设计原则：
+    ///  - 精确词组（全词匹配）权重高；包含子串的普通匹配权重低
+    ///  - 负向词（干扰词）扣分，避免 "runtime" 误触 command 意图
+    ///  - 必须达到阈値才分类，低于阈値则 mixed（安全干默）
+    ///
+    /// `internal`（非 private）以便单测直接访问静态方法。
+    struct IntentScorer {
+
+        struct WeightedPhrase {
+            let phrase: String
+            let weight: Int
+            /// 如果 text 中包含这些词中任何一个，则不计分（防止误触）
+            let negations: [String]
+
+            init(_ phrase: String, weight: Int, negations: [String] = []) {
+                self.phrase   = phrase
+                self.weight   = weight
+                self.negations = negations
+            }
+        }
+
+        // 命令意图评分规则
+        static let commandPhrases: [WeightedPhrase] = [
+            // 负向：精确全词断语（权重 3）
+            WeightedPhrase("run command",      weight: 3, negations: ["don't run", "no command", "without command"]),
+            WeightedPhrase("run script",       weight: 3, negations: ["don't run"]),
+            WeightedPhrase("execute command",  weight: 3),
+            WeightedPhrase("execute script",   weight: 3),
+            WeightedPhrase("运行命令",        weight: 3),
+            WeightedPhrase("执行命令",        weight: 3),
+            WeightedPhrase("执行脚本",        weight: 3),
+            WeightedPhrase("运行脚本",        weight: 3),
+            // 中权重：常见但有歧义（权重 2）
+            WeightedPhrase("bash ",            weight: 2, negations: ["bash script", "bash file"]),
+            WeightedPhrase("shell command",    weight: 2),
+            WeightedPhrase("npm run ",         weight: 2, negations: ["npm run script"]),
+            WeightedPhrase("npx ",             weight: 2),
+            WeightedPhrase("make ",            weight: 2, negations: ["make sure", "make it", "make the"]),
+            // 低权重：干扰容易大的词（权重 1）——单独不足以触发分类
+            WeightedPhrase("script",           weight: 1, negations: ["script tag", "inline script", "no script", "shell script is"]),
+        ]
+
+        // 文件管理意图评分规则
+        static let fileManagePhrases: [WeightedPhrase] = [
+            WeightedPhrase("create file",      weight: 3),
+            WeightedPhrase("new file",         weight: 3, negations: ["open new file", "save as new file"]),
+            WeightedPhrase("make file",        weight: 3),
+            WeightedPhrase("mkdir",            weight: 3),
+            WeightedPhrase("create directory", weight: 3),
+            WeightedPhrase("new directory",    weight: 3),
+            WeightedPhrase("新建文件",        weight: 3),
+            WeightedPhrase("创建文件",        weight: 3),
+            WeightedPhrase("创建目录",        weight: 3),
+            WeightedPhrase("新建目录",        weight: 3),
+        ]
+
+        /// 分类阈値：评分必须 ≥ threshold 才应用对应意图。
+        /// 默认 2：要求至少命中一个中权重匹配，防止子串误打。
+        static let threshold: Int = 2
+
+        static func score(text: String, phrases: [WeightedPhrase]) -> Int {
+            var total = 0
+            for item in phrases {
+                guard text.contains(item.phrase) else { continue }
+                // 负向词检查：有任意匹配则不计分
+                if item.negations.contains(where: { text.contains($0) }) { continue }
+                total += item.weight
+            }
+            return total
+        }
+    }
+
+    /// 根据最近 3 条用户消息推断意图。
+    ///
+    /// 保守策略：当两种意图评分都达到阈値时，选择得分更高的；
+    ///   得分相同时优先 mixed（不确定则不居分）。
     private func inferIntent(from messages: [AgentMessage]) -> Intent {
         let text = messages
             .filter { $0.role == .user }
@@ -21,18 +100,16 @@ struct ClaudeCLIBackend: AgentBackend {
             .map { $0.content.lowercased() }
             .joined(separator: " ")
 
-        // command：要求精确词组，避免 "runtime" / "run through" 误触
-        let commandPhrases = ["run command", "run script", "execute command", "bash ", "shell ",
-                              "运行命令", "执行命令", "执行脚本"]
-        if commandPhrases.contains(where: { text.contains($0) }) { return .command }
+        let commandScore    = IntentScorer.score(text: text, phrases: IntentScorer.commandPhrases)
+        let fileManageScore = IntentScorer.score(text: text, phrases: IntentScorer.fileManagePhrases)
+        let threshold       = IntentScorer.threshold
 
-        // fileManage：明确的文件创建/目录操作
-        let fileManagePhrases = ["create file", "new file", "mkdir", "create directory",
-                                 "新建文件", "创建文件", "创建目录", "新建目录"]
-        if fileManagePhrases.contains(where: { text.contains($0) }) { return .fileManage }
-
-        // 其余情况统一 mixed，不强制分类（风险大于收益）
-        return .mixed
+        switch (commandScore >= threshold, fileManageScore >= threshold) {
+        case (true, false):  return .command
+        case (false, true):  return .fileManage
+        case (true, true):   return commandScore > fileManageScore ? .command : .fileManage
+        case (false, false): return .mixed
+        }
     }
 
     /// 按意图过滤工具。
