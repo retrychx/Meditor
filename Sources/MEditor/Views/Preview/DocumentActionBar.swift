@@ -8,6 +8,35 @@ struct DocumentActionBar: View {
 
     private var theme: PreviewTheme { state.themeStore.current }
 
+    /// 美化按文件类型分流：Markdown 走本地规范化（同格式回写，diff 预览）；HTML 走 HTML 美化 Sheet。
+    /// 均受内置「美化」技能开关控制。
+    private func beautifyCurrent() {
+        guard let tab = state.selectedTab else { return }
+        guard state.pluginManager.isBuiltinEnabled(BuiltinSkills.ID.htmlBeautifier) else {
+            state.showToast("「美化」功能已在设置中关闭", icon: "wand.and.stars")
+            return
+        }
+        if tab.language == .markdown {
+            let original  = tab.content
+            let formatted = MarkdownFormatter.format(original)
+            guard formatted != original else {
+                state.showToast("Markdown 已经很规整了", icon: "checkmark.circle")
+                return
+            }
+            let tabID = tab.id
+            state.diffReview.present(
+                original: original,
+                modified: formatted,
+                mode: .markdownVsMarkdown,
+                onFinalize: { merged in
+                    state.updateTabContent(tabID, content: merged)
+                }
+            )
+        } else {
+            state.showingBeautifySheet = true
+        }
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             actionButton(
@@ -16,7 +45,7 @@ struct DocumentActionBar: View {
                 label: "美化",
                 isDisabled: state.selectedTab == nil
             ) {
-                state.showingBeautifySheet = true
+                beautifyCurrent()
             }
 
             dividerSeparator

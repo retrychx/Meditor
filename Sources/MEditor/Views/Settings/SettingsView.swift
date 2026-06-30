@@ -12,6 +12,7 @@ struct SettingsView: View {
     @State private var aiModels: [String] = []
     @State private var aiLoadingModels = false
     @State private var aiDetecting = false
+    @State private var skillAddMessage: String? = nil
     
         /// When true, the view is presented as an in-app hero overlay (not a window),
         /// so it must not mutate any NSWindow chrome.
@@ -24,12 +25,11 @@ struct SettingsView: View {
     private static let tagline      = "A minimal Markdown editor for macOS"
 
     enum SettingsTab: String, CaseIterable {
-        case general, editor, ai, sharing, plugins, paths
+        case general, ai, sharing, plugins, paths
 
         var label: String {
             switch self {
             case .general: return L("settings.tab.general")
-            case .editor:  return L("settings.tab.editor")
             case .ai:      return L("settings.tab.ai")
             case .sharing: return L("settings.tab.sharing")
             case .plugins: return "插件"
@@ -40,7 +40,6 @@ struct SettingsView: View {
         var icon: String {
             switch self {
             case .general: return "slider.horizontal.3"
-            case .editor:  return "textformat"
             case .ai:      return "sparkles"
             case .sharing: return "wifi"
             case .plugins: return "puzzlepiece.extension"
@@ -82,7 +81,6 @@ struct SettingsView: View {
                 Group {
                     switch selectedTab {
                     case .general: generalContent
-                    case .editor:  editorContent
                     case .ai:      aiContent
                     case .sharing: sharingContent
                     case .plugins: pluginsContent
@@ -551,27 +549,6 @@ struct SettingsView: View {
 
     // MARK: - Editor
 
-    private var editorContent: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                settingsGroup(title: L("settings.section.launchLayout")) {
-                    settingsRow(label: L("settings.showSidebar")) {
-                        Toggle("", isOn: bindableSettings.showSidebarOnLaunch).labelsHidden()
-                    }
-                    rowDivider
-                    settingsRow(label: L("settings.showEditor")) {
-                        Toggle("", isOn: bindableSettings.showEditorOnLaunch).labelsHidden()
-                    }
-                    rowDivider
-                    settingsRow(label: L("settings.showPreview")) {
-                        Toggle("", isOn: bindableSettings.showPreviewOnLaunch).labelsHidden()
-                    }
-                }
-            }
-            .padding(DS.Space.lg)
-        }
-    }
-
     // MARK: - Plugins
 
     private var pluginsContent: some View {
@@ -623,6 +600,18 @@ struct SettingsView: View {
                     Spacer()
                 }
                 .padding(.top, 4)
+
+                if let msg = skillAddMessage {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Text(msg)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.top, 6)
+                }
             }
             .padding(DS.Space.lg)
         }
@@ -708,8 +697,14 @@ struct SettingsView: View {
 
     private func openSkillFilePicker() {
         Task {
-            if let url = await state.filePickerService.pickFile(title: "选择 SKILL.md 文件", allowedExtensions: ["md", "txt"]) {
-                state.pluginManager.addManual(skillMDURL: url)
+            if let url = await state.filePickerService.pickFileOrFolder(title: "选择 SKILL.md / 技能目录 / 插件目录", allowedExtensions: ["md", "txt"]) {
+                let count = state.pluginManager.addSkills(from: url)
+                if count > 0 {
+                    await state.pluginManager.reloadAll()
+                    skillAddMessage = count > 1 ? "已添加 \(count) 个技能" : nil
+                } else {
+                    skillAddMessage = "未找到 SKILL.md：可选 SKILL.md 文件、含 SKILL.md 的技能目录，或包含 skills/*/SKILL.md 的插件目录"
+                }
             }
         }
     }

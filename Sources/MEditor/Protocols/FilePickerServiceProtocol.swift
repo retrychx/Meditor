@@ -11,4 +11,6 @@ protocol FilePickerServiceProtocol {
     func pickFile(title: String?, allowedTypes: [UTType]) async -> URL?
     /// 选择单个文件（扩展名列表，方便调用方）
     func pickFile(title: String?, allowedExtensions: [String]) async -> URL?
+    /// 选择文件或文件夹（用于 skill：可选 SKILL.md 本身或其所在文件夹 / 插件目录）
+    func pickFileOrFolder(title: String?, allowedExtensions: [String]) async -> URL?
 }

@@ -52,7 +52,7 @@ enum BuiltinSkills {
 
     /// All built-in skills as (id, name, description, content) tuples
     static var all: [(id: String, name: String, description: String, content: String)] {[
-        (ID.htmlBeautifier, "HTML 美化",  "将 Markdown 转为精美的 self-contained HTML", htmlBeautifier),
+        (ID.htmlBeautifier, "美化",      "美化当前文档：Markdown 智能排版规整 / HTML 生成精美文档", htmlBeautifier),
         (ID.inlineEditor,   "内联编辑",   "改写、扩写、精简、翻译选中文本",              inlineEditor),
     ]}
 }
