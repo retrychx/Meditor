@@ -49,8 +49,6 @@ final class AIConversation {
 
     /// 待用户确认执行的命令（nil = 无）。AIAssistant 观察它显示确认条。
     var pendingCommand: PendingCommand? = nil
-    /// 本次会话是否已授权执行命令（首次确认后置 true，之后不再逐条询问）。
-    @ObservationIgnored var commandApprovedThisSession = false
 
     private static let fileURL: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]

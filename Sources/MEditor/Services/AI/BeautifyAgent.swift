@@ -47,7 +47,7 @@ final class BeautifyAgent {
                let r = templateHTML.range(of: "</style>", options: .caseInsensitive) {
                 templateHTML.replaceSubrange(r, with: overrideBlock + "\n</style>")
             }
-            var system = BuiltinSkills.htmlDocBeautifier
+            var system = BuiltinSkills.htmlDocBeautifierContent
             if !extra.isEmpty { system += "\n\n---\n\n# 附加技能\n\n" + extra }
             let user = """
             HTML 模板（保留其 <style> 与结构）：
@@ -67,7 +67,7 @@ final class BeautifyAgent {
         // tufte / craft / dark：内联各自的主题 CSS
         let css = BuiltinTemplates.css(for: template.id)
         let effectiveCSS = css + overrideBlock
-        var system = BuiltinSkills.htmlBeautifier
+        var system = BuiltinSkills.htmlBeautifier.content
             + "\n\nCSS（必须原样内联，不要修改）：\n\(effectiveCSS)"
         if !extra.isEmpty { system += "\n\n---\n\n# 附加技能\n\n" + extra }
 

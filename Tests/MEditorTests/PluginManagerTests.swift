@@ -69,6 +69,89 @@ final class PluginManagerTests: XCTestCase {
         XCTAssertFalse(ok, "目录中没有 SKILL.md 应返回 false")
     }
 
+    // MARK: - BuiltinSkillDef & Commands
+
+    func test_builtins_allHaveUniqueIDs() {
+        let ids = BuiltinSkills.all.map(\.id)
+        let unique = Set(ids)
+        XCTAssertEqual(ids.count, unique.count, "所有内置 skill 的 ID 必须唯一")
+    }
+
+    func test_builtins_allHaveNonEmptyContent() {
+        for def in BuiltinSkills.all {
+            XCTAssertFalse(def.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                           "内置 skill \(def.id) 的 content 不能为空")
+        }
+    }
+
+    func test_builtins_allHaveNonEmptyName() {
+        for def in BuiltinSkills.all {
+            XCTAssertFalse(def.name.isEmpty, "内置 skill \(def.id) 的 name 不能为空")
+        }
+    }
+
+    func test_builtins_commandsHaveUniqueNamesWithinSkill() {
+        for def in BuiltinSkills.all {
+            let names = def.commands.map(\.name)
+            let unique = Set(names)
+            XCTAssertEqual(names.count, unique.count,
+                           "内置 skill \(def.id) 的 command name 在 skill 内必须唯一")
+        }
+    }
+
+    func test_builtins_commandsHaveNonEmptyTrigger() {
+        for def in BuiltinSkills.all {
+            for cmd in def.commands {
+                XCTAssertFalse(cmd.trigger.isEmpty,
+                               "skill \(def.id) 的 command \(cmd.name) trigger 不能为空")
+            }
+        }
+    }
+
+    func test_builtins_htmlBeautifier_hasCommands() {
+        let def = BuiltinSkills.htmlBeautifier
+        XCTAssertFalse(def.commands.isEmpty, "htmlBeautifier 应有至少一个 command")
+    }
+
+    func test_builtins_reviewHelper_hasCommands() {
+        let def = BuiltinSkills.reviewHelper
+        XCTAssertFalse(def.commands.isEmpty, "reviewHelper 应有至少一个 command")
+    }
+
+    func test_pluginManager_loadsBuiltinCommands() async {
+        let pm = PluginManager()
+        await pm.reloadAll()
+
+        let htmlSkill = pm.skills.first { $0.id == BuiltinSkills.ID.htmlBeautifier }
+        XCTAssertNotNil(htmlSkill, "htmlBeautifier 应已加载")
+        XCTAssertFalse(htmlSkill?.commands.isEmpty ?? true,
+                       "htmlBeautifier 加载后应携带 commands")
+    }
+
+    func test_pluginManager_buildinCount_matchesAll() async {
+        let pm = PluginManager()
+        await pm.reloadAll()
+
+        let builtinCount = pm.skills.filter { $0.source == .builtin }.count
+        XCTAssertEqual(builtinCount, BuiltinSkills.all.count,
+                       "PluginManager 加载的内置 skill 数量应与 BuiltinSkills.all 一致")
+    }
+
+    func test_builtins_idConstants_matchAllIDs() {
+        // 确保 ID 枚举里的所有常量都有对应的 skill 在 all 里
+        let allIDs: Set<String> = Set(BuiltinSkills.all.map(\.id))
+        XCTAssertTrue(allIDs.contains(BuiltinSkills.ID.htmlBeautifier))
+        XCTAssertTrue(allIDs.contains(BuiltinSkills.ID.inlineEditor))
+        XCTAssertTrue(allIDs.contains(BuiltinSkills.ID.mermaidDiagram))
+        XCTAssertTrue(allIDs.contains(BuiltinSkills.ID.weeklyReport))
+        XCTAssertTrue(allIDs.contains(BuiltinSkills.ID.apiDocWriter))
+        XCTAssertTrue(allIDs.contains(BuiltinSkills.ID.codeCommenter))
+        XCTAssertTrue(allIDs.contains(BuiltinSkills.ID.techDesign))
+        XCTAssertTrue(allIDs.contains(BuiltinSkills.ID.reviewHelper))
+    }
+
+    // MARK: - Plugin Discovery
+
     func test_addSkills_pluginStructure_discoversNestedSkills() async throws {
         // 插件结构：<plugin>/skills/<name>/SKILL.md（如 sea-publish）
         let plugin = FileManager.default.temporaryDirectory

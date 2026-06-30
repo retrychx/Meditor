@@ -40,9 +40,22 @@ protocol AgentContextProtocol: AnyObject {
     func openFile(named name: String) -> Bool
     func searchWorkspace(query: String, extensions: [String]) async -> [String]
 
-    /// 请求用户确认执行某条命令（会话级授权：首次确认后本会话不再询问）。
-    /// 返回 true 表示允许执行。
+    // MARK: - Command Sandbox
+
+    /// 向用户展示确认对话框，询问是否允许执行该命令。
+    /// 此方法 **仅负责 UI 对话**，不做缓存判断；缓存逻辑由调用方（RunCommandTool）管理。
+    /// 返回 true 表示用户点击了「允许」。
     func confirmCommandExecution(_ command: String, cwd: String?) async -> Bool
+
+    /// 检查某条命令（由 CommandSandbox.approvalKey 生成的 key）是否已在本 Agent 会话中被批准。
+    func isCommandApproved(_ key: String) -> Bool
+
+    /// 将某条命令标记为已在本 Agent 会话中批准，后续相同 key 不再弹确认框。
+    func markCommandApproved(_ key: String)
+
+    /// 当前 skill 声明的可执行命令前缀白名单（来自 SKILL.md `allowedCommands:` 字段）。
+    /// nil 表示无限制（未在 skill 内运行，或 skill 未声明白名单）。
+    var allowedCommandPatterns: [String]? { get }
 
     /// 解析文件名/路径，区分唯一找到、多个同名、未找到三种情况。
     func resolveFile(_ name: String) -> FileResolveResult

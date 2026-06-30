@@ -150,10 +150,11 @@ final class AppStateDocumentAdapter: AgentDocumentAdapter {
 
     func confirmCommandExecution(_ command: String, cwd: String?) async -> Bool {
         guard let convo = appState?.aiConversation else { return false }
-        if convo.commandApprovedThisSession { return true }
+        // 注意：不在此处做会话级缓存判断。
+        // 缓存策略（per-command-key）由 RunCommandTool 通过 AgentContext 管理，
+        // 此方法仅负责 UI 层展示确认对话框。
         return await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
             convo.pendingCommand = PendingCommand(command: command, cwd: cwd) { approved in
-                if approved { convo.commandApprovedThisSession = true }
                 convo.pendingCommand = nil
                 cont.resume(returning: approved)
             }

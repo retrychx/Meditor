@@ -1,65 +1,216 @@
 import Foundation
 
-// MARK: - Run Command
+// MARK: - RunCommandTool
 
 /// 执行 shell 命令（主要用于"脚本型" skill，如运行 SKILL 目录下的 scripts/*.ts）。
-/// 安全：执行前必须经用户在 agent step 流里确认（会话级授权，首次确认后本会话不再询问）。
+///
+/// ## 安全机制（多层防御）
+///
+/// 1. **静态风险分析**（CommandSandbox.assess）
+///    - `.blocked`：直接拒绝，不弹确认框（如 rm -rf /、sudo、curl 等）
+///    - `.warn`：高风险，每次都弹确认框，不复用缓存
+///    - `.safe`：低风险，命中 per-key 缓存时跳过弹框
+///
+/// 2. **工作目录限制**（CommandSandbox.validateCwd）
+///    - cwd 必须在当前工作区根目录内
+///    - 检测路径穿越（../）
+///    - 没有打开工作区时不限制
+///
+/// 3. **Skill 白名单**（allowedCommandPatterns）
+///    - Skill 可在 SKILL.md 的 `allowedCommands:` 字段声明允许的命令前缀
+///    - 不在白名单内的命令直接拒绝，不弹确认框
+///
+/// 4. **Per-command-key 确认缓存**
+///    - 相同命令 + cwd 组合，用户确认一次后本次 agent session 内不再弹框
+///    - warn 级别命令不复用缓存，每次都要确认
+///
+/// 5. **执行超时**
+///    - 单条命令最长执行 `executionTimeoutSeconds`（默认 30s）
+///    - 超时后进程被强制终止，返回错误信息
+///
+/// 6. **输出截断**
+///    - stdout + stderr 合并后超过 `maxOutputBytes` 时截断（默认 16KB）
+///
 struct RunCommandTool: AgentTool {
+
+    // MARK: - Configuration
+
+    /// 单条命令最长执行时间（秒）。超时后进程被强制终止。
+    var executionTimeoutSeconds: TimeInterval = 30
+
+    /// 最大输出字节数（超出后截断，避免撑爆上下文）。
+    var maxOutputBytes: Int = 16_000
+
+    // MARK: - Spec
+
     let spec = AgentToolSpec(
         name: "run_command",
-        description: "Run a shell command (for script-based skills, e.g. `npx tsx <SKILL_DIR>/scripts/publish.ts ...`). The user must confirm execution in the step flow before it runs. Use the skill's real SKILL_DIR for paths and pass it as 'cwd'. Returns the command's combined stdout/stderr.",
+        description: """
+        Run a shell command (for script-based skills, e.g. `npx tsx <SKILL_DIR>/scripts/publish.ts`). \
+        Requires user confirmation before execution. \
+        Blocked commands (rm -rf, sudo, curl, etc.) are rejected automatically. \
+        The cwd must be inside the current workspace. \
+        Returns the command's combined stdout/stderr (max 16 KB).
+        """,
         parameters: ToolParameterSchema(
             properties: [
-                "command": ToolPropertySchema(type: "string", description: "The exact shell command to run."),
-                "cwd":     ToolPropertySchema(type: "string", description: "Working directory (use the skill's SKILL_DIR when running a skill's script). Optional; defaults to the workspace root.")
+                "command": ToolPropertySchema(
+                    type: "string",
+                    description: "The exact shell command to run."
+                ),
+                "cwd": ToolPropertySchema(
+                    type: "string",
+                    description: "Working directory. Must be inside the workspace root. Defaults to the workspace root."
+                ),
             ],
             required: ["command"]
         )
     )
 
+    // MARK: - Execute
+
     func execute(arguments: [String: AnySendableValue], context: any AgentContextProtocol) async throws -> String {
-        guard let command = arguments["command"]?.stringValue, !command.trimmingCharacters(in: .whitespaces).isEmpty else {
+        // 1. 参数提取
+        guard let command = arguments["command"]?.stringValue,
+              !command.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw AgentError.executionError("缺少 command 参数")
         }
-        let cwd = arguments["cwd"]?.stringValue
-        let resolvedCwd = (cwd?.isEmpty == false) ? cwd : await context.workspaceURL?.path
 
-        // 执行前确认（会话级授权）
-        let approved = await context.confirmCommandExecution(command, cwd: resolvedCwd)
-        guard approved else { return "[!] 用户已拒绝执行该命令：\(command)" }
+        let rawCwd = arguments["cwd"]?.stringValue
+        let workspaceRoot = await context.workspaceURL?.path
+        let resolvedCwd: String
 
-        return await Self.runViaLoginShell(command: command, cwd: resolvedCwd)
+        // 2. 工作目录校验
+        let cwdToValidate = (rawCwd?.isEmpty == false) ? rawCwd! : (workspaceRoot ?? "")
+        let cwdValidation = CommandSandbox.validateCwd(cwdToValidate, workspaceRoot: workspaceRoot)
+        switch cwdValidation {
+        case .allowed(let resolved):
+            resolvedCwd = resolved.isEmpty ? (workspaceRoot ?? "") : resolved
+        case .outsideWorkspace, .traversalDetected:
+            return "[!] \(cwdValidation.errorMessage ?? "工作目录校验失败")"
+        }
+
+        // 3. 静态风险评估
+        let risk = CommandSandbox.assess(command)
+        if case .blocked(let reason) = risk {
+            return "[!] \(reason)"
+        }
+
+        // 4. Skill 白名单校验
+        let patterns = await context.allowedCommandPatterns
+        if !CommandSandbox.matchesAllowedPatterns(command, patterns: patterns) {
+            let list = patterns?.prefix(5).joined(separator: ", ") ?? ""
+            return "[!] 安全限制：当前 Skill 未声明允许执行此命令。\n允许的命令前缀：\(list)\n命令：\(command)"
+        }
+
+        // 5. 用户确认（warn 级别不复用缓存；safe 级别复用）
+        let approvalKey = CommandSandbox.approvalKey(command: command, cwd: resolvedCwd.isEmpty ? nil : resolvedCwd)
+        let isWarn = { if case .warn = risk { return true }; return false }()
+
+        let needsDialog: Bool
+        if isWarn {
+            // warn 命令：每次都弹确认
+            needsDialog = true
+        } else {
+            // safe 命令：检查 per-key 缓存
+            needsDialog = !(await context.isCommandApproved(approvalKey))
+        }
+
+        if needsDialog {
+            let approved = await context.confirmCommandExecution(command, cwd: resolvedCwd.isEmpty ? nil : resolvedCwd)
+            guard approved else {
+                return "[!] 用户已拒绝执行该命令：\(command)"
+            }
+            // 只有 safe 命令才缓存审批
+            if !isWarn {
+                await context.markCommandApproved(approvalKey)
+            }
+        }
+
+        // 6. 执行命令（with timeout）
+        return await runWithTimeout(command: command, cwd: resolvedCwd.isEmpty ? nil : resolvedCwd)
     }
 
-    /// 通过 login shell 执行命令（加载 .zshrc/.zprofile 以获得 PATH，能跑 npx/node 等），合并 stdout/stderr。
-    private static func runViaLoginShell(command: String, cwd: String?) async -> String {
+    // MARK: - Execution
+
+    /// 执行命令，带超时保护。
+    private func runWithTimeout(command: String, cwd: String?) async -> String {
+        let timeout = executionTimeoutSeconds
+        let maxBytes = maxOutputBytes
+
+        return await withTaskGroup(of: String.self) { group in
+            // 实际执行任务
+            group.addTask {
+                await Self.runViaLoginShell(command: command, cwd: cwd, maxOutputBytes: maxBytes)
+            }
+            // 超时哨兵
+            group.addTask {
+                do {
+                    try await Task.sleep(for: .seconds(timeout))
+                } catch {
+                    // 被 cancel（主任务完成），不触发超时
+                    return "__CANCELLED__"
+                }
+                return "__TIMEOUT__"
+            }
+
+            // 取第一个完成的结果
+            var result = ""
+            for await value in group {
+                group.cancelAll()
+                if value == "__CANCELLED__" { continue }
+                if value == "__TIMEOUT__" {
+                    result = "[!] 命令执行超时（\(Int(timeout))s），进程已终止。\n命令：\(command)"
+                } else {
+                    result = value
+                }
+                break
+            }
+            return result
+        }
+    }
+
+    /// 通过 login shell 执行命令，确保 PATH / nvm / rbenv 等环境变量可用。
+    /// stdout 与 stderr 合并到同一管道，超限截断。
+    private static func runViaLoginShell(command: String, cwd: String?, maxOutputBytes: Int) async -> String {
         await Task.detached(priority: .userInitiated) { () -> String in
             let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
             let process = Process()
             process.executableURL = URL(fileURLWithPath: shell)
             process.arguments = ["-l", "-c", command]
+
             if let cwd, !cwd.isEmpty {
                 process.currentDirectoryURL = URL(fileURLWithPath: cwd)
             }
-            let outPipe = Pipe()
-            process.standardOutput = outPipe
-            process.standardError = outPipe   // 合并 stderr 到同一管道
+
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError  = pipe   // 合并 stderr
+
             do {
                 try process.run()
             } catch {
-                return "[X] 无法启动命令：\(error.localizedDescription)"
+                return "[X] 无法启动命令：\(error.localizedDescription)\n命令：\(command)"
             }
-            let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
-            var output = String(data: data, encoding: .utf8) ?? ""
-            // 截断超长输出，避免撑爆上下文
-            let maxBytes = 16_000
-            if output.utf8.count > maxBytes {
-                output = String(output.prefix(maxBytes)) + "\n…（输出过长已截断）"
+
+            var output = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) ?? ""
+
+            // 截断超长输出
+            if output.utf8.count > maxOutputBytes {
+                let prefix = output.prefix(maxOutputBytes)
+                let omitted = output.utf8.count - maxOutputBytes
+                output = "\(prefix)\n…（输出过长，已省略约 \(omitted / 1000)KB）"
             }
+
             let status = process.terminationStatus
-            let header = status == 0 ? "[OK] 命令完成（exit 0）" : "[!] 命令退出码 \(status)"
-            return "\(header)\n$ \(command)\n\n\(output.isEmpty ? "(无输出)" : output)"
+            let header = status == 0
+                ? "[OK] 命令完成（exit 0）"
+                : "[!] 命令退出码 \(status)"
+
+            return "\(header)\n$ \(command)\n\n\(output.isEmpty ? "（无输出）" : output)"
         }.value
     }
 }

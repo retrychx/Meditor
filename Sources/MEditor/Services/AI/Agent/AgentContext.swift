@@ -151,9 +151,24 @@ final class AgentContext: AgentContextProtocol {
         return cnt
     }
 
-    // MARK: - Command confirmation → doc
+    // MARK: - Command Sandbox
+
+    /// Per-Agent-session 的已批准命令 key 集合。
+    /// 注意：warn 级命令不写入此集合（每次都弹确认）。
+    private var _approvedCommandKeys: Set<String> = []
 
     func confirmCommandExecution(_ command: String, cwd: String?) async -> Bool {
         await doc.confirmCommandExecution(command, cwd: cwd)
     }
+
+    func isCommandApproved(_ key: String) -> Bool {
+        _approvedCommandKeys.contains(key)
+    }
+
+    func markCommandApproved(_ key: String) {
+        _approvedCommandKeys.insert(key)
+    }
+
+    /// 暂时返回 nil（将来当 skill 执行上下文建立后，从 skill 元数据读取）。
+    var allowedCommandPatterns: [String]? { nil }
 }
