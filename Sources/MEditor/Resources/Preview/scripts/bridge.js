@@ -399,6 +399,8 @@
     sourceAnchorLines = [];
     tocItems = [];
     Array.prototype.forEach.call(headings, function (el) {
+      // 跳过美化模板卡片/网格组件内的装饰性标题（统计数字、卡片标题等），不计入大纲
+      if (el.closest('.feat, .features, .card, .stp, .flow, .tbl')) return;
       var line = parseInt(el.getAttribute('data-source-line') || '-1', 10);
       tocItems.push({
         level: parseInt(el.tagName.charAt(1), 10),
