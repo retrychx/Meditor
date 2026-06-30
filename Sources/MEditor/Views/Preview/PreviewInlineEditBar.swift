@@ -37,24 +37,16 @@ struct PreviewInlineEditBar: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
             } else {
-                ForEach(InlineEditAction.allCases) { action in
-                    Button {
-                        triggerAction(action)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: action.icon)
-                                .font(.system(size: 10, weight: .medium))
-                            Text(action.rawValue)
-                                .font(.system(size: 12, weight: .medium))
-                        }
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
-                        .background(Color.primary.opacity(0.05), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .help(action.rawValue)
+                // 内容感知：按选中内容类型只显示最相关的 3-4 个操作（与编辑器内联栏一致）
+                ForEach(contextualActions) { action in
+                    actionButton(action)
                 }
+
+                // 问 AI 入口（预览栏此前缺失）
+                Divider()
+                    .frame(height: 14)
+                    .padding(.horizontal, 4)
+                askAIButton
             }
         }
         .padding(.horizontal, 6)
@@ -64,6 +56,69 @@ struct PreviewInlineEditBar: View {
         .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
         .padding(.bottom, 12)
         .onDisappear { streamTask?.cancel() }
+    }
+
+    // MARK: - 内容感知动作列表
+
+    /// 根据选中内容类型返回最相关的 AI 操作，最多 4 个（与 InlineEditBar 一致）。
+    private var contextualActions: [InlineEditAction] {
+        let t = selectedText.trimmingCharacters(in: .whitespaces)
+        if t.hasPrefix("```") || t.hasPrefix("    ") {
+            return [.explainCode, .addComments, .condense]
+        }
+        if t.hasPrefix("#") {
+            return [.expandSection, .rewrite]
+        }
+        let lines = t.components(separatedBy: "\n").filter { !$0.isEmpty }
+        let isListLike = lines.count >= 2 && lines.prefix(3).allSatisfy {
+            $0.hasPrefix("- ") || $0.hasPrefix("* ") || $0.hasPrefix("+ ") ||
+            $0.range(of: #"^\d+\. "#, options: .regularExpression) != nil
+        }
+        if isListLike {
+            return [.organizeList, .expand, .condense]
+        }
+        return [.rewrite, .expand, .condense, .translate]
+    }
+
+    private func actionButton(_ action: InlineEditAction) -> some View {
+        Button { triggerAction(action) } label: {
+            HStack(spacing: 4) {
+                Image(systemName: action.icon)
+                    .font(.system(size: 10, weight: .medium))
+                Text(action.rawValue)
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(Color.primary.opacity(0.05), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(action.rawValue)
+    }
+
+    /// 把选中文本带入 AI 面板，开启对话。
+    private var askAIButton: some View {
+        Button {
+            guard !selectedText.isEmpty else { return }
+            let quoted = selectedText.count <= 200
+                ? "> \(selectedText)\n\n"
+                : "> \(String(selectedText.prefix(200)))…\n\n"
+            state.openAssistantWithSelection(quoted)
+            onDismiss?()
+        } label: {
+            HStack(spacing: 4) {
+                AIAssistantOrb(size: 12)
+                Text(L("ai.askAI"))
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .foregroundStyle(AIBrand.blue)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(AIBrand.blue.opacity(0.09), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(L("ai.askAIHint"))
     }
 
     // MARK: - Action
