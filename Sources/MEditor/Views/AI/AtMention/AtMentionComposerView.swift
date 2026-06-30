@@ -81,6 +81,9 @@ struct AtMentionComposerView: NSViewRepresentable {
         // 外部（send 后）清空 plainText → 同步清空 textView
         if plainText.isEmpty && !tv.string.isEmpty {
             context.coordinator.clearAll()
+        } else if !plainText.isEmpty && tv.string.isEmpty {
+            // 外部注入（如「问 AI」带入选区引用）到空输入框 → 同步显示，否则 NSTextView 不会刷新
+            context.coordinator.setExternalText(plainText)
         }
         if isFocused && tv.window?.firstResponder !== tv {
             tv.window?.makeFirstResponder(tv)
@@ -223,6 +226,18 @@ struct AtMentionComposerView: NSViewRepresentable {
             activeQuery = nil
             atSignIndex = nil
             plainText = ""
+        }
+
+        /// 外部注入纯文本（如「问 AI」带入选区引用）到空输入框。
+        /// updateNSView 仅在 textView 为空时调用，避免覆盖用户正在输入的内容或 @mention。
+        func setExternalText(_ text: String) {
+            guard let storage = textView.textStorage else { return }
+            var attrs = textView.typingAttributes
+            if attrs[.font] == nil, let f = textView.font { attrs[.font] = f }
+            storage.setAttributedString(NSAttributedString(string: text, attributes: attrs))
+            // 光标移到末尾，方便用户接着输入问题
+            textView.setSelectedRange(NSRange(location: (text as NSString).length, length: 0))
+            if plainText != text { plainText = text }
         }
 
         // MARK: Plain text sync
