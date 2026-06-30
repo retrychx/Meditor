@@ -90,25 +90,27 @@ enum AtMentionContextBuilder {
             return "## @workspace — file list\n\n" + files.joined(separator: "\n")
 
         case .file(let url):
+            let display = displayPath(url, root: workspaceRoot)
             guard FileManager.default.fileExists(atPath: url.path) else {
-                return "<!-- @\(url.lastPathComponent): file not found -->"
+                return "<!-- @\(display): file not found -->"
             }
             guard let raw = try? Data(contentsOf: url),
                   let text = String(data: raw, encoding: .utf8)
                            ?? String(data: raw, encoding: .isoLatin1) else {
-                return "<!-- @\(url.lastPathComponent): binary or unreadable file -->"
+                return "<!-- @\(display): binary or unreadable file -->"
             }
             let content = truncate(text, maxBytes: AtMentionLimits.maxFileBytesPerToken, name: url.lastPathComponent)
             let lang = languageTag(for: url.pathExtension.lowercased())
-            return "## @\(url.lastPathComponent)\n\n```\(lang)\n\(content)\n```"
+            return "## @\(display)\n\n```\(lang)\n\(content)\n```"
 
         case .directory(let url):
+            let display = displayPath(url, root: workspaceRoot)
             guard let items = try? FileManager.default.contentsOfDirectory(
                 at: url,
                 includingPropertiesForKeys: [.isDirectoryKey],
                 options: [.skipsHiddenFiles]
             ) else {
-                return "<!-- @\(url.lastPathComponent)/: directory not readable -->"
+                return "<!-- @\(display)/: directory not readable -->"
             }
             let sorted = items.sorted { $0.lastPathComponent < $1.lastPathComponent }
             let lines = sorted.prefix(AtMentionLimits.maxDirChildren).map { item -> String in
@@ -117,7 +119,7 @@ enum AtMentionContextBuilder {
             }
             let more = items.count > AtMentionLimits.maxDirChildren
                 ? "\n... and \(items.count - AtMentionLimits.maxDirChildren) more" : ""
-            return "## @\(url.lastPathComponent)/ — directory contents\n\n" + lines.joined(separator: "\n") + more
+            return "## @\(display)/ — directory contents\n\n" + lines.joined(separator: "\n") + more
         }
     }
 
@@ -136,6 +138,18 @@ enum AtMentionContextBuilder {
         let p = url.standardizedFileURL.path
         let r = root.standardizedFileURL.path
         return p.hasPrefix(r) ? String(p.dropFirst(r.count + 1)) : url.lastPathComponent
+    }
+
+    /// @ 引用标题显示路径：工作区内 → 相对工作区根路径（如 test111/index.html）；
+    /// 工作区外或无工作区 → 绝对路径。让 AI 拿到可精确定位/回写的路径，而非仅文件名。
+    private static func displayPath(_ url: URL, root: URL?) -> String {
+        let p = url.standardizedFileURL.path
+        if let root {
+            let r = root.standardizedFileURL.path
+            if p == r { return url.lastPathComponent }
+            if p.hasPrefix(r + "/") { return String(p.dropFirst(r.count + 1)) }
+        }
+        return p
     }
 
     private static func languageTag(for ext: String) -> String {
