@@ -798,10 +798,7 @@ struct AIAssistantPanel: View {
 
     /// 「问 AI」带入的引用选段卡片：左侧竖线 + 选段摘要 + 移除按钮。
     private func quotedContextCard(_ text: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(Color.appAccent.opacity(0.7))
-                .frame(width: 3)
+        HStack(alignment: .center, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
                     Image(systemName: "text.quote")
@@ -827,9 +824,19 @@ struct AIAssistantPanel: View {
             .buttonStyle(.plain)
             .help("移除引用")
         }
-        .padding(.horizontal, 10)
+        .padding(.leading, 11)
+        .padding(.trailing, 10)
         .padding(.vertical, 7)
+        .fixedSize(horizontal: false, vertical: true)   // 锁成内容高度，杜绝被拉伸出空白
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.craftHover.opacity(0.5), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        // 左侧 accent 竖线用 overlay 绘制，不参与 HStack 高度计算（greedy shape 会撑高）
+        .overlay(alignment: .leading) {
+            Capsule()
+                .fill(Color.appAccent.opacity(0.7))
+                .frame(width: 3)
+                .padding(.vertical, 6)
+        }
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(theme.separator.opacity(0.35), lineWidth: 0.5)
