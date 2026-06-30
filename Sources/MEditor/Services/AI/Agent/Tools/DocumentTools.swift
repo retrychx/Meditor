@@ -67,11 +67,19 @@ struct WriteDocumentTool: AgentTool {
             // found 则用其绝对路径覆盖（避免裸文件名在根目录误建新文件）；notFound 则按给定路径新建
             let target: String
             if case .found(let foundURL) = resolved { target = foundURL.path } else { target = filename }
-            let url = try await context.writeFile(name: target, content: content)
-            return "[OK] 已写入文件：\(url.lastPathComponent)（\(content.count) 字符）"
+            do {
+                let url = try await context.writeFile(name: target, content: content)
+                return "[OK] 已写入文件：\(url.lastPathComponent)（\(content.count) 字符）"
+            } catch {
+                return "[!] 写入失败：\(error.localizedDescription)"
+            }
         }
-        try await context.writeDocument(content)
-        return "[OK] 文档已全量更新（\(content.count) 字符）"
+        do {
+            try await context.writeDocument(content)
+            return "[OK] 文档已全量更新（\(content.count) 字符）"
+        } catch {
+            return "[!] 写入失败：\(error.localizedDescription)"
+        }
     }
 }
 

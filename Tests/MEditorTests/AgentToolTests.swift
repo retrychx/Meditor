@@ -50,15 +50,14 @@ final class AgentToolTests: XCTestCase {
         let newContent = "# New Content\n\nReplaced."
         let result  = try await tool.execute(arguments: ["content": .string(newContent)], context: ctx)
         XCTAssertEqual(ctx.writtenContents.last, newContent, "应写入正确内容")
-        XCTAssertTrue(result.contains("✅") || result.lowercased().contains("success") || result.contains("已写入"),
-                      "成功时应有正向反馈")
+        XCTAssertTrue(result.contains("[OK]"), "成功时应有正向反馈")
     }
 
     func testWriteDocument_propagatesError() async throws {
         ctx.writeDocumentError = CocoaError(.fileWriteNoPermission)
         let tool   = WriteDocumentTool()
         let result = try await tool.execute(arguments: ["content": .string("x")], context: ctx)
-        XCTAssertTrue(result.contains("❌") || result.lowercased().contains("error") || result.contains("错误"),
+        XCTAssertTrue(result.contains("[!]") || result.lowercased().contains("error") || result.contains("错误") || result.contains("失败"),
                       "写入失败时应返回错误消息")
     }
 
@@ -79,7 +78,7 @@ final class AgentToolTests: XCTestCase {
     func testPatchDocument_allFlag() async throws {
         let tool = PatchDocumentTool()
         _ = try await tool.execute(
-            arguments: ["find": .string("line"), "replace": .string("LINE"), "all": .bool(true)],
+            arguments: ["find": .string("line"), "replace": .string("LINE"), "replace_all": .bool(true)],
             context: ctx
         )
         XCTAssertTrue(ctx.patchCalls[0].all, "all=true 应传递到 context")
@@ -95,7 +94,7 @@ final class AgentToolTests: XCTestCase {
             context: ctx
         )
         XCTAssertTrue(result.contains("MISSING"), "错误信息应包含未匹配的 query")
-        XCTAssertTrue(result.contains("❌"), "应包含错误标记")
+        XCTAssertTrue(result.contains("[!]"), "应包含错误标记")
     }
 
     func testPatchDocument_byFilename() async throws {
@@ -117,7 +116,7 @@ final class AgentToolTests: XCTestCase {
     func testCreateFile_success() async throws {
         let tool   = CreateFileTool()
         let result = try await tool.execute(
-            arguments: ["name": .string("new.md"), "content": .string("# New")],
+            arguments: ["filename": .string("new.md"), "content": .string("# New")],
             context: ctx
         )
         XCTAssertNotNil(ctx.files["new.md"], "文件应已写入 context")
@@ -129,7 +128,7 @@ final class AgentToolTests: XCTestCase {
         ctx.createFileError = AgentContextError.fileAlreadyExists("notes.md")
         let tool   = CreateFileTool()
         let result = try await tool.execute(
-            arguments: ["name": .string("notes.md"), "content": .string("x")],
+            arguments: ["filename": .string("notes.md"), "content": .string("x")],
             context: ctx
         )
         XCTAssertTrue(result.contains("❌") || result.contains("already") || result.contains("已存在"),
