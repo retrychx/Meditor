@@ -187,7 +187,9 @@ struct AgentStepView: View {
                     .lineLimit(1)
 
                 if !done {
-                    ProgressView().scaleEffect(0.6).controlSize(.mini)
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(accent)
                         .transition(.opacity)
                 }
                 Spacer(minLength: 0)
