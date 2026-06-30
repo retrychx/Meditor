@@ -141,9 +141,10 @@ final class PreviewExporter: PreviewExporterProtocol {
                     var tag = node.tagName.toLowerCase();
                     // 跳过脚本/样式/模板，避免 JS/CSS 源码混入 markdown
                     if (tag === 'script' || tag === 'style' || tag === 'noscript' || tag === 'template') return;
-                    // Preserve elements with style attribute as raw HTML
-                    if (node.getAttribute('style')) {
-                        md += node.outerHTML;
+                    // 带 inline style 的元素保留为 raw HTML，但 <pre> 例外（走下方代码块转换更干净）；
+                    // 前后补空行，确保与相邻 markdown 块正确分隔，否则后续 ### 标题会紧贴而不渲染
+                    if (node.getAttribute('style') && tag !== 'pre') {
+                        md += '\\n\\n' + node.outerHTML + '\\n\\n';
                         return;
                     }
                     if (tag === 'h1') md += '# ' + h2m(node, indent).trim() + '\\n\\n';
