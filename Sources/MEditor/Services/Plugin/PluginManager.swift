@@ -18,30 +18,77 @@ final class PluginManager {
 
     // MARK: - Manual add / remove
 
-    func addManual(skillMDURL: URL) {
-        guard skillMDURL.lastPathComponent == "SKILL.md" else { return }
-        let id = stableID(for: skillMDURL)
+    @discardableResult
+    func addManual(skillMDURL rawURL: URL) -> Bool {
+        // 支持两种选择：① skill 文件夹（其中含 SKILL.md）② SKILL.md 文件本身
+        var isDir: ObjCBool = false
+        FileManager.default.fileExists(atPath: rawURL.path, isDirectory: &isDir)
 
-        guard !skills.contains(where: { $0.id == id }) else { return }
-
-        do {
-            let bookmark = try skillMDURL.bookmarkData(
-                options: .withSecurityScope,
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            )
-            var entries = loadManualEntries()
-            entries.append(ManualSkillEntry(id: id, pathBookmark: bookmark, isEnabled: true))
-            saveManualEntries(entries)
-        } catch {
-            if let bookmark = try? skillMDURL.bookmarkData() {
-                var entries = loadManualEntries()
-                entries.append(ManualSkillEntry(id: id, pathBookmark: bookmark, isEnabled: true))
-                saveManualEntries(entries)
-            }
+        let skillMD: URL          // 实际的 SKILL.md
+        let bookmarkTarget: URL   // 对 skill 根目录建书签，便于将来访问目录内 references/scripts
+        if isDir.boolValue {
+            skillMD = rawURL.appendingPathComponent("SKILL.md")
+            guard FileManager.default.fileExists(atPath: skillMD.path) else { return false }
+            bookmarkTarget = rawURL
+        } else {
+            guard rawURL.lastPathComponent == "SKILL.md" else { return false }
+            skillMD = rawURL
+            bookmarkTarget = rawURL.deletingLastPathComponent()
         }
 
-        Task { await loadManual(); loadBuiltins() }
+        let id = stableID(for: skillMD)
+        guard !skills.contains(where: { $0.id == id }) else { return false }
+
+        // 非沙盒应用：用普通书签即可。security-scoped 书签需要 sandbox entitlement，
+        // 本 app 没有，会创建/解析失败导致技能加载不出来。
+        guard let bookmark = try? bookmarkTarget.bookmarkData() else { return false }
+        var entries = loadManualEntries()
+        entries.append(ManualSkillEntry(id: id, pathBookmark: bookmark, isEnabled: true))
+        saveManualEntries(entries)
+
+        Task { await reloadAll() }
+        return true
+    }
+
+    /// 从用户选择的 URL 发现并添加 skill，返回成功添加的数量：
+    /// - 选中 SKILL.md 文件 → 添加它
+    /// - 选中"单 skill 目录"（直接含 SKILL.md）→ 添加
+    /// - 选中"插件目录"（含 `skills/<name>/SKILL.md`）→ 添加其中所有 skill
+    @discardableResult
+    func addSkills(from url: URL) -> Int {
+        var added = 0
+        for md in discoverSkillMDs(in: url) where addManual(skillMDURL: md) {
+            added += 1
+        }
+        return added
+    }
+
+    private func discoverSkillMDs(in url: URL) -> [URL] {
+        let fm = FileManager.default
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: url.path, isDirectory: &isDir) else { return [] }
+
+        if !isDir.boolValue {
+            return url.lastPathComponent == "SKILL.md" ? [url] : []
+        }
+        // ① 目录直接含 SKILL.md（单 skill 目录）
+        let direct = url.appendingPathComponent("SKILL.md")
+        if fm.fileExists(atPath: direct.path) { return [direct] }
+
+        // ② 插件结构：<url>/skills/<name>/SKILL.md
+        let skillsDir = url.appendingPathComponent("skills")
+        guard let subs = try? fm.contentsOfDirectory(
+            at: skillsDir,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        return subs.compactMap { sub -> URL? in
+            var subIsDir: ObjCBool = false
+            guard fm.fileExists(atPath: sub.path, isDirectory: &subIsDir), subIsDir.boolValue else { return nil }
+            let md = sub.appendingPathComponent("SKILL.md")
+            return fm.fileExists(atPath: md.path) ? md : nil
+        }
     }
 
     func remove(id: String) {
@@ -106,9 +153,14 @@ final class PluginManager {
 
     func load() {
         Task {
-            await loadManual()
-            loadBuiltins()
+            await reloadAll()
         }
+    }
+
+    /// 重新加载手动技能 + 内置技能（可被测试 await）。
+    func reloadAll() async {
+        await loadManual()
+        loadBuiltins()
     }
 
     // MARK: - Private helpers
@@ -134,8 +186,12 @@ final class PluginManager {
         var found: [PluginSkill] = []
         for entry in loadManualEntries() {
             if let url = resolveBookmark(entry.pathBookmark) {
+                // 书签可能指向 skill 根目录（新）或 SKILL.md 文件（旧），统一解析出 SKILL.md
+                var isDir: ObjCBool = false
+                FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+                let skillMD = isDir.boolValue ? url.appendingPathComponent("SKILL.md") : url
                 let isEnabled = states[entry.id] ?? entry.isEnabled
-                if let skill = await parseSkill(at: url, id: entry.id, isEnabled: isEnabled) {
+                if let skill = await parseSkill(at: skillMD, id: entry.id, isEnabled: isEnabled) {
                     found.append(skill)
                 }
             }
@@ -269,9 +325,10 @@ final class PluginManager {
 
     private func resolveBookmark(_ data: Data) -> URL? {
         var isStale = false
+        // 非沙盒应用：普通书签解析，不使用 .withSecurityScope（否则解析普通书签会失败）
         return try? URL(
             resolvingBookmarkData: data,
-            options: .withSecurityScope,
+            options: [],
             relativeTo: nil,
             bookmarkDataIsStale: &isStale
         )
