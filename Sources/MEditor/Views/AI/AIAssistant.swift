@@ -97,6 +97,17 @@ struct AIAssistantPanel: View {
                 }
             }
         }
+        // 面板已打开时再次「问 AI」：onAppear 不会重触发，这里负责把选区带入输入框
+        .onChange(of: state.aiUI.pendingSelectionPrompt) { _, pending in
+            guard let pending, !pending.isEmpty else { return }
+            if convo.input.isEmpty {
+                convo.input = pending
+            } else {
+                convo.input += "\n\n" + pending
+            }
+            state.aiUI.pendingSelectionPrompt = nil
+            inputFocused = true
+        }
     }
 
     // MARK: Header
