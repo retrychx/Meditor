@@ -232,7 +232,9 @@ final class PreviewExporter: PreviewExporterProtocol {
                 });
                 return md;
             }
-            return h2m(document.body, '');
+            // 优先从主内容区导出，跳过侧边栏/目录导航等非正文容器；无则退回整个 body
+            var root = document.querySelector('main, .main, article, [role="main"]') || document.body;
+            return h2m(root, '');
         })();
         """
         webView.evaluateJavaScript(js) { result, error in
