@@ -186,16 +186,10 @@ final class AppState {
     var errorMessage: String?
     var toastMessage: ToastMessage?
 
-    /// 打开 AI 面板，并将选中文本预填到输入框。
+    /// 打开 AI 面板，并把选中文本作为「引用选段」带入（显示为输入框上方的引用卡片）。
     func openAssistantWithSelection(_ text: String) {
-        // 直接同步写入当前会话输入框，避免依赖 AI 面板视图 onAppear/onChange 的时序
-        // （面板常驻打开时，onAppear 不会重触发，间接传递会丢失选区）。
-        guard !text.isEmpty else { aiUI.showingAssistant = true; return }
-        if aiConversation.input.isEmpty {
-            aiConversation.input = text
-        } else {
-            aiConversation.input += "\n\n" + text
-        }
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        aiUI.quotedContext = t.isEmpty ? nil : t
         aiUI.showingAssistant = true
     }
 

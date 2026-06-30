@@ -613,6 +613,11 @@ struct AIAssistantPanel: View {
 
     private var composerFooter: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // 引用选段卡片（来自「问 AI」带入的选区），可一键移除
+            if let quoted = state.aiUI.quotedContext, !quoted.isEmpty {
+                quotedContextCard(quoted)
+            }
+
             // Primary prompt area — @mention-aware rich composer
             AtMentionComposerWrapper(
                 plainText: Binding(get: { convo.input }, set: { convo.input = $0 }),
@@ -759,15 +764,70 @@ struct AIAssistantPanel: View {
         let trimmed = convo.input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !convo.isResponding else { return }
 
+        // 若带有「引用选段」，作为 markdown 引用拼到提问前，给 AI 完整上下文
+        let messageText: String
+        if let quoted = state.aiUI.quotedContext, !quoted.isEmpty {
+            let quotedBlock = quoted
+                .split(separator: "\n", omittingEmptySubsequences: false)
+                .map { "> \($0)" }
+                .joined(separator: "\n")
+            messageText = quotedBlock + "\n\n" + trimmed
+        } else {
+            messageText = trimmed
+        }
+
         withAnimation(DS.Motion.standard) {
-            convo.messages.append(AIChatMessage(role: .user, text: trimmed))
+            convo.messages.append(AIChatMessage(role: .user, text: messageText))
             convo.input = ""
         }
+        state.aiUI.quotedContext = nil
         // 保存当次 @tokens，供 runCompletion 注入上下文，然后清空
         let tokensSnapshot = mentionTokens
         mentionTokens = []
         convo.persist()
         runCompletion(mentionTokens: tokensSnapshot)
+    }
+
+    /// 「问 AI」带入的引用选段卡片：左侧竖线 + 选段摘要 + 移除按钮。
+    private func quotedContextCard(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(Color.appAccent.opacity(0.7))
+                .frame(width: 3)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Image(systemName: "text.quote")
+                        .font(.system(size: 9, weight: .semibold))
+                    Text("引用选段")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .foregroundStyle(theme.craftSecondary)
+                Text(text)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(theme.craftPrimary)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            Button {
+                withAnimation(DS.Motion.fast) { state.aiUI.quotedContext = nil }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(theme.craftSecondary.opacity(0.6))
+            }
+            .buttonStyle(.plain)
+            .help("移除引用")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(theme.craftHover.opacity(0.5), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(theme.separator.opacity(0.35), lineWidth: 0.5)
+        )
+        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
     /// Drop the last assistant reply (if any) and re-run the request.

@@ -123,13 +123,7 @@ struct InlineEditBar: View {
     private var askAIButton: some View {
         Button {
             guard !selectedText.isEmpty else { return }
-            let quoted: String
-            if selectedText.count <= 200 {
-                quoted = "> \(selectedText)\n\n"
-            } else {
-                quoted = "> \(String(selectedText.prefix(200)))…\n\n"
-            }
-            state.openAssistantWithSelection(quoted)
+            state.openAssistantWithSelection(selectedText)
         } label: {
             HStack(spacing: 4) {
                 AIAssistantOrb(size: 12)
