@@ -59,29 +59,29 @@ final class SlashCommandTests: XCTestCase {
 
     func testExpansionHeading1() {
         let item = SlashCommandHandler.allCommands.first { $0.aliases.contains("/h1") }
-        XCTAssertEqual(item?.expansion.text, "# ")
-        XCTAssertNil(item?.expansion.cursorOffset)
+        XCTAssertEqual(item?.expansion?.text, "# ")
+        XCTAssertNil(item?.expansion?.cursorOffset)
     }
 
     func testExpansionHeading2() {
         let item = SlashCommandHandler.allCommands.first { $0.aliases.contains("/h2") }
-        XCTAssertEqual(item?.expansion.text, "## ")
+        XCTAssertEqual(item?.expansion?.text, "## ")
     }
 
     func testExpansionHeading3() {
         let item = SlashCommandHandler.allCommands.first { $0.aliases.contains("/h3") }
-        XCTAssertEqual(item?.expansion.text, "### ")
+        XCTAssertEqual(item?.expansion?.text, "### ")
     }
 
     func testExpansionCodeBlockHasCursorOffset() {
         let item = SlashCommandHandler.allCommands.first { $0.aliases.contains("/code") }
-        XCTAssertEqual(item?.expansion.text, "```\n\n```")
-        XCTAssertEqual(item?.expansion.cursorOffset, 4)
+        XCTAssertEqual(item?.expansion?.text, "```\n\n```")
+        XCTAssertEqual(item?.expansion?.cursorOffset, 4)
     }
 
     func testExpansionTableText() {
         let item = SlashCommandHandler.allCommands.first { $0.aliases.contains("/table") }
-        XCTAssertEqual(item?.expansion.text, "| Column | Column |\n| --- | --- |\n|  |  |")
-        XCTAssertEqual(item?.expansion.cursorOffset, 36)
+        XCTAssertEqual(item?.expansion?.text, "| Column | Column |\n| --- | --- |\n|  |  |")
+        XCTAssertEqual(item?.expansion?.cursorOffset, 36)
     }
 }
