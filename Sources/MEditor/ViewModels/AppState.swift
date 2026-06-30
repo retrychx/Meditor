@@ -188,7 +188,15 @@ final class AppState {
 
     /// 打开 AI 面板，并将选中文本预填到输入框。
     func openAssistantWithSelection(_ text: String) {
-        aiUI.openAssistantWithSelection(text)
+        // 直接同步写入当前会话输入框，避免依赖 AI 面板视图 onAppear/onChange 的时序
+        // （面板常驻打开时，onAppear 不会重触发，间接传递会丢失选区）。
+        guard !text.isEmpty else { aiUI.showingAssistant = true; return }
+        if aiConversation.input.isEmpty {
+            aiConversation.input = text
+        } else {
+            aiConversation.input += "\n\n" + text
+        }
+        aiUI.showingAssistant = true
     }
 
     func showToast(_ text: String, icon: String? = nil) {
