@@ -131,9 +131,10 @@ final class PreviewExporter: PreviewExporterProtocol {
                 var md = '';
                 el.childNodes.forEach(function(node) {
                     if (node.nodeType === 3) {
-                        // 折叠源 HTML 的缩进/换行空白为单空格（模拟浏览器渲染），
-                        // 否则 pretty-printed HTML 的缩进会污染 markdown 行首并产生大量空行
-                        md += node.textContent.replace(/\\s+/g, ' ');
+                        // 折叠空白为单空格（模拟浏览器渲染）；纯空白节点（标签间的换行/缩进）
+                        // 直接丢弃，否则会作为前导空格污染行首，导致 ## 标题被当成代码块
+                        var t = node.textContent.replace(/\\s+/g, ' ');
+                        if (t.trim() !== '') md += t;
                         return;
                     }
                     if (node.nodeType !== 1) return;
@@ -153,8 +154,10 @@ final class PreviewExporter: PreviewExporterProtocol {
                     else if (tag === 'h6') md += '###### ' + h2m(node, indent).trim() + '\\n\\n';
                     else if (tag === 'p') md += h2m(node, indent).trim() + '\\n\\n';
                     else if (tag === 'br') md += '\\n';
-                    else if (tag === 'strong' || tag === 'b') md += '**' + h2m(node, indent) + '**';
-                    else if (tag === 'em' || tag === 'i') md += '*' + h2m(node, indent) + '*';
+                    // 用 HTML 标签而非 **/*：中文标点边界下 markdown 的 **粗体** 常无法闭合渲染，
+                    // inline HTML 在 markdown 中通用且渲染可靠
+                    else if (tag === 'strong' || tag === 'b') md += '<strong>' + h2m(node, indent) + '</strong>';
+                    else if (tag === 'em' || tag === 'i') md += '<em>' + h2m(node, indent) + '</em>';
                     else if (tag === 'code' && node.parentElement && node.parentElement.tagName === 'PRE') md += h2m(node, indent);
                     else if (tag === 'code') md += '`' + h2m(node, indent) + '`';
                     else if (tag === 'pre') {
