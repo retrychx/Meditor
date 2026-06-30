@@ -101,10 +101,7 @@ struct PreviewInlineEditBar: View {
     private var askAIButton: some View {
         Button {
             guard !selectedText.isEmpty else { return }
-            let quoted = selectedText.count <= 200
-                ? "> \(selectedText)\n\n"
-                : "> \(String(selectedText.prefix(200)))…\n\n"
-            state.openAssistantWithSelection(quoted)
+            state.openAssistantWithSelection(selectedText)
             onDismiss?()
         } label: {
             HStack(spacing: 4) {

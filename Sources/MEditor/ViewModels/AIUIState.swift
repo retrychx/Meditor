@@ -9,6 +9,8 @@ final class AIUIState {
     var editorSelectedText: String = ""
     /// Current preview selection text (for preview-side inline edit).
     var previewSelectedText: String = ""
+    /// 「问 AI」带入的引用选段，显示为输入框上方的引用卡片（独立于用户输入框文本）。
+    var quotedContext: String? = nil
     /// Text to insert at the current caret position (driven by AI panel).
     var editorInsertText: String = ""
     /// Monotonic nonce so the same text can be inserted more than once.
