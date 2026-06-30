@@ -88,6 +88,18 @@ final class AppStateTests: XCTestCase {
 
     // MARK: - File Tree
 
+    /// Spin the main run loop until `condition` holds or timeout — 用于等待后台 IO
+    /// (Task.detached) 异步更新 @MainActor 状态后再断言。
+    private func waitUntil(_ timeout: TimeInterval = 2,
+                           file: StaticString = #file, line: UInt = #line,
+                           _ condition: () -> Bool) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+        XCTAssertTrue(condition(), "等待条件超时", file: file, line: line)
+    }
+
     func test_openFolder_setsRootURLAndReloadsTree() {
         let root = URL(fileURLWithPath: "/tmp/project")
         mockService.setChildren([
@@ -98,6 +110,7 @@ final class AppStateTests: XCTestCase {
         state.openFolder(root)
 
         XCTAssertEqual(state.rootURL, root)
+        waitUntil { state.fileTree.count == 2 }
         XCTAssertEqual(state.fileTree.count, 2)
         XCTAssertEqual(state.previewFindController.activeMode, .empty)
     }
@@ -109,11 +122,13 @@ final class AppStateTests: XCTestCase {
             makeItem("b.md"),
         ], for: root)
         state.openFolder(root)
+        waitUntil { state.fileTree.count == 2 }
         let staleURL = URL(fileURLWithPath: "/tmp/c.md")
         state.fileTreeManager.fileItemMap[staleURL] = makeItem("c.md") // add stale entry
 
         state.reloadFileTree()
 
+        waitUntil { state.fileTree.count == 2 && state.fileItemMap.count == 2 }
         XCTAssertEqual(state.fileTree.count, 2)
         XCTAssertEqual(state.fileItemMap.count, 2) // stale entry cleared
     }
@@ -341,6 +356,7 @@ final class AppStateTests: XCTestCase {
 
         state.saveTab(state.openTabs[0])
 
+        waitUntil { mockService.fileContent(at: tab.url) == "updated" }
         XCTAssertFalse(state.openTabs[0].isModified)
         XCTAssertEqual(mockService.fileContent(at: tab.url), "updated")
     }

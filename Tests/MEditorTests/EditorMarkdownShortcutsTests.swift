@@ -58,7 +58,7 @@ final class EditorMarkdownShortcutsTests: XCTestCase {
     // MARK: - allCommands catalogue completeness
 
     func testAllCommandsCount() {
-        XCTAssertEqual(SlashCommandHandler.allCommands.count, 10)
+        XCTAssertEqual(SlashCommandHandler.allCommands.count, 14)
     }
 
     func testEveryCommandHasAtLeastOneAlias() {
