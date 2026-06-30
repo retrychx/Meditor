@@ -44,6 +44,10 @@ final class MockAgentContext: AgentContextProtocol {
     var commandConfirmResult: Bool                  = true
     var allowedCommandPatterns: [String]?           = nil
 
+    func setAllowedCommandPatterns(_ patterns: [String]?) {
+        allowedCommandPatterns = patterns?.isEmpty == false ? patterns : nil
+    }
+
     // MARK: - Per-key approval cache (spy)
     private var _approvedKeys: Set<String>          = []
 

@@ -189,8 +189,10 @@ struct InlineEditBar: View {
             ? allTools
             : allTools.filter { command.allowedTools.contains($0.spec.name) }
 
-        let config = AIConfig.current(settings, scene: .inline)   // plugin 命令也属于内联编辑场景
+        let config  = AIConfig.current(settings, scene: .inline)   // plugin 命令也属于内联编辑场景
         let context = AgentContext.make(appState: state)
+        // 将 Skill command 声明的 shell 白名单注入上下文，使 RunCommandTool 能够执行白名单检查
+        context.setAllowedCommandPatterns(command.allowedCommands.isEmpty ? nil : command.allowedCommands)
 
         let userMsg = "Selected text:\n\n\(selectedText)\n\nFull document:\n\n\(state.selectedTab?.content ?? "")"
 

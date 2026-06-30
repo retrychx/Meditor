@@ -15,14 +15,35 @@ struct SkillCommand: Identifiable, Codable, Sendable {
     var description: String
     /// Which builtin tool names this command is allowed to use. Empty = all.
     var allowedTools: [String]
+    /// Which shell command prefixes this command's run_command tool is allowed to execute.
+    /// Empty / nil = no restriction (RunCommandTool falls through to its own sandbox rules).
+    var allowedCommands: [String]
 
-    init(name: String, trigger: String, icon: String = "sparkles",
-         description: String = "", allowedTools: [String] = []) {
-        self.name = name
-        self.trigger = trigger
-        self.icon = icon
-        self.description = description
-        self.allowedTools = allowedTools
+    init(
+        name: String,
+        trigger: String,
+        icon: String = "sparkles",
+        description: String = "",
+        allowedTools: [String] = [],
+        allowedCommands: [String] = []
+    ) {
+        self.name            = name
+        self.trigger         = trigger
+        self.icon            = icon
+        self.description     = description
+        self.allowedTools    = allowedTools
+        self.allowedCommands = allowedCommands
+    }
+
+    // Backward-compatible decoder: allowedCommands may be absent in persisted data
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name            = try c.decode(String.self,   forKey: .name)
+        trigger         = try c.decode(String.self,   forKey: .trigger)
+        icon            = (try? c.decode(String.self, forKey: .icon))            ?? "sparkles"
+        description     = (try? c.decode(String.self, forKey: .description))     ?? ""
+        allowedTools    = (try? c.decode([String].self, forKey: .allowedTools))  ?? []
+        allowedCommands = (try? c.decode([String].self, forKey: .allowedCommands)) ?? []
     }
 }
 

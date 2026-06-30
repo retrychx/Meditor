@@ -169,6 +169,14 @@ final class AgentContext: AgentContextProtocol {
         _approvedCommandKeys.insert(key)
     }
 
-    /// 暂时返回 nil（将来当 skill 执行上下文建立后，从 skill 元数据读取）。
-    var allowedCommandPatterns: [String]? { nil }
+    /// 当前执行中的 Skill command 所声明的 shell 命令白名单（前缀匹配）。
+    /// nil = 无限制（非 Skill 上下文，或 Skill 未声明 allowedCommands）。
+    private var _allowedCommandPatterns: [String]? = nil
+    var allowedCommandPatterns: [String]? { _allowedCommandPatterns }
+
+    /// 由 Skill 启动方设置，将当前执行命令的 allowedCommands 注入上下文。
+    /// - Parameter patterns: SKILL.md `allowedCommands:` 字段内容；nil 表示无限制。
+    func setAllowedCommandPatterns(_ patterns: [String]?) {
+        _allowedCommandPatterns = patterns?.isEmpty == false ? patterns : nil
+    }
 }

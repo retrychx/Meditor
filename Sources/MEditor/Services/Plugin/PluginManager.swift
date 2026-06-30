@@ -225,31 +225,53 @@ final class PluginManager {
         let lines = frontMatter.components(separatedBy: "\n")
         var inCommands = false
         var currentCmd: [String: String] = [:]
-        var currentTools: [String] = []
+        var currentTools: [String]    = []
+        var currentAllowedCmds: [String] = []
+        /// tracks which inline list is being filled: "tools" or "allowedCommands"
+        var currentListKey: String? = nil
 
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed == "commands:" { inCommands = true; continue }
             if inCommands {
                 if trimmed.hasPrefix("- ") || trimmed.hasPrefix("-\t") {
-                    // New command entry
+                    // New command entry — flush previous
                     if !currentCmd.isEmpty {
-                        commands.append(makeCommand(from: currentCmd, tools: currentTools))
+                        commands.append(makeCommand(from: currentCmd,
+                                                    tools: currentTools,
+                                                    allowedCommands: currentAllowedCmds))
                     }
-                    currentCmd = [:]
-                    currentTools = []
+                    currentCmd = [:]; currentTools = []; currentAllowedCmds = []; currentListKey = nil
                     let rest = String(trimmed.dropFirst(2))
                     if let kv = parseYAMLLine(rest) { currentCmd[kv.0] = kv.1 }
                 } else if trimmed.hasPrefix("  ") || trimmed.hasPrefix("\t") {
                     let inner = trimmed.trimmingCharacters(in: .whitespaces)
+
                     if inner.hasPrefix("tools:") {
-                        let toolStr = inner.dropFirst("tools:".count).trimmingCharacters(in: .whitespaces)
-                        let cleaned = toolStr.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
-                        currentTools = cleaned.components(separatedBy: ",").map {
-                            $0.trimmingCharacters(in: .whitespacesAndNewlines)
-                        }.filter { !$0.isEmpty }
-                    } else if let kv = parseYAMLLine(inner) {
-                        currentCmd[kv.0] = kv.1
+                        currentListKey = "tools"
+                        let inline = inner.dropFirst("tools:".count).trimmingCharacters(in: .whitespaces)
+                        if !inline.isEmpty {
+                            currentTools = parseInlineList(inline)
+                            currentListKey = nil   // inline list completed on same line
+                        }
+                    } else if inner.hasPrefix("allowedCommands:") {
+                        currentListKey = "allowedCommands"
+                        let inline = inner.dropFirst("allowedCommands:".count).trimmingCharacters(in: .whitespaces)
+                        if !inline.isEmpty {
+                            currentAllowedCmds = parseInlineList(inline)
+                            currentListKey = nil
+                        }
+                    } else if inner.hasPrefix("- ") || inner.hasPrefix("-\t") {
+                        // Multi-line list item
+                        let item = String(inner.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+                        switch currentListKey {
+                        case "tools":           currentTools.append(item)
+                        case "allowedCommands": currentAllowedCmds.append(item)
+                        default: break
+                        }
+                    } else {
+                        currentListKey = nil
+                        if let kv = parseYAMLLine(inner) { currentCmd[kv.0] = kv.1 }
                     }
                 } else {
                     // End of commands block
@@ -258,19 +280,32 @@ final class PluginManager {
             }
         }
         if !currentCmd.isEmpty {
-            commands.append(makeCommand(from: currentCmd, tools: currentTools))
+            commands.append(makeCommand(from: currentCmd,
+                                        tools: currentTools,
+                                        allowedCommands: currentAllowedCmds))
         }
         return commands
     }
 
-    private func makeCommand(from dict: [String: String], tools: [String]) -> SkillCommand {
+    private func makeCommand(from dict: [String: String],
+                              tools: [String],
+                              allowedCommands: [String]) -> SkillCommand {
         SkillCommand(
-            name:         dict["name"] ?? "command",
-            trigger:      dict["trigger"] ?? dict["name"] ?? "操作",
-            icon:         dict["icon"] ?? "sparkles",
-            description:  dict["description"] ?? "",
-            allowedTools: tools
+            name:            dict["name"]    ?? "command",
+            trigger:         dict["trigger"] ?? dict["name"] ?? "操作",
+            icon:            dict["icon"]    ?? "sparkles",
+            description:     dict["description"] ?? "",
+            allowedTools:    tools,
+            allowedCommands: allowedCommands
         )
+    }
+
+    /// 解析内联 YAML 列表：`[git log, git status]` 或裸逗号分隔值
+    private func parseInlineList(_ raw: String) -> [String] {
+        let cleaned = raw.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        return cleaned.components(separatedBy: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
     }
 
     private func parseYAMLLine(_ line: String) -> (String, String)? {

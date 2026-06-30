@@ -411,7 +411,7 @@ struct CalendarMainView: View {
         let (s, e) = visibleRange
         events = service.fetchEvents(from: s, to: e)
         if internal_calendarAvailable && AppSettings.shared.internal_calendarEnabled {
-            internal_calendarEvents = (try? await InternalCalendarCalendarService.shared.fetchEvents(from: s, to: e)) ?? []
+            internal_calendarEvents = (try? await InternalCalendarCalendarService.shared.fetchInternalCalendarEvents(from: s, to: e)) ?? []
         }
         isLoading = false
     }

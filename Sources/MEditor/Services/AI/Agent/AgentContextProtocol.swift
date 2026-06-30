@@ -57,6 +57,10 @@ protocol AgentContextProtocol: AnyObject {
     /// nil 表示无限制（未在 skill 内运行，或 skill 未声明白名单）。
     var allowedCommandPatterns: [String]? { get }
 
+    /// 由 Skill 调用方将 allowedCommands 注入上下文。
+    /// - Parameter patterns: 允许的命令前缀列表；nil 或空数组表示无限制。
+    func setAllowedCommandPatterns(_ patterns: [String]?)
+
     /// 解析文件名/路径，区分唯一找到、多个同名、未找到三种情况。
     func resolveFile(_ name: String) -> FileResolveResult
 }
