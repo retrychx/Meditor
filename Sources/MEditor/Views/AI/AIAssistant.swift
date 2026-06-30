@@ -387,19 +387,9 @@ struct AIAssistantPanel: View {
                 Spacer()
                 Button("拒绝") { pending.reject() }
                     .buttonStyle(.bordered)
-                Button { pending.approve() } label: {
-                    Text("执行")
-                        .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundStyle(Color.appAccent)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 6)
-                        .background(Color.appAccent.opacity(0.14), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .strokeBorder(Color.appAccent.opacity(0.55), lineWidth: 1)
-                        )
-                }
-                .buttonStyle(.plain)
+                Button("执行") { pending.approve() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.appAccent)
             }
             Text("确认后本次会话不再询问")
                 .font(.system(size: 10))

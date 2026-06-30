@@ -101,7 +101,7 @@ enum AtMentionContextBuilder {
             }
             let content = truncate(text, maxBytes: AtMentionLimits.maxFileBytesPerToken, name: url.lastPathComponent)
             let lang = languageTag(for: url.pathExtension.lowercased())
-            return "## @\(display)\n\n```\(lang)\n\(content)\n```"
+            return "## @\(display)\n\n绝对路径（调用工具或 run_command 时必须使用此完整路径）：\(url.path)\n\n```\(lang)\n\(content)\n```"
 
         case .directory(let url):
             let display = displayPath(url, root: workspaceRoot)
@@ -119,7 +119,7 @@ enum AtMentionContextBuilder {
             }
             let more = items.count > AtMentionLimits.maxDirChildren
                 ? "\n... and \(items.count - AtMentionLimits.maxDirChildren) more" : ""
-            return "## @\(display)/ — directory contents\n\n" + lines.joined(separator: "\n") + more
+            return "## @\(display)/ — directory contents\n\n绝对路径（调用工具或 run_command 时必须使用此完整路径）：\(url.path)\n\n" + lines.joined(separator: "\n") + more
         }
     }
 
