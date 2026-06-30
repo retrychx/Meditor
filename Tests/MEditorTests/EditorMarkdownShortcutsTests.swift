@@ -24,9 +24,9 @@ final class EditorMarkdownShortcutsTests: XCTestCase {
         for row in expected {
             let item = SlashCommandHandler.allCommands.first { $0.aliases.contains(row.alias) }
             XCTAssertNotNil(item, "Missing command for alias \(row.alias)")
-            XCTAssertEqual(item?.expansion.text, row.text,
+            XCTAssertEqual(item?.expansion?.text, row.text,
                            "Wrong expansion.text for \(row.alias)")
-            XCTAssertEqual(item?.expansion.cursorOffset, row.cursorOffset,
+            XCTAssertEqual(item?.expansion?.cursorOffset, row.cursorOffset,
                            "Wrong expansion.cursorOffset for \(row.alias)")
         }
     }

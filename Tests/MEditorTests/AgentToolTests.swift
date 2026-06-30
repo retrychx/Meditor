@@ -239,11 +239,11 @@ final class AgentRunnerTests: XCTestCase {
         let ctx   = MockAgentContext()
         let tools: [any AgentTool] = []
         let msgs  = [AgentMessage(role: .user, content: "Hello")]
-        let cfg   = AIConfig(kind: .disabled, baseURL: "", model: "", cliPath: "", cliModel: "", apiKey: "")
+        let cfg   = AIConfig(kind: .disabled, baseURL: "", model: "", cliPath: "", cliModel: "", apiKey: "", requestTimeoutSeconds: 60)
 
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             runner.onComplete = { cont.resume() }
-            runner.start(messages: msgs, tools: tools, config: cfg, context: ctx)
+            runner.run(messages: msgs, tools: tools, config: cfg, context: ctx)
         }
 
         XCTAssertEqual(runner.finalText, "Done!")
@@ -272,11 +272,11 @@ final class AgentRunnerTests: XCTestCase {
         )
 
         let ctx = MockAgentContext()
-        let cfg = AIConfig(kind: .disabled, baseURL: "", model: "", cliPath: "", cliModel: "", apiKey: "")
+        let cfg = AIConfig(kind: .disabled, baseURL: "", model: "", cliPath: "", cliModel: "", apiKey: "", requestTimeoutSeconds: 60)
 
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             runner.onComplete = { cont.resume() }
-            runner.start(messages: [AgentMessage(role: .user, content: "test")],
+            runner.run(messages: [AgentMessage(role: .user, content: "test")],
                          tools: [], config: cfg, context: ctx)
         }
 
