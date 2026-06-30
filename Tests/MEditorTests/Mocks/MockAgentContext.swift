@@ -42,6 +42,10 @@ final class MockAgentContext: AgentContextProtocol {
     var writeFileError:      Error?                 = nil
     var fileContentError:    Error?                 = nil
     var commandConfirmResult: Bool                  = true
+    var allowedCommandPatterns: [String]?           = nil
+
+    // MARK: - Per-key approval cache (spy)
+    private var _approvedKeys: Set<String>          = []
 
     // MARK: - AgentContextProtocol — Document
 
@@ -161,6 +165,14 @@ final class MockAgentContext: AgentContextProtocol {
         return commandConfirmResult
     }
 
+    func isCommandApproved(_ key: String) -> Bool {
+        _approvedKeys.contains(key)
+    }
+
+    func markCommandApproved(_ key: String) {
+        _approvedKeys.insert(key)
+    }
+
     func resolveFile(_ name: String) -> FileResolveResult {
         // 支持精确文件名或 "path/to/file.md" 格式匹配
         let matches = files.keys.filter { key in
@@ -196,5 +208,11 @@ final class MockAgentContext: AgentContextProtocol {
         openedFiles        = []
         createdDirectories = []
         confirmedCommands  = []
+        _approvedKeys      = []
+    }
+
+    /// 直接设置某个 key 为已批准（测试用）。
+    func stubApprovedKey(_ key: String) {
+        _approvedKeys.insert(key)
     }
 }

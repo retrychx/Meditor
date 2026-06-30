@@ -33,7 +33,7 @@ enum InlineEditAction: String, CaseIterable, Identifiable {
 
     @MainActor
     func buildMessages(for text: String, pluginManager: PluginManager) -> [AIMessage] {
-        var system = BuiltinSkills.inlineEditor
+        var system = BuiltinSkills.inlineEditor.content
         let extra = pluginManager.userSkillsPrompt()
         if !extra.isEmpty { system += "\n\n---\n\n# 附加技能\n\n" + extra }
         return [

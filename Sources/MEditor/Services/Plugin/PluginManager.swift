@@ -167,14 +167,15 @@ final class PluginManager {
 
     private func loadBuiltins() {
         let states = loadStates()
-        let builtins = BuiltinSkills.all.map { item in
+        let builtins = BuiltinSkills.all.map { def in
             PluginSkill(
-                id: item.id,
-                name: item.name,
-                description: item.description,
-                skillPath: URL(fileURLWithPath: "/builtin/\(item.id)"),
-                isEnabled: states[item.id] ?? true,
-                source: .builtin
+                id:          def.id,
+                name:        def.name,
+                description: def.description,
+                skillPath:   URL(fileURLWithPath: "/builtin/\(def.id)"),
+                isEnabled:   states[def.id] ?? true,
+                source:      .builtin,
+                commands:    def.commands
             )
         }
         // Builtins go first; existing manual skills follow

@@ -238,7 +238,7 @@ struct InlineEditBar: View {
         let tools   = BuiltinAgentTools.all
 
         // 系统 prompt = 内置 inlineEditor skill + 用户插件附加
-        var systemPrompt = BuiltinSkills.inlineEditor
+        var systemPrompt = BuiltinSkills.inlineEditor.content
         let extra = state.pluginManager.userSkillsPrompt()
         if !extra.isEmpty { systemPrompt += "\n\n---\n\n# 附加技能\n\n" + extra }
 
