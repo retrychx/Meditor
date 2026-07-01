@@ -127,7 +127,19 @@ final class PluginManager {
             .filter { $0.source == .manual && $0.isEnabled }
             .compactMap { skill -> String? in
                 guard let content = try? String(contentsOf: skill.skillPath, encoding: .utf8) else { return nil }
-                return "## User Skill: \(skill.name)\n\n\(content)"
+                let skillDir = skill.skillPath.deletingLastPathComponent().path
+                // 注入 SKILL_DIR 绝对路径：技能脚本/资源都在此目录下。
+                // 否则 AI 看到 SKILL.md 里的相对路径/占位符无法解析，会去工作区瞎搜脚本。
+                let header = """
+                ## User Skill: \(skill.name)
+
+                SKILL_DIR = \(skillDir)
+                （这是本技能的安装目录绝对路径。SKILL.md 中出现的 SKILL_DIR、脚本或资源相对路径，
+                都以此目录为根解析。用 run_command 执行本技能脚本时，命令里的路径请拼成
+                \(skillDir)/… 的绝对路径，并把 cwd 设为该目录，不要在工作区里搜索脚本。）
+
+                """
+                return header + content
             }
             .joined(separator: "\n\n---\n\n")
     }
