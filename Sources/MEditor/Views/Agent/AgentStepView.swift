@@ -187,6 +187,11 @@ struct AgentStepView: View {
         case "search_document":
             let q = argValue("query", from: args) ?? ""
             return ("magnifyingglass", q.isEmpty ? "搜索文档" : "文档内搜索「\(q)」", .gray)
+        case "run_command":
+            let cmd = argValue("command", from: args) ?? ""
+            if cmd.isEmpty { return ("terminal", "执行命令", .orange) }
+            let short = cmd.count > 36 ? String(cmd.prefix(36)) + "…" : cmd
+            return ("terminal", "执行命令 · \(short)", .orange)
         default:
             return ("gearshape.fill", name, .orange)
         }
