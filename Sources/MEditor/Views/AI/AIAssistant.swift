@@ -536,22 +536,25 @@ struct AIAssistantPanel: View {
         return convo.messages
     }
 
-    /// 当前轮的 Agent 工具步骤面板（渲染在流式 reply 之上）。
+    /// 当前轮的 Agent 工具步骤面板（紧凑单行，渲染在流式 reply 之上）。
     @ViewBuilder
     private func agentStepsPanel(_ runner: AgentRunner) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 5) {
             ForEach(runner.steps) { step in
-                AgentStepView(step: step)
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .bottom).combined(with: .opacity),
-                        removal:   .opacity
-                    ))
+                AgentStepView(step: step, compact: true)
+                    .environment(state)
+                    .transition(.opacity)
             }
             .animation(DS.Motion.spring, value: runner.steps.count)
         }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 6)
-        .background(theme.editorBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 11)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.editorBackground.opacity(0.5), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(theme.separator.opacity(0.25), lineWidth: 0.5)
+        )
     }
 
     private func scrollToEnd(_ proxy: ScrollViewProxy) {
