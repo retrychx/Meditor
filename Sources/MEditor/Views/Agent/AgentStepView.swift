@@ -19,22 +19,28 @@ struct ShakeEffect: GeometryEffect {
 /// 展示单个执行步骤（thinking / tool call / done），带入场、状态过渡、错误抗动动画。
 struct AgentStepView: View {
     let step: AgentRunnerStep
+    var compact: Bool = false   // 紧凑单行模式（AI 助手内联使用）
     @Environment(AppState.self) private var state
 
     // MARK: - Animation state
-    @State private var pulsing      = false   // thinking 呼吸灯
-    @State private var resultShown  = false   // 工具结果文字展开
-    @State private var errorShake: CGFloat = 0 // 错误抗动进度
+    @State private var pulsing        = false   // thinking 呼吸灯
+    @State private var resultShown    = false   // 工具结果文字展开
+    @State private var resultExpanded = false   // 工具结果内容展开（多行/长文）
+    @State private var errorShake: CGFloat = 0  // 错误抗动进度
 
     var body: some View {
         Group {
-            switch step {
-            case .thinking(let label, _):
-                thinkingView(label: label)
-            case .toolCall(_, let name, let args):
-                toolCallView(name: name, args: args)
-            case .toolCallDone(_, let name, _, let result, let isError):
-                toolCallView(name: name, args: "", result: result, isError: isError)
+            if compact {
+                compactRow
+            } else {
+                switch step {
+                case .thinking(let label, _):
+                    thinkingView(label: label)
+                case .toolCall(_, let name, let args):
+                    toolCallView(name: name, args: args)
+                case .toolCallDone(_, let name, _, let result, let isError):
+                    toolCallView(name: name, args: "", result: result, isError: isError)
+                }
             }
         }
         .modifier(ShakeEffect(animatableData: errorShake))
@@ -49,6 +55,52 @@ struct AgentStepView: View {
         // 首次展示时如果已是 done（历史步骤回放）
         .onAppear {
             if step.isDone { resultShown = true }
+        }
+    }
+
+    // MARK: - Compact single-line row
+
+    /// 紧凑单行：状态图标 + 操作简述，用于 AI 助手内联的工具过程列表。
+    @ViewBuilder
+    private var compactRow: some View {
+        switch step {
+        case .thinking(let label, _):
+            HStack(spacing: 7) {
+                ProgressView().controlSize(.mini).scaleEffect(0.8)
+                    .frame(width: 13, height: 13)
+                Text(label)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .opacity(pulsing ? 0.6 : 1.0)
+            .onAppear { withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { pulsing = true } }
+            .onDisappear { pulsing = false }
+        case .toolCall(_, let name, let args):
+            compactToolRow(text: toolLabel(name: name, args: args).text, done: false, isError: false)
+        case .toolCallDone(_, let name, let args, _, let isError):
+            compactToolRow(text: toolLabel(name: name, args: args).text, done: true, isError: isError)
+        }
+    }
+
+    private func compactToolRow(text: String, done: Bool, isError: Bool) -> some View {
+        HStack(spacing: 7) {
+            Group {
+                if !done {
+                    ProgressView().controlSize(.mini).scaleEffect(0.8)
+                } else {
+                    Image(systemName: isError ? "xmark.circle.fill" : "checkmark.circle.fill")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(isError ? Color.red : Color.green)
+                }
+            }
+            .frame(width: 13, height: 13)
+            Text(text)
+                .font(.system(size: 11.5))
+                .foregroundStyle(.primary.opacity(0.85))
+                .lineLimit(1)
+            Spacer(minLength: 0)
         }
     }
 
@@ -148,13 +200,18 @@ struct AgentStepView: View {
         return nil
     }
 
-    /// 工具结果摘要：去掉文字前缀，截断长文本
-    private func resultSummary(_ raw: String) -> String {
+    /// 去掉 [OK]/[!]/[X] 前缀并 trim，返回完整内容（不截断）。
+    private func stripResultPrefix(_ raw: String) -> String {
         var s = raw
         for prefix in ["[OK] ", "[!] ", "[X] "] {
             if s.hasPrefix(prefix) { s = String(s.dropFirst(prefix.count)); break }
         }
-        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// 工具结果摘要：去掉文字前缀，截断长文本
+    private func resultSummary(_ raw: String) -> String {
+        let trimmed = stripResultPrefix(raw)
         let firstLine = trimmed.components(separatedBy: "\n").first ?? trimmed
         return firstLine.count > 80 ? String(firstLine.prefix(80)) + "…" : firstLine
     }
@@ -197,22 +254,44 @@ struct AgentStepView: View {
 
             // 结果行：状态变为 done 后展开
             if let result, !result.isEmpty, resultShown {
-                let summary = resultSummary(result)
-                let icon    = resultIcon(from: result)
-                if !summary.isEmpty {
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        if let icon {
-                            Image(systemName: icon.name)
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(icon.color.opacity(0.85))
+                let stripped    = stripResultPrefix(result)
+                let icon        = resultIcon(from: result)
+                let needsExpand = result.contains("\n") || stripped.count > 80
+                let summary     = resultSummary(result)
+                HStack(alignment: .top, spacing: 4) {
+                    if let icon {
+                        Image(systemName: icon.name)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(icon.color.opacity(0.85))
+                            .padding(.top, 1)
+                    }
+                    if resultExpanded {
+                        ScrollView(.vertical) {
+                            Text(stripped)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
+                        .frame(maxHeight: 200)
+                    } else {
                         Text(summary)
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                     }
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    if needsExpand {
+                        Spacer(minLength: 0)
+                        Button {
+                            withAnimation(DS.Motion.spring) { resultExpanded.toggle() }
+                        } label: {
+                            Image(systemName: resultExpanded ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .padding(.horizontal, 12)
@@ -241,6 +320,9 @@ struct AgentResultPanel: View {
     @Environment(AppState.self) private var state
     @Bindable var runner: AgentRunner
     let onDismiss: () -> Void
+
+    @State private var finalTextExpanded = false
+    @State private var copyDone = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -317,6 +399,51 @@ struct AgentResultPanel: View {
             }
 
             if !runner.isRunning && !runner.finalText.isEmpty {
+                Divider()
+                // finalText 展示区
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "text.bubble")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        Text("回复")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(runner.finalText, forType: .string)
+                            copyDone = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                copyDone = false
+                            }
+                        } label: {
+                            Image(systemName: copyDone ? "checkmark" : "doc.on.doc")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Text(runner.finalText)
+                        .font(.system(size: 12.5))
+                        .lineLimit(finalTextExpanded ? nil : 4)
+                        .fixedSize(horizontal: false, vertical: true)
+                    let needsExpand = runner.finalText.components(separatedBy: "\n").count > 4
+                        || runner.finalText.count > 200
+                    if needsExpand {
+                        Button {
+                            withAnimation(DS.Motion.spring) { finalTextExpanded.toggle() }
+                        } label: {
+                            Text(finalTextExpanded ? "收起" : "展开")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.appAccent)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+
                 Divider()
                 HStack {
                     Spacer()
