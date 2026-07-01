@@ -29,6 +29,7 @@ struct AIAssistantPanel: View {
     @Environment(AppSettings.self) private var settings
     @State private var showHistory = false
     @State private var atBottom = true
+    @State private var streamScrollWork: DispatchWorkItem?   // 流式滚动 debounce
     @State private var sessionDocModified = false
     @State private var mentionTokens: [AtMentionToken] = []
     @State private var showMentionPicker = false
@@ -417,27 +418,27 @@ struct AIAssistantPanel: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
                         ForEach(convo.messages) { message in
+                            // 响应中：把当前轮 Agent steps 插到最后一条 reply 之上
+                            // （过程在上、结论在下；reply 只在最底部增长，减少布局抖动）
+                            if convo.isResponding,
+                               message.id == convo.messages.last?.id,
+                               let runner = convo.agentRunner, !runner.steps.isEmpty {
+                                agentStepsPanel(runner)
+                            }
                             if !message.text.isEmpty {
                                 bubble(message).id(message.id)
                             }
                         }
-                    // 响应中：优先展示 Agent steps；没有 steps 才显示 thinking orb
+
+                    // 响应中的进行态提示（steps 已在上方各自渲染）
                     if convo.isResponding {
-                        if let runner = convo.agentRunner, !runner.steps.isEmpty {
-                            VStack(alignment: .leading, spacing: 4) {
-                                ForEach(runner.steps) { step in
-                                    AgentStepView(step: step)
-                                        .transition(.asymmetric(
-                                            insertion: .move(edge: .bottom).combined(with: .opacity),
-                                            removal:   .opacity
-                                        ))
-                                }
-                                .animation(DS.Motion.spring, value: runner.steps.count)
-                            }
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 6)
-                            .background(theme.editorBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
-                        } else if convo.messages.last?.text.isEmpty ?? true {
+                        let streaming = !(convo.messages.last?.text.isEmpty ?? true)
+                        let hasSteps  = !(convo.agentRunner?.steps.isEmpty ?? true)
+                        if streaming {
+                            // 流式输出中：reply 文本下方闪烁光标
+                            StreamingCursorView()
+                        } else if !hasSteps {
+                            // 还没有 steps 也没有文本：思考中
                             HStack(spacing: 8) {
                                 AIAssistantOrb(size: 18, glow: true)
                                 Text(L("ai.thinking"))
@@ -445,10 +446,8 @@ struct AIAssistantPanel: View {
                                     .foregroundStyle(theme.craftSecondary)
                                 TypingDots(color: theme.craftSecondary)
                             }
-                        } else {
-                            // 流式输出中：在最后一条消息下方显示闪烁光标
-                            StreamingCursorView()
                         }
+                        // 有 steps 但还没最终文本：steps 内的 thinking 步骤已表示进行中
                     }
                     if let pending = convo.pendingCommand {
                         commandConfirmBar(pending)
@@ -502,9 +501,12 @@ struct AIAssistantPanel: View {
                 scrollToEnd(proxy)
             }
             .onChange(of: convo.messages.last?.text) { _, _ in
-                // 流式输出时每个 token 都会触发，用 async 让 SwiftUI 先完成当前帧再滚动。
-                // 不需要额外节流：延迟到主队列尾部本身就具备天然合并效果。
-                if atBottom { DispatchQueue.main.async { scrollToEnd(proxy) } }
+                // 流式输出每个 token 都触发：debounce 合并（60ms），避免逐字滚动导致抖动
+                guard atBottom else { return }
+                streamScrollWork?.cancel()
+                let work = DispatchWorkItem { scrollToEnd(proxy) }
+                streamScrollWork = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.06, execute: work)
             }
             .onChange(of: convo.agentRunner?.steps.count) { _, _ in
                 // 新增 step 时无条件滚动（不检查 atBottom）：
@@ -522,6 +524,24 @@ struct AIAssistantPanel: View {
             }
             }
         }
+    }
+
+    /// 当前轮的 Agent 工具步骤面板（渲染在流式 reply 之上）。
+    @ViewBuilder
+    private func agentStepsPanel(_ runner: AgentRunner) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(runner.steps) { step in
+                AgentStepView(step: step)
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .bottom).combined(with: .opacity),
+                        removal:   .opacity
+                    ))
+            }
+            .animation(DS.Motion.spring, value: runner.steps.count)
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 6)
+        .background(theme.editorBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func scrollToEnd(_ proxy: ScrollViewProxy) {
