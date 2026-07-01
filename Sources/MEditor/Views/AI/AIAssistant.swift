@@ -417,28 +417,30 @@ struct AIAssistantPanel: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
-                        ForEach(convo.messages) { message in
-                            // 响应中：把当前轮 Agent steps 插到最后一条 reply 之上
-                            // （过程在上、结论在下；reply 只在最底部增长，减少布局抖动）
-                            if convo.isResponding,
-                               message.id == convo.messages.last?.id,
-                               let runner = convo.agentRunner, !runner.steps.isEmpty {
-                                agentStepsPanel(runner)
-                            }
+                        // 历史消息（响应中排除最后一条 reply 占位，交由下方单独渲染，
+                        // 使 steps 能放在 reply 之上且能随 runner.steps 更新）
+                        ForEach(displayMessages) { message in
                             if !message.text.isEmpty {
                                 bubble(message).id(message.id)
                             }
                         }
 
-                    // 响应中的进行态提示（steps 已在上方各自渲染）
                     if convo.isResponding {
+                        // 当前轮 Agent steps —— 放在 reply 之上（过程在上、结论在下，减少抖动）
+                        if let runner = convo.agentRunner, !runner.steps.isEmpty {
+                            agentStepsPanel(runner)
+                        }
+                        // 当前轮 reply（在 steps 之下流式增长）
+                        if let last = convo.messages.last,
+                           last.role == .assistant, !last.text.isEmpty {
+                            bubble(last).id(last.id)
+                        }
+                        // 进行态提示
                         let streaming = !(convo.messages.last?.text.isEmpty ?? true)
                         let hasSteps  = !(convo.agentRunner?.steps.isEmpty ?? true)
                         if streaming {
-                            // 流式输出中：reply 文本下方闪烁光标
                             StreamingCursorView()
                         } else if !hasSteps {
-                            // 还没有 steps 也没有文本：思考中
                             HStack(spacing: 8) {
                                 AIAssistantOrb(size: 18, glow: true)
                                 Text(L("ai.thinking"))
@@ -524,6 +526,14 @@ struct AIAssistantPanel: View {
             }
             }
         }
+    }
+
+    /// 响应中排除最后一条 reply 占位（交由 transcript 单独渲染，使 steps 能置于其上）。
+    private var displayMessages: [AIChatMessage] {
+        if convo.isResponding, convo.messages.last?.role == .assistant {
+            return Array(convo.messages.dropLast())
+        }
+        return convo.messages
     }
 
     /// 当前轮的 Agent 工具步骤面板（渲染在流式 reply 之上）。
