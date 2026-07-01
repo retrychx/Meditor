@@ -61,7 +61,7 @@ enum BuiltinSkills {
             description: "美化当前文档：Markdown 智能排版规整 / HTML 生成精美文档",
             content: """
             ---
-            name: HTML 美化
+            name: 美化
             description: 将 Markdown 文档转换为精美的 self-contained HTML 文档
             version: 1.1
             ---
@@ -75,6 +75,7 @@ enum BuiltinSkills {
             - 代码块用 <pre><code class="language-xxx"> 包裹，保留缩进和换行
             - 标题层级严格对应 Markdown 的 # ## ### → h1 h2 h3
             - 把提供的 CSS 完整嵌入 <style> 标签内，不要修改主题 CSS
+            - 若未提供 CSS 主题，则使用简洁清晰的内置默认样式（system 字体、合理行距与留白、浅色代码块背景）
             - 只输出 HTML 代码，不加任何解释或 markdown 代码块标记
             """,
             commands: [
@@ -83,14 +84,14 @@ enum BuiltinSkills {
                     trigger: "转 HTML 文档",
                     icon: "doc.richtext.fill",
                     description: "将当前 Markdown 文档生成精美 HTML",
-                    allowedTools: ["read_document", "write_document"]
+                    allowedTools: ["read_document", "create_file"]
                 ),
                 SkillCommand(
                     name: "to_html_doc",
                     trigger: "转带侧边栏 HTML",
                     icon: "sidebar.left",
                     description: "生成含侧边栏导航的 HTML 文档",
-                    allowedTools: ["read_document", "write_document", "get_html_template"]
+                    allowedTools: ["read_document", "create_file", "get_html_template"]
                 ),
             ]
         )
@@ -239,9 +240,9 @@ enum BuiltinSkills {
             直接输出格式化的汇报文档，不加额外说明。
             """,
             commands: [
-                SkillCommand(name: "daily",   trigger: "生成日报", icon: "sun.max",        allowedTools: ["read_document", "write_document"]),
-                SkillCommand(name: "weekly",  trigger: "生成周报", icon: "calendar",        allowedTools: ["read_document", "write_document"]),
-                SkillCommand(name: "monthly", trigger: "生成月报", icon: "calendar.badge.clock", allowedTools: ["read_document", "write_document"]),
+                SkillCommand(name: "daily",   trigger: "生成日报", icon: "sun.max",        allowedTools: ["read_document", "create_file"]),
+                SkillCommand(name: "weekly",  trigger: "生成周报", icon: "calendar",        allowedTools: ["read_document", "create_file"]),
+                SkillCommand(name: "monthly", trigger: "生成月报", icon: "calendar.badge.clock", allowedTools: ["read_document", "create_file"]),
             ]
         )
     }
@@ -301,8 +302,8 @@ enum BuiltinSkills {
             - 只输出文档内容，不加额外解释
             """,
             commands: [
-                SkillCommand(name: "from_code",  trigger: "代码转文档",  icon: "doc.text.magnifyingglass", allowedTools: ["read_document", "write_document"]),
-                SkillCommand(name: "from_desc",  trigger: "描述转文档",  icon: "text.badge.plus",          allowedTools: ["read_document", "write_document"]),
+                SkillCommand(name: "from_code",  trigger: "代码转文档",  icon: "doc.text.magnifyingglass", allowedTools: ["read_document", "create_file"]),
+                SkillCommand(name: "from_desc",  trigger: "描述转文档",  icon: "text.badge.plus",          allowedTools: ["read_document", "create_file"]),
             ]
         )
     }
@@ -420,7 +421,7 @@ enum BuiltinSkills {
                     trigger: "生成技术方案",
                     icon: "doc.badge.gearshape",
                     description: "将当前文档的需求描述转化为技术方案",
-                    allowedTools: ["read_document", "write_document"]
+                    allowedTools: ["read_document", "create_file"]
                 ),
                 SkillCommand(
                     name: "add_risks",
@@ -507,7 +508,7 @@ enum BuiltinSkills {
                     trigger: "全面 Review",
                     icon: "checkmark.seal",
                     description: "对当前文档代码进行全维度 Review",
-                    allowedTools: ["read_document", "write_document"]
+                    allowedTools: ["read_document", "create_file"]
                 ),
                 SkillCommand(
                     name: "review_security",
@@ -537,10 +538,10 @@ enum BuiltinSkills {
     ## 规则
     - 严格保留模板的 <style> 块与整体结构（侧边栏 <aside class="sidebar"> + 主区 <main class="main">），不要修改样式
     - 用 Markdown 的真实内容替换模板里的所有示例占位（示例章节、示例表格/流程图等占位都要替换或删除，不要保留“章节二/示例”这类占位文字）
-    - 侧边栏 <nav> 根据正文的 h2（必要时 h3）生成对应的 <a href="#锴点">，并给每个 <section> 设置匹配的 id；第一个导航项加 class="active"
+    - 侧边栏 <nav> 根据正文的 h2（必要时 h3）生成对应的 <a href="#锚点">，并给每个 <section> 设置匹配的 id；第一个导航项加 class="active"
     - 正文放入 <main class="main">，按 h2 分 <section id="...">；标题层级严格对应 Markdown：# → h1、## → h2、### → h3
     - 文档标题（<title>、侧边栏 brand、首个 h1）使用 Markdown 的一级标题
-    - 可酥情使用模板自带组件 class：表格用 <div class="tbl"><table>…，提示用 .alert / .alert-info，标签用 .tag / .tag-g / .tag-o / .tag-r，卡片用 .card，代码块用 <pre><code>
+    - 可酌情使用模板自带组件 class：表格用 <div class="tbl"><table>…，提示用 .alert / .alert-info，标签用 .tag / .tag-g / .tag-o / .tag-r，卡片用 .card，代码块用 <pre><code>
     - 只输出完整 HTML（从 <!DOCTYPE html> 到 </html>），不加任何解释或 markdown 代码块标记
     """
 
