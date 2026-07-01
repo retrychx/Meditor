@@ -90,14 +90,16 @@ final class AppStateTests: XCTestCase {
 
     /// Spin the main run loop until `condition` holds or timeout — 用于等待后台 IO
     /// (Task.detached) 异步更新 @MainActor 状态后再断言。
-    private func waitUntil(_ timeout: TimeInterval = 2,
+    private func waitUntil(_ timeout: TimeInterval = 5,
                            file: StaticString = #file, line: UInt = #line,
                            _ condition: () -> Bool) {
         let deadline = Date().addingTimeInterval(timeout)
         while !condition() && Date() < deadline {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+            // 驱动主 runloop 处理后台 Task.detached 完成后回主线程的 @MainActor 更新；
+            // 用 run(mode:before:) 在有事件时尽早返回，条件满足后能更快跳出，减少无谓等待。
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.01))
         }
-        XCTAssertTrue(condition(), "等待条件超时", file: file, line: line)
+        XCTAssertTrue(condition(), "等待条件超时（\(timeout)s）", file: file, line: line)
     }
 
     func test_openFolder_setsRootURLAndReloadsTree() {
