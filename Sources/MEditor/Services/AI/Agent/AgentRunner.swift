@@ -17,6 +17,10 @@ final class AgentRunner {
     var finalText: String = ""
     var error: String? = nil
 
+    /// 当前 step 的流式累积文本；onChunk 始终回调「累积全文」而非增量 delta，
+    /// 让 UI 侧可直接赋值显示（无需自行拼接）。
+    private var streamAccumulated = ""
+
     /// 流式 chunk 回调（主线程，可选）
     var onChunk: (@MainActor (String) -> Void)? = nil
     /// 完成回调（主线程，isRunning 已设为 false）
@@ -143,7 +147,18 @@ final class AgentRunner {
             guard !Task.isCancelled else { break }
 
             do {
-                let response = try await backend.complete(messages: messages, tools: tools)
+                streamAccumulated = ""   // 每个 step 重置，reply 只显示当前轮累积文本
+                let response = try await backend.completeStreaming(
+                    messages: messages,
+                    tools: tools,
+                    onTextChunk: { [weak self] chunk in
+                        Task { @MainActor [weak self] in
+                            guard let self else { return }
+                            self.streamAccumulated += chunk          // 累积 delta
+                            self.onChunk?(self.streamAccumulated)     // 回调累积全文
+                        }
+                    }
+                )
 
                 if !response.toolCalls.isEmpty {
                     removeLastThinking()
