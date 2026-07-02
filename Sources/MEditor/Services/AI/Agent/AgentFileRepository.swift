@@ -36,6 +36,12 @@ final class DefaultAgentFileRepository: AgentFileRepository {
     static let maxReadBytes     = 64_000       // ~64 KB，约 16 k tokens
     static let maxFullReadBytes = 5_000_000    // 5 MB
 
+    /// 枚举工作区文件时跳过的噪音目录名
+    static let noiseDirectories: Set<String> = [
+        "node_modules", ".git", ".build", "dist", ".next", ".nuxt",
+        "DerivedData", ".gradle", "Pods", "vendor", ".cache", "__pycache__"
+    ]
+
     init(_ provider: @escaping () -> URL?) {
         self.workspaceProvider = provider
     }
@@ -87,6 +93,10 @@ final class DefaultAgentFileRepository: AgentFileRepository {
             guard let url = item as? URL,
                   let vals = try? url.resourceValues(forKeys: [.isRegularFileKey]),
                   vals.isRegularFile == true else { return nil }
+            // 跳过噪音目录（node_modules、.git、.build 等）
+            if url.pathComponents.contains(where: { Self.noiseDirectories.contains($0) }) {
+                return nil
+            }
             if extensions.isEmpty { return url }
             return extensions.contains(url.pathExtension.lowercased()) ? url : nil
         }
@@ -170,8 +180,10 @@ final class DefaultAgentFileRepository: AgentFileRepository {
         let unsafeForGrep = CharacterSet(charactersIn: ".+*?^${}[]|()\\")
         guard query.unicodeScalars.allSatisfy({ !unsafeForGrep.contains($0) }),
               !query.isEmpty else { return nil }
-        let includes = extensions.flatMap { ["--include", "*.\($0)"] }
-        let args: [String] = ["-r", "-n", "-i", "--max-count=5"] + includes + [query, root.path]
+        let includes    = extensions.flatMap { ["--include", "*.\($0)"] }
+        let excludeDirs = DefaultAgentFileRepository.noiseDirectories.sorted()
+                              .flatMap { ["--exclude-dir", $0] }
+        let args: [String] = ["-r", "-n", "-i", "--max-count=5"] + includes + excludeDirs + [query, root.path]
         return await Task.detached(priority: .userInitiated) {
             let proc = Process()
             proc.executableURL  = URL(fileURLWithPath: "/usr/bin/grep")

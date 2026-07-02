@@ -116,6 +116,15 @@ final class AIConversation {
         }
     }
 
+    /// AgentMessage 完整历史（含工具调用上下文），读写当前会话
+    var agentHistory: [AgentMessage] {
+        get { sessions.indices.contains(activeIndex) ? sessions[activeIndex].agentHistory : [] }
+        set {
+            guard sessions.indices.contains(activeIndex) else { return }
+            sessions[activeIndex].agentHistory = newValue
+        }
+    }
+
     // MARK: Context estimation
 
     /// Rough token estimate for the current conversation (chars ÷ 4).

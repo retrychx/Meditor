@@ -926,12 +926,24 @@ struct AIAssistantPanel: View {
         tools: [any AgentTool]
     ) {
 
-        // 把历史对话转成 AgentMessage 格式
-        var agentMessages: [AgentMessage] = [
-            AgentMessage(role: .system, content: sysContent)
-        ]
-        agentMessages += convo.messages.map {
-            AgentMessage(role: $0.role == .user ? .user : .assistant, content: $0.text)
+        // 构建 AgentMessage 列表：优先使用已保存的 agentHistory（保留工具调用上下文）
+        var agentMessages: [AgentMessage]
+        let savedHistory = convo.agentHistory
+        if !savedHistory.isEmpty, let newUserMsg = convo.messages.last, newUserMsg.role == .user {
+            // 用历史记录（含工具调用）+ 新的用户消息，更新 system prompt
+            agentMessages = savedHistory
+            if agentMessages.first?.role == .system {
+                agentMessages[0] = AgentMessage(role: .system, content: sysContent)
+            } else {
+                agentMessages.insert(AgentMessage(role: .system, content: sysContent), at: 0)
+            }
+            agentMessages.append(AgentMessage(role: .user, content: newUserMsg.text))
+        } else {
+            // 回退：从 AIChatMessage 重建（丢失工具调用上下文，适用于首轮或旧会话）
+            agentMessages = [AgentMessage(role: .system, content: sysContent)]
+            agentMessages += convo.messages.map {
+                AgentMessage(role: $0.role == .user ? .user : .assistant, content: $0.text)
+            }
         }
 
         // 在消息列表末尾加一个空 assistant 占位，用于流式显示
@@ -985,6 +997,11 @@ struct AIAssistantPanel: View {
                     // 工具全部成功，结果已体现在文档里，删掉空占位
                     convo.messages.removeAll { $0.id == replyID }
                 }
+            }
+
+            // 保存完整的 agent 消息历史（含工具调用），下次对话时直接使用
+            if let fm = runner?.finalMessages, !fm.isEmpty {
+                convo.agentHistory = fm
             }
 
             convo.isResponding = false

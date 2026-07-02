@@ -14,6 +14,8 @@ struct AISession: Identifiable, Codable, Sendable {
     var title: String = ""
     var messages: [AIChatMessage] = []
     var updatedAt: Date = .now
+    /// 保存 AgentRunner 最终消息列表（含工具调用上下文），用于多轮对话时保留 tool context
+    var agentHistory: [AgentMessage] = []
 }
 
 // MARK: - Accent style
