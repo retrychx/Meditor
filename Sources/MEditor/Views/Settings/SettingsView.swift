@@ -15,6 +15,10 @@ struct SettingsView: View {
     @State private var skillAddMessage: String? = nil
     @State private var installingSkillID: String? = nil
     @State private var installedSkillIDs: Set<String> = []
+    // AI 连通性测试
+    @State private var connectionTestResult: String? = nil
+    @State private var connectionTestOK: Bool = false
+    @State private var connectionTesting: Bool = false
     
         /// When true, the view is presented as an in-app hero overlay (not a window),
         /// so it must not mutate any NSWindow chrome.
@@ -322,12 +326,35 @@ struct SettingsView: View {
                         rowDivider
                         settingsStackedRow(label: L("ai.apiKey")) { aiKeyField }
                         rowDivider
+                        settingsStackedRow(label: "连接测试") {
+                            HStack(spacing: 10) {
+                                Button {
+                                    Task { await runConnectionTest() }
+                                } label: {
+                                    if connectionTesting {
+                                        HStack(spacing: 6) {
+                                            ProgressView().controlSize(.small)
+                                            Text("测试中…")
+                                        }
+                                    } else {
+                                        Text("测试连接")
+                                    }
+                                }
+                                .disabled(connectionTesting)
+                                if let result = connectionTestResult {
+                                    Text(result)
+                                        .font(.system(size: 11.5))
+                                        .foregroundStyle(connectionTestOK ? Color.green : Color.red)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
+                            }
+                        }
+                        rowDivider
                         settingsStackedRow(label: L("ai.model")) { aiModelField }
                         rowDivider
                         settingsStackedRow(label: "Agent 模型", subtitle: "工具调用专用，留空则使用上方模型") {
-                            TextField("留空则回退到上方模型", text: bindableSettings.aiAgentModel)
-                                .textFieldStyle(.plain)
-                                .settingsField()
+                            modelPickerField(binding: bindableSettings.aiAgentModel, placeholder: "留空则回退到上方模型")
                         }
                         rowDivider
                         settingsStackedRow(label: "Agent 最大步数", subtitle: "每次对话最多工具调用轮次（5~100，默认 30）") {
@@ -338,9 +365,7 @@ struct SettingsView: View {
                         }
                         rowDivider
                         settingsStackedRow(label: "内联编辑模型", subtitle: "改写/扩写/精简/翻译，留空则使用上方模型") {
-                            TextField("留空则回退到上方模型", text: bindableSettings.aiInlineModel)
-                                .textFieldStyle(.plain)
-                                .settingsField()
+                            modelPickerField(binding: bindableSettings.aiInlineModel, placeholder: "留空则回退到上方模型")
                         }
                     }
                 }
@@ -534,6 +559,126 @@ struct SettingsView: View {
                 aiDetecting = false
             }
         }
+    }
+
+    // MARK: - Preset model picker for agent/inline fields
+
+    /// Returns preset model list based on current provider/baseURL.
+    private var presetModelsForCurrentProvider: [String] {
+        // If a known preset matches, use its models
+        if let preset = AIPresets.match(settings.aiBaseURL) {
+            return preset.models
+        }
+        // Fall back by base URL heuristics
+        let base = settings.aiBaseURL.lowercased()
+        if base.contains("anthropic") {
+            return ["claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-3-5"]
+        } else if base.contains("openai") {
+            return ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o3", "o4-mini"]
+        } else if base.contains("localhost:11434") || base.contains("ollama") {
+            return ["llama3.2", "qwen2.5", "deepseek-r1"]
+        }
+        // Generic fallback
+        return ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o3", "o4-mini",
+                "claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-3-5",
+                "llama3.2", "qwen2.5", "deepseek-r1"]
+    }
+
+    @ViewBuilder
+    private func modelPickerField(binding: Binding<String>, placeholder: String) -> some View {
+        HStack(spacing: 6) {
+            TextField(placeholder, text: binding)
+                .textFieldStyle(.plain)
+                .settingsField()
+            Menu {
+                Button("（清空/自定义）") { binding.wrappedValue = "" }
+                Divider()
+                ForEach(presetModelsForCurrentProvider, id: \.self) { model in
+                    Button(model) { binding.wrappedValue = model }
+                }
+            } label: {
+                Image(systemName: "chevron.down.circle")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("选择预设模型")
+        }
+    }
+
+    // MARK: - Connection test
+
+    @MainActor
+    private func runConnectionTest() async {
+        connectionTesting = true
+        connectionTestResult = nil
+        let baseURL = settings.aiBaseURL.trimmingCharacters(in: .whitespaces)
+        let apiKey = AIKeychain.load() ?? ""
+        let model = settings.aiModel.isEmpty ? "gpt-4o-mini" : settings.aiModel
+        let isAnthropic = baseURL.lowercased().contains("anthropic")
+
+        do {
+            let resultModel = try await performConnectionTest(
+                baseURL: baseURL, apiKey: apiKey, model: model, isAnthropic: isAnthropic
+            )
+            connectionTestOK = true
+            connectionTestResult = "✓ 连接成功（model: \(resultModel)）"
+        } catch {
+            connectionTestOK = false
+            connectionTestResult = "✗ 连接失败：\(error.localizedDescription)"
+        }
+        connectionTesting = false
+    }
+
+    private func performConnectionTest(
+        baseURL: String, apiKey: String, model: String, isAnthropic: Bool
+    ) async throws -> String {
+        guard !baseURL.isEmpty else { throw URLError(.badURL) }
+        let urlString: String
+        var bodyDict: [String: Any]
+        var headers: [(String, String)] = [("Content-Type", "application/json")]
+
+        if isAnthropic {
+            urlString = baseURL.hasSuffix("/") ? "\(baseURL)messages" : "\(baseURL)/messages"
+            bodyDict = [
+                "model": model,
+                "max_tokens": 16,
+                "messages": [["role": "user", "content": "hi"]]
+            ]
+            headers.append(("x-api-key", apiKey))
+            headers.append(("anthropic-version", "2023-06-01"))
+        } else {
+            urlString = baseURL.hasSuffix("/") ? "\(baseURL)chat/completions" : "\(baseURL)/chat/completions"
+            bodyDict = [
+                "model": model,
+                "max_tokens": 16,
+                "messages": [["role": "user", "content": "hi"]]
+            ]
+            if !apiKey.isEmpty {
+                headers.append(("Authorization", "Bearer \(apiKey)"))
+            }
+        }
+
+        guard let url = URL(string: urlString) else { throw URLError(.badURL) }
+        var request = URLRequest(url: url, timeoutInterval: 10)
+        request.httpMethod = "POST"
+        for (k, v) in headers { request.setValue(v, forHTTPHeaderField: k) }
+        request.httpBody = try JSONSerialization.data(withJSONObject: bodyDict)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        guard (200..<300).contains(http.statusCode) else {
+            let msg = String(data: data, encoding: .utf8) ?? "HTTP \(http.statusCode)"
+            throw NSError(domain: "AI", code: http.statusCode,
+                          userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode): \(msg.prefix(120))"])
+        }
+        // Extract model name from response
+        if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let returnedModel = obj["model"] as? String {
+            return returnedModel
+        }
+        return model
     }
 
     private func refreshModels() {
