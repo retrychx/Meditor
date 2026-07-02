@@ -5,7 +5,7 @@
 <h1 align="center">MEditor</h1>
 
 <p align="center">
-  <strong>A native macOS Markdown & HTML editor built with SwiftUI</strong>
+  <strong>A native macOS Markdown editor with a built-in AI Agent</strong>
 </p>
 
 <p align="center">
@@ -21,35 +21,50 @@
 
 ---
 
+MEditor is a **pure SwiftUI + AppKit** Markdown editor for macOS. It ships with a built-in AI Agent that can read, write, and refactor your documents using tool calls — no plugins, no Electron, no cloud sync required.
+
+---
+
 ## ✨ Features
 
-### Editing & Preview
-- **📝 Live Preview** — Real-time Markdown rendering with marked.js, code highlighting via highlight.js, and diagram support via Mermaid.js
-- **🎨 Syntax Highlighting** — 40+ languages supported in the editor (native `NSTextView`) and preview (highlight.js with full alias mapping)
-- **🔀 Bidirectional Scroll Sync** — Scrolling in the editor syncs the preview and vice versa, with anti-loop protection
-- **🔍 Find & Replace** — Native find panel: Find, Find Next/Previous, Use Selection for Find, Jump to Line, Replace
-- **🖥 HTML Preview** — `.html`/`.htm` files render directly as web pages
+### 🤖 AI Agent (the main thing)
 
-### Files & Tabs
-- **📂 File Browser** — Sidebar with search, context menus (new file/folder, rename, delete, reveal in Finder), persisted expansion state
-- **📁 File Tree Auto-Refresh** — FSEvents-based file watcher that detects external changes instantly
-- **📑 Tab Management** — Drag-to-reorder tabs, close confirmation (save/discard/cancel), reopen closed tab (⌘⇧T), next/previous tab
-- **⚡️ Quick Open** — Fuzzy file finder (⌘P) with keyboard navigation
+- **Multi-turn tool loop** — The Agent reasons, calls tools, reads results, and keeps going until the task is done
+- **Document tools** — Read, write, patch, and insert into the current document via precise tool calls
+- **Workspace tools** — List files, search across the workspace, open tabs, run shell commands (sandboxed)
+- **Streaming output** — Responses appear word-by-word; tool steps show inline with expand/collapse detail
+- **OpenAI & Anthropic** — Full SSE streaming for both wire protocols; ClaudeCLI backend also supported
+- **Bring your own key** — Works with any OpenAI-compatible endpoint (Ollama, OpenRouter, local LLMs)
+- **Skill system** — Built-in skills (summarize, beautify, review…) plus a curated gallery to extend
 
-### Workspace
-- **🎨 Preview Themes** — GitHub (light), Nord, Dracula (dark); the whole window chrome adapts and the choice is persisted
-- **📤 Export** — Export the preview to HTML / PDF / Image (2× PNG); HTML files can also export to Markdown
-- **🌐 LAN Sharing** — Built-in HTTP server (NWListener) shares open documents over the local network; access is gated by a one-time token and an allowlist limited to currently open files
-- **💾 Session Restore** — Remembers the root folder, open tabs (order), and selection across launches via security-scoped bookmarks
-- **⏱ Auto-Save** — Optional timed auto-save (configurable interval); modified tabs are also saved on quit
-- **⚙️ Settings** — Preview font size, auto-save, default launch layout, LAN share port (⌘,)
-- **🔄 Drag-to-Resize Panels** — Toggle and resize sidebar, editor, and preview panels independently
-- **📊 Status Bar** — Cursor position (Ln/Col), file size, UTF-8 indicator
-- **💻 macOS Native** — Pure SwiftUI + AppKit, no Electron, no web wrappers; bundled JS libraries work fully offline
+### 📝 Editing & Preview
+
+- **Live Preview** — Real-time Markdown rendering (marked.js), code highlighting (highlight.js), diagrams (Mermaid.js)
+- **Syntax Highlighting** — 40+ languages in both editor and preview
+- **Bidirectional Scroll Sync** — Editor and preview scroll in sync, with anti-loop protection
+- **Find & Replace** — Native find panel with Jump to Line and Replace
+- **HTML Preview** — `.html`/`.htm` files render as web pages
+
+### 📂 Files & Tabs
+
+- **File Browser** — Sidebar with search, context menus, FSEvents auto-refresh
+- **Tab Management** — Drag-to-reorder, close confirmation, reopen closed tab (⌘⇧T)
+- **Quick Open** — Fuzzy file finder (⌘P)
+
+### 🗂 Workspace
+
+- **Preview Themes** — GitHub (light), Nord, Dracula (dark)
+- **Export** — HTML / PDF / 2× PNG; HTML → Markdown conversion
+- **LAN Sharing** — Built-in HTTP server with one-time token auth
+- **Session Restore** — Remembers tabs, folder, and selection across launches
+- **Auto-Save** — Optional timed auto-save; saves on quit
+- **No Electron** — Pure Swift, bundled JS runs fully offline
+
+---
 
 ## 📸 Screenshots
 
-> *Coming soon*
+> *Coming soon — contributions welcome!*
 
 ---
 
@@ -64,39 +79,28 @@
 ### Quick start
 
 ```bash
-# Clone the repository
 git clone https://github.com/retrychx/Meditor.git
 cd Meditor
-
-# Build with Swift Package Manager
 swift build
-
-# Run directly (lightweight, no .app bundle)
 swift run
 ```
 
 ### Run tests
 
 ```bash
-# Uses the full Xcode toolchain automatically
-./scripts/test.sh
-
-# Short alias
-make test
+./scripts/test.sh   # uses full Xcode toolchain
+make test           # short alias
 ```
 
-### Create a proper .app bundle
+### Create a .app bundle
 
 ```bash
-# Build then bundle into a .app
 swift build
 bash scripts/bundle.sh
-
-# Launch with icon, Dock presence, and document associations
 open .build/debug/MEditor.app
 ```
 
-> **Note:** The `.app` bundle is automatically ad-hoc signed by `bundle.sh`. After opening it once, you can associate `.md` and `.html` files with MEditor via **Get Info → Open with → MEditor → Change All**.
+> The `.app` is ad-hoc signed automatically. After first launch, associate `.md`/`.html` files via **Get Info → Open With → MEditor → Change All**.
 
 ### Open in Xcode
 
@@ -106,74 +110,83 @@ open Package.swift
 
 ---
 
+## ⚙️ AI Setup
+
+Open **Settings (⌘,) → AI** and fill in:
+
+| Field | Example |
+|-------|---------|
+| Provider | OpenAI / Anthropic / OpenAI-compatible |
+| Base URL | `https://api.openai.com/v1` |
+| API Key | `sk-...` |
+| Model | `gpt-4o` / `claude-opus-4-5` |
+
+Any OpenAI-compatible endpoint works (Ollama, LM Studio, OpenRouter, etc.).
+
+---
+
 ## 🏗 Project Structure
 
 ```
 MEditor/
-├── Package.swift                # Swift Package Manager manifest
+├── Package.swift
 ├── scripts/
-│   └── bundle.sh                # .app bundle assembler
-├── docs/
-│   └── code-review-and-roadmap.md  # Code quality analysis & feature plan
+│   ├── bundle.sh          # .app assembler
+│   └── test.sh            # Xcode-toolchain test runner
+├── docs/                  # Design specs & roadmap
 └── Sources/MEditor/
-    ├── MEditorApp.swift         # App entry point & @main struct
-    ├── Info.plist               # Bundle config & document type associations
-    ├── Models/
-    │   ├── EditorTab.swift      # Tab model (url, content, language, modified flag)
-    │   └── FileItem.swift       # File tree node (url, directory, children)
-    ├── Protocols/
-    │   ├── FileServiceProtocol.swift      # Abstract file I/O
-    │   └── SyntaxHighlightEngine.swift    # Abstract syntax highlighting
-    ├── Resources/
-    │   ├── AppIcon.icns         # Application icon (all resolutions)
-    │   └── Preview/             # Bundled JS libraries (no network required)
-    │       ├── marked.min.js    # Markdown → HTML renderer
-    │       ├── highlight.min.js # Code syntax highlighter
-    │       └── mermaid.min.js   # Diagram renderer (flowcharts, sequence, etc.)
+    ├── Models/            # EditorTab, FileItem, AgentTool, PluginSkill…
+    ├── Protocols/         # FileService, SyntaxHighlight, AgentContext…
     ├── Services/
-    │   ├── FileService.swift              # File I/O implementation
-    │   ├── FileWatcherService.swift       # FSEvents directory watcher
-    │   ├── FileTypeConfiguration.swift    # File type registry (icon, color, language)
-    │   ├── HTMLHighlightEngine.swift      # Regex-based HTML highlighter
-    │   ├── HighlightService.swift         # Syntax engine registry
-    │   └── MarkdownHighlightEngine.swift  # Regex-based Markdown highlighter
-    ├── ViewModels/
-    │   └── AppState.swift       # Global observable state (@Observable macro)
+    │   ├── AI/
+    │   │   ├── Agent/
+    │   │   │   ├── AgentRunner.swift          # Multi-turn loop & state
+    │   │   │   ├── Backends/
+    │   │   │   │   ├── AgentBackend.swift     # Protocol + default streaming fallback
+    │   │   │   │   ├── RestAgentBackend.swift # OpenAI & Anthropic SSE
+    │   │   │   │   └── ClaudeCLIBackend.swift # claude CLI subprocess
+    │   │   │   └── Tools/                     # Document, editor, workspace tools
+    │   │   ├── AIService.swift                # Chat (non-agent) completions
+    │   │   └── BeautifyAgent.swift            # Single-shot document polish
+    │   ├── Core/          # AppSettings, Localization, MarkdownFormatter
+    │   ├── File/          # FileService, FileWatcher, FileType config
+    │   └── Calendar/      # CalendarService protocol + InternalCalendar impl
+    ├── Managers/          # Tab, FileTree, Share, Template, Todo…
     └── Views/
-        ├── ContentView.swift    # Root layout (welcome screen + main layout)
-        ├── Editor/
-        │   ├── EditorTabBar.swift       # Drag-to-reorder tab bar
-        │   ├── EditorView.swift         # Editor container
-        │   └── NativeEditorView.swift   # NSTextView wrapper with highlighting
-        ├── Preview/
-        │   ├── MarkdownWebPreview.swift # WKWebView for Markdown rendering
-        │   ├── PreviewPanel.swift       # Preview container
-        │   └── WebPreviewView.swift     # WKWebView for raw HTML
-        ├── Shared/
-        │   ├── PanelLabel.swift         # Reusable panel header
-        │   └── VisualEffect.swift       # NSVisualEffectView wrapper
-        └── Sidebar/
-            ├── FileRow.swift            # File item row with context menu
-            └── FileSidebar.swift        # File tree with search & CRUD
+        ├── Agent/         # AgentStepView, AgentResultPanel
+        ├── AI/            # AIAssistant, AtMention composer
+        ├── Editor/        # NativeEditorView, TabBar, InlineEdit…
+        ├── Preview/       # MarkdownWebPreview, TOC, ExportBar
+        ├── Sidebar/       # FileSidebar, FileRow, TodoSidebar…
+        └── Shared/        # DesignTokens, ChromeButton, Toast…
 ```
 
 ---
 
-## 🔍 Code Quality & Roadmap
+## 🗺 Roadmap
 
-See [`docs/code-review-and-roadmap.md`](docs/code-review-and-roadmap.md) for a detailed code quality assessment and future feature roadmap.
+**Now**
+- [x] AI Agent with streaming (OpenAI + Anthropic SSE)
+- [x] Tool call expand/collapse with result details
+- [x] Built-in skills & curated gallery
+- [x] Session restore, auto-save, LAN share
 
-Highlights from the review:
+**Next**
+- [ ] Editor font & size settings
+- [ ] Git status indicators in sidebar
+- [ ] Global search (⌘⇧F)
+- [ ] Onboarding for first-time AI setup
 
-| Area | Rating |
-|------|--------|
-| **Architecture** | ⭐ Protocol-oriented with clean Service layer |
-| **Performance** | ⭐ Large file threshold (500KB), debounced updates |
-| **Security** | ⭐ Per-session token + allowlist for LAN share, standardized-path traversal guard, JSON encoding for preview |
-| **Needs Work** | 🔧 HTML templates embedded in Swift strings |
-| **Needs Work** | 🔧 Resource copy logic duplication |
-| **Shipped** | ✅ Preferences window, session restore, export (PDF/HTML/image), LAN share, themes |
-| **Next Up** | Editor font settings, Git status indicators, global search (⌘⇧F) |
+**Later**
+- [ ] Multi-window support
+- [ ] MCP (Model Context Protocol) tool servers
+- [ ] iOS / iPadOS companion
+
+---
+
+## 🤝 Contributing
+
+PRs welcome. Please run `make test` before opening one.
 
 ---
 
@@ -183,4 +196,4 @@ Highlights from the review:
 
 ---
 
-*Built with ❤️ using Swift and AppKit*
+*Built with Swift and SwiftUI on macOS*
