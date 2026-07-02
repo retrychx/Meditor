@@ -925,6 +925,12 @@ struct AIAssistantPanel: View {
         context: AgentContext,
         tools: [any AgentTool]
     ) {
+        // 对话过长时自动截断，保留最近 10 轮对话。截断后 agentHistory 同步清空。
+        if convo.truncateIfOverLimit(keepRecentPairs: 10) {
+            // 截断发生：插入一条系统提示（不影响正常流程）
+            let notice = AIChatMessage(role: .assistant, text: "⚠️ 对话历史过长，已自动保留最近 10 轮对话。")
+            convo.messages.insert(notice, at: max(0, convo.messages.count - 1))
+        }
 
         // 构建 AgentMessage 列表：优先使用已保存的 agentHistory（保留工具调用上下文）
         var agentMessages: [AgentMessage]
