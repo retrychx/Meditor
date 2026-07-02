@@ -177,7 +177,10 @@ struct RunCommandTool: AgentTool {
             let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
             let process = Process()
             process.executableURL = URL(fileURLWithPath: shell)
-            process.arguments = ["-l", "-c", command]
+            // 不加 -l：避免加载用户 shell 配置带来的副作用（慢启动、意外 cd 等）。
+            // 继承当前进程的 PATH，包含 Homebrew / nvm / pyenv 等常用工具路径。
+            process.environment = ProcessInfo.processInfo.environment
+            process.arguments = ["-c", command]
 
             if let cwd, !cwd.isEmpty {
                 process.currentDirectoryURL = URL(fileURLWithPath: cwd)

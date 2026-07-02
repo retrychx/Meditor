@@ -185,7 +185,7 @@ final class AgentRunnerMultiTurnTests: XCTestCase {
                       "错误消息应提示超时")
     }
 
-    // MARK: - onChunk 回调
+    // MARK: - onChunk / 流式输出
 
     func test_onChunk_calledDuringStreaming() async {
         var chunks: [String] = []
@@ -194,9 +194,47 @@ final class AgentRunnerMultiTurnTests: XCTestCase {
 
         await runAndWait(runner)
 
-        // 注意：RestAgentBackend 的流式由 backend 决定，这里 mock backend 不发 chunk
-        // 只测 finalText 正确；真实流式测试需要 integration test
+        // 注意：SequentialBackend 实现了 completeStreaming 的默认回退实现，
+        // onTextChunk 不被调用，finalText 由 runner 在 response.text 嵌入后回调。
         XCTAssertEqual(runner.finalText, "final text")
+    }
+
+    func test_streaming_chunksAccumulateCorrectly() async {
+        // 流式 backend：每次 completeStreaming 分 3 次回调 onTextChunk，最终返回完整文本
+        let streamingBackend = ChunkingBackend(chunks: ["Hello", " ", "World"], finalText: "Hello World")
+        let runner = AgentRunner(maxSteps: 5, backendFactory: { _ in streamingBackend })
+
+        var receivedChunks: [String] = []
+        runner.onChunk = { chunk in receivedChunks.append(chunk) }
+
+        await runAndWait(runner)
+
+        // 最终文本正确
+        XCTAssertEqual(runner.finalText, "Hello World")
+        // onChunk 至少被调用了（包括 chunk 和最终 finalText 回调）
+        XCTAssertFalse(receivedChunks.isEmpty, "onChunk 应被调用")
+        // 最后一次 onChunk 是完整文本
+        XCTAssertEqual(receivedChunks.last, "Hello World")
+    }
+
+    func test_streaming_toolCallRound_chunkIgnored_finalTextCorrect() async {
+        // 工具调用轮次的 chunk 被忽略，最终文本轮次的 chunk 正确输出
+        let spy = SpyTool(name: "read_document", result: "doc content")
+        let streamingBackend = ChunkingBackend(
+            toolCallName: "read_document",
+            finalChunks: ["Done", "!"],
+            finalText: "Done!"
+        )
+        let runner = AgentRunner(maxSteps: 5, backendFactory: { _ in streamingBackend })
+
+        var receivedChunks: [String] = []
+        runner.onChunk = { chunk in receivedChunks.append(chunk) }
+
+        await runAndWait(runner, tools: [spy])
+
+        XCTAssertTrue(spy.wasCalled)
+        XCTAssertEqual(runner.finalText, "Done!")
+        XCTAssertEqual(receivedChunks.last, "Done!")
     }
 
     // MARK: - 工具调用后继续多轮
@@ -334,6 +372,59 @@ private final class SpyTool: AgentTool, @unchecked Sendable {
         wasCalled = true
         lastArguments = arguments
         return result
+    }
+}
+
+/// 流式 Backend：分 chunk 回调 onTextChunk，支持纯文本和单次工具调用两种模式。
+private final class ChunkingBackend: AgentBackend, @unchecked Sendable {
+    private enum Mode {
+        case textOnly(chunks: [String], finalText: String)
+        case oneToolCall(name: String, finalChunks: [String], finalText: String)
+    }
+    private let mode: Mode
+    private var callCount = 0
+    private let lock = NSLock()
+
+    /// 纯文本流式模式
+    init(chunks: [String], finalText: String) {
+        self.mode = .textOnly(chunks: chunks, finalText: finalText)
+    }
+
+    /// 工具调用 + 最终文本流式模式
+    init(toolCallName: String, finalChunks: [String], finalText: String) {
+        self.mode = .oneToolCall(name: toolCallName, finalChunks: finalChunks, finalText: finalText)
+    }
+
+    func complete(messages: [AgentMessage], tools: [any AgentTool]) async throws -> AgentCompletionResponse {
+        try await completeStreaming(messages: messages, tools: tools, onTextChunk: { _ in })
+    }
+
+    func completeStreaming(
+        messages: [AgentMessage],
+        tools: [any AgentTool],
+        onTextChunk: @escaping @Sendable (String) -> Void
+    ) async throws -> AgentCompletionResponse {
+        lock.lock(); let call = callCount; callCount += 1; lock.unlock()
+
+        switch mode {
+        case .textOnly(let chunks, let finalText):
+            for chunk in chunks { onTextChunk(chunk) }
+            return AgentCompletionResponse(text: finalText, toolCalls: [], finishReason: "stop")
+
+        case .oneToolCall(let toolName, let finalChunks, let finalText):
+            if call == 0 {
+                // 第一轮：返回工具调用，chunk 被 Runner 忽略
+                return AgentCompletionResponse(
+                    text: "",
+                    toolCalls: [AgentToolCall(id: "tc1", name: toolName, argumentsJSON: "{}")],
+                    finishReason: "tool_calls"
+                )
+            } else {
+                // 第二轮：流式输出最终文本
+                for chunk in finalChunks { onTextChunk(chunk) }
+                return AgentCompletionResponse(text: finalText, toolCalls: [], finishReason: "stop")
+            }
+        }
     }
 }
 
