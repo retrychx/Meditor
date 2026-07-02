@@ -966,8 +966,25 @@ struct AIAssistantPanel: View {
                     convo.messages[idx].text = finalText
                 }
             } else {
-                // Agent 做了工具调用但没有最终文本：删掉空占位，工具结果已经体现在文档里
-                convo.messages.removeAll { $0.id == replyID }
+                // Agent 做了工具调用但没有最终文本
+                let errorSteps = runner?.steps.filter(\.isError) ?? []
+                if !errorSteps.isEmpty {
+                    // 有失败的工具步骤 → 生成错误摘要，不要静默消失
+                    let lines = errorSteps.compactMap { step -> String? in
+                        if case .toolCallDone(_, let name, _, let result, true) = step {
+                            let short = result.prefix(120)
+                            return "• \(name)：\(short)"
+                        }
+                        return nil
+                    }
+                    let summary = "⚠️ 部分操作未能完成：\n" + lines.joined(separator: "\n")
+                    if let idx = convo.messages.firstIndex(where: { $0.id == replyID }) {
+                        convo.messages[idx].text = summary
+                    }
+                } else {
+                    // 工具全部成功，结果已体现在文档里，删掉空占位
+                    convo.messages.removeAll { $0.id == replyID }
+                }
             }
 
             convo.isResponding = false
