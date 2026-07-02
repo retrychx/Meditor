@@ -5,7 +5,7 @@
 <h1 align="center">MEditor</h1>
 
 <p align="center">
-  <strong>基于 SwiftUI 的原生 macOS Markdown & HTML 编辑器</strong>
+  <strong>原生 macOS Markdown 编辑器，内置 AI Agent</strong>
 </p>
 
 <p align="center">
@@ -21,7 +21,21 @@
 
 ---
 
+MEditor 是一款纯 SwiftUI + AppKit 的 macOS Markdown 编辑器，内置 AI Agent，可通过工具调用直接读写、重构你的文档 —— 无插件、无 Electron、无云同步。
+
+---
+
 ## ✨ 功能特性
+
+### 🤖 AI Agent（核心能力）
+
+- **多轮工具循环** — Agent 推理、调用工具、读取结果，反复迭代直到任务完成
+- **文档工具** — 通过精准工具调用读取、写入、补丁式修改当前文档
+- **工作区工具** — 列出文件、全局搜索、打开标签、执行 Shell 命令（沙盒隔离）
+- **流式输出** — 回复逐字出现；工具步骤内联展示，支持展开/折叠查看详情
+- **OpenAI & Anthropic** — 两套协议均支持完整 SSE 流式；同时支持 ClaudeCLI 后端
+- **自带密钥** — 兼容任何 OpenAI 格式端点（Ollama、OpenRouter、本地大模型）
+- **技能系统** — 内置技能（总结、美化、代码审查…）+ 精选技能库，可自由扩展
 
 ### 编辑与预览
 - **📝 实时预览** — 基于 marked.js 的 Markdown 渲染，highlight.js 代码高亮，Mermaid.js 图表支持
