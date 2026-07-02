@@ -44,6 +44,8 @@ final class AIConversation {
     @ObservationIgnored var streamTask: Task<Void, Never>?
     /// Agent runner for tool-calling mode (助手面板接入 AgentRunner 时使用).
     @ObservationIgnored var agentRunner: AgentRunner?
+    /// 上次 Agent 运行的状态快照（Runner 完成后保留历史步骤展示用）。
+    var lastRunState: AgentRunState? = nil
     /// Debounced disk-persist work item.
     @ObservationIgnored private var persistWork: DispatchWorkItem?
 

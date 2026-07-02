@@ -70,11 +70,11 @@ final class AgentContext: AgentContextProtocol {
 
     // MARK: - File IO → files
 
-    func listWorkspaceFiles(extensions: [String]) -> [URL] {
-        files.listWorkspaceFiles(extensions: extensions)
+    func listWorkspaceFiles(extensions: [String]) async -> [URL] {
+        await files.listWorkspaceFiles(extensions: extensions)
     }
 
-    func readFile(at url: URL) throws -> String { try files.readFile(at: url) }
+    func readFile(at url: URL) async throws -> String { try files.readFile(at: url) }
 
     func searchWorkspace(query: String, extensions: [String]) async -> [String] {
         await files.searchWorkspace(query: query, extensions: extensions)

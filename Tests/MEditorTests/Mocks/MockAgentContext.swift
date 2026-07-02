@@ -98,7 +98,7 @@ final class MockAgentContext: AgentContextProtocol {
 
     // MARK: - AgentContextProtocol — Workspace
 
-    func listWorkspaceFiles(extensions: [String]) -> [URL] {
+    func listWorkspaceFiles(extensions: [String]) async -> [URL] {
         files.keys
             .filter { name in
                 extensions.isEmpty || extensions.contains { name.hasSuffix(".\($0)") }
@@ -106,7 +106,7 @@ final class MockAgentContext: AgentContextProtocol {
             .map { fakeURL(for: $0) }
     }
 
-    func readFile(at url: URL) throws -> String {
+    func readFile(at url: URL) async throws -> String {
         let name = url.lastPathComponent
         guard let content = files[name] else {
             throw CocoaError(.fileNoSuchFile)
@@ -116,7 +116,7 @@ final class MockAgentContext: AgentContextProtocol {
 
     func fileContentFull(at url: URL) async throws -> String {
         if let e = fileContentError { throw e }
-        return try readFile(at: url)
+        return try await readFile(at: url)
     }
 
     func createFile(name: String, content: String = "") throws -> URL {

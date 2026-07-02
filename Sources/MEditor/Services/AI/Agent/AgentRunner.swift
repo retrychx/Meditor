@@ -10,12 +10,29 @@ import Observation
 @Observable
 final class AgentRunner {
 
-    // MARK: - State
+    // MARK: - Owned run state
 
-    var steps: [AgentRunnerStep] = []
-    var isRunning: Bool = false
-    var finalText: String = ""
-    var error: String? = nil
+    /// 该次运行的可观测状态。生命周期独立于 Runner：Runner 完成后外层可保留它展示历史步骤。
+    let state: AgentRunState
+
+    // MARK: - State (forwarded to state)
+
+    var steps: [AgentRunnerStep] {
+        get { state.steps }
+        set { state.steps = newValue }
+    }
+    var isRunning: Bool {
+        get { state.isRunning }
+        set { state.isRunning = newValue }
+    }
+    var finalText: String {
+        get { state.finalText }
+        set { state.finalText = newValue }
+    }
+    var error: String? {
+        get { state.error }
+        set { state.error = newValue }
+    }
     /// 运行完成后暴露的完整 AgentMessage 列表（含工具调用上下文）
     private(set) var finalMessages: [AgentMessage] = []
 
@@ -45,6 +62,7 @@ final class AgentRunner {
         maxSteps: Int = 30,
         backendFactory: @escaping @Sendable (AIConfig) -> any AgentBackend = AgentBackendFactory.make
     ) {
+        self.state = AgentRunState()
         self.maxSteps = maxSteps
         self.backendFactory = backendFactory
     }

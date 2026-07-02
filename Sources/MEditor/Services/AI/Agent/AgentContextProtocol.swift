@@ -27,8 +27,8 @@ protocol DocumentContext: AnyObject {
 @MainActor
 protocol WorkspaceContext: AnyObject {
     var workspaceURL: URL? { get }
-    func listWorkspaceFiles(extensions: [String]) -> [URL]
-    func readFile(at url: URL) throws -> String
+    func listWorkspaceFiles(extensions: [String]) async -> [URL]
+    func readFile(at url: URL) async throws -> String
     /// 文件"当前最准确"的完整内容（开着的 Tab 内存内容优先，否则完整读盘；不截断）。
     func fileContentFull(at url: URL) async throws -> String
     @discardableResult func createFile(name: String, content: String) throws -> URL

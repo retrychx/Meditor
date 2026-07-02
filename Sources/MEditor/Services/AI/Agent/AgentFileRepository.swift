@@ -10,7 +10,7 @@ protocol AgentFileRepository: AnyObject {
     // 路径解析
     func resolveURL(_ name: String) -> URL
     func resolveFile(_ name: String) -> FileResolveResult
-    func listWorkspaceFiles(extensions: [String]) -> [URL]
+    func listWorkspaceFiles(extensions: [String]) async -> [URL]
 
     // 读写
     func readFile(at url: URL) throws -> String               // 截断到 maxReadBytes，多编码 fallback
@@ -68,7 +68,7 @@ final class DefaultAgentFileRepository: AgentFileRepository {
             if fm.fileExists(atPath: u.path) { return .found(u) }
         }
         let target   = (name as NSString).lastPathComponent
-        let allFiles = listWorkspaceFiles(extensions: []).filter { $0.lastPathComponent == target }
+        let allFiles = _listWorkspaceFilesSync(extensions: []).filter { $0.lastPathComponent == target }
         switch allFiles.count {
         case 0:  return .notFound
         case 1:  return .found(allFiles[0])
@@ -81,8 +81,15 @@ final class DefaultAgentFileRepository: AgentFileRepository {
         }
     }
 
-    func listWorkspaceFiles(extensions: [String] = []) -> [URL] {
+    // MARK: - Private sync enumeration (used by resolveFile and searchWorkspace)
+
+    private func _listWorkspaceFilesSync(extensions: [String]) -> [URL] {
         guard let root = workspaceURL else { return [] }
+        return Self.enumerate(root: root, extensions: extensions, noiseDirectories: Self.noiseDirectories)
+    }
+
+    /// Static helper: enumerates files under `root` — safe to call from any thread / Task.detached.
+    static func enumerate(root: URL, extensions: [String], noiseDirectories: Set<String>) -> [URL] {
         let fm = FileManager.default
         guard let enumerator = fm.enumerator(
             at: root,
@@ -93,13 +100,21 @@ final class DefaultAgentFileRepository: AgentFileRepository {
             guard let url = item as? URL,
                   let vals = try? url.resourceValues(forKeys: [.isRegularFileKey]),
                   vals.isRegularFile == true else { return nil }
-            // 跳过噪音目录（node_modules、.git、.build 等）
-            if url.pathComponents.contains(where: { Self.noiseDirectories.contains($0) }) {
+            if url.pathComponents.contains(where: { noiseDirectories.contains($0) }) {
                 return nil
             }
             if extensions.isEmpty { return url }
             return extensions.contains(url.pathExtension.lowercased()) ? url : nil
         }
+    }
+
+    func listWorkspaceFiles(extensions: [String] = []) async -> [URL] {
+        guard let root = workspaceURL else { return [] }
+        let noise = Self.noiseDirectories
+        let exts  = extensions
+        return await Task.detached(priority: .utility) {
+            DefaultAgentFileRepository.enumerate(root: root, extensions: exts, noiseDirectories: noise)
+        }.value
     }
 
     // MARK: - Read / Write
@@ -167,7 +182,7 @@ final class DefaultAgentFileRepository: AgentFileRepository {
         if let results = await grepSearch(query: query, extensions: extensions, root: root) {
             return results
         }
-        let files    = listWorkspaceFiles(extensions: extensions)
+        let files    = _listWorkspaceFilesSync(extensions: extensions)
         let rootPath = root.path
         return await Task.detached(priority: .userInitiated) {
             DefaultAgentFileRepository.swiftSearch(query: query, files: files, rootPath: rootPath)
