@@ -98,6 +98,15 @@ public enum CommandSandbox {
         .init(pattern: "launchctl remove",    label: "blocked", description: "移除系统服务"),
         .init(pattern: "/etc/passwd",         label: "blocked", description: "访问系统账户文件"),
         .init(pattern: "/etc/sudoers",        label: "blocked", description: "访问 sudoers"),
+        // 网络工具（curl/wget 绕过路径）
+        .init(pattern: "nc ",                 label: "blocked", description: "netcat 网络工具"),
+        .init(pattern: "ncat ",               label: "blocked", description: "ncat 网络工具"),
+        .init(pattern: "nmap ",               label: "blocked", description: "网络扫描"),
+        .init(pattern: "ssh ",                label: "blocked", description: "SSH 远程连接"),
+        .init(pattern: "scp ",                label: "blocked", description: "SCP 文件传输"),
+        .init(pattern: "rsync ",              label: "blocked", description: "rsync 远程同步"),
+        .init(pattern: "ftp ",                label: "blocked", description: "FTP 连接"),
+        .init(pattern: "sftp ",               label: "blocked", description: "SFTP 连接"),
     ]
 
     /// 高风险：每次都必须弹确认，不复用已缓存的审批 key。
@@ -114,6 +123,18 @@ public enum CommandSandbox {
         .init(pattern: "drop table",        label: "warn", description: "SQL 删表"),
         .init(pattern: "drop database",     label: "warn", description: "SQL 删库"),
         .init(pattern: "truncate table",    label: "warn", description: "SQL 清空表"),
+        // 内联脚本执行（可绕过 curl/wget 直接拦截）
+        .init(pattern: "python -c",         label: "warn", description: "Python 内联执行"),
+        .init(pattern: "python3 -c",        label: "warn", description: "Python3 内联执行"),
+        .init(pattern: "node -e",           label: "warn", description: "Node.js 内联执行"),
+        .init(pattern: "perl -e",           label: "warn", description: "Perl 内联执行"),
+        .init(pattern: "ruby -e",           label: "warn", description: "Ruby 内联执行"),
+        .init(pattern: "bash -c",           label: "warn", description: "Bash 内联执行（可绕过命令过滤）"),
+        .init(pattern: "sh -c",             label: "warn", description: "Shell 内联执行（可绕过命令过滤）"),
+        .init(pattern: "zsh -c",            label: "warn", description: "Zsh 内联执行（可绕过命令过滤）"),
+        .init(pattern: "eval ",             label: "warn", description: "eval 动态执行"),
+        .init(pattern: "| bash",            label: "warn", description: "管道 bash（常见恶意安装模式）"),
+        .init(pattern: "| sh",              label: "warn", description: "管道 shell（常见恶意安装模式）"),
     ]
 
     // MARK: - Assess

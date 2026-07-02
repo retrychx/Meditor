@@ -125,24 +125,20 @@ struct AgentStepView: View {
 
     // MARK: - Tool Call
 
-    /// 从 JSON args 字符串中提取指定 key 的字符串值（简单正则，不依赖 Codable）
+    /// 从 JSON args 字符串中提取指定 key 的字符串值。
+    /// 使用 JSONSerialization 解析，正确处理嵌套对象、数组、转义字符等边界情况。
     private func argValue(_ key: String, from args: String) -> String? {
-        // 从 JSON args 字符串提取 "key": "value"，逐字符解析，不依赖 NSRegularExpression
-        guard let keyStart = args.range(of: "\"" + key + "\"") else { return nil }
-        var rest = args[keyStart.upperBound...]
-        // 跳过 : 和空格，找到第一个 "
-        while let first = rest.first, first != "\"" { rest = rest.dropFirst() }
-        guard rest.hasPrefix("\"") else { return nil }
-        rest = rest.dropFirst() // 去掉开头引号
-        var value = ""
-        var escaped = false
-        for ch in rest {
-            if escaped { escaped = false; value.append(ch); continue }
-            if ch == "\\" { escaped = true; continue }
-            if ch == "\"" { break }
-            value.append(ch)
+        guard let data = args.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        // 字符串值直接返回；非字符串值序列化为紧凑 JSON 字符串
+        if let str = obj[key] as? String { return str }
+        if let val = obj[key] {
+            let serialized = (try? JSONSerialization.data(withJSONObject: val))
+                .flatMap { String(data: $0, encoding: .utf8) }
+            return serialized
         }
-        return value.replacingOccurrences(of: "\\n", with: " ")
+        return nil
     }
 
     /// 将工具名 + 参数转成人类可读的操作摘要
