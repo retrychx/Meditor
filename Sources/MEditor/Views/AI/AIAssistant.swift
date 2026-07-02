@@ -430,6 +430,11 @@ struct AIAssistantPanel: View {
                         if let runner = convo.agentRunner, !runner.steps.isEmpty {
                             agentStepsPanel(runner)
                         }
+                    } else if let lastState = convo.lastRunState, !lastState.steps.isEmpty {
+                        // 完成后：展示历史步骤（Runner 已 nil，但 state 保留）
+                        agentStepsPanelFromState(lastState)
+                    }
+                    if convo.isResponding {
                         // 当前轮 reply（在 steps 之下流式增长）
                         if let last = convo.messages.last,
                            last.role == .assistant, !last.text.isEmpty {
@@ -555,6 +560,28 @@ struct AIAssistantPanel: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(theme.separator.opacity(0.25), lineWidth: 0.5)
         )
+    }
+
+    /// 历史步骤面板（Runner 完成后，从 AgentRunState 渲染已结束步骤）
+    @ViewBuilder
+    private func agentStepsPanelFromState(_ runState: AgentRunState) -> some View {
+        let donesteps = runState.steps.filter { if case .thinking = $0 { return false }; return true }
+        if !donesteps.isEmpty {
+            VStack(alignment: .leading, spacing: 5) {
+                ForEach(donesteps) { step in
+                    AgentStepView(step: step, compact: true)
+                        .environment(state)
+                }
+            }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(theme.editorBackground.opacity(0.5), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(theme.separator.opacity(0.25), lineWidth: 0.5)
+            )
+        }
     }
 
     private func scrollToEnd(_ proxy: ScrollViewProxy) {
@@ -1009,6 +1036,9 @@ struct AIAssistantPanel: View {
             if let fm = runner?.finalMessages, !fm.isEmpty {
                 convo.agentHistory = fm
             }
+
+            // 保存本次运行状态快照（历史步骤持久化，Runner 置 nil 后仍可展示）
+            convo.lastRunState = runner?.state
 
             convo.isResponding = false
             convo.agentRunner  = nil
