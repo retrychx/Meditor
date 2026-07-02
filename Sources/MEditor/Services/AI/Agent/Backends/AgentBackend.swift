@@ -39,8 +39,8 @@ struct AgentCompletionResponse: Sendable {
 
 // MARK: - Agent AI Message (extended with tool roles)
 
-struct AgentMessage: Sendable {
-    enum Role: String, Sendable {
+struct AgentMessage: Sendable, Codable {
+    enum Role: String, Sendable, Codable {
         case system, user, assistant, tool
     }
 

@@ -16,6 +16,8 @@ final class AgentRunner {
     var isRunning: Bool = false
     var finalText: String = ""
     var error: String? = nil
+    /// 运行完成后暴露的完整 AgentMessage 列表（含工具调用上下文）
+    private(set) var finalMessages: [AgentMessage] = []
 
     /// 当前 step 的流式累积文本；onChunk 始终回调「累积全文」而非增量 delta，
     /// 让 UI 侧可直接赋值显示（无需自行拼接）。
@@ -238,6 +240,7 @@ final class AgentRunner {
             self.error = "Agent 执行超过最大步数（\(maxSteps)）"
         }
 
+        finalMessages     = messages
         isRunning         = false
         lastThinkingIndex = nil
         runTask           = nil

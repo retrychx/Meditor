@@ -705,6 +705,30 @@ struct SettingsView: View {
 
         return ScrollView {
             VStack(spacing: 0) {
+                // ── SKILL.md 解析错误警告条 ──
+                if !plugins.loadErrors.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("部分技能加载失败", systemImage: "exclamationmark.triangle.fill")
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .foregroundStyle(.orange)
+                        ForEach(plugins.loadErrors, id: \.self) { err in
+                            Text(err)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, DS.Space.lg)
+                    .padding(.vertical, DS.Space.sm)
+                    .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(Color.orange.opacity(0.3), lineWidth: 0.5)
+                    )
+                    .padding(.horizontal, DS.Space.lg)
+                    .padding(.top, DS.Space.md)
+                }
+
                 // ── 内置技能 ──
                 settingsGroup(title: "内置技能 (\(builtins.filter(\.isEnabled).count)/\(builtins.count) 已启用)") {
                     ForEach(builtins) { skill in

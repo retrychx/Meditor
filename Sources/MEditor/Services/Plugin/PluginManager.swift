@@ -8,6 +8,8 @@ final class PluginManager {
     // MARK: - State
 
     var skills: [PluginSkill] = []
+    /// SKILL.md 解析失败的错误描述（用于 UI 展示警告）
+    var loadErrors: [String] = []
 
     // MARK: - Persistence keys
 
@@ -196,7 +198,8 @@ final class PluginManager {
 
     private func loadManual() async {
         let states = loadStates()
-        var found: [PluginSkill] = []
+        var found:  [PluginSkill] = []
+        var errors: [String]      = []
         for entry in loadManualEntries() {
             if let url = resolveBookmark(entry.pathBookmark) {
                 // 书签可能指向 skill 根目录（新）或 SKILL.md 文件（旧），统一解析出 SKILL.md
@@ -206,10 +209,16 @@ final class PluginManager {
                 let isEnabled = states[entry.id] ?? entry.isEnabled
                 if let skill = await parseSkill(at: skillMD, id: entry.id, isEnabled: isEnabled) {
                     found.append(skill)
+                } else {
+                    let path = skillMD.path
+                    errors.append("\(skillMD.deletingLastPathComponent().lastPathComponent): 无法解析 SKILL.md（\(path)）")
                 }
+            } else {
+                errors.append("ID \(entry.id): 书签失效，请重新添加技能")
             }
         }
-        skills = found
+        skills     = found
+        loadErrors = errors
     }
 
     private func parseSkill(at url: URL, id: String, isEnabled: Bool) async -> PluginSkill? {

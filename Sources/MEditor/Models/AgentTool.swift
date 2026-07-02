@@ -136,7 +136,7 @@ struct AgentToolSpec: Sendable {
 // MARK: - Tool Call (from AI response)
 // 用强类型 AnySendableValue 替代 [String: Any]，消除 @unchecked Sendable
 
-enum AnySendableValue: Sendable {
+enum AnySendableValue: Sendable, Codable {
     case string(String)
     case bool(Bool)
     case int(Int)
@@ -219,6 +219,12 @@ struct AgentToolCall: Sendable {
         default: return .null
         }
     }
+}
+
+// MARK: - AgentToolCall Codable
+
+extension AgentToolCall: Codable {
+    enum CodingKeys: String, CodingKey { case id, name, arguments }
 }
 
 // MARK: - Tool Result
