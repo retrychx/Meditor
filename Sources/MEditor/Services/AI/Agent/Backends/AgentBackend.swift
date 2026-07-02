@@ -57,8 +57,9 @@ struct AgentMessage: Sendable, Codable {
         case .user:      return AIMessage(role: .user,      content: content)
         case .assistant: return AIMessage(role: .assistant, content: content)
         case .tool:
-            assertionFailure("asAIMessage called on tool-role message — use openAIDict instead")
-            return AIMessage(role: .user, content: content)
+            // tool-role 消息不应通过 asAIMessage 转换（应走 openAIDict）
+            // Release 下安全降级为 user 消息，避免静默数据损坏导致 AI 行为异常
+            return AIMessage(role: .user, content: "[tool result] " + content)
         }
     }
 

@@ -26,6 +26,18 @@ struct RestAgentBackend: AgentBackend {
     let config: AIConfig
     let wire: WireProtocol
 
+    /// 可注入的 URLSession（测试用）。nil 时使用 makeSession() 生成带超时配置的 session。
+    let sessionOverride: (any URLSessionDataProtocol)?
+
+    init(config: AIConfig, wire: WireProtocol, session: (any URLSessionDataProtocol)? = nil) {
+        self.config = config
+        self.wire = wire
+        self.sessionOverride = session
+    }
+
+    /// 返回实际使用的 session：有注入时用注入的，否则用带超时配置的 makeSession()。
+    var resolvedSession: any URLSessionDataProtocol { sessionOverride ?? makeSession() }
+
     // MARK: - AgentBackend
 
     func complete(
@@ -33,19 +45,40 @@ struct RestAgentBackend: AgentBackend {
         tools: [any AgentTool]
     ) async throws -> AgentCompletionResponse {
         guard config.isConfigured else { throw AIError.notConfigured }
-
         let req = try buildRequest(messages: messages, tools: tools)
-
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse else {
-            throw AIError.network("Invalid response type")
+        return try await withRetry {
+            let (data, response) = try await resolvedSession.data(for: req)
+            guard let http = response as? HTTPURLResponse else {
+                throw AIError.network("Invalid response type")
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                let body = String(data: data, encoding: .utf8) ?? "(empty)"
+                throw AIError.server(http.statusCode, body)
+            }
+            return try self.parseResponse(data: data)
         }
-        guard (200..<300).contains(http.statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? "(empty)"
-            throw AIError.server(http.statusCode, body)
-        }
+    }
 
-        return try parseResponse(data: data)
+    // MARK: - Retry helper（429 / 503 指数退避，最多重试 2 次）
+
+    private func withRetry<T: Sendable>(
+        maxAttempts: Int = 3,
+        _ block: @Sendable () async throws -> T
+    ) async throws -> T {
+        var lastError: Error?
+        var delayNs: UInt64 = 1_000_000_000  // 1s
+        for attempt in 1...maxAttempts {
+            do {
+                return try await block()
+            } catch AIError.server(let code, _) where (code == 429 || code == 503) && attempt < maxAttempts {
+                lastError = AIError.server(code, "retrying (attempt \(attempt))")
+                try? await Task.sleep(nanoseconds: delayNs)
+                delayNs *= 2
+            } catch {
+                throw error
+            }
+        }
+        throw lastError ?? AIError.network("retry exhausted")
     }
 
     // MARK: - Streaming
@@ -68,8 +101,7 @@ struct RestAgentBackend: AgentBackend {
         onTextChunk: @escaping @Sendable (String) -> Void
     ) async throws -> AgentCompletionResponse {
         let req = try openAIRequest(messages: messages, tools: tools, stream: true)
-        let session = makeSession()
-        let (bytes, response) = try await session.bytes(for: req)
+        let (bytes, response) = try await makeSession().bytes(for: req)
         guard let http = response as? HTTPURLResponse else { throw AIError.network("invalid response") }
         guard (200..<300).contains(http.statusCode) else {
             var body = ""
@@ -127,8 +159,7 @@ struct RestAgentBackend: AgentBackend {
         onTextChunk: @escaping @Sendable (String) -> Void
     ) async throws -> AgentCompletionResponse {
         let req = try anthropicRequest(messages: messages, tools: tools, stream: true)
-        let session = makeSession()
-        let (bytes, response) = try await session.bytes(for: req)
+        let (bytes, response) = try await makeSession().bytes(for: req)
         guard let http = response as? HTTPURLResponse else { throw AIError.network("invalid response") }
         guard (200..<300).contains(http.statusCode) else {
             var body = ""
