@@ -324,6 +324,10 @@ struct AgentResultPanel: View {
 
     @State private var finalTextExpanded = false
     @State private var copyDone = false
+    @State private var stepsExpanded = false
+
+    private let visibleRecentCount = 20
+    private let collapseThreshold = 30
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -361,7 +365,38 @@ struct AgentResultPanel: View {
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 8) {
-                        ForEach(runner.steps) { step in
+                        let totalSteps = runner.steps.count
+                        let shouldCollapse = totalSteps > collapseThreshold
+                        let hiddenCount = shouldCollapse ? totalSteps - visibleRecentCount : 0
+                        let visibleSteps = shouldCollapse ? Array(runner.steps.suffix(visibleRecentCount)) : runner.steps
+
+                        if shouldCollapse && hiddenCount > 0 {
+                            if stepsExpanded {
+                                ForEach(runner.steps.prefix(hiddenCount)) { step in
+                                    AgentStepView(step: step)
+                                        .environment(state)
+                                }
+                            }
+                            Button {
+                                withAnimation(DS.Motion.spring) { stepsExpanded.toggle() }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: stepsExpanded ? "chevron.down" : "chevron.right")
+                                        .font(.system(size: 10))
+                                    Text(stepsExpanded ? "折叠早期步骤" : "▸ 已折叠 \(hiddenCount) 个早期步骤")
+                                        .font(.system(size: 11.5))
+                                    Spacer(minLength: 0)
+                                }
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.primary.opacity(0.04),
+                                            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        ForEach(visibleSteps) { step in
                             AgentStepView(step: step)
                                 .environment(state)
                                 .transition(.asymmetric(
