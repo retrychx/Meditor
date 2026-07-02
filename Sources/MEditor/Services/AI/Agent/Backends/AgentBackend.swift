@@ -9,6 +9,24 @@ protocol AgentBackend: Sendable {
         messages: [AgentMessage],
         tools: [any AgentTool]
     ) async throws -> AgentCompletionResponse
+
+    /// 流式版本：文字 chunk 边生成边回调，工具调用结束后一次性返回完整 response。
+    /// 默认实现回退到 complete()，不调用 onTextChunk。
+    func completeStreaming(
+        messages: [AgentMessage],
+        tools: [any AgentTool],
+        onTextChunk: @escaping @Sendable (String) -> Void
+    ) async throws -> AgentCompletionResponse
+}
+
+extension AgentBackend {
+    func completeStreaming(
+        messages: [AgentMessage],
+        tools: [any AgentTool],
+        onTextChunk: @escaping @Sendable (String) -> Void
+    ) async throws -> AgentCompletionResponse {
+        try await complete(messages: messages, tools: tools)
+    }
 }
 
 // MARK: - Agent completion response

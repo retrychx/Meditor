@@ -48,6 +48,148 @@ struct RestAgentBackend: AgentBackend {
         return try parseResponse(data: data)
     }
 
+    // MARK: - Streaming
+
+    func completeStreaming(
+        messages: [AgentMessage],
+        tools: [any AgentTool],
+        onTextChunk: @escaping @Sendable (String) -> Void
+    ) async throws -> AgentCompletionResponse {
+        guard config.isConfigured else { throw AIError.notConfigured }
+        switch wire {
+        case .openAI:    return try await streamOpenAI(messages: messages, tools: tools, onTextChunk: onTextChunk)
+        case .anthropic: return try await streamAnthropic(messages: messages, tools: tools, onTextChunk: onTextChunk)
+        }
+    }
+
+    private func streamOpenAI(
+        messages: [AgentMessage],
+        tools: [any AgentTool],
+        onTextChunk: @escaping @Sendable (String) -> Void
+    ) async throws -> AgentCompletionResponse {
+        let req = try openAIRequest(messages: messages, tools: tools, stream: true)
+        let session = makeSession()
+        let (bytes, response) = try await session.bytes(for: req)
+        guard let http = response as? HTTPURLResponse else { throw AIError.network("invalid response") }
+        guard (200..<300).contains(http.statusCode) else {
+            var body = ""
+            for try await line in bytes.lines { body += line; if body.count > 500 { break } }
+            throw AIError.server(http.statusCode, body)
+        }
+
+        struct ToolCallAcc { var id = ""; var name = ""; var args = "" }
+        var accText = ""
+        var toolByIndex: [Int: ToolCallAcc] = [:]
+        var finishReason = "stop"
+
+        for try await line in bytes.lines {
+            guard line.hasPrefix("data:") else { continue }
+            let payload = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+            if payload == "[DONE]" { break }
+            guard let data = payload.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let choices = obj["choices"] as? [[String: Any]],
+                  let choice = choices.first else { continue }
+
+            if let fr = choice["finish_reason"] as? String, fr != "null", !fr.isEmpty {
+                finishReason = fr
+            }
+            guard let delta = choice["delta"] as? [String: Any] else { continue }
+
+            if let content = delta["content"] as? String, !content.isEmpty {
+                accText += content
+                onTextChunk(content)
+            }
+            if let tcs = delta["tool_calls"] as? [[String: Any]] {
+                for tc in tcs {
+                    guard let index = tc["index"] as? Int else { continue }
+                    var acc = toolByIndex[index] ?? ToolCallAcc()
+                    if let id = tc["id"] as? String { acc.id = id }
+                    if let fn = tc["function"] as? [String: Any] {
+                        if let name = fn["name"] as? String { acc.name = name }
+                        if let args = fn["arguments"] as? String { acc.args += args }
+                    }
+                    toolByIndex[index] = acc
+                }
+            }
+        }
+
+        let toolCalls = toolByIndex.sorted { $0.key < $1.key }.compactMap { _, acc -> AgentToolCall? in
+            guard !acc.id.isEmpty, !acc.name.isEmpty else { return nil }
+            return AgentToolCall(id: acc.id, name: acc.name, argumentsJSON: acc.args.isEmpty ? "{}" : acc.args)
+        }
+        return AgentCompletionResponse(text: accText, toolCalls: toolCalls, finishReason: finishReason)
+    }
+
+    private func streamAnthropic(
+        messages: [AgentMessage],
+        tools: [any AgentTool],
+        onTextChunk: @escaping @Sendable (String) -> Void
+    ) async throws -> AgentCompletionResponse {
+        let req = try anthropicRequest(messages: messages, tools: tools, stream: true)
+        let session = makeSession()
+        let (bytes, response) = try await session.bytes(for: req)
+        guard let http = response as? HTTPURLResponse else { throw AIError.network("invalid response") }
+        guard (200..<300).contains(http.statusCode) else {
+            var body = ""
+            for try await line in bytes.lines { body += line; if body.count > 500 { break } }
+            throw AIError.server(http.statusCode, body)
+        }
+
+        struct ToolUseAcc { var id = ""; var name = ""; var inputJSON = "" }
+        var accText = ""
+        var toolByIndex: [Int: ToolUseAcc] = [:]
+        var stopReason = "end_turn"
+
+        for try await line in bytes.lines {
+            // Anthropic SSE: ignore event lines, only parse data lines
+            guard line.hasPrefix("data:") else { continue }
+            let payload = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+            guard let data = payload.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let type = obj["type"] as? String else { continue }
+
+            switch type {
+            case "content_block_start":
+                guard let index = obj["index"] as? Int,
+                      let block = obj["content_block"] as? [String: Any],
+                      let blockType = block["type"] as? String,
+                      blockType == "tool_use" else { continue }
+                var acc = ToolUseAcc()
+                acc.id   = block["id"]   as? String ?? ""
+                acc.name = block["name"] as? String ?? ""
+                toolByIndex[index] = acc
+
+            case "content_block_delta":
+                guard let index = obj["index"] as? Int,
+                      let delta = obj["delta"] as? [String: Any],
+                      let deltaType = delta["type"] as? String else { continue }
+                if deltaType == "text_delta", let text = delta["text"] as? String {
+                    accText += text
+                    onTextChunk(text)
+                } else if deltaType == "input_json_delta",
+                          let partial = delta["partial_json"] as? String {
+                    toolByIndex[index]?.inputJSON += partial
+                }
+
+            case "message_delta":
+                if let delta = obj["delta"] as? [String: Any],
+                   let sr = delta["stop_reason"] as? String {
+                    stopReason = sr
+                }
+
+            default: break
+            }
+        }
+
+        let toolCalls = toolByIndex.sorted { $0.key < $1.key }.compactMap { _, acc -> AgentToolCall? in
+            guard !acc.id.isEmpty, !acc.name.isEmpty else { return nil }
+            return AgentToolCall(id: acc.id, name: acc.name, argumentsJSON: acc.inputJSON.isEmpty ? "{}" : acc.inputJSON)
+        }
+        let finishReason = stopReason == "tool_use" ? "tool_calls" : "stop"
+        return AgentCompletionResponse(text: accText, toolCalls: toolCalls, finishReason: finishReason)
+    }
+
     // MARK: - Request Building
 
     private func buildRequest(messages: [AgentMessage], tools: [any AgentTool]) throws -> URLRequest {
@@ -57,9 +199,18 @@ struct RestAgentBackend: AgentBackend {
         }
     }
 
+    private func makeSession() -> URLSession {
+        URLSession(configuration: {
+            let c = URLSessionConfiguration.default
+            c.timeoutIntervalForRequest  = config.requestTimeoutSeconds
+            c.timeoutIntervalForResource = config.requestTimeoutSeconds * 2
+            return c
+        }())
+    }
+
     // ── OpenAI ────────────────────────────────────────────────────────────────
 
-    private func openAIRequest(messages: [AgentMessage], tools: [any AgentTool]) throws -> URLRequest {
+    private func openAIRequest(messages: [AgentMessage], tools: [any AgentTool], stream: Bool = false) throws -> URLRequest {
         let base     = config.baseURL.hasSuffix("/") ? config.baseURL : config.baseURL + "/"
         let endpoint = base + "chat/completions"
         guard let url = URL(string: endpoint) else { throw AIError.badURL }
@@ -68,13 +219,14 @@ struct RestAgentBackend: AgentBackend {
         req.httpMethod    = "POST"
         req.timeoutInterval = config.requestTimeoutSeconds
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if stream { req.setValue("text/event-stream", forHTTPHeaderField: "Accept") }
         if !config.apiKey.isEmpty {
             req.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
         }
 
         var payload: [String: Any] = [
             "model":    config.model,
-            "stream":   false,
+            "stream":   stream,
             "messages": messages.map { $0.openAIDict }
         ]
         if !tools.isEmpty {
@@ -87,7 +239,7 @@ struct RestAgentBackend: AgentBackend {
 
     // ── Anthropic ─────────────────────────────────────────────────────────────
 
-    private func anthropicRequest(messages: [AgentMessage], tools: [any AgentTool]) throws -> URLRequest {
+    private func anthropicRequest(messages: [AgentMessage], tools: [any AgentTool], stream: Bool = false) throws -> URLRequest {
         let base     = config.baseURL.isEmpty ? "https://api.anthropic.com/v1" : config.baseURL
         let norm     = base.hasSuffix("/") ? base : base + "/"
         let endpoint = norm + "messages"
@@ -97,6 +249,7 @@ struct RestAgentBackend: AgentBackend {
         req.httpMethod    = "POST"
         req.timeoutInterval = config.requestTimeoutSeconds
         req.setValue("application/json",  forHTTPHeaderField: "Content-Type")
+        if stream { req.setValue("text/event-stream", forHTTPHeaderField: "Accept") }
         req.setValue(config.apiKey,       forHTTPHeaderField: "x-api-key")
         req.setValue("2023-06-01",        forHTTPHeaderField: "anthropic-version")
 
@@ -109,6 +262,7 @@ struct RestAgentBackend: AgentBackend {
             "max_tokens": 8096,
             "messages":   convo
         ]
+        if stream       { payload["stream"] = true }
         if !system.isEmpty { payload["system"] = system }
         if !tools.isEmpty  { payload["tools"]  = tools.map { $0.spec.anthropicDict } }
 
