@@ -138,6 +138,33 @@ final class AIConversation {
         estimatedTokenCount > 102_400   // 128 000 × 0.80
     }
 
+    /// 当对话历史超过 context limit 时，自动滑动窗口截断早期消息。
+    /// 策略：保留第一条用户消息（初始上下文）+ 最近 N 轮对话（一对 = user + assistant 各一条）。
+    /// 调用后 agentHistory 同步重置，避免旧历史影响新轮工具上下文。
+    @discardableResult
+    func truncateIfOverLimit(keepRecentPairs: Int = 10) -> Bool {
+        guard isApproachingContextLimit else { return false }
+        guard sessions.indices.contains(activeIndex) else { return false }
+
+        var msgs = sessions[activeIndex].messages
+        let totalPairs = keepRecentPairs * 2   // user + assistant 各一条
+
+        if msgs.count > totalPairs + 1 {
+            let first = msgs.first   // 保留最早的用户消息（初始上下文）
+            let recent = Array(msgs.suffix(totalPairs))
+            msgs = (first.map { [$0] } ?? []) + recent
+            // 去重（首条和 recent 可能重叠）
+            var seen = Set<UUID>()
+            msgs = msgs.filter { seen.insert($0.id).inserted }
+            sessions[activeIndex].messages = msgs
+        }
+
+        // 重置 agentHistory：旧工具调用上下文不再有效
+        sessions[activeIndex].agentHistory = []
+        persist()
+        return true
+    }
+
     /// History ordered most-recently-updated first.
     var history: [AISession] {
         sessions.sorted { $0.updatedAt > $1.updatedAt }
