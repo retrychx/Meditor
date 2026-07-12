@@ -66,14 +66,27 @@ public enum CommandSandbox {
 
     // MARK: - Risk Rules
 
-    /// 一条风险匹配规则（子串匹配，不区分大小写）。
+    /// 一条风险匹配规则。
     public struct RiskRule: Sendable {
-        /// 被检测的命令字符串（小写）中需包含的子串。
+        /// 命中判定用的模式文本（含义取决于 `kind`）。
         public let pattern: String
+        /// 匹配方式：`.substring` 用于含特殊符号的固定短语（如 "rm -rf /"），
+        /// `.commandToken` 用于裸命令名（如 "nc"、"ssh"），按词边界 + 命令起始位置匹配，
+        /// 避免 "npm run sync" 命中 "nc"、"git commit -m 'sync data'" 命中 "nc" 这类误杀。
+        public let kind: MatchKind
         /// 风险类型（blocked / warn），risk.message 由 assess 生成，rule 只提供 label。
         public let label: String
         /// 规则描述（用于生成 message）。
         public let description: String
+
+        public enum MatchKind: Sendable { case substring, commandToken }
+
+        public init(pattern: String, kind: MatchKind = .substring, label: String, description: String) {
+            self.pattern = pattern
+            self.kind = kind
+            self.label = label
+            self.description = description
+        }
     }
 
     /// 直接拒绝，不弹确认框。匹配第一条即止。
@@ -82,37 +95,36 @@ public enum CommandSandbox {
         .init(pattern: "rm -rf ~",            label: "blocked", description: "删除 home 目录"),
         .init(pattern: "rm -rf $home",        label: "blocked", description: "删除 home 目录"),
         .init(pattern: ":(){ :|:& };",        label: "blocked", description: "Fork 炸弹"),
-        .init(pattern: "mkfs",                label: "blocked", description: "磁盘格式化"),
+        .init(pattern: "mkfs",                kind: .commandToken, label: "blocked", description: "磁盘格式化"),
         .init(pattern: "dd if=",              label: "blocked", description: "磁盘低级写入"),
         .init(pattern: "> /dev/",             label: "blocked", description: "写入设备文件"),
-        .init(pattern: "sudo ",               label: "blocked", description: "sudo 提权"),
-        .init(pattern: "sudo\t",              label: "blocked", description: "sudo 提权（tab）"),
+        .init(pattern: "sudo",                kind: .commandToken, label: "blocked", description: "sudo 提权"),
         .init(pattern: "su -",                label: "blocked", description: "切换 root"),
         .init(pattern: "chmod 777 /",         label: "blocked", description: "系统目录权限篡改"),
         .init(pattern: "chown -r /",          label: "blocked", description: "系统目录 owner 篡改"),
         .init(pattern: "defaults delete com.apple", label: "blocked", description: "删除系统级 defaults"),
-        .init(pattern: "curl ",               label: "blocked", description: "外部网络请求（含 pipe shell 风险）"),
-        .init(pattern: "wget ",               label: "blocked", description: "外部网络下载"),
-        .init(pattern: "killall ",            label: "blocked", description: "批量终止进程"),
+        .init(pattern: "curl",                kind: .commandToken, label: "blocked", description: "外部网络请求（含 pipe shell 风险）"),
+        .init(pattern: "wget",                kind: .commandToken, label: "blocked", description: "外部网络下载"),
+        .init(pattern: "killall",             kind: .commandToken, label: "blocked", description: "批量终止进程"),
         .init(pattern: "launchctl unload",    label: "blocked", description: "卸载系统服务"),
         .init(pattern: "launchctl remove",    label: "blocked", description: "移除系统服务"),
         .init(pattern: "/etc/passwd",         label: "blocked", description: "访问系统账户文件"),
         .init(pattern: "/etc/sudoers",        label: "blocked", description: "访问 sudoers"),
-        // 网络工具（curl/wget 绕过路径）
-        .init(pattern: "nc ",                 label: "blocked", description: "netcat 网络工具"),
-        .init(pattern: "ncat ",               label: "blocked", description: "ncat 网络工具"),
-        .init(pattern: "nmap ",               label: "blocked", description: "网络扫描"),
-        .init(pattern: "ssh ",                label: "blocked", description: "SSH 远程连接"),
-        .init(pattern: "scp ",                label: "blocked", description: "SCP 文件传输"),
-        .init(pattern: "rsync ",              label: "blocked", description: "rsync 远程同步"),
-        .init(pattern: "ftp ",                label: "blocked", description: "FTP 连接"),
-        .init(pattern: "sftp ",               label: "blocked", description: "SFTP 连接"),
+        // 网络工具（curl/wget 绕过路径）——命令名 token 匹配，避免 "npm run sync"/"vsync"/"concat" 误杀
+        .init(pattern: "nc",                  kind: .commandToken, label: "blocked", description: "netcat 网络工具"),
+        .init(pattern: "ncat",                kind: .commandToken, label: "blocked", description: "ncat 网络工具"),
+        .init(pattern: "nmap",                kind: .commandToken, label: "blocked", description: "网络扫描"),
+        .init(pattern: "ssh",                 kind: .commandToken, label: "blocked", description: "SSH 远程连接"),
+        .init(pattern: "scp",                 kind: .commandToken, label: "blocked", description: "SCP 文件传输"),
+        .init(pattern: "rsync",               kind: .commandToken, label: "blocked", description: "rsync 远程同步"),
+        .init(pattern: "ftp",                 kind: .commandToken, label: "blocked", description: "FTP 连接"),
+        .init(pattern: "sftp",                kind: .commandToken, label: "blocked", description: "SFTP 连接"),
     ]
 
     /// 高风险：每次都必须弹确认，不复用已缓存的审批 key。
     public static let warnRules: [RiskRule] = [
-        .init(pattern: "rm ",               label: "warn", description: "删除文件"),
-        .init(pattern: "mv ",               label: "warn", description: "移动 / 重命名（可能覆盖）"),
+        .init(pattern: "rm",                kind: .commandToken, label: "warn", description: "删除文件"),
+        .init(pattern: "mv",                kind: .commandToken, label: "warn", description: "移动 / 重命名（可能覆盖）"),
         .init(pattern: "npm publish",       label: "warn", description: "发布到 npm 公共仓库"),
         .init(pattern: "yarn publish",      label: "warn", description: "发布到 npm 公共仓库"),
         .init(pattern: "pnpm publish",      label: "warn", description: "发布到 npm 公共仓库"),
@@ -123,7 +135,7 @@ public enum CommandSandbox {
         .init(pattern: "drop table",        label: "warn", description: "SQL 删表"),
         .init(pattern: "drop database",     label: "warn", description: "SQL 删库"),
         .init(pattern: "truncate table",    label: "warn", description: "SQL 清空表"),
-        // 内联脚本执行（可绕过 curl/wget 直接拦截）
+        // 内联脚本执行（可绕过 curl/wget 直接拦截）—— 命令名 token 匹配，避免子串误杀
         .init(pattern: "python -c",         label: "warn", description: "Python 内联执行"),
         .init(pattern: "python3 -c",        label: "warn", description: "Python3 内联执行"),
         .init(pattern: "node -e",           label: "warn", description: "Node.js 内联执行"),
@@ -132,7 +144,7 @@ public enum CommandSandbox {
         .init(pattern: "bash -c",           label: "warn", description: "Bash 内联执行（可绕过命令过滤）"),
         .init(pattern: "sh -c",             label: "warn", description: "Shell 内联执行（可绕过命令过滤）"),
         .init(pattern: "zsh -c",            label: "warn", description: "Zsh 内联执行（可绕过命令过滤）"),
-        .init(pattern: "eval ",             label: "warn", description: "eval 动态执行"),
+        .init(pattern: "eval",              kind: .commandToken, label: "warn", description: "eval 动态执行"),
         .init(pattern: "| bash",            label: "warn", description: "管道 bash（常见恶意安装模式）"),
         .init(pattern: "| sh",              label: "warn", description: "管道 shell（常见恶意安装模式）"),
     ]
@@ -147,15 +159,38 @@ public enum CommandSandbox {
         let lower = command.lowercased().trimmingCharacters(in: .whitespaces)
         guard !lower.isEmpty else { return .safe }
 
-        for rule in blockedRules where lower.contains(rule.pattern) {
+        for rule in blockedRules where matches(rule, in: lower) {
             return .blocked(reason: "🚫 安全限制：\(rule.description)，该命令已被自动拒绝。\n命令：\(truncated(command))")
         }
 
-        for rule in warnRules where lower.contains(rule.pattern) {
+        for rule in warnRules where matches(rule, in: lower) {
             return .warn(reason: "⚠️ 高风险操作：\(rule.description)，请确认后继续。")
         }
 
         return .safe
+    }
+
+    /// 按规则的匹配方式判定是否命中。
+    private static func matches(_ rule: RiskRule, in lowerCommand: String) -> Bool {
+        switch rule.kind {
+        case .substring:
+            return lowerCommand.contains(rule.pattern)
+        case .commandToken:
+            return containsCommandToken(rule.pattern, in: lowerCommand)
+        }
+    }
+
+    /// 判断 `token` 是否作为「命令名」出现在 `command` 中：
+    /// 前面是字符串起始或 shell 命令分隔符（空白/`;`/`|`/`&`/`(`），
+    /// 后面是字符串结束或非字母数字字符（空白/`;`/`|`/`&`/参数 `-`/路径 `/` 等）。
+    /// 用于避免 "npm run sync" 命中 "nc"、"git commit -m 'sync data'" 命中 "nc"、
+    /// "concat files" 命中 "nc" 这类把命令名当子串到处匹配的误杀。
+    private static func containsCommandToken(_ token: String, in command: String) -> Bool {
+        guard let regex = try? NSRegularExpression(
+            pattern: "(?:^|[\\s;|&(])" + NSRegularExpression.escapedPattern(for: token) + "(?:$|[\\s;|&)/.])"
+        ) else { return command.contains(token) }
+        let range = NSRange(command.startIndex..., in: command)
+        return regex.firstMatch(in: command, range: range) != nil
     }
 
     // MARK: - Cwd Validation

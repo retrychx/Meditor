@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MEditor — Native macOS Markdown Editor with AI</title>
+  <style>
+    /* ─── Reset & Base ─────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #09090f;
+      --surface:     #111118;
+      --surface2:    #17171f;
+      --border:      rgba(255,255,255,0.07);
+      --accent:      #7c6bff;
+      --accent2:     #a78bfa;
+      --accent-glow: rgba(124,107,255,0.35);
+      --text:        #e8e8f0;
+      --muted:       #8888a0;
+      --radius:      16px;
+      --font:        -apple-system, "SF Pro Display", BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ─── Noise Overlay ────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0.6;
+    }
+
+    /* ─── Ambient Glows (hero) ─────────────────────────── */
+    .glow-1, .glow-2, .glow-3 {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(90px);
+      pointer-events: none;
+    }
+    .glow-1 { width: 600px; height: 600px; background: rgba(124,107,255,0.18); top: -120px; left: 50%; transform: translateX(-60%); }
+    .glow-2 { width: 400px; height: 400px; background: rgba(167,139,250,0.12); top: 200px; right: -80px; }
+    .glow-3 { width: 350px; height: 350px; background: rgba(56,189,248,0.10); top: 350px; left: -60px; }
+
+    /* ─── NAV (frosted glass) ──────────────────────────── */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 40px;
+      background: rgba(9,9,15,0.55);
+      backdrop-filter: blur(20px) saturate(160%) brightness(0.85);
+      -webkit-backdrop-filter: blur(20px) saturate(160%) brightness(0.85);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 17px;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      text-decoration: none;
+    }
+    .nav-logo .logo-mark {
+      width: 28px; height: 28px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 28px;
+      list-style: none;
+    }
+    .nav-links a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 14px;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--text); }
+
+    .nav-cta {
+      background: var(--accent);
+      color: #fff;
+      padding: 7px 18px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: opacity 0.2s, transform 0.2s;
+    }
+    .nav-cta:hover { opacity: 0.85; transform: translateY(-1px); }
+
+    /* ─── HERO ─────────────────────────────────────────── */
+    .hero {
+      position: relative;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 120px 24px 80px;
+      overflow: hidden;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(124,107,255,0.12);
+      border: 1px solid rgba(124,107,255,0.3);
+      color: var(--accent2);
+      font-size: 13px;
+      font-weight: 500;
+      padding: 5px 14px;
+      border-radius: 100px;
+      margin-bottom: 28px;
+      letter-spacing: 0.01em;
+    }
+    .hero-badge .dot {
+      width: 6px; height: 6px;
+      background: var(--accent2);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.8); }
+    }
+
+    .hero h1 {
+      font-size: clamp(42px, 7vw, 80px);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.08;
+      margin-bottom: 24px;
+      max-width: 820px;
+    }
+    .hero h1 .gradient-text {
+      background: linear-gradient(135deg, #fff 30%, var(--accent2) 70%, var(--accent) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-sub {
+      font-size: clamp(16px, 2.2vw, 20px);
+      color: var(--muted);
+      max-width: 560px;
+      line-height: 1.65;
+      margin-bottom: 40px;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 72px;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      padding: 14px 32px;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+      box-shadow: 0 0 28px rgba(124,107,255,0.35);
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 0 40px rgba(124,107,255,0.5);
+    }
+
+    .btn-ghost {
+      background: var(--surface);
+      color: var(--text);
+      padding: 14px 32px;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 500;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid var(--border);
+      transition: all 0.2s;
+    }
+    .btn-ghost:hover {
+      border-color: rgba(255,255,255,0.15);
+      background: var(--surface2);
+      transform: translateY(-1px);
+    }
+
+    /* ─── HERO SCREENSHOT ──────────────────────────────── */
+    .hero-media {
+      width: 100%;
+      max-width: 960px;
+      position: relative;
+    }
+    .hero-media::before {
+      content: '';
+      position: absolute;
+      top: -30px; left: 50%; transform: translateX(-50%);
+      width: 70%;
+      height: 60px;
+      background: var(--accent);
+      filter: blur(60px);
+      opacity: 0.3;
+      border-radius: 50%;
+    }
+    .hero-screenshot {
+      width: 100%;
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.09);
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,0.04) inset,
+        0 40px 120px -20px rgba(0,0,0,0.8),
+        0 0 80px -10px rgba(124,107,255,0.15);
+      overflow: hidden;
+      background: var(--surface2);
+    }
+    /* 占位截图 */
+    .screenshot-placeholder {
+      width: 100%;
+      aspect-ratio: 16/10;
+      background: linear-gradient(135deg, #141420 0%, #1a1a28 50%, #141420 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .screenshot-placeholder .ph-icon {
+      width: 56px; height: 56px;
+      background: rgba(124,107,255,0.15);
+      border: 1px dashed rgba(124,107,255,0.3);
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px;
+    }
+    .screenshot-placeholder span {
+      font-size: 13px;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    /* ─── SECTION BASE ─────────────────────────────────── */
+    section {
+      padding: 100px 24px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .section-label {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent2);
+      margin-bottom: 12px;
+    }
+    .section-title {
+      font-size: clamp(28px, 4vw, 44px);
+      font-weight: 750;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      margin-bottom: 16px;
+    }
+    .section-sub {
+      font-size: 16px;
+      color: var(--muted);
+      max-width: 540px;
+      line-height: 1.65;
+    }
+    .section-header { margin-bottom: 60px; }
+
+    /* ─── SCROLL ANIMATIONS ────────────────────────────── */
+    .reveal {
+      opacity: 0;
+      transform: translateY(36px);
+      transition: opacity 0.7s cubic-bezier(0.22,1,0.36,1),
+                  transform 0.7s cubic-bezier(0.22,1,0.36,1);
+    }
+    .reveal.from-left  { transform: translateX(-40px) translateY(0); }
+    .reveal.from-right { transform: translateX(40px) translateY(0); }
+    .reveal.visible {
+      opacity: 1;
+      transform: translate(0, 0);
+    }
+    /* stagger children */
+    .stagger-children > * { opacity: 0; transform: translateY(28px); transition: opacity 0.6s cubic-bezier(0.22,1,0.36,1), transform 0.6s cubic-bezier(0.22,1,0.36,1); }
+    .stagger-children.visible > *:nth-child(1) { opacity:1; transform:none; transition-delay: 0.05s; }
+    .stagger-children.visible > *:nth-child(2) { opacity:1; transform:none; transition-delay: 0.15s; }
+    .stagger-children.visible > *:nth-child(3) { opacity:1; transform:none; transition-delay: 0.25s; }
+    .stagger-children.visible > *:nth-child(4) { opacity:1; transform:none; transition-delay: 0.35s; }
+    .stagger-children.visible > *:nth-child(5) { opacity:1; transform:none; transition-delay: 0.45s; }
+    .stagger-children.visible > *:nth-child(6) { opacity:1; transform:none; transition-delay: 0.55s; }
+
+    /* ─── FEATURE BENTO ────────────────────────────────── */
+    .bento-grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 16px;
+    }
+
+    .bento-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      padding: 28px;
+      transition: border-color 0.3s, transform 0.3s, box-shadow 0.3s;
+      position: relative;
+    }
+    .bento-card:hover {
+      border-color: rgba(124,107,255,0.25);
+      transform: translateY(-3px);
+      box-shadow: 0 12px 40px -8px rgba(0,0,0,0.5), 0 0 0 1px rgba(124,107,255,0.08) inset;
+    }
+    .bento-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(124,107,255,0.04) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    .bc-1 { grid-column: span 7; }
+    .bc-2 { grid-column: span 5; }
+    .bc-3 { grid-column: span 5; }
+    .bc-4 { grid-column: span 7; }
+    .bc-5 { grid-column: span 4; }
+    .bc-6 { grid-column: span 4; }
+    .bc-7 { grid-column: span 4; }
+
+    .card-icon {
+      width: 40px; height: 40px;
+      background: rgba(124,107,255,0.15);
+      border: 1px solid rgba(124,107,255,0.2);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+      margin-bottom: 16px;
+    }
+    .card-title {
+      font-size: 16px;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+    .card-desc {
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    /* card image area */
+    .card-media {
+      margin: 20px -28px -28px;
+      aspect-ratio: 16/9;
+      background: linear-gradient(160deg, #13131c, #1b1b2a);
+      display: flex; align-items: center; justify-content: center;
+      border-top: 1px solid var(--border);
+      position: relative;
+      overflow: hidden;
+    }
+    .card-media img { width: 100%; height: 100%; object-fit: cover; }
+    .card-media-ph {
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+    }
+    .card-media-ph .ph-box {
+      width: 44px; height: 44px;
+      background: rgba(255,255,255,0.04);
+      border: 1px dashed rgba(255,255,255,0.1);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+    }
+    .card-media-ph span { font-size: 11px; color: rgba(255,255,255,0.2); letter-spacing: 0.06em; text-transform: uppercase; }
+
+    /* ─── FEATURE SPLIT SECTIONS ───────────────────────── */
+    .feature-split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 60px;
+      align-items: center;
+      padding: 80px 24px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .feature-split.reverse { direction: rtl; }
+    .feature-split.reverse > * { direction: ltr; }
+
+    .split-text .tag {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent2);
+      background: rgba(124,107,255,0.1);
+      border: 1px solid rgba(124,107,255,0.2);
+      border-radius: 100px;
+      padding: 3px 12px;
+      margin-bottom: 16px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .split-text h3 {
+      font-size: clamp(22px, 3vw, 32px);
+      font-weight: 750;
+      letter-spacing: -0.03em;
+      line-height: 1.2;
+      margin-bottom: 14px;
+    }
+    .split-text p {
+      font-size: 15px;
+      color: var(--muted);
+      line-height: 1.7;
+      margin-bottom: 20px;
+    }
+    .feature-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .feature-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .feature-list li::before {
+      content: '✓';
+      flex-shrink: 0;
+      width: 18px; height: 18px;
+      background: rgba(124,107,255,0.15);
+      color: var(--accent2);
+      border-radius: 5px;
+      font-size: 11px;
+      font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      margin-top: 1px;
+    }
+
+    .split-visual {
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      box-shadow: 0 24px 80px -16px rgba(0,0,0,0.6);
+    }
+    .split-visual-ph {
+      aspect-ratio: 4/3;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 10px;
+      background: linear-gradient(135deg, #13131c, #1b1b2a);
+    }
+    .split-visual-ph .ph-lg {
+      width: 60px; height: 60px;
+      background: rgba(124,107,255,0.1);
+      border: 1.5px dashed rgba(124,107,255,0.25);
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 28px;
+    }
+    .split-visual-ph span { font-size: 12px; color: rgba(255,255,255,0.18); letter-spacing: 0.07em; text-transform: uppercase; }
+
+    /* ─── DIVIDER LINE ─────────────────────────────────── */
+    .divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border), transparent);
+      margin: 0 24px;
+    }
+
+    /* ─── STATS ROW ────────────────────────────────────── */
+    .stats-section {
+      padding: 60px 24px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1px;
+      background: var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .stat-item {
+      background: var(--surface);
+      padding: 36px 32px;
+      text-align: center;
+    }
+    .stat-num {
+      font-size: 40px;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      background: linear-gradient(135deg, #fff, var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 6px;
+    }
+    .stat-label { font-size: 13px; color: var(--muted); }
+
+    /* ─── CTA BANNER ───────────────────────────────────── */
+    .cta-banner {
+      margin: 0 24px 100px;
+      max-width: 1052px;
+      margin-left: auto;
+      margin-right: auto;
+      border-radius: 24px;
+      overflow: hidden;
+      position: relative;
+      background: linear-gradient(135deg, #1a1730 0%, #12121e 60%, #1a1730 100%);
+      border: 1px solid rgba(124,107,255,0.2);
+      padding: 72px 48px;
+      text-align: center;
+    }
+    .cta-banner::before {
+      content: '';
+      position: absolute;
+      top: -40px; left: 50%; transform: translateX(-50%);
+      width: 500px; height: 200px;
+      background: var(--accent);
+      opacity: 0.08;
+      filter: blur(60px);
+      border-radius: 50%;
+    }
+    .cta-banner h2 {
+      font-size: clamp(28px, 4vw, 44px);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 16px;
+    }
+    .cta-banner p {
+      font-size: 16px;
+      color: var(--muted);
+      margin-bottom: 36px;
+      max-width: 480px;
+      margin-left: auto; margin-right: auto;
+      line-height: 1.6;
+    }
+
+    /* ─── FOOTER ────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 40px 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    footer a { color: var(--muted); text-decoration: none; }
+    footer a:hover { color: var(--text); }
+    .footer-links { display: flex; gap: 24px; }
+
+    /* ─── RESPONSIVE ────────────────────────────────────── */
+    @media (max-width: 768px) {
+      nav { padding: 0 20px; }
+      .nav-links { display: none; }
+      .bento-grid { grid-template-columns: 1fr; }
+      .bc-1,.bc-2,.bc-3,.bc-4,.bc-5,.bc-6,.bc-7 { grid-column: span 1; }
+      .feature-split { grid-template-columns: 1fr; gap: 36px; }
+      .feature-split.reverse { direction: ltr; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      footer { flex-direction: column; gap: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ───── NAV ──────────────────────────────────────────── -->
+<nav>
+  <a href="#" class="nav-logo">
+    <span class="logo-mark">✦</span>
+    MEditor
+  </a>
+  <ul class="nav-links">
+    <li><a href="#features">Features</a></li>
+    <li><a href="#ai">AI Agent</a></li>
+    <li><a href="#editor">Editor</a></li>
+    <li><a href="https://github.com/your-repo/meditor">GitHub</a></li>
+  </ul>
+  <a href="#download" class="nav-cta">Download Free →</a>
+</nav>
+
+<!-- ───── HERO ─────────────────────────────────────────── -->
+<div class="hero">
+  <div class="glow-1"></div>
+  <div class="glow-2"></div>
+  <div class="glow-3"></div>
+
+  <div class="hero-badge">
+    <span class="dot"></span>
+    Native macOS · No Electron · No Cloud
+  </div>
+
+  <h1>
+    The Markdown Editor<br />
+    <span class="gradient-text">with a Brain.</span>
+  </h1>
+
+  <p class="hero-sub">
+    MEditor is a pure SwiftUI + AppKit Markdown editor for macOS, with a built-in AI Agent that can read, write, and refactor your documents — using real tool calls.
+  </p>
+
+  <div class="hero-actions">
+    <a href="#download" class="btn-primary">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1v9M8 10l-3-3M8 10l3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 13h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Download for macOS
+    </a>
+    <a href="https://github.com/your-repo/meditor" class="btn-ghost">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      View on GitHub
+    </a>
+  </div>
+
+  <div class="hero-media">
+    <div class="hero-screenshot">
+      <div class="screenshot-placeholder">
+        <div class="ph-icon">🖼️</div>
+        <span>App Screenshot — Coming Soon</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ───── STATS ────────────────────────────────────────── -->
+<div class="stats-section reveal">
+  <div class="stats-grid stagger-children">
+    <div class="stat-item">
+      <div class="stat-num">40+</div>
+      <div class="stat-label">Syntax languages</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-num">0ms</div>
+      <div class="stat-label">Startup time</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-num">100%</div>
+      <div class="stat-label">Native SwiftUI</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-num">∞</div>
+      <div class="stat-label">AI models supported</div>
+    </div>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- ───── FEATURE BENTO ────────────────────────────────── -->
+<section id="features">
+  <div class="section-header reveal">
+    <div class="section-label">Everything you need</div>
+    <h2 class="section-title">Built for writers who<br />think in Markdown.</h2>
+    <p class="section-sub">Every feature — from live preview to workspace tools — is designed to stay out of your way and let you focus on writing.</p>
+  </div>
+
+  <div class="bento-grid stagger-children">
+
+    <!-- Card 1: AI Agent — wide -->
+    <div class="bento-card bc-1">
+      <div class="card-icon">🤖</div>
+      <div class="card-title">Built-in AI Agent</div>
+      <div class="card-desc">Multi-turn reasoning loop. The Agent reads your document, calls tools, sees results, and keeps going until the task is done — all inline.</div>
+      <div class="card-media">
+        <div class="card-media-ph">
+          <div class="ph-box">🤖</div>
+          <span>AI Agent screenshot</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 2: Live Preview -->
+    <div class="bento-card bc-2">
+      <div class="card-icon">👁️</div>
+      <div class="card-title">Real-time Preview</div>
+      <div class="card-desc">Editor and preview scroll in sync. Code blocks, Mermaid diagrams, and math rendered instantly as you type.</div>
+      <div class="card-media">
+        <div class="card-media-ph">
+          <div class="ph-box">👁️</div>
+          <span>Preview screenshot</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 3: Workspace Tools -->
+    <div class="bento-card bc-3">
+      <div class="card-icon">🗂️</div>
+      <div class="card-title">Workspace Tools</div>
+      <div class="card-desc">List files, search across your vault, open tabs, run sandboxed shell commands — all accessible to the AI Agent.</div>
+      <div class="card-media">
+        <div class="card-media-ph">
+          <div class="ph-box">🗂️</div>
+          <span>Workspace screenshot</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 4: Streaming output — wide -->
+    <div class="bento-card bc-4">
+      <div class="card-icon">⚡</div>
+      <div class="card-title">Streaming Output</div>
+      <div class="card-desc">Responses appear word-by-word. Tool steps show inline with expand/collapse detail — you always know what the Agent is doing.</div>
+      <div class="card-media">
+        <div class="card-media-ph">
+          <div class="ph-box">⚡</div>
+          <span>Streaming screenshot</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 5, 6, 7: Small cards -->
+    <div class="bento-card bc-5">
+      <div class="card-icon">🔑</div>
+      <div class="card-title">Bring Your Own Key</div>
+      <div class="card-desc">Works with any OpenAI-compatible endpoint — Ollama, OpenRouter, Anthropic, local LLMs.</div>
+    </div>
+
+    <div class="bento-card bc-6">
+      <div class="card-icon">📤</div>
+      <div class="card-title">Export Anywhere</div>
+      <div class="card-desc">Export to HTML, PDF, or 2× PNG in one click. Plus HTML → Markdown conversion.</div>
+    </div>
+
+    <div class="bento-card bc-7">
+      <div class="card-icon">🌐</div>
+      <div class="card-title">LAN Sharing</div>
+      <div class="card-desc">Built-in HTTP server with one-time token auth. Share your document over Wi-Fi instantly.</div>
+    </div>
+
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ───── FEATURE SPLIT: AI Agent ─────────────────────── -->
+<div class="feature-split" id="ai">
+  <div class="split-text reveal from-left">
+    <span class="tag">AI Agent</span>
+    <h3>Your AI writes, refactors, and edits — with real tool calls.</h3>
+    <p>MEditor ships with a full AI Agent, not just a chat panel. It reads your document, calls tools to patch specific sections, searches your workspace — and shows every step transparently.</p>
+    <ul class="feature-list">
+      <li>Multi-turn reasoning loop that runs to completion</li>
+      <li>Document tools: read, write, patch, insert with precision</li>
+      <li>OpenAI &amp; Anthropic SSE streaming, both wire protocols</li>
+      <li>Skill system — built-in + an extensible gallery</li>
+    </ul>
+  </div>
+  <div class="split-visual reveal from-right">
+    <div class="split-visual-ph">
+      <div class="ph-lg">🤖</div>
+      <span>AI Agent Panel</span>
+    </div>
+  </div>
+</div>
+
+<!-- ───── FEATURE SPLIT: Editor ───────────────────────── -->
+<div class="feature-split reverse" id="editor">
+  <div class="split-text reveal from-right">
+    <span class="tag">Editor</span>
+    <h3>A real editor. Not an afterthought.</h3>
+    <p>Syntax highlighting for 40+ languages, bidirectional scroll sync with anti-loop protection, native find &amp; replace with jump-to-line, and a fuzzy file finder (⌘P) — everything you'd expect from a desktop app.</p>
+    <ul class="feature-list">
+      <li>Live Markdown preview with Mermaid diagram support</li>
+      <li>Drag-to-reorder tabs, close confirmation, reopen closed tab</li>
+      <li>GitHub Light, Nord, and Dracula themes</li>
+      <li>Session restore across launches — tabs, folder, selection</li>
+    </ul>
+  </div>
+  <div class="split-visual reveal from-left">
+    <div class="split-visual-ph">
+      <div class="ph-lg">📝</div>
+      <span>Editor View</span>
+    </div>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- ───── CTA BANNER ───────────────────────────────────── -->
+<div class="cta-banner reveal" id="download">
+  <h2>Start writing smarter today.</h2>
+  <p>MEditor is free and open-source. No subscription, no Electron, no cloud — just your words and a capable AI Agent.</p>
+  <div class="hero-actions" style="margin-bottom:0">
+    <a href="#" class="btn-primary">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1v9M8 10l-3-3M8 10l3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 13h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Download for macOS 14+
+    </a>
+    <a href="https://github.com/your-repo/meditor" class="btn-ghost">View Source →</a>
+  </div>
+</div>
+
+<!-- ───── FOOTER ───────────────────────────────────────── -->
+<footer>
+  <span>© 2025 MEditor. MIT License.</span>
+  <div class="footer-links">
+    <a href="#">GitHub</a>
+    <a href="#">Releases</a>
+    <a href="#">Docs</a>
+    <a href="#">Issues</a>
+  </div>
+</footer>
+
+<!-- ───── SCROLL REVEAL JS ────────────────────────────── -->
+<script>
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+
+  document.querySelectorAll('.reveal, .stagger-children').forEach(el => {
+    observer.observe(el);
+  });
+
+  // Subtle nav shadow on scroll
+  const nav = document.querySelector('nav');
+  window.addEventListener('scroll', () => {
+    if (window.scrollY > 20) {
+      nav.style.background = 'rgba(9,9,15,0.80)';
+    } else {
+      nav.style.background = 'rgba(9,9,15,0.55)';
+    }
+  }, { passive: true });
+</script>
+</body>
+</html>

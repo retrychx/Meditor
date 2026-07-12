@@ -69,6 +69,34 @@ final class CommandSandboxTests: XCTestCase {
         XCTAssertTrue(CommandSandbox.assess("rsync -avz . user@host:/backup").isBlocked)
     }
 
+    // MARK: - assess: 负向用例（子串误杀回归测试）
+    // 昨晚引入的 "nc " 等裸命令名 blocked 规则曾用纯子串匹配，会误杀含同名子串的合法命令。
+    // 改为 commandToken（词边界 + 命令起始位置）匹配后，以下均不应被拦截。
+
+    func test_assess_npmRunSync_notBlocked_byNcSubstring() {
+        XCTAssertFalse(CommandSandbox.assess("npm run sync").isBlocked, "'sync' 中的 'nc' 子串不应误判为 netcat")
+    }
+
+    func test_assess_gitCommitSyncMessage_notBlocked_byNcSubstring() {
+        XCTAssertFalse(CommandSandbox.assess("git commit -m 'sync data'").isBlocked)
+    }
+
+    func test_assess_vsyncEnable_notBlocked_byNcSubstring() {
+        XCTAssertFalse(CommandSandbox.assess("vsync enable").isBlocked)
+    }
+
+    func test_assess_concatFiles_notBlocked_byNcatSubstring() {
+        XCTAssertFalse(CommandSandbox.assess("concat files").isBlocked, "'concat' 中的 'ncat' 子串不应误判为 ncat 工具")
+    }
+
+    func test_assess_mvFile_isWarn_notMisreadAsSubstring() {
+        // "mv" 作为独立命令仍应命中 warn；同时确认它不会在无关词中被误触发
+        if case .warn = CommandSandbox.assess("mv a.txt b.txt") { /* pass */ } else {
+            XCTFail("mv 应命中 warn")
+        }
+        XCTAssertEqual(CommandSandbox.assess("summary of movement"), .safe)
+    }
+
     // MARK: - assess: Warn
 
     func test_assess_rmFile_isWarn() {

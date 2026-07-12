@@ -50,7 +50,7 @@ final class AppStateDocumentAdapter: AgentDocumentAdapter {
         guard let tab = appState?.selectedTab else { return nil }
         // Tab 刚打开，内容异步加载中：回退读盘，避免 agent 误判"文件为空"
         if tab.awaitingInitialContent {
-            return (try? fileRepo.readFile(at: tab.url)) ?? tab.content
+            return (try? fileRepo.readFileSyncFallback(at: tab.url)) ?? tab.content
         }
         return tab.content
     }
@@ -71,7 +71,7 @@ final class AppStateDocumentAdapter: AgentDocumentAdapter {
         guard let state = appState,
               let tab = state.selectedTab else { throw AgentContextError.noActiveDocument }
         let original = tab.awaitingInitialContent
-            ? ((try? fileRepo.readFile(at: tab.url)) ?? tab.content)
+            ? ((try? fileRepo.readFileSyncFallback(at: tab.url)) ?? tab.content)
             : tab.content
         let (updated, count) = PatchEngine.apply(to: original, find: find, replace: replace, all: all)
         if count == 0 {
