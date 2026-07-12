@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
     @Environment(AppState.self) private var state
     @Environment(\.controlActiveState) private var controlActiveState
@@ -282,6 +283,7 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
     }
 }
 
+@MainActor
 private struct TopToolbar: View {
     @Environment(AppState.self) private var state
     @Environment(\.sidebarToggleNS) private var sidebarNS
@@ -333,6 +335,7 @@ private struct TopToolbar: View {
     }
 }
 
+@MainActor
 private struct ToolbarActionGroup: View {
     @Environment(AppState.self) private var state
     @Bindable var workspaceUI: WorkspaceUIState
@@ -400,6 +403,7 @@ struct DocStats {
     }
 }
 
+@MainActor
 private struct StatusBarHost: View {
     @Environment(AppState.self) private var state
     @State private var showStatsPopover = false
@@ -524,6 +528,7 @@ private struct StatusBarHost: View {
 /// - LAN 分享进行中：显示 wifi 图标（accent 色），点击复制当前文件链接
 /// - GitHub Gist 有上次发布链接：显示云图标，点击复制链接
 /// - 两者都无：不显示
+@MainActor
 private struct ShareStatusChip: View {
     let state: AppState
     let theme: PreviewTheme
@@ -655,6 +660,7 @@ private struct StatsPopover: View {
 /// Floating focus-mode toggle shown over the document in focus mode. Shares the
 /// "focusToggle" matchedGeometry id with the toolbar's scope button so it flies
 /// between the two positions (hero transition).
+@MainActor
 private struct FocusToggleButton: View {
     @Environment(AppState.self) private var state
     @Bindable var workspaceUI: WorkspaceUIState
@@ -704,6 +710,7 @@ private struct FocusToggleButton: View {
 }
 
 /// 专注模式下鼠标移到顶部时浮现的退出按钮（Escape 已有快捷键，此处提供鼠标路径）。
+@MainActor
 private struct FocusExitHoverZone: View {
     @Bindable var workspaceUI: WorkspaceUIState
     @State private var isHovered = false
@@ -745,6 +752,7 @@ private struct FocusExitHoverZone: View {
 }
 
 /// Transient hint surfaced when entering focus mode (Craft-style).
+@MainActor
 private struct FocusHintToast: View {
     @Environment(AppState.self) private var state
 

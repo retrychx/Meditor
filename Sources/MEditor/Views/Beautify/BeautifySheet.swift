@@ -3,6 +3,7 @@ import WebKit
 
 // MARK: - BeautifySheet
 
+@MainActor
 struct BeautifySheet: View {
     @Environment(AppState.self) private var state
     @Environment(AppSettings.self) private var settings

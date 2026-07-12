@@ -515,6 +515,7 @@ extension Notification.Name {
 // MARK: - AtMentionPickerView (SwiftUI popover)
 
 /// The floating file picker that appears while the user is typing after @.
+@MainActor
 struct AtMentionPickerView: View {
     @Environment(AppState.self) private var state
     let query: String

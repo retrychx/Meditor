@@ -60,7 +60,7 @@ final class LocalShareServer {
         }
 
         listener?.stateUpdateHandler = { [weak self] state in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self else { return }
                 switch state {
                 case .ready:
@@ -78,7 +78,7 @@ final class LocalShareServer {
         }
 
         listener?.newConnectionHandler = { [weak self] connection in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 self?.handleConnection(connection)
             }
         }
@@ -120,7 +120,7 @@ final class LocalShareServer {
 
     private func receiveRequest(on connection: NWConnection, accumulated: Data) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 16 * 1024) { [weak self] data, _, isComplete, error in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self else {
                     connection.cancel()
                     return

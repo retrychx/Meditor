@@ -314,8 +314,7 @@ final class AppState {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self else { return }
-            self.restartClaudeMonitorIfNeeded()
+            Task { @MainActor [weak self] in self?.restartClaudeMonitorIfNeeded() }
         }
     }
 
