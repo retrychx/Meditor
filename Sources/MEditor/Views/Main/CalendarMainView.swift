@@ -793,7 +793,7 @@ struct CalendarEventItem: Identifiable {
     var location: String? { event.location }
 }
 
-extension EKEvent: @retroactive Identifiable {
+extension EKEvent: Identifiable {
     public var id: String { eventIdentifier ?? UUID().uuidString }
 }
 
