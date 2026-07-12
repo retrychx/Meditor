@@ -3,6 +3,7 @@ import AppKit
 
 /// Walks up the view hierarchy from inside the NavigationSplitView sidebar column
 /// and patches the system-provided NSVisualEffectView to use .sidebar material.
+@MainActor
 struct SidebarMaterialFixer: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let v = NSView()

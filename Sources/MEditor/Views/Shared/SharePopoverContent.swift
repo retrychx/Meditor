@@ -1,6 +1,7 @@
 import SwiftUI
 
 /// Refined LAN-share popover: URL in a copyable pill, primary/destructive button hierarchy.
+@MainActor
 struct SharePopoverContent: View {
     let server: ShareManager
     let selectedTab: EditorTab?

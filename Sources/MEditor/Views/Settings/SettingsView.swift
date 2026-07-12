@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct SettingsView: View {
     @Environment(AppSettings.self) private var settings
     private var bindableSettings: Bindable<AppSettings> { Bindable(settings) }

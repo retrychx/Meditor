@@ -2,6 +2,7 @@ import EventKit
 import SwiftUI
 
 /// 侧边栏日历视图：展示未来 7 天的日程事件（需用户授权）。
+@MainActor
 struct CalendarSidebarView: View {
     @State private var events: [EKEvent] = []
     @State private var authStatus: EKAuthorizationStatus = .notDetermined

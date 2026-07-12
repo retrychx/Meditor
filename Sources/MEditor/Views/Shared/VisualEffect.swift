@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct VisualEffect: NSViewRepresentable {
     let material: NSVisualEffectView.Material
     var blendingMode: NSVisualEffectView.BlendingMode = .withinWindow

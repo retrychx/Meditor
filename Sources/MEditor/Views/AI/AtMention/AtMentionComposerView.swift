@@ -16,6 +16,7 @@ import AppKit
 
 // MARK: - Public SwiftUI wrapper
 
+@MainActor
 struct AtMentionComposerView: NSViewRepresentable {
 
     // MARK: Bindings / callbacks

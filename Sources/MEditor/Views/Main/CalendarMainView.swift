@@ -11,6 +11,7 @@ private enum CalendarViewMode: String, CaseIterable {
 // MARK: - CalendarMainView
 
 /// 全宽日历主视图：月视图/周视图、导航、创建事件、事件详情。
+@MainActor
 struct CalendarMainView: View {
     @State private var viewMode: CalendarViewMode = .month
     @State private var referenceDate: Date = Date()
@@ -630,6 +631,7 @@ private struct EventRow: View {
 
 // MARK: - Create Event Sheet
 
+@MainActor
 struct CreateEventSheet: View {
     let defaultDate: Date
     let calendars: [EKCalendar]
@@ -797,6 +799,7 @@ extension EKEvent: @retroactive Identifiable {
 
 // MARK: - EventDetailPopoverItem
 
+@MainActor
 private struct EventDetailPopoverItem: View {
     let item: CalendarEventItem
     let onDismiss: () -> Void
