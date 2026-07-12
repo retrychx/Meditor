@@ -130,9 +130,13 @@ final class AIConversation {
     // MARK: Context estimation
 
     /// Rough token estimate for the current conversation (chars ÷ 4).
+    /// 除 UI 消息文本外，还纳入 agentHistory（工具调用/结果的原始内容，单条可达 64KB）——
+    /// 这才是真正发给模型的 agentMessages 的主要体积来源，否则触发时机会严重滞后于真实占用。
     /// Used to surface a context-limit warning before the API rejects the request.
     var estimatedTokenCount: Int {
-        messages.reduce(0) { $0 + $1.text.count / 4 }
+        let messagesTokens = messages.reduce(0) { $0 + $1.text.count / 4 }
+        let historyTokens  = agentHistory.reduce(0) { $0 + $1.content.count / 4 }
+        return messagesTokens + historyTokens
     }
 
     /// True when estimated tokens exceed 80 % of a 128 K context window.

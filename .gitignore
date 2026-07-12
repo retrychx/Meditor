@@ -2,6 +2,7 @@
 .claude
 .swiftpm
 .vscode
+.DS_Store
 
 # Dev-flow workspace artifacts (auto-generated)
 workspaces/current-workspace

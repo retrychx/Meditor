@@ -13,7 +13,10 @@ protocol AgentFileRepository: AnyObject {
     func listWorkspaceFiles(extensions: [String]) async -> [URL]
 
     // 读写
-    func readFile(at url: URL) throws -> String               // 截断到 maxReadBytes，多编码 fallback
+    func readFile(at url: URL) async throws -> String          // 截断到 maxReadBytes，多编码 fallback，Task.detached
+    /// 同步小文件读取，仅供 DocumentContext 的同步接口（currentDocument/patchDocument）在
+    /// tab 初始内容尚未异步加载完成时的读盘兜底使用；不用于 AI 工具调用的主路径。
+    func readFileSyncFallback(at url: URL) throws -> String
     func readDiskFull(at url: URL) async throws -> String      // 完整读取，Task.detached
     func writeDisk(_ content: String, to url: URL) throws      // 原子写盘
 
@@ -119,9 +122,21 @@ final class DefaultAgentFileRepository: AgentFileRepository {
 
     // MARK: - Read / Write
 
-    func readFile(at url: URL) throws -> String {
+    func readFile(at url: URL) async throws -> String {
+        let fileURL = url
+        return try await Task.detached(priority: .userInitiated) {
+            try Self.decodeFile(at: fileURL, maxBytes: Self.maxReadBytes)
+        }.value
+    }
+
+    func readFileSyncFallback(at url: URL) throws -> String {
+        try Self.decodeFile(at: url, maxBytes: Self.maxReadBytes)
+    }
+
+    /// 共享的读盘 + 多编码解码逻辑，供同步/异步两个入口复用。
+    private static func decodeFile(at url: URL, maxBytes: Int) throws -> String {
         let data = try Data(contentsOf: url)
-        let truncated = data.count > Self.maxReadBytes ? data.prefix(Self.maxReadBytes) : data
+        let truncated = data.count > maxBytes ? data.prefix(maxBytes) : data
         if let text = String(data: truncated, encoding: .utf8) { return text }
         for enc: String.Encoding in [.isoLatin1, .ascii, .unicode] {
             if let text = String(data: truncated, encoding: enc) { return text }

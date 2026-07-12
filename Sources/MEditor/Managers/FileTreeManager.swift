@@ -44,6 +44,12 @@ final class FileTreeManager {
 
     /// Immediately reload the first level of the tree and rebuild the full index.
     /// 首层目录扫描在后台执行，避免阻塞主线程。
+    ///
+    /// 递归刷新已展开（childrenLoaded == true）的子目录：FSEvents 是对整棵目录树
+    /// 递归监听的，外部在已展开的子文件夹内新建文件/文件夹时，仅刷新根目录的第一层
+    /// 是不够的——UI 只在 isExpanded 从 false→true "翻转"时才会重新拉取子级
+    /// (DirectoryRow.onChange(of: isExpanded))，已经展开的目录永远不会再次触发。
+    /// 因此这里在后台线程按需递归重新扫描所有已加载过子级的目录。
     func reload(rootURL: URL) {
         pendingReloadWork?.cancel()
         let sid     = PerformanceTracer.begin("ReloadFileTree", log: PerformanceTracer.fileOps)
@@ -51,19 +57,44 @@ final class FileTreeManager {
         let svc     = fileService
         Task.detached(priority: .userInitiated) { [weak self] in
             let children = svc.loadImmediateChildren(of: rootURL)
-            await self?.applyReload(children: children, into: current, rootURL: rootURL, sid: sid)
+            let merged = Self.mergeChildrenRecursively(children, into: current, fileService: svc)
+            await self?.applyReload(children: merged, rootURL: rootURL, sid: sid)
         }
     }
 
     @MainActor
-    private func applyReload(children: [FileItem], into existing: [FileItem], rootURL: URL, sid: OSSignpostID) {
-        let merged   = mergeChildren(children, into: existing)
+    private func applyReload(children: [FileItem], rootURL: URL, sid: OSSignpostID) {
         fileItemMap  = [:]
-        fileTree     = merged
-        addToMap(merged)
+        fileTree     = children
+        addToMap(children)
         indexStale        = true
         lastIndexedRootURL = rootURL
         PerformanceTracer.end("ReloadFileTree", log: PerformanceTracer.fileOps, id: sid)
+    }
+
+    /// Off-main-thread recursive merge: rescans any directory that was
+    /// previously expanded (`childrenLoaded == true`) so newly created
+    /// files/folders inside already-expanded subdirectories show up without
+    /// requiring the user to manually collapse/re-expand. Directories that
+    /// were never expanded keep their lazy `childrenLoaded = false` state.
+    nonisolated private static func mergeChildrenRecursively(
+        _ fresh: [FileItem],
+        into existing: [FileItem],
+        fileService: FileServiceProtocol
+    ) -> [FileItem] {
+        let existingMap = Dictionary(uniqueKeysWithValues: existing.map { ($0.url, $0) })
+        return fresh.map { newItem in
+            guard let old = existingMap[newItem.url], old.isDirectory == newItem.isDirectory else {
+                return newItem
+            }
+            if old.isDirectory, old.childrenLoaded {
+                let freshChildren = fileService.loadImmediateChildren(of: old.url)
+                let mergedChildren = mergeChildrenRecursively(freshChildren, into: old.children ?? [], fileService: fileService)
+                old.children = mergedChildren
+                old.childrenLoaded = true
+            }
+            return old
+        }
     }
 
     /// Fresh open: load and assign in one step, bypassing merge so SwiftUI

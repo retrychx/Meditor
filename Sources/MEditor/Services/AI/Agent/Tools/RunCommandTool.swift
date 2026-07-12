@@ -177,10 +177,13 @@ struct RunCommandTool: AgentTool {
             let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
             let process = Process()
             process.executableURL = URL(fileURLWithPath: shell)
-            // 不加 -l：避免加载用户 shell 配置带来的副作用（慢启动、意外 cd 等）。
-            // 继承当前进程的 PATH，包含 Homebrew / nvm / pyenv 等常用工具路径。
+            // 加 -l -i：GUI 进程的环境变量是登录时的一份静态快照，不会加载用户的
+            // .zshrc/.zprofile/.bash_profile；nvm/pyenv/rbenv 等工具链通常只在这些
+            // rc 文件里配置 PATH，缺少 -l -i 会导致 Agent 执行命令时找不到用户实际
+            // 在交互式终端里能用的工具版本（曾错误地为"避免慢启动/意外 cd"去掉过，
+            // 但代价是牺牲了 PATH 正确性，收益不对等，这里改回来）。
+            process.arguments = ["-l", "-i", "-c", command]
             process.environment = ProcessInfo.processInfo.environment
-            process.arguments = ["-c", command]
 
             if let cwd, !cwd.isEmpty {
                 process.currentDirectoryURL = URL(fileURLWithPath: cwd)

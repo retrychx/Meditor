@@ -74,7 +74,7 @@ final class AgentContext: AgentContextProtocol {
         await files.listWorkspaceFiles(extensions: extensions)
     }
 
-    func readFile(at url: URL) async throws -> String { try files.readFile(at: url) }
+    func readFile(at url: URL) async throws -> String { try await files.readFile(at: url) }
 
     func searchWorkspace(query: String, extensions: [String]) async -> [String] {
         await files.searchWorkspace(query: query, extensions: extensions)

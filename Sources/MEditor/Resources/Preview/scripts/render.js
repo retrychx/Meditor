@@ -284,6 +284,35 @@
     configureMermaidFromTheme();
   }
 
+  /** Rewrite absolute-path image/resource references (`/Users/.../pic.png`,
+   *  `file:///Users/.../pic.png`) to the custom `meditor-asset://` scheme so
+   *  they bypass WKWebView's `allowingReadAccessTo` single-directory
+   *  restriction. Relative references (`./pic.png`, `../assets/pic.png`)
+   *  are left untouched — they resolve correctly via the `<base href>`
+   *  (itself a `meditor-asset://` URL, see bridge.js `setBaseURL`). */
+  function rewriteAbsoluteAssetPaths(rootEl) {
+    var els = rootEl.querySelectorAll('img[src], source[src]');
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      var raw = el.getAttribute('src');
+      var rewritten = toMeditorAssetURL(raw);
+      if (rewritten) el.setAttribute('src', rewritten);
+    }
+  }
+
+  function toMeditorAssetURL(raw) {
+    if (!raw) return null;
+    var path = null;
+    if (raw.indexOf('file://') === 0) {
+      try { path = decodeURIComponent(raw.slice('file://'.length)); } catch (e) { path = raw.slice('file://'.length); }
+    } else if (raw.charAt(0) === '/') {
+      path = raw;
+    } else {
+      return null; // relative path — handled by <base href>, or already an http(s)/data/meditor-asset URL
+    }
+    return 'meditor-asset://local' + path.split('/').map(encodeURIComponent).join('/');
+  }
+
   /** Full render pipeline with incremental DOM update.
    *  Instead of innerHTML replacing the entire tree, we diff at the
    *  block level (top-level children of #content) and only replace
@@ -301,6 +330,7 @@
           stampHeadingLines(targetEl, content || '');
           highlightCodeBlocks(targetEl);
           renderMermaidDiagrams(extracted.diagrams);
+          rewriteAbsoluteAssetPaths(targetEl);
           return;
         }
       }
@@ -319,6 +349,7 @@
       stampHeadingLines(targetEl, content || '');
       highlightCodeBlocks(targetEl);
       renderMermaidDiagrams(extracted.diagrams);
+      rewriteAbsoluteAssetPaths(targetEl);
     } catch (e) {
       targetEl.innerHTML = '<div class="error-block">Render error: ' + String(e && e.message || e) + '</div>';
     }

@@ -112,7 +112,8 @@ private struct MarkdownWebView: NSViewRepresentable {
 
             // Apply theme + push content (webview is already loaded and ready)
             pooled.evaluateJavaScript(JSBridge.call("setTheme", args: [theme.rawValue]), completionHandler: nil)
-            if let baseURL = sourceURL?.deletingLastPathComponent().absoluteString {
+            if let sourceDir = sourceURL?.deletingLastPathComponent() {
+                let baseURL = MeditorAssetSchemeHandler.baseURLString(forDirectory: sourceDir)
                 pooled.evaluateJavaScript(JSBridge.call("setBaseURL", args: [baseURL]), completionHandler: nil)
             }
             // Pooled WebView skips didFinish, so inject the selection listener here.
@@ -124,6 +125,7 @@ private struct MarkdownWebView: NSViewRepresentable {
 
         // Cold path: create fresh webview.
         let config = WKWebViewConfiguration()
+        config.setURLSchemeHandler(MeditorAssetSchemeHandler(), forURLScheme: MeditorAssetSchemeHandler.scheme)
         let userContent = WKUserContentController()
         userContent.add(context.coordinator, name: Self.scrollHandlerName)
         userContent.add(context.coordinator, name: Self.copyHandlerName)
@@ -165,7 +167,7 @@ private struct MarkdownWebView: NSViewRepresentable {
         let sourceChanged = sourceURL != coordinator.lastSourceURL
         if sourceChanged {
             coordinator.lastSourceURL = sourceURL
-            let baseURL = sourceURL?.deletingLastPathComponent().absoluteString ?? ""
+            let baseURL = sourceURL.map { MeditorAssetSchemeHandler.baseURLString(forDirectory: $0.deletingLastPathComponent()) } ?? ""
             coordinator.evaluateWhenReady(JSBridge.call("setBaseURL", args: [baseURL]))
         }
 

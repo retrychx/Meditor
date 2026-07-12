@@ -47,6 +47,7 @@ final class WebViewPool {
 
         // Create and load
         let config = WKWebViewConfiguration()
+        config.setURLSchemeHandler(MeditorAssetSchemeHandler(), forURLScheme: MeditorAssetSchemeHandler.scheme)
         config.userContentController = WKUserContentController()
         let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1, height: 1), configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
