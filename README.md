@@ -150,7 +150,7 @@ MEditor/
     │   │   └── BeautifyAgent.swift            # Single-shot document polish
     │   ├── Core/          # AppSettings, Localization, MarkdownFormatter
     │   ├── File/          # FileService, FileWatcher, FileType config
-    │   └── Calendar/      # CalendarService protocol + InternalCalendar impl
+    │   └── Calendar/      # CalendarService (EventKit)
     ├── Managers/          # Tab, FileTree, Share, Template, Todo…
     └── Views/
         ├── Agent/         # AgentStepView, AgentResultPanel
