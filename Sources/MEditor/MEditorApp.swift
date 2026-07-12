@@ -1,6 +1,7 @@
 import SwiftUI
 
 @main
+@MainActor
 struct MEditorApp: App {
     @State private var appState = AppState()
 
