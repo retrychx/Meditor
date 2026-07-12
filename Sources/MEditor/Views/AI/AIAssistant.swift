@@ -22,6 +22,7 @@ private struct AISuggestion: Identifiable {
 /// 浮现于编辑器上方的 AI 助手面板。
 /// 支持多 provider：OpenAI 兼容接口（远程）或本地 Claude CLI（复用登录态）。
 /// 通过 AppSettings 配置 provider；未配置时显示引导界面。
+@MainActor
 struct AIAssistantPanel: View {
     @Environment(AppState.self) private var state
     let onClose: () -> Void
@@ -942,7 +943,9 @@ struct AIAssistantPanel: View {
             )
             var sysContent = baseSys
             if !mentionCtx.isEmpty { sysContent += mentionCtx }
-            launchAgentRunner(sysContent: sysContent, config: config, context: context, tools: tools)
+            await MainActor.run {
+                launchAgentRunner(sysContent: sysContent, config: config, context: context, tools: tools)
+            }
         }
     }
 
@@ -1154,6 +1157,7 @@ private struct AISuggestionRow: View {
     }
 }
 
+@MainActor
 private struct AIHistoryView: View {
     @Bindable var convo: AIConversation
     let theme: PreviewTheme

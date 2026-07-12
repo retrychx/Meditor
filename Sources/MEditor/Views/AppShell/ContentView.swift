@@ -240,8 +240,9 @@ struct ContentView: View {
                   let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
             var isDir: ObjCBool = false
             FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+            let isDirectory = isDir.boolValue
             DispatchQueue.main.async {
-                if isDir.boolValue {
+                if isDirectory {
                     state.openFolder(url)
                 } else {
                     state.openFile(FileItem(url: url, isDirectory: false))

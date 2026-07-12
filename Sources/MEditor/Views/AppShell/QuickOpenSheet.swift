@@ -7,6 +7,7 @@ import SwiftUI
 /// - Searches a background-built flat file index so opening a folder doesn't
 ///   have to eagerly hydrate the full sidebar tree.
 /// - Ranks results by simple substring + path depth. Good enough for now.
+@MainActor
 struct QuickOpenSheet: View {
     @Environment(AppState.self) private var state
     @Environment(WorkspaceUIState.self) private var workspaceUI
