@@ -12,6 +12,7 @@ import WebKit
 ///   ├────────────────────────────────────────────────┤
 ///   │  左：原文（段落高亮）  │  右：AI结果（流式/diff）         │
 ///   └────────────────────────────────────────────────┘
+@MainActor
 struct DiffReviewOverlay: View {
     @Environment(AppState.self) private var state
 
@@ -169,6 +170,7 @@ struct DiffReviewOverlay: View {
 // MARK: - DiffModeBar
 
 /// Slim top bar shown across both panes in diff mode.
+@MainActor
 private struct DiffModeBar: View {
     @Environment(AppState.self) private var state
 
