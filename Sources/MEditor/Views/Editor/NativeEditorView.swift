@@ -49,7 +49,8 @@ struct NativeEditorView: NSViewRepresentable {
     /// editor pane visually matches the rest of the app.
     var theme: PreviewTheme = .github
     /// Editor font size in points. Defaults to the shared AppSettings value.
-    var editorFontSize: Int = AppSettings.shared.editorFontSize
+    /// Default 14pt (同 AppSettings 默认值)。父视图（@MainActor）可在初始化时传入实际值。
+    var editorFontSize: Int = 14
 
     func makeCoordinator() -> EditorCoordinator {
         EditorCoordinator(
