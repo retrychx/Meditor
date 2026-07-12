@@ -15,8 +15,6 @@ struct CalendarMainView: View {
     @State private var viewMode: CalendarViewMode = .month
     @State private var referenceDate: Date = Date()
     @State private var events: [EKEvent] = []
-    @State private var internal_calendarEvents: [InternalCalendarEvent] = []
-    @State private var internal_calendarAvailable = false
     @State private var authStatus: EKAuthorizationStatus = .notDetermined
     @State private var isLoading = false
     @State private var selectedDate: Date? = nil
@@ -371,21 +369,10 @@ struct CalendarMainView: View {
         let cal = Calendar.current
         let dayStart = cal.startOfDay(for: date)
         let dayEnd   = cal.date(byAdding: .day, value: 1, to: dayStart)!
-        let ek = events.filter { event in
+        return events.filter { event in
             event.startDate < dayEnd && event.endDate > dayStart
-        }.map { CalendarEventItem.ek($0) }
-        let sc = internal_calendarEvents.filter { e in
-            e.startDate < dayEnd && e.endDate > dayStart
-        }.map { CalendarEventItem.internal_calendar($0) }
-
-        // 去重：InternalCalendar 事件若与 EK 事件 name+时间吻合则跳过（系统日历已同步该条目）
-        let ekKeys = Set(ek.map { "\($0.title)|\(Int($0.startDate.timeIntervalSince1970 / 60))" })
-        let dedupedSC = sc.filter { item in
-            let key = "\(item.title)|\(Int(item.startDate.timeIntervalSince1970 / 60))"
-            return !ekKeys.contains(key)
-        }
-
-        return (ek + dedupedSC).sorted { $0.startDate < $1.startDate }
+        }.map { CalendarEventItem($0) }
+        .sorted { $0.startDate < $1.startDate }
     }
 
     private func navigate(by delta: Int) {
@@ -401,7 +388,6 @@ struct CalendarMainView: View {
     private func load() async {
         authStatus = EKEventStore.authorizationStatus(for: .event)
         allCalendars = service.allCalendars()
-        internal_calendarAvailable = await InternalCalendarCalendarService.shared.isAvailable
         if authStatus == .fullAccess { await reload() }
     }
 
@@ -410,9 +396,6 @@ struct CalendarMainView: View {
         isLoading = true
         let (s, e) = visibleRange
         events = service.fetchEvents(from: s, to: e)
-        if internal_calendarAvailable && AppSettings.shared.internal_calendarEnabled {
-            internal_calendarEvents = (try? await InternalCalendarCalendarService.shared.fetchInternalCalendarEvents(from: s, to: e)) ?? []
-        }
         isLoading = false
     }
 }
@@ -783,77 +766,36 @@ private extension DateFormatter {
 
 // MARK: - CalendarEventItem
 
-enum CalendarEventItem: Identifiable {
-    case ek(EKEvent)
-    case internal_calendar(InternalCalendarEvent)
+struct CalendarEventItem: Identifiable {
+    let event: EKEvent
 
-    var id: String {
-        switch self {
-        case .ek(let e):    return e.eventIdentifier ?? UUID().uuidString
-        case .internal_calendar(let e): return "internal_calendar-\(e.id)"
-        }
-    }
-    var title: String {
-        switch self {
-        case .ek(let e):    return e.title ?? "（无标题）"
-        case .internal_calendar(let e): return e.name
-        }
-    }
-    var startDate: Date {
-        switch self {
-        case .ek(let e):    return e.startDate
-        case .internal_calendar(let e): return e.startDate
-        }
-    }
-    var endDate: Date {
-        switch self {
-        case .ek(let e):    return e.endDate
-        case .internal_calendar(let e): return e.endDate
-        }
-    }
-    var isAllDay: Bool {
-        switch self {
-        case .ek(let e):    return e.isAllDay
-        case .internal_calendar(let e): return e.isAllDay
-        }
-    }
+    init(_ event: EKEvent) { self.event = event }
+
+    var id: String { event.eventIdentifier ?? UUID().uuidString }
+    var title: String { event.title ?? "（无标题）" }
+    var startDate: Date { event.startDate }
+    var endDate: Date { event.endDate }
+    var isAllDay: Bool { event.isAllDay }
+    var source: String { "system" }
+
     var colorHex: String {
-        switch self {
-        case .ek(let e):
-            let c = e.calendar.cgColor
-            let comps = c?.components ?? [0.4, 0.6, 1.0, 1.0]
-            let r = Int((comps.count > 0 ? comps[0] : 0) * 255)
-            let g = Int((comps.count > 1 ? comps[1] : 0) * 255)
-            let b = Int((comps.count > 2 ? comps[2] : 0) * 255)
-            return String(format: "%02X%02X%02X", r, g, b)
-        case .internal_calendar(let e): return e.colorHex.trimmingCharacters(in: .init(charactersIn: "#"))
-        }
+        let c = event.calendar.cgColor
+        let comps = c?.components ?? [0.4, 0.6, 1.0, 1.0]
+        let r = Int((comps.count > 0 ? comps[0] : 0) * 255)
+        let g = Int((comps.count > 1 ? comps[1] : 0) * 255)
+        let b = Int((comps.count > 2 ? comps[2] : 0) * 255)
+        return String(format: "%02X%02X%02X", r, g, b)
     }
-    var source: String {
-        switch self {
-        case .ek:    return "system"
-        case .internal_calendar: return "internal_calendar"
-        }
-    }
-    var notes: String? {
-        switch self {
-        case .ek(let e):    return e.notes
-        case .internal_calendar(let e): return e.desc.isEmpty ? nil : e.desc
-        }
-    }
-    var location: String? {
-        switch self {
-        case .ek(let e):    return e.location
-        case .internal_calendar(let e): return e.location.isEmpty ? nil : e.location
-        }
-    }
+
+    var notes: String? { event.notes }
+    var location: String? { event.location }
 }
 
 extension EKEvent: @retroactive Identifiable {
     public var id: String { eventIdentifier ?? UUID().uuidString }
 }
 
-// MARK: - EventDetailPopoverItem (wraps EKEvent or InternalCalendarEvent detail)
+// MARK: - EventDetailPopoverItem
 
 private struct EventDetailPopoverItem: View {
     let item: CalendarEventItem
@@ -872,11 +814,6 @@ private struct EventDetailPopoverItem: View {
                             .frame(width: 10, height: 10)
                         Text(item.title)
                             .font(.system(size: 15, weight: .semibold))
-                    }
-                    if item.source == "internal_calendar" {
-                        Label("InternalCalendar 日程", systemImage: "message.fill")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
                     }
                 }
                 Spacer()
@@ -902,8 +839,8 @@ private struct EventDetailPopoverItem: View {
             }
             .padding(16)
 
-            // Actions — only for EKEvent
-            if case .ek(let event) = item, event.calendar.allowsContentModifications {
+            // Actions
+            if item.event.calendar.allowsContentModifications {
                 Divider()
                 HStack {
                     Button(role: .destructive) {
@@ -916,7 +853,7 @@ private struct EventDetailPopoverItem: View {
                     .foregroundStyle(.red)
                     .confirmationDialog("确认删除此事件？", isPresented: $showDeleteConfirm) {
                         Button("删除", role: .destructive) {
-                            service.deleteEvent(event)
+                            service.deleteEvent(item.event)
                             onDismiss()
                         }
                         Button("取消", role: .cancel) {}
