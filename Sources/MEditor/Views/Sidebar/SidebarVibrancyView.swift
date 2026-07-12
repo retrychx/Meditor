@@ -7,6 +7,7 @@ import SwiftUI
 ///   - Activates accent-color vibrancy when the window is key/main.
 ///   - Desaturates gracefully when the window loses focus.
 ///   - Matches Finder and Craft's native sidebar feel exactly.
+@MainActor
 struct SidebarVibrancyView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let v = NSVisualEffectView()

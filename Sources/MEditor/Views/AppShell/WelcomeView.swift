@@ -1,6 +1,7 @@
 import SwiftUI
 
 /// Welcome screen — pixel-art title card + typewriter subtitle + recent folders.
+@MainActor
 struct WelcomeView: View {
     let onOpenFolder: () -> Void
     var onOpenRecent: ((URL) -> Void)? = nil

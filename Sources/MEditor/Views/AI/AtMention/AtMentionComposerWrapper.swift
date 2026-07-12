@@ -2,6 +2,7 @@ import SwiftUI
 
 // MARK: - AtMentionComposerWrapper
 
+@MainActor
 struct AtMentionComposerWrapper<Picker: View>: View {
 
     @Environment(AppState.self) private var state
