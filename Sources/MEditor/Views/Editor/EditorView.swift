@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct EditorView: View {
     @Environment(AppState.self) private var state
 
@@ -112,6 +113,7 @@ struct EditorView: View {
     }
 }
 
+@MainActor
 private struct DocumentHeader: View {
     let tab: EditorTab
     let theme: PreviewTheme
@@ -182,6 +184,7 @@ private struct DocumentHeader: View {
 /// `content` string. The NSViewRepresentable's `updateNSView` already
 /// has its own `lastAcknowledgedContent` gate so it handles content
 /// diffs cheaply on its own terms.
+@MainActor
 private struct EditorViewContent: View, Equatable {
     let tabID: UUID
     let content: String

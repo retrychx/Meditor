@@ -1,6 +1,7 @@
 import SwiftUI
 
 /// 悬浮在预览区右上角的操作按钮组（Craft 风格）
+@MainActor
 struct DocumentActionBar: View {
     @Environment(AppState.self) private var state
 

@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Floating action strip shown at the bottom of the preview when text is selected.
 /// Triggers AI inline edit then opens the diff-review overlay instead of a sheet.
+@MainActor
 struct PreviewInlineEditBar: View {
     @Environment(AppState.self)    private var state
     @Environment(AppSettings.self) private var settings

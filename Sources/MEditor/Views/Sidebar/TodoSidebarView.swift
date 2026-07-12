@@ -1,6 +1,7 @@
 import SwiftUI
 
 /// 侧边栏待办列表视图：扫描工作区 .md 文件中的 checkbox 并展示为可交互列表。
+@MainActor
 struct TodoSidebarView: View {
     @Environment(AppState.self) private var state
     private var theme: PreviewTheme { state.themeStore.current }

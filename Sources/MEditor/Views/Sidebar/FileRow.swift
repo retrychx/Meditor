@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct FileRow: View {
     let item: FileItem
     let isSelected: Bool

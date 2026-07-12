@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Template picker — Craft-inspired: a search header, sectioned scroll, and
 /// rich cards that each render a miniature preview of the template's layout.
+@MainActor
 struct TemplatePickerSheet: View {
     @Environment(AppState.self) private var state
     @Environment(\.dismiss) private var dismiss
