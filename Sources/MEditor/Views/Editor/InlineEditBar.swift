@@ -3,6 +3,7 @@ import SwiftUI
 /// Floating action strip shown at the editor's bottom when text is selected.
 /// Tapping an action triggers AI processing and morphs the content area into
 /// an inline split diff view — no sheet, no modal.
+@MainActor
 struct InlineEditBar: View {
     @Environment(AppState.self)    private var state
     @Environment(AppSettings.self) private var settings

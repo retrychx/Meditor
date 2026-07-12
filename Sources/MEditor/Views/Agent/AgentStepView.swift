@@ -17,6 +17,7 @@ struct ShakeEffect: GeometryEffect {
 // MARK: - AgentStepView
 
 /// 展示单个执行步骤（thinking / tool call / done），带入场、状态过渡、错误抗动动画。
+@MainActor
 struct AgentStepView: View {
     let step: AgentRunnerStep
     var compact: Bool = false   // 紧凑单行模式（AI 助手内联使用）
@@ -317,6 +318,7 @@ struct AgentStepView: View {
 // MARK: - Agent Result Panel
 
 /// Full panel showing agent steps + final result + apply button.
+@MainActor
 struct AgentResultPanel: View {
     @Environment(AppState.self) private var state
     @Bindable var runner: AgentRunner

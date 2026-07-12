@@ -14,6 +14,7 @@ enum FileAction: Hashable {
 
 // MARK: - FileSidebar (Craft-style)
 
+@MainActor
 struct FileSidebar: View {
     @Environment(AppState.self) private var state
     @Environment(WorkspaceUIState.self) private var workspaceUI
@@ -333,6 +334,7 @@ struct FileSidebar: View {
 
 // MARK: - Space Switcher
 
+@MainActor
 private struct SidebarTitlebarRow: View {
     @Bindable var workspaceUI: WorkspaceUIState
     @Environment(AppState.self) private var state
@@ -372,6 +374,7 @@ private struct SidebarTitlebarRow: View {
     }
 }
 
+@MainActor
 private struct SpaceSwitcherRow: View {
     @Environment(AppState.self) private var state
     @Environment(WorkspaceUIState.self) private var workspaceUI
@@ -435,6 +438,7 @@ private struct SpaceSwitcherRow: View {
 
 // MARK: - Search Bar
 
+@MainActor
 private struct SidebarSearchBar: View {
     @Binding var text: String
     @Environment(AppState.self) private var state
@@ -472,6 +476,7 @@ private struct SidebarSearchBar: View {
 
 // MARK: - Top Nav Entry (All Docs / Recent / Favorites)
 
+@MainActor
 private struct TopNavEntry: View {
     let icon: String
     let label: String
@@ -581,6 +586,7 @@ private struct PinnedTabButton: View {
     }
 }
 
+@MainActor
 private struct SidebarBottomBar: View {
     @Environment(AppState.self) private var state
     @Environment(WorkspaceUIState.self) private var workspaceUI
@@ -650,6 +656,7 @@ private struct SidebarIconButton: View {
 
 // MARK: - Doc File Row
 
+@MainActor
 private struct DocFileRow: View {
     let url: URL
     let isSelected: Bool

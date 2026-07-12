@@ -13,6 +13,7 @@ struct SettingsAnchorKey: PreferenceKey {
 /// Instead of opening a separate system window (which cannot be custom-animated),
 /// the panel scales and fades out of the gear button's location with a spring,
 /// dimming the rest of the window behind it.
+@MainActor
 struct SettingsHeroOverlay: View {
     @Environment(AppState.self) private var state
 

@@ -1,6 +1,7 @@
 import SwiftUI
 
 /// 全宽待办主视图 — 点击底部 tab 的"待办"后替换主内容区。
+@MainActor
 struct TodoMainView: View {
     @Environment(AppState.self) private var state
     @State private var showingAddTodo = false
@@ -229,6 +230,7 @@ private struct TodoMainRow: View {
 
 // MARK: - AddTodoSheet
 
+@MainActor
 struct AddTodoSheet: View {
     let theme: PreviewTheme
     /// 回调：(待办文本, 目标文件URL)

@@ -6,6 +6,7 @@ import SwiftUI
 /// Using a View struct instead of a helper function returning `AnyView` gives
 /// SwiftUI concrete structural identity: it can diff the tree without heap-
 /// allocating a type-erased wrapper for every row on every render pass.
+@MainActor
 struct SidebarTreeNode: View {
     let item: FileItem
     let searchText: String

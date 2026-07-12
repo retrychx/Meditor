@@ -65,6 +65,7 @@ struct AIAssistantOrb: View {
 /// Pill-shaped assistant launcher pinned to the bottom-trailing corner of the
 /// document area. Reports its bounds via `AIAssistantAnchorKey` so the hero
 /// overlay can expand from this exact location.
+@MainActor
 struct AIAssistantButton: View {
     @Environment(AppState.self) private var state
     @State private var hovered = false
@@ -122,6 +123,7 @@ struct AIAssistantButton: View {
 /// In-app "hero" presentation of the assistant panel. The panel scales + fades
 /// out of the launcher's location with a spring and dims the rest of the window
 /// behind it (matches `SettingsHeroOverlay`).
+@MainActor
 struct AIAssistantHeroOverlay: View {
     @Environment(AppState.self) private var state
 

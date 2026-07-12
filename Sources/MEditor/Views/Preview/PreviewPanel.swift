@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import Combine
 
+@MainActor
 struct PreviewPanel: View {
     @Environment(AppState.self) private var state
     @Environment(WorkspaceUIState.self) private var workspaceUI

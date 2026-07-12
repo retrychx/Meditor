@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 // MARK: - Tab Bar
 
+@MainActor
 struct EditorTabBar: View {
     @Environment(AppState.self) private var state
     @State private var draggedTabID: UUID?
