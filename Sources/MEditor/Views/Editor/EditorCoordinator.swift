@@ -210,13 +210,24 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
         let charIndex = textView.characterIndexForInsertion(at: dropPoint)
         var insertionText = ""
         for url in images {
-            insertionText += "![\(url.lastPathComponent)](\(url.path))\n"
+            // 路径做百分号编码：空格/括号不处理会破坏 Markdown 链接语法
+            let encodedPath = url.path.addingPercentEncoding(
+                withAllowedCharacters: Self.markdownLinkPathAllowed
+            ) ?? url.path
+            // alt 文本里的方括号会破坏图片语法，直接剔除
+            let alt = url.lastPathComponent
+                .replacingOccurrences(of: "[", with: "")
+                .replacingOccurrences(of: "]", with: "")
+            insertionText += "![\(alt)](\(encodedPath))\n"
         }
         textView.insertText(insertionText, replacementRange: NSRange(location: charIndex, length: 0))
         return true
     }
 
     private static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "tiff"]
+    /// urlPathAllowed 本身不含空格；再剔除 () 防止提前闭合 Markdown 链接。
+    private static let markdownLinkPathAllowed: CharacterSet =
+        CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "()"))
 
     private static func previewUpdateDebounce(for content: String) -> TimeInterval {
         let bytes = content.utf8.count

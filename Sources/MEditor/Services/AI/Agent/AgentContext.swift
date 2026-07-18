@@ -17,6 +17,7 @@ enum AgentContextError: LocalizedError {
     case fileNotReadable(String)
     case fileNotFound(String)
     case fileTooLarge(String, Int)
+    case pathOutsideWorkspace(String)
 
     var errorDescription: String? {
         switch self {
@@ -26,6 +27,7 @@ enum AgentContextError: LocalizedError {
         case .fileNotReadable(let n):     return "文件无法读取（编码不支持）：\(n)"
         case .fileNotFound(let n):        return "未找到文件：\(n)"
         case .fileTooLarge(let n, let s): return "文件过大（\(s / 1000)KB），超出上限 \(DefaultAgentFileRepository.maxFullReadBytes / 1_000_000)MB：\(n)"
+        case .pathOutsideWorkspace(let p): return "安全限制：目标路径不在工作区内（\(p)），已拒绝写入。"
         }
     }
 }
@@ -105,13 +107,28 @@ final class AgentContext: AgentContextProtocol {
 
     // MARK: - File mutations（磁盘 IO + 通知 AppState）
 
+    /// 写入目标合规性校验：必须位于工作区内（与 RunCommandTool 的 cwd 校验
+    /// 同一安全边界），或对应一个已打开的 Tab（散文件场景）。
+    /// 防止提示注入诱导 Agent 写入 ~/.zshrc 等任意路径。
+    func validateWriteTarget(_ url: URL) throws {
+        let target = url.standardizedFileURL
+        if let root = workspaceURL?.standardizedFileURL,
+           target.path == root.path || target.path.hasPrefix(root.path + "/") {
+            return
+        }
+        if doc.hasOpenTab(at: target) { return }
+        throw AgentContextError.pathOutsideWorkspace(target.path)
+    }
+
     func createFile(name: String, content: String) throws -> URL {
+        try validateWriteTarget(files.resolveURL(name))
         let url = try files.createFile(name: name, content: content)
         doc.notifyFileCreated(url)
         return url
     }
 
     func writeFile(name: String, content: String) throws -> URL {
+        try validateWriteTarget(files.resolveURL(name))
         let isNew = !FileManager.default.fileExists(atPath: files.resolveURL(name).path)
         let url   = try files.writeFile(name: name, content: content)
         doc.notifyFileWritten(url, content: content, isNew: isNew)
@@ -119,6 +136,7 @@ final class AgentContext: AgentContextProtocol {
     }
 
     func createDirectory(name: String) throws -> URL {
+        try validateWriteTarget(files.resolveURL(name))
         let url = try files.createDirectory(name: name)
         doc.notifyDirectoryCreated(url)
         return url
@@ -138,6 +156,7 @@ final class AgentContext: AgentContextProtocol {
         guard let url = resolveExistingFile(name) else {
             throw AgentContextError.fileNotFound(name)
         }
+        try validateWriteTarget(url)
         let original       = try await fileContentFull(at: url)
         let (updated, cnt) = PatchEngine.apply(to: original, find: find, replace: replace, all: all)
         if cnt == 0 {

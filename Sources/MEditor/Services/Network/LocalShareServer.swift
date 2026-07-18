@@ -269,7 +269,7 @@ final class LocalShareServer {
             return build404Response()
         }
 
-        let title = fileURL.deletingPathExtension().lastPathComponent
+        let title = Self.escapeHTML(fileURL.deletingPathExtension().lastPathComponent)
 
         // Load marked.js and highlight.js from bundle resources
         let markedJS = loadBundledJS("marked.min.js")
@@ -435,6 +435,14 @@ final class LocalShareServer {
         return encoded
     }
 
+    /// 插入 HTML 文本节点的最小转义（& 必须最先替换）。
+    static func escapeHTML(_ s: String) -> String {
+        s.replacingOccurrences(of: "&", with: "&amp;")
+         .replacingOccurrences(of: "<", with: "&lt;")
+         .replacingOccurrences(of: ">", with: "&gt;")
+         .replacingOccurrences(of: "\"", with: "&quot;")
+    }
+
     static func extractHTMLReferences(from content: String) -> [String] {
         guard let regex = try? NSRegularExpression(
             pattern: #"(?:src|href)\s*=\s*["']([^"']+)["']"#,
@@ -521,25 +529,32 @@ final class LocalShareServer {
     // MARK: - Network utility
 
     private static func getLocalIP() -> String? {
-        var address: String?
         var ifaddr: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&ifaddr) == 0, let firstAddr = ifaddr else { return nil }
         defer { freeifaddrs(ifaddr) }
 
+        var preferred: String? = nil   // en0/en1（Wi-Fi / 有线）
+        var fallback: String? = nil    // 其他可用接口（USB 网卡、热点共享等）
         for ptr in sequence(first: firstAddr, next: { $0.pointee.ifa_next }) {
             let interface = ptr.pointee
-            let addrFamily = interface.ifa_addr.pointee.sa_family
-            guard addrFamily == UInt8(AF_INET) else { continue }
+            guard interface.ifa_addr.pointee.sa_family == UInt8(AF_INET) else { continue }
 
-            let name = String(cString: interface.ifa_name)
-            guard name == "en0" || name == "en1" else { continue }
+            // 只考虑 UP 且非 loopback 的接口
+            let flags = Int32(interface.ifa_flags)
+            guard (flags & IFF_UP) != 0, (flags & IFF_LOOPBACK) == 0 else { continue }
 
             var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
             getnameinfo(interface.ifa_addr, socklen_t(interface.ifa_addr.pointee.sa_len),
                        &hostname, socklen_t(hostname.count), nil, 0, NI_NUMERICHOST)
-            address = String(cString: hostname)
-            break
+            let address = String(cString: hostname)
+
+            let name = String(cString: interface.ifa_name)
+            if name == "en0" || name == "en1" {
+                preferred = address
+                break
+            }
+            if fallback == nil { fallback = address }
         }
-        return address
+        return preferred ?? fallback
     }
 }

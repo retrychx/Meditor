@@ -192,6 +192,10 @@ final class AIConversation {
         streamTask = nil
         agentRunner?.cancel()
         agentRunner = nil
+        // dismiss 挂起的命令确认：reject() 会以 false 恢复工具内的 continuation，
+        // 让卡在确认框的 Agent loop 能响应取消退出，确认条同时从 UI 消失。
+        pendingCommand?.reject()
+        pendingCommand = nil
         isResponding = false
         persist()
     }

@@ -19,6 +19,8 @@ protocol AgentDocumentAdapter: AnyObject {
     // Tab 查询 & 操作
     func contentForTab(at url: URL) -> String?  // 返回 nil 表示未打开或尚未加载
     func openFile(at url: URL) -> Bool
+    /// 是否有已打开的 Tab 对应此文件（写入 confinement 的散文件例外）
+    func hasOpenTab(at url: URL) -> Bool
 
     // 文件操作完成后的通知（由 AgentContext 在磁盘 IO 后回调）
     func notifyFileCreated(_ url: URL)
@@ -27,6 +29,11 @@ protocol AgentDocumentAdapter: AnyObject {
 
     // 命令授权
     func confirmCommandExecution(_ command: String, cwd: String?) async -> Bool
+}
+
+extension AgentDocumentAdapter {
+    /// 默认无打开 Tab——mock / 测试实现无需关心此方法。
+    func hasOpenTab(at url: URL) -> Bool { false }
 }
 
 // MARK: - AppState Implementation
@@ -94,6 +101,12 @@ final class AppStateDocumentAdapter: AgentDocumentAdapter {
         appState?.openTabs.first {
             $0.url.standardizedFileURL == url.standardizedFileURL && !$0.awaitingInitialContent
         }?.content
+    }
+
+    func hasOpenTab(at url: URL) -> Bool {
+        appState?.openTabs.contains {
+            $0.url.standardizedFileURL == url.standardizedFileURL
+        } ?? false
     }
 
     func openFile(at url: URL) -> Bool {

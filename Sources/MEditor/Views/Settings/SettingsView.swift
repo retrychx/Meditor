@@ -9,7 +9,7 @@ struct SettingsView: View {
     @State private var selectedTab: SettingsTab = .general
     @State private var githubTokenInput = ""
     @State private var aiKeyInput = ""
-    @State private var aiHasKey = AIKeychain.hasKey
+    @State private var aiHasKey = AIAPIKeyStore.hasKey
     @State private var aiModels: [String] = []
     @State private var aiLoadingModels = false
     @State private var aiDetecting = false
@@ -464,7 +464,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .settingsField()
                 Button(L("gitlab.clearToken")) {
-                    AIKeychain.clear(); aiKeyInput = ""; aiHasKey = false
+                    AIAPIKeyStore.clear(); aiKeyInput = ""; aiHasKey = false
                 }
             }
         } else {
@@ -473,7 +473,7 @@ struct SettingsView: View {
                     .textFieldStyle(.plain)
                     .settingsField()
                 Button(L("gitlab.saveConfig")) {
-                    AIKeychain.save(aiKeyInput); aiKeyInput = ""; aiHasKey = AIKeychain.hasKey
+                    AIAPIKeyStore.save(aiKeyInput); aiKeyInput = ""; aiHasKey = AIAPIKeyStore.hasKey
                 }
                 .disabled(aiKeyInput.isEmpty)
             }
@@ -581,7 +581,7 @@ struct SettingsView: View {
         connectionTesting = true
         connectionTestResult = nil
         let baseURL = settings.aiBaseURL.trimmingCharacters(in: .whitespaces)
-        let apiKey = AIKeychain.load() ?? ""
+        let apiKey = AIAPIKeyStore.load() ?? ""
         let model = settings.aiModel.isEmpty ? "gpt-4o-mini" : settings.aiModel
         let isAnthropic = baseURL.lowercased().contains("anthropic")
 
@@ -651,7 +651,7 @@ struct SettingsView: View {
     private func refreshModels() {
         aiLoadingModels = true
         let base = settings.aiBaseURL
-        let key = AIKeychain.load() ?? ""
+        let key = AIAPIKeyStore.load() ?? ""
         Task {
             let models = await AIClient.fetchModels(baseURL: base, apiKey: key)
             await MainActor.run {

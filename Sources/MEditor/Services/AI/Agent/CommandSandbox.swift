@@ -181,13 +181,16 @@ public enum CommandSandbox {
     }
 
     /// 判断 `token` 是否作为「命令名」出现在 `command` 中：
-    /// 前面是字符串起始或 shell 命令分隔符（空白/`;`/`|`/`&`/`(`），
-    /// 后面是字符串结束或非字母数字字符（空白/`;`/`|`/`&`/参数 `-`/路径 `/` 等）。
+    /// 前面是字符串起始或 shell 命令分隔符（空白/`;`/`|`/`&`/`(`/引号），
+    /// 后面是字符串结束或非字母数字字符（空白/`;`/`|`/`&`/参数 `-`/路径 `/`/引号 等）。
     /// 用于避免 "npm run sync" 命中 "nc"、"git commit -m 'sync data'" 命中 "nc"、
-    /// "concat files" 命中 "nc" 这类把命令名当子串到处匹配的误杀。
+    /// "concat files" 命中 "nc" 这类把命令名当子串到处匹配的误杀；
+    /// 同时覆盖 `"curl"`、`'ssh'` 这类引号包裹的命令名。
+    /// 注意：字符串匹配只是纵深防御的一层（可被 shell 语法进一步绕过），
+    /// 真正的安全边界是 warn/blocked 之外命令的用户确认流程。
     private static func containsCommandToken(_ token: String, in command: String) -> Bool {
         guard let regex = try? NSRegularExpression(
-            pattern: "(?:^|[\\s;|&(])" + NSRegularExpression.escapedPattern(for: token) + "(?:$|[\\s;|&)/.])"
+            pattern: "(?:^|[\\s;|&(\"'])" + NSRegularExpression.escapedPattern(for: token) + "(?:$|[\\s;|&)/.\"'])"
         ) else { return command.contains(token) }
         let range = NSRange(command.startIndex..., in: command)
         return regex.firstMatch(in: command, range: range) != nil

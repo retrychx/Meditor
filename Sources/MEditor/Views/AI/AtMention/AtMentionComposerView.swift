@@ -187,7 +187,9 @@ struct AtMentionComposerView: NSViewRepresentable {
             // Compute the actual replace range: from @ to end of typed query
             let nsStr = storage.string as NSString
             var end = replaceStart
-            while end < nsStr.length && !" \n\t".contains(nsStr.character(at: end).unicodeChar) {
+            while end < nsStr.length {
+                // 代理对 half 的 unicodeChar 为 nil，视为非空白继续扫描
+                if let uc = nsStr.character(at: end).unicodeChar, " \n\t".contains(uc) { break }
                 end += 1
             }
             let actualRange = NSRange(location: replaceStart, length: end - replaceStart)
@@ -298,8 +300,19 @@ struct AtMentionComposerView: NSViewRepresentable {
             var query = ""
             while scanIdx >= 0 {
                 let ch = nsStr.character(at: scanIdx)
-                let scalar = Unicode.Scalar(ch)!
-                let c = Character(scalar)
+                // UTF-16 代理对（emoji 等）没有独立的 Unicode.Scalar，强制解包会崩：
+                // 低位 half 与前一个高位 half 合成完整字符；孤立 half 直接放弃检测。
+                var step = 1
+                let c: Character
+                if let scalar = Unicode.Scalar(ch) {
+                    c = Character(scalar)
+                } else if UTF16.isTrailSurrogate(ch), scanIdx > 0,
+                          UTF16.isLeadSurrogate(nsStr.character(at: scanIdx - 1)) {
+                    c = Character(String(decoding: [nsStr.character(at: scanIdx - 1), ch], as: UTF16.self))
+                    step = 2
+                } else {
+                    break
+                }
                 if c == "@" {
                     // Verify this is NOT inside an attachment range
                     var isAttachment = false
@@ -308,9 +321,16 @@ struct AtMentionComposerView: NSViewRepresentable {
                     }
                     if !isAttachment {
                         // Check the character before @ is whitespace / start
-                        let before = scanIdx > 0 ? nsStr.character(at: scanIdx - 1) : 32
-                        let beforeChar = Character(Unicode.Scalar(before)!)
-                        if scanIdx == 0 || " \n\t".contains(beforeChar) {
+                        // （代理对 half 没有 Scalar，视为非空白，不触发 mention）
+                        let beforeIsWhitespace: Bool
+                        if scanIdx == 0 {
+                            beforeIsWhitespace = true
+                        } else if let s = Unicode.Scalar(nsStr.character(at: scanIdx - 1)) {
+                            beforeIsWhitespace = " \n\t".contains(Character(s))
+                        } else {
+                            beforeIsWhitespace = false
+                        }
+                        if beforeIsWhitespace {
                             // Valid mention trigger
                             activeQuery = String(query.reversed())
                             atSignIndex = scanIdx
@@ -322,7 +342,7 @@ struct AtMentionComposerView: NSViewRepresentable {
                 // Bail out if we hit a space or newline (no @ before non-space)
                 if " \n\t".contains(c) { break }
                 query.append(c)
-                scanIdx -= 1
+                scanIdx -= step
             }
             // No valid @ found
             if activeQuery != nil { cancelMention() }
@@ -346,8 +366,9 @@ struct AtMentionComposerView: NSViewRepresentable {
 
 // MARK: - NSUInteger → unichar helper
 private extension UInt16 {
-    var unicodeChar: Character {
-        Character(Unicode.Scalar(self)!)
+    /// 安全转换：代理对的一半（emoji 等）没有独立的 Unicode.Scalar，返回 nil。
+    var unicodeChar: Character? {
+        Unicode.Scalar(self).map(Character.init)
     }
 }
 
