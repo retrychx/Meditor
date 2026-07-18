@@ -26,7 +26,7 @@ struct RestAgentBackend: AgentBackend {
     let config: AIConfig
     let wire: WireProtocol
 
-    /// 可注入的 URLSession（测试用）。nil 时使用 makeSession() 生成带超时配置的 session。
+    /// 可注入的 URLSession（测试用）。nil 时使用进程级共享 session（复用连接池）。
     let sessionOverride: (any URLSessionDataProtocol)?
 
     init(config: AIConfig, wire: WireProtocol, session: (any URLSessionDataProtocol)? = nil) {
@@ -35,8 +35,16 @@ struct RestAgentBackend: AgentBackend {
         self.sessionOverride = session
     }
 
-    /// 返回实际使用的 session：有注入时用注入的，否则用带超时配置的 makeSession()。
-    var resolvedSession: any URLSessionDataProtocol { sessionOverride ?? makeSession() }
+    /// 进程级共享 session：复用连接池（HTTP/2 多路复用），避免每次请求新建
+    /// URLSession 的线程/缓存开销。细粒度超时在各 request 的 timeoutInterval 上设置。
+    private static let sharedSession: URLSession = {
+        let c = URLSessionConfiguration.default
+        c.timeoutIntervalForResource = 3600   // 兜底上限；请求级超时由 URLRequest 控制
+        return URLSession(configuration: c)
+    }()
+
+    /// 返回实际使用的 session：有注入时用注入的，否则用共享 session。
+    var resolvedSession: any URLSessionDataProtocol { sessionOverride ?? Self.sharedSession }
 
     // MARK: - AgentBackend
 
@@ -101,7 +109,7 @@ struct RestAgentBackend: AgentBackend {
         onTextChunk: @escaping @Sendable (String) -> Void
     ) async throws -> AgentCompletionResponse {
         let req = try openAIRequest(messages: messages, tools: tools, stream: true)
-        let (bytes, response) = try await makeSession().bytes(for: req)
+        let (bytes, response) = try await Self.sharedSession.bytes(for: req)
         guard let http = response as? HTTPURLResponse else { throw AIError.network("invalid response") }
         guard (200..<300).contains(http.statusCode) else {
             var body = ""
@@ -159,7 +167,7 @@ struct RestAgentBackend: AgentBackend {
         onTextChunk: @escaping @Sendable (String) -> Void
     ) async throws -> AgentCompletionResponse {
         let req = try anthropicRequest(messages: messages, tools: tools, stream: true)
-        let (bytes, response) = try await makeSession().bytes(for: req)
+        let (bytes, response) = try await Self.sharedSession.bytes(for: req)
         guard let http = response as? HTTPURLResponse else { throw AIError.network("invalid response") }
         guard (200..<300).contains(http.statusCode) else {
             var body = ""
@@ -228,15 +236,6 @@ struct RestAgentBackend: AgentBackend {
         case .openAI:    return try openAIRequest(messages: messages, tools: tools)
         case .anthropic: return try anthropicRequest(messages: messages, tools: tools)
         }
-    }
-
-    private func makeSession() -> URLSession {
-        URLSession(configuration: {
-            let c = URLSessionConfiguration.default
-            c.timeoutIntervalForRequest  = config.requestTimeoutSeconds
-            c.timeoutIntervalForResource = config.requestTimeoutSeconds * 2
-            return c
-        }())
     }
 
     // ── OpenAI ────────────────────────────────────────────────────────────────

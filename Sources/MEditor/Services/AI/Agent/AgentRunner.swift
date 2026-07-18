@@ -142,6 +142,10 @@ final class AgentRunner {
     func cancel() {
         runTask?.cancel()
         runTask = nil
+        // 立即置为未运行：工具可能卡在用户确认对话框（continuation 不响应 Task 取消），
+        // 不把状态复位会导致 UI 一直停在"运行中"。确认由调用方（AIConversation）负责 dismiss，
+        // 之后 _run 的 cleanup 会再次幂等地走一遍收尾流程。
+        isRunning = false
         if finalText.isEmpty && error == nil {
             error = "已取消"
         }
@@ -172,10 +176,15 @@ final class AgentRunner {
                     messages: messages,
                     tools: tools,
                     onTextChunk: { [weak self] chunk in
-                        Task { @MainActor [weak self] in
-                            guard let self else { return }
-                            self.streamAccumulated += chunk          // 累积 delta
-                            self.onChunk?(self.streamAccumulated)     // 回调累积全文
+                        // 用 DispatchQueue.main.async 而非 Task { @MainActor }：
+                        // main queue 严格 FIFO，chunk 按到达顺序应用；
+                        // Task 调度顺序不保证，高速流式下累积文本可能乱序。
+                        DispatchQueue.main.async {
+                            MainActor.assumeIsolated {
+                                guard let self else { return }
+                                self.streamAccumulated += chunk          // 累积 delta
+                                self.onChunk?(self.streamAccumulated)     // 回调累积全文
+                            }
                         }
                     }
                 )

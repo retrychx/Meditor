@@ -1,0 +1,166 @@
+import XCTest
+@testable import MEditor
+
+// MARK: - Mock adapter
+
+/// 内存态 AgentDocumentAdapter，仅支撑 confinement 测试。
+@MainActor
+private final class ConfinementMockAdapter: AgentDocumentAdapter {
+    var currentDocument: String?     = nil
+    var currentDocumentName: String? = nil
+    var workspaceURL: URL?
+    var currentTabURL: URL?          = nil
+
+    /// 模拟"已打开的 Tab"集合（标准化路径）
+    var openTabPaths: Set<String> = []
+
+    func writeDocument(_ content: String) throws {}
+    func patchDocument(find: String, replace: String, all: Bool) throws -> Int { 0 }
+    func insertIntoDocument(_ text: String) {}
+    func contentForTab(at url: URL) -> String? { nil }
+    func openFile(at url: URL) -> Bool { true }
+    func hasOpenTab(at url: URL) -> Bool {
+        openTabPaths.contains(url.standardizedFileURL.path)
+    }
+
+    func notifyFileCreated(_ url: URL) {}
+    func notifyFileWritten(_ url: URL, content: String, isNew: Bool) {}
+    func notifyDirectoryCreated(_ url: URL) {}
+
+    func confirmCommandExecution(_ command: String, cwd: String?) async -> Bool { true }
+}
+
+// MARK: - Tests
+
+/// Agent 文件写入的工作区 confinement：
+/// 防止 write_file / create_file / create_directory / patch_file 被诱导写工作区外路径。
+@MainActor
+final class AgentWriteConfinementTests: XCTestCase {
+
+    private var rootURL: URL!
+    private var outsideURL: URL!
+    private var ctx: AgentContext!
+    private var adapter: ConfinementMockAdapter!
+
+    override func setUp() async throws {
+        try await super.setUp()
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent("meditor-confinement-\(UUID().uuidString)")
+        rootURL = base.appendingPathComponent("workspace")
+        outsideURL = base.appendingPathComponent("outside")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outsideURL, withIntermediateDirectories: true)
+
+        let root = rootURL!
+        let repo = DefaultAgentFileRepository { root }
+        adapter = ConfinementMockAdapter()
+        adapter.workspaceURL = root
+        ctx = AgentContext(files: repo, doc: adapter)
+    }
+
+    override func tearDown() async throws {
+        if let base = rootURL?.deletingLastPathComponent() {
+            try? FileManager.default.removeItem(at: base)
+        }
+        try await super.tearDown()
+    }
+
+    // MARK: 允许的路径
+
+    func testWriteFileInsideWorkspaceAllowed() throws {
+        let url = try ctx.writeFile(name: "notes.md", content: "hello")
+        XCTAssertTrue(url.path.hasPrefix(rootURL.path))
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "hello")
+    }
+
+    func testWriteFileNestedRelativePathAllowed() throws {
+        let url = try ctx.writeFile(name: "docs/intro.md", content: "nested")
+        XCTAssertTrue(url.path.hasPrefix(rootURL.path))
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "nested")
+    }
+
+    func testWriteFileOutsideWorkspaceAllowedWhenTabOpen() throws {
+        let loose = outsideURL.appendingPathComponent("loose.md")
+        adapter.openTabPaths.insert(loose.standardizedFileURL.path)
+        let url = try ctx.writeFile(name: loose.path, content: "loose content")
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "loose content")
+    }
+
+    // MARK: 拒绝的路径
+
+    func testWriteFileAbsolutePathOutsideWorkspaceRejected() {
+        let target = outsideURL.appendingPathComponent("evil.md")
+        XCTAssertThrowsError(try ctx.writeFile(name: target.path, content: "x")) { error in
+            guard case AgentContextError.pathOutsideWorkspace = error else {
+                return XCTFail("期望 pathOutsideWorkspace，实际 \(error)")
+            }
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target.path))
+    }
+
+    func testWriteFileTraversalOutsideWorkspaceRejected() {
+        let target = outsideURL.appendingPathComponent("escape.md")
+        XCTAssertThrowsError(try ctx.writeFile(name: "../outside/escape.md", content: "x")) { error in
+            guard case AgentContextError.pathOutsideWorkspace = error else {
+                return XCTFail("期望 pathOutsideWorkspace，实际 \(error)")
+            }
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target.path))
+    }
+
+    func testCreateFileOutsideWorkspaceRejected() {
+        let target = outsideURL.appendingPathComponent("new.md")
+        XCTAssertThrowsError(try ctx.createFile(name: target.path, content: "x")) { error in
+            guard case AgentContextError.pathOutsideWorkspace = error else {
+                return XCTFail("期望 pathOutsideWorkspace，实际 \(error)")
+            }
+        }
+    }
+
+    func testCreateDirectoryOutsideWorkspaceRejected() {
+        XCTAssertThrowsError(try ctx.createDirectory(name: outsideURL.appendingPathComponent("dir").path)) { error in
+            guard case AgentContextError.pathOutsideWorkspace = error else {
+                return XCTFail("期望 pathOutsideWorkspace，实际 \(error)")
+            }
+        }
+    }
+
+    func testPatchFileOutsideWorkspaceRejected() async throws {
+        let target = outsideURL.appendingPathComponent("patchme.md")
+        try "original text".write(to: target, atomically: true, encoding: .utf8)
+        await XCTAssertThrowsErrorAsync(try await ctx.patchFile(name: target.path, find: "original", replace: "hacked", all: false)) { error in
+            guard case AgentContextError.pathOutsideWorkspace = error else {
+                return XCTFail("期望 pathOutsideWorkspace，实际 \(error)")
+            }
+        }
+        // 文件内容未被修改
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "original text")
+    }
+
+    func testShellConfigWriteRejected() {
+        // 典型提示注入目标：~/.zshrc（一定在工作区外）
+        let zshrc = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".zshrc")
+        XCTAssertThrowsError(try ctx.writeFile(name: zshrc.path, content: "evil")) { error in
+            guard case AgentContextError.pathOutsideWorkspace = error else {
+                return XCTFail("期望 pathOutsideWorkspace，实际 \(error)")
+            }
+        }
+    }
+}
+
+// MARK: - async 断言辅助
+
+private func XCTAssertThrowsErrorAsync<T>(
+    _ expression: @autoclosure () async throws -> T,
+    _ message: String = "",
+    file: StaticString = #filePath,
+    line: UInt = #line,
+    _ errorHandler: (Error) -> Void
+) async {
+    do {
+        _ = try await expression()
+        XCTFail("期望抛出错误但没有抛出。\(message)", file: file, line: line)
+    } catch {
+        errorHandler(error)
+    }
+}

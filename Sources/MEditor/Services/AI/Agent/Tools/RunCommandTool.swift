@@ -133,46 +133,57 @@ struct RunCommandTool: AgentTool {
 
     // MARK: - Execution
 
-    /// 执行命令，带超时保护。
+    /// 共享的 Process 引用，让超时/取消分支能够触达 detached 任务里的子进程。
+    private final class ProcessBox: @unchecked Sendable { var process: Process? }
+
+    /// 执行命令，带超时保护。超时或外层取消时会真正终止子进程。
     private func runWithTimeout(command: String, cwd: String?) async -> String {
         let timeout = executionTimeoutSeconds
         let maxBytes = maxOutputBytes
+        let box = ProcessBox()
 
-        return await withTaskGroup(of: String.self) { group in
-            // 实际执行任务
-            group.addTask {
-                await Self.runViaLoginShell(command: command, cwd: cwd, maxOutputBytes: maxBytes)
-            }
-            // 超时哨兵
-            group.addTask {
-                do {
-                    try await Task.sleep(for: .seconds(timeout))
-                } catch {
-                    // 被 cancel（主任务完成），不触发超时
-                    return "__CANCELLED__"
+        return await withTaskCancellationHandler {
+            await withTaskGroup(of: String.self) { group in
+                // 实际执行任务
+                group.addTask {
+                    await Self.runViaLoginShell(command: command, cwd: cwd, maxOutputBytes: maxBytes, box: box)
                 }
-                return "__TIMEOUT__"
-            }
+                // 超时哨兵
+                group.addTask {
+                    do {
+                        try await Task.sleep(for: .seconds(timeout))
+                    } catch {
+                        // 被 cancel（主任务完成），不触发超时
+                        return "__CANCELLED__"
+                    }
+                    return "__TIMEOUT__"
+                }
 
-            // 取第一个完成的结果
-            var result = ""
-            for await value in group {
-                group.cancelAll()
-                if value == "__CANCELLED__" { continue }
-                if value == "__TIMEOUT__" {
-                    result = "[!] 命令执行超时（\(Int(timeout))s），进程已终止。\n命令：\(command)"
-                } else {
-                    result = value
+                // 取第一个完成的结果
+                var result = ""
+                for await value in group {
+                    group.cancelAll()
+                    if value == "__CANCELLED__" { continue }
+                    if value == "__TIMEOUT__" {
+                        // 真正终止子进程：SIGTERM 关闭管道，解除 runViaLoginShell 的阻塞
+                        box.process?.terminate()
+                        result = "[!] 命令执行超时（\(Int(timeout))s），进程已终止。\n命令：\(command)"
+                    } else {
+                        result = value
+                    }
+                    break
                 }
-                break
+                return result
             }
-            return result
+        } onCancel: {
+            box.process?.terminate()
         }
     }
 
     /// 通过 login shell 执行命令，确保 PATH / nvm / rbenv 等环境变量可用。
     /// stdout 与 stderr 合并到同一管道，超限截断。
-    private static func runViaLoginShell(command: String, cwd: String?, maxOutputBytes: Int) async -> String {
+    /// 启动成功后的 Process 会写入 `box`，供超时/取消路径 terminate。
+    private static func runViaLoginShell(command: String, cwd: String?, maxOutputBytes: Int, box: ProcessBox) async -> String {
         await Task.detached(priority: .userInitiated) { () -> String in
             let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
             let process = Process()
@@ -198,17 +209,29 @@ struct RunCommandTool: AgentTool {
             } catch {
                 return "[X] 无法启动命令：\(error.localizedDescription)\n命令：\(command)"
             }
+            box.process = process
 
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            // 边读边截：超限后继续 drain 管道（避免子进程因管道满而阻塞），
+            // 但不再累积，防止超大输出先把内存撑爆。
+            var data = Data()
+            var wasTruncated = false
+            let handle = pipe.fileHandleForReading
+            while true {
+                let chunk = handle.readData(ofLength: 8192)
+                if chunk.isEmpty { break }   // EOF
+                let remaining = maxOutputBytes - data.count
+                if remaining > 0 {
+                    data.append(chunk.prefix(remaining))
+                    if chunk.count > remaining { wasTruncated = true }
+                } else {
+                    wasTruncated = true
+                }
+            }
             process.waitUntilExit()
 
-            var output = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) ?? ""
-
-            // 截断超长输出
-            if output.utf8.count > maxOutputBytes {
-                let prefix = output.prefix(maxOutputBytes)
-                let omitted = output.utf8.count - maxOutputBytes
-                output = "\(prefix)\n…（输出过长，已省略约 \(omitted / 1000)KB）"
+            var output = Self.decodeLossyUTF8(data)
+            if wasTruncated {
+                output += "\n…（输出过长，已截断到 \(maxOutputBytes / 1000)KB）"
             }
 
             let status = process.terminationStatus
@@ -218,5 +241,15 @@ struct RunCommandTool: AgentTool {
 
             return "\(header)\n$ \(command)\n\n\(output.isEmpty ? "（无输出）" : output)"
         }.value
+    }
+
+    /// 按 UTF-8 解码，失败时回退去掉末尾最多 3 字节重试
+    /// （截断点可能落在多字节字符中间），最后兜底 isoLatin1。
+    private static func decodeLossyUTF8(_ data: Data) -> String {
+        if let s = String(data: data, encoding: .utf8) { return s }
+        for drop in 1...3 {
+            if let s = String(data: data.dropLast(drop), encoding: .utf8) { return s }
+        }
+        return String(data: data, encoding: .isoLatin1) ?? ""
     }
 }

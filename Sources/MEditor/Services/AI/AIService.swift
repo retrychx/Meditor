@@ -137,7 +137,7 @@ struct AIConfig: Sendable {
             model:                 model,
             cliPath:               s.aiCLIPath.trimmingCharacters(in: .whitespaces),
             cliModel:              s.aiCLIModel.trimmingCharacters(in: .whitespaces),
-            apiKey:                AIKeychain.load() ?? "",
+            apiKey:                AIAPIKeyStore.load() ?? "",
             requestTimeoutSeconds: s.aiRequestTimeout
         )
     }
@@ -152,14 +152,15 @@ struct AIConfig: Sendable {
     }
 }
 
-// MARK: - Keychain (API key)
+// MARK: - API key store
 
 /// API Key 存储。
 /// 使用 UserDefaults 而非 Keychain，原因：
 ///   - Keychain ACL 绑定 code signature，每次 cp 替换二进制都会弹授权窗口
 ///   - API Key 已通过 HTTPS 传输，本地明文存储与 Keychain 安全级别差异可接受
 ///   - 彻底消除开发期反复弹窗的摩擦
-enum AIKeychain {
+/// 注意：类型名如实反映存储介质（UserDefaults 明文），勿改回 "Keychain" 命名。
+enum AIAPIKeyStore {
     private static let key = "meditor.ai.apiKey"
 
     static func save(_ value: String) {
@@ -254,7 +255,7 @@ struct AIClient {
 
                     var req = URLRequest(url: url)
                     req.httpMethod    = "POST"
-                    req.timeoutInterval = 60
+                    req.timeoutInterval = config.requestTimeoutSeconds
                     req.setValue("application/json",        forHTTPHeaderField: "Content-Type")
                     req.setValue("text/event-stream",       forHTTPHeaderField: "Accept")
                     req.setValue(config.apiKey,             forHTTPHeaderField: "x-api-key")
@@ -277,8 +278,8 @@ struct AIClient {
 
                     let session = URLSession(configuration: {
                         let c = URLSessionConfiguration.default
-                        c.timeoutIntervalForRequest  = 60
-                        c.timeoutIntervalForResource = 600
+                        c.timeoutIntervalForRequest  = config.requestTimeoutSeconds
+                        c.timeoutIntervalForResource = config.requestTimeoutSeconds * 2
                         return c
                     }())
 
@@ -337,9 +338,9 @@ struct AIClient {
                     if !config.apiKey.isEmpty {
                         req.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
                     }
-                    // Fail fast if the endpoint never responds (the byte stream
-                    // itself stays open for the whole generation once flowing).
-                    req.timeoutInterval = 60
+                    // 超时与 Agent 路径（RestAgentBackend）一致使用配置值，
+                    // 避免设置页调整对聊天路径不生效。默认 300s，适配推理模型长思考。
+                    req.timeoutInterval = config.requestTimeoutSeconds
 
                     let payload: [String: Any] = [
                         "model": config.model,
@@ -350,8 +351,8 @@ struct AIClient {
 
                     let session = URLSession(configuration: {
                         let c = URLSessionConfiguration.default
-                        c.timeoutIntervalForRequest = 60          // idle timeout between bytes
-                        c.timeoutIntervalForResource = 600         // overall ceiling
+                        c.timeoutIntervalForRequest = config.requestTimeoutSeconds   // idle timeout between bytes
+                        c.timeoutIntervalForResource = config.requestTimeoutSeconds * 2   // overall ceiling
                         c.waitsForConnectivity = false
                         return c
                     }())
@@ -475,9 +476,13 @@ struct AIClient {
                     // subprocess hasn't flushed yet, so we use readDataToEndOfFile().
                     // The termination closure calls process.terminate() which closes
                     // the pipe and unblocks this call when the Task is cancelled.
-                    let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
-                    let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+                    // stdout / stderr 必须并发读取：顺序读会在子进程向 stderr 写满
+                    // 管道缓冲（64KB）时死锁——进程阻塞在 stderr 写，stdout 永远等不到 EOF。
+                    async let outRead = outPipe.fileHandleForReading.readDataToEndOfFile()
+                    async let errRead = errPipe.fileHandleForReading.readDataToEndOfFile()
                     process.waitUntilExit()
+                    let outData = await outRead
+                    let errData = await errRead
 
                     if Task.isCancelled { continuation.finish(); return }
 
