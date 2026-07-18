@@ -59,45 +59,72 @@ struct WindowConfigurator: NSViewRepresentable {
         }
 
         private func constrainTitlebarToSidebar(_ w: NSWindow) {
-            guard let contentView = w.contentView else { return }
-            for sub in contentView.superview?.subviews ?? [] {
-                let typeName = String(describing: type(of: sub))
-                if typeName.contains("Titlebar") || typeName.contains("titlebar") {
-                    // Shrink the titlebar container to *just* the traffic lights so
-                    // everything to their right (sidebar, tabs, the show-sidebar
-                    // button) stays clickable instead of being captured by the
-                    // titlebar drag region.
-                    var f = sub.frame
-                    f.size.width = 80
-                    sub.frame = f
-                    sub.autoresizingMask = [.minYMargin]
-                    // Allow the traffic-light buttons to be pushed *below* the
-                    // default compact-titlebar height without being clipped.
-                    sub.clipsToBounds = false
-                    // The titlebar's NSTitlebarBackgroundView / _NSTitlebarDecorationView
-                    // draw an opaque (white) bar with the window's rounded corner.
-                    // Once the container is shrunk, that rounded white nub pokes
-                    // into the content — hide those backing views (the traffic-light
-                    // widgets are siblings, so they stay visible).
-                    Self.hideTitlebarBacking(sub)
-                    break
+            guard let contentView = w.contentView, let themeFrame = contentView.superview else { return }
+            let buttonTypes: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+            let buttons = buttonTypes.compactMap { w.standardWindowButton($0) }
+            guard let firstButton = buttons.first else { return }
+
+            // 从红绿灯按钮向上找到 titlebar 容器（themeFrame 的直接子视图）。
+            // 不依赖私有类名，macOS 版本间类名会变。
+            var container = firstButton
+            while let parent = container.superview, parent !== themeFrame {
+                container = parent
+            }
+            guard container.superview === themeFrame else { return }
+
+            // Shrink the titlebar container to *just* the traffic lights so
+            // everything to their right (sidebar, tabs, the show-sidebar
+            // button) stays clickable instead of being captured by the
+            // titlebar drag region.
+            var f = container.frame
+            f.size.width = 80
+            container.frame = f
+            container.autoresizingMask = [.minYMargin]
+            // Allow the traffic-light buttons to be pushed *below* the
+            // default compact-titlebar height without being clipped.
+            container.clipsToBounds = false
+            container.layer?.backgroundColor = nil
+            container.layer?.cornerRadius = 0
+            container.layer?.mask = nil
+
+            // 容器内：只保留按钮所在分支，背景/装饰视图全部隐藏——
+            // 否则 titlebar 的不透明白底（带窗口圆角）会戳进内容区。
+            Self.hideChrome(in: container, keeping: buttons)
+
+            // 容器外：新版 macOS 可能把毛玻璃/圆角装饰做成容器的兄弟节点，
+            // 类名随版本变化（Titlebar*/Backdrop/Glass/Decoration…）。
+            // 只隐藏"标题栏高度"的条带视图，避免误伤全窗口背景。
+            for sibling in themeFrame.subviews
+            where sibling !== container && sibling !== contentView && sibling.frame.height <= 80 {
+                let name = String(describing: type(of: sibling))
+                if name.contains("Titlebar") || name.contains("Backdrop")
+                    || name.contains("Glass") || name.contains("Decoration") {
+                    sibling.isHidden = true
                 }
             }
+
             repositionTrafficLights(w)
         }
 
-        /// Recursively hide the titlebar's background/decoration drawing views so
-        /// no white bar / rounded nub shows. Traffic-light widgets are left alone.
-        static func hideTitlebarBacking(_ view: NSView) {
-            let name = String(describing: type(of: view))
-            if name.contains("TitlebarBackground") || name.contains("TitlebarDecoration") {
-                view.isHidden = true
-                return
+        /// 隐藏 view 子树中所有「不包含红绿灯按钮」的分支；
+        /// 按钮所在分支保持可见，但清掉自身的背景绘制。
+        /// 类名无关，对 macOS 各版本的私有视图结构都成立。
+        static func hideChrome(in view: NSView, keeping buttons: [NSView]) {
+            func subtreeContainsButton(_ v: NSView) -> Bool {
+                if buttons.contains(where: { $0 === v }) { return true }
+                return v.subviews.contains(where: subtreeContainsButton)
             }
-            view.clipsToBounds = false
-            view.layer?.cornerRadius = 0
-            view.layer?.mask = nil
-            for s in view.subviews { hideTitlebarBacking(s) }
+            for sub in view.subviews {
+                if subtreeContainsButton(sub) {
+                    sub.clipsToBounds = false
+                    sub.layer?.backgroundColor = nil
+                    sub.layer?.cornerRadius = 0
+                    sub.layer?.mask = nil
+                    hideChrome(in: sub, keeping: buttons)
+                } else {
+                    sub.isHidden = true
+                }
+            }
         }
 
         /// Push the standard traffic-light buttons lower (Craft / Finder feel)
