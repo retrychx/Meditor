@@ -179,9 +179,12 @@ final class AgentRunner {
                         // 用 DispatchQueue.main.async 而非 Task { @MainActor }：
                         // main queue 严格 FIFO，chunk 按到达顺序应用；
                         // Task 调度顺序不保证，高速流式下累积文本可能乱序。
-                        DispatchQueue.main.async {
+                        DispatchQueue.main.async { [weak self] in
+                            // guard 必须与本闭包的 [weak self] 同层：
+                            // 在嵌套 @Sendable 闭包里解包外层 weak 捕获，
+                            // 新版编译器会报 captured var 硬错误。
+                            guard let self else { return }
                             MainActor.assumeIsolated {
-                                guard let self else { return }
                                 self.streamAccumulated += chunk          // 累积 delta
                                 self.onChunk?(self.streamAccumulated)     // 回调累积全文
                             }
