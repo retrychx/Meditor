@@ -66,7 +66,7 @@ struct WindowConfigurator: NSViewRepresentable {
 
             // 从红绿灯按钮向上找到 titlebar 容器（themeFrame 的直接子视图）。
             // 不依赖私有类名，macOS 版本间类名会变。
-            var container = firstButton
+            var container: NSView = firstButton
             while let parent = container.superview, parent !== themeFrame {
                 container = parent
             }
