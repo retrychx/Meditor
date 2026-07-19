@@ -1,6 +1,19 @@
 import EventKit
 import SwiftUI
 
+/// 静态缓存的格式化器（DateFormatter 创建昂贵，仅在本文件 @MainActor 视图内使用）。
+private enum SidebarFmt {
+    static let dayKey: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f
+    }()
+    static let sectionDisplay: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "M月d日 EEEE"; f.locale = .current; return f
+    }()
+    static let timeShort: DateFormatter = {
+        let f = DateFormatter(); f.timeStyle = .short; f.dateStyle = .none; return f
+    }()
+}
+
 /// 侧边栏日历视图：展示未来 7 天的日程事件（需用户授权）。
 @MainActor
 struct CalendarSidebarView: View {
@@ -8,7 +21,7 @@ struct CalendarSidebarView: View {
     @State private var authStatus: EKAuthorizationStatus = .notDetermined
     @State private var isLoading = false
 
-    private let service = CalendarService.shared
+    @Environment(\.calendarService) private var service
 
     var body: some View {
         VStack(spacing: 0) {
@@ -125,12 +138,10 @@ struct CalendarSidebarView: View {
     // MARK: - Helpers
 
     private var groupedEvents: [(String, [EKEvent])] {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
         var dict: [(String, [EKEvent])] = []
         var seen: [String: Int] = [:]
         for event in events {
-            let key = formatter.string(from: event.startDate)
+            let key = SidebarFmt.dayKey.string(from: event.startDate)
             if let idx = seen[key] {
                 dict[idx].1.append(event)
             } else {
@@ -142,16 +153,11 @@ struct CalendarSidebarView: View {
     }
 
     private func sectionTitle(for dateKey: String) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        guard let date = formatter.date(from: dateKey) else { return dateKey }
+        guard let date = SidebarFmt.dayKey.date(from: dateKey) else { return dateKey }
         let cal = Calendar.current
         if cal.isDateInToday(date) { return L("calendar.today") }
         if cal.isDateInTomorrow(date) { return L("calendar.tomorrow") }
-        let display = DateFormatter()
-        display.dateFormat = "M月d日 EEEE"
-        display.locale = Locale.current
-        return display.string(from: date)
+        return SidebarFmt.sectionDisplay.string(from: date)
     }
 
     private func loadIfAuthorized() async {
@@ -200,9 +206,6 @@ private struct CalendarEventRow: View {
 
     private var timeLabel: String {
         if event.isAllDay { return L("calendar.allDay") }
-        let fmt = DateFormatter()
-        fmt.timeStyle = .short
-        fmt.dateStyle = .none
-        return "\(fmt.string(from: event.startDate)) – \(fmt.string(from: event.endDate))"
+        return "\(SidebarFmt.timeShort.string(from: event.startDate)) – \(SidebarFmt.timeShort.string(from: event.endDate))"
     }
 }

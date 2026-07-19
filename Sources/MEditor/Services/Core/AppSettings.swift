@@ -106,7 +106,7 @@ final class AppSettings {
         didSet { defaults.set(aiAccentStyle, forKey: Key.aiAccentStyle) }
     }
 
-    /// AI provider mode: "disabled" | "openai" | "claudeCLI".
+    /// AI provider mode: "disabled" | "openai" | "anthropic" | "claudeCLI".
     var aiProvider: String {
         didSet { defaults.set(aiProvider, forKey: Key.aiProvider) }
     }

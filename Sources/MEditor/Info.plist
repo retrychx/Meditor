@@ -18,6 +18,9 @@
 	<string>MEditor</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
+	<!-- Version values below are placeholders. The single source of truth is
+	     /VERSION at the repo root; scripts/bundle.sh overwrites both keys in the
+	     packaged .app. To bump the version, edit VERSION — not this file. -->
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
 	<key>CFBundleVersion</key>

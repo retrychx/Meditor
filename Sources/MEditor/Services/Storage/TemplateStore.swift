@@ -55,9 +55,9 @@ enum TemplateStoreError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .cannotDeleteBuiltin: return "Built-in templates cannot be deleted"
-        case .invalidName: return "Template name is invalid"
-        case .writeFailed(let e): return "Failed to save template: \(e.localizedDescription)"
+        case .cannotDeleteBuiltin: return L("template.error.cannotDeleteBuiltin")
+        case .invalidName: return L("template.error.invalidName")
+        case .writeFailed(let e): return L("template.error.writeFailed", e.localizedDescription)
         }
     }
 }

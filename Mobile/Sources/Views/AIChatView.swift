@@ -7,6 +7,13 @@ struct AIChatView: View {
     @Environment(DocumentStore.self) private var store
     @FocusState private var inputFocused: Bool
     @State private var copiedID: UUID?
+    /// 「已复制」确认的重置任务：视图消失时取消，不再用不跟踪取消的 asyncAfter。
+    @State private var copyResetTask: Task<Void, Never>?
+    /// 消息列表是否贴底：贴底时流式输出自动跟随滚底；用户上翻阅读时不强制拽回。
+    @State private var pinnedToBottom = true
+
+    /// 列表底部锚点 id（贴底检测与滚动目标共用）。
+    private let bottomAnchorID = "chat-bottom"
 
     var body: some View {
         NavigationStack {
@@ -23,24 +30,58 @@ struct AIChatView: View {
             .background(PaperTheme.paper)
             .navigationTitle("AI 助手")
             .navigationBarTitleDisplayMode(.inline)
+            .onDisappear {
+                copyResetTask?.cancel()
+                copiedID = nil
+            }
         }
     }
 
     // MARK: - 消息列表
 
     private var messageList: some View {
-        List(model.messages) { msg in
-            bubbleRow(msg)
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+        ScrollViewReader { proxy in
+            List {
+                ForEach(model.messages) { msg in
+                    bubbleRow(msg)
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                }
+                // 底部锚点：进出视口维护「贴底」状态，也是滚动到底的目标。
+                Color.clear
+                    .frame(height: 1)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
+                    .id(bottomAnchorID)
+                    .onAppear { pinnedToBottom = true }
+                    .onDisappear { pinnedToBottom = false }
+            }
+            .listStyle(.plain)
+            .listRowSpacing(2)
+            .scrollContentBackground(.hidden)
+            .background(PaperTheme.paper)
+            // 拖动列表时键盘随手势收回
+            .scrollDismissesKeyboard(.interactively)
+            .onChange(of: model.messages.count) { _ in
+                // 新消息（发送/回复开始）始终跳到底。
+                pinnedToBottom = true
+                scrollToBottom(proxy)
+            }
+            .onChange(of: model.messages.last?.text) { _ in
+                // 流式增长：仅贴底时跟随。
+                guard pinnedToBottom else { return }
+                scrollToBottom(proxy)
+            }
+            .onAppear { proxy.scrollTo(bottomAnchorID, anchor: .bottom) }
         }
-        .listStyle(.plain)
-        .listRowSpacing(2)
-        .scrollContentBackground(.hidden)
-        .background(PaperTheme.paper)
-        // 拖动列表时键盘随手势收回
-        .scrollDismissesKeyboard(.interactively)
+    }
+
+    private func scrollToBottom(_ proxy: ScrollViewProxy) {
+        withAnimation(.easeOut(duration: 0.2)) {
+            proxy.scrollTo(bottomAnchorID, anchor: .bottom)
+        }
     }
 
     private func bubbleRow(_ msg: ChatModel.ChatMessage) -> some View {
@@ -111,8 +152,12 @@ struct AIChatView: View {
             Button {
                 Pasteboard.copy(msg.text)
                 copiedID = msg.id
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
-                    if copiedID == msg.id { copiedID = nil }
+                copyResetTask?.cancel()
+                let id = msg.id
+                copyResetTask = Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(1.4))
+                    guard !Task.isCancelled, copiedID == id else { return }
+                    copiedID = nil
                 }
             } label: {
                 Label(copiedID == msg.id ? "已复制" : "复制",

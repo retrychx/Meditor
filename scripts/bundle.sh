@@ -25,6 +25,19 @@ cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 # Copy Info.plist (with document type associations)
 cp "$PROJECT_DIR/Sources/$APP_NAME/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
 
+# Inject version from the single source of truth for the macOS app: <repo>/VERSION.
+# (iOS takes its version from MARKETING_VERSION/CURRENT_PROJECT_VERSION in
+# Mobile/MEditorMobile.xcodeproj instead.) To bump the version, edit VERSION —
+# do NOT edit the version keys in Sources/MEditor/Info.plist.
+VERSION_FILE="$PROJECT_DIR/VERSION"
+if [ ! -s "$VERSION_FILE" ]; then
+  echo "error: version file not found or empty: $VERSION_FILE" >&2
+  exit 1
+fi
+APP_VERSION="$(tr -d '[:space:]' < "$VERSION_FILE")"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $APP_VERSION" "$APP_BUNDLE/Contents/Info.plist"
+
 # Copy resources (icons, JS libraries, etc.)
 if [ -d "$BUILD_DIR/${APP_NAME}_${APP_NAME}.bundle/Resources/" ]; then
   cp -R "$BUILD_DIR/${APP_NAME}_${APP_NAME}.bundle/Resources/" "$APP_BUNDLE/Contents/Resources/"

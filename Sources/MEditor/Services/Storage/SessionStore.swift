@@ -80,7 +80,10 @@ final class SessionStore: SessionStoreProtocol {
         let activeURLs = Set(openTabURLs.map(\.standardizedFileURL) + [rootURL?.standardizedFileURL].compactMap { $0 })
         cacheLock.withLock { bookmarkCache = bookmarkCache.filter { activeURLs.contains($0.key) } }
 
-        guard let encoded = try? JSONEncoder().encode(session) else { return }
+        guard let encoded = try? JSONEncoder().encode(session) else {
+            AppLog.session.error("SessionStore: PersistedSession encode failed, save skipped")
+            return
+        }
         self.userDefaults.set(encoded, forKey: Self.userDefaultsKey)
     }
 

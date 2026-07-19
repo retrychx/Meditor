@@ -128,7 +128,6 @@ struct DocumentView: View {
 
     @ViewBuilder
     private var content: some View {
-        @Bindable var store = store
         if store.showPreview {
             switch store.kind {
             case .html:
@@ -146,7 +145,11 @@ struct DocumentView: View {
                 }
             }
         } else {
-            TextEditor(text: $store.text)
+            // 手动编辑经 applyManualEdit 进 store：触发防抖自动保存，进程退出不丢内容。
+            TextEditor(text: Binding(
+                get: { store.text },
+                set: { store.applyManualEdit($0) }
+            ))
                 .font(PaperTheme.Typography.editorBody)
                 .foregroundStyle(PaperTheme.ink)
                 .lineSpacing(6)

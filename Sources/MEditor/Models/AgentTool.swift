@@ -157,6 +157,20 @@ enum AnySendableValue: Sendable, Codable {
         if case .int(let i) = self { return i }
         return nil
     }
+
+    /// 还原为 Foundation `Any`（`.null` → NSNull），供 JSONSerialization 回写 wire format。
+    /// 唯一的 unwrap 实现——此前同一份 switch 抄了 3 遍（这里 / AgentBackend / AgentRunner）。
+    var anyValue: Any {
+        switch self {
+        case .string(let s):  return s
+        case .bool(let b):    return b
+        case .int(let i):     return i
+        case .double(let d):  return d
+        case .null:           return NSNull()
+        case .array(let arr): return arr.map { $0.anyValue }
+        case .dict(let d):    return d.reduce(into: [String: Any]()) { $0[$1.key] = $1.value.anyValue }
+        }
+    }
 }
 
 struct AgentToolCall: Sendable {
@@ -194,19 +208,7 @@ struct AgentToolCall: Sendable {
 
     /// 将强类型 arguments 还原为 [String: Any]（用于序列化回 wire format）
     var argumentsDict: [String: Any] {
-        arguments.reduce(into: [String: Any]()) { $0[$1.key] = unwrapValue($1.value) }
-    }
-
-    private func unwrapValue(_ v: AnySendableValue) -> Any {
-        switch v {
-        case .string(let s):  return s
-        case .bool(let b):    return b
-        case .int(let i):     return i
-        case .double(let d):  return d
-        case .null:           return NSNull()
-        case .array(let arr): return arr.map { unwrapValue($0) }
-        case .dict(let d):    return d.reduce(into: [String: Any]()) { $0[$1.key] = unwrapValue($1.value) }
-        }
+        arguments.reduce(into: [String: Any]()) { $0[$1.key] = $1.value.anyValue }
     }
 
     init(id: String, name: String, arguments: [String: AnySendableValue] = [:]) {

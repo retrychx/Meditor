@@ -16,8 +16,12 @@ import UIKit
 final class GitHubGistManager {
 
     private let service = GitHubGistService()
-    private let settings = AppSettings.shared
+    private let settings: AppSettings
     private let gistMapKey = "MEditor.githubGistMap"
+
+    init(settings: AppSettings = .shared) {
+        self.settings = settings
+    }
 
     // MARK: - Publish state (observed by UI)
 

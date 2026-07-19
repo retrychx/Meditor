@@ -229,7 +229,7 @@ struct RunCommandTool: AgentTool {
             }
             process.waitUntilExit()
 
-            var output = Self.decodeLossyUTF8(data)
+            var output = TextFileDecoder.decode(data) ?? ""
             if wasTruncated {
                 output += "\n…（输出过长，已截断到 \(maxOutputBytes / 1000)KB）"
             }
@@ -241,15 +241,5 @@ struct RunCommandTool: AgentTool {
 
             return "\(header)\n$ \(command)\n\n\(output.isEmpty ? "（无输出）" : output)"
         }.value
-    }
-
-    /// 按 UTF-8 解码，失败时回退去掉末尾最多 3 字节重试
-    /// （截断点可能落在多字节字符中间），最后兜底 isoLatin1。
-    private static func decodeLossyUTF8(_ data: Data) -> String {
-        if let s = String(data: data, encoding: .utf8) { return s }
-        for drop in 1...3 {
-            if let s = String(data: data.dropLast(drop), encoding: .utf8) { return s }
-        }
-        return String(data: data, encoding: .isoLatin1) ?? ""
     }
 }

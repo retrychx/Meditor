@@ -43,6 +43,9 @@ final class AgentRunner {
     /// 当前 step 的流式累积文本；onChunk 始终回调「累积全文」而非增量 delta，
     /// 让 UI 侧可直接赋值显示（无需自行拼接）。
     private var streamAccumulated = ""
+    /// 上次 onChunk 推送时间：delta 每次都累积，但 UI 回调按 ≥50ms 合批
+    /// （同 AIClient.streamTask 思路），避免高速流式时主队列洪峰。
+    private var lastStreamFlush: Date = .distantPast
 
     /// 流式 chunk 回调（主线程，可选）
     var onChunk: (@MainActor (String) -> Void)? = nil
@@ -136,6 +139,9 @@ final class AgentRunner {
                     self.error     = "操作超时（\(Int(self.timeoutSeconds))s），请重试或简化任务"
                     self.isRunning = false
                     self.runTask   = nil
+                    // 拒绝挂起的命令确认：恢复工具内 withCheckedContinuation，否则确认框
+                    // 弹出期间超时会让 _run 永不结束（reject 幂等，与 cancelStreaming 不冲突）
+                    context.cancelPendingCommandConfirmation()
                     // onComplete 不在此处调用 —— _run 的 cleanup 必然执行并统一触发
                     // (group.cancelAll 后 withTaskGroup 会等待 _run 响应取消并结束)
                 }
@@ -177,6 +183,7 @@ final class AgentRunner {
 
             do {
                 streamAccumulated = ""   // 每个 step 重置，reply 只显示当前轮累积文本
+                lastStreamFlush = .distantPast   // 每个 step 的首个 delta 立即显示
                 let response = try await backend.completeStreaming(
                     messages: messages,
                     tools: tools,
@@ -191,11 +198,27 @@ final class AgentRunner {
                             guard let self else { return }
                             MainActor.assumeIsolated {
                                 self.streamAccumulated += chunk          // 累积 delta
-                                self.onChunk?(self.streamAccumulated)     // 回调累积全文
+                                // onChunk 按 ≥50ms 合批：不每个 delta 都触发一次 UI 更新
+                                let now = Date()
+                                if now.timeIntervalSince(self.lastStreamFlush) > 0.05 {
+                                    self.lastStreamFlush = now
+                                    self.onChunk?(self.streamAccumulated)     // 回调累积全文
+                                }
                             }
                         }
                     }
                 )
+
+                // 冲刷节流残余：把累积全文最后推一次。与 chunk 同走 main queue（FIFO），
+                // 保证在最后一批 delta 之后执行；最终回复随后还会由 onChunk?(response.text) 覆盖。
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    MainActor.assumeIsolated {
+                        guard !self.streamAccumulated.isEmpty else { return }
+                        self.lastStreamFlush = Date()
+                        self.onChunk?(self.streamAccumulated)
+                    }
+                }
 
                 // 输出被 max_tokens 截断：置位标记由 UI 提示，不自动续跑（避免死循环）
                 if response.finishReason == "length" || response.finishReason == "max_tokens" {
@@ -300,6 +323,8 @@ final class AgentRunner {
         isRunning         = false
         lastThinkingIndex = nil
         runTask           = nil
+        // 正常结束也拒绝挂起的命令确认（幂等），兜底防 continuation 泄漏
+        context.cancelPendingCommandConfirmation()
         onComplete?()
     }
 
@@ -383,23 +408,11 @@ final class AgentRunner {
         guard !args.isEmpty else { return "{}" }
         // 将 AnySendableValue 还原为 Any 用于 JSON 序列化
         let raw = args.reduce(into: [String: Any]()) { dict, pair in
-            dict[pair.key] = unwrapValue(pair.value)
+            dict[pair.key] = pair.value.anyValue
         }
         guard let data = try? JSONSerialization.data(withJSONObject: raw, options: .prettyPrinted),
               let str = String(data: data, encoding: .utf8)
         else { return "{}" }
         return str.count > 200 ? String(str.prefix(200)) + "…" : str
-    }
-
-    private func unwrapValue(_ v: AnySendableValue) -> Any {
-        switch v {
-        case .string(let s):  return s
-        case .bool(let b):    return b
-        case .int(let i):     return i
-        case .double(let d):  return d
-        case .null:           return NSNull()
-        case .array(let arr): return arr.map { unwrapValue($0) }
-        case .dict(let d):    return d.reduce(into: [String: Any]()) { $0[$1.key] = unwrapValue($1.value) }
-        }
     }
 }

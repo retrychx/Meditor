@@ -1,4 +1,6 @@
 .build
+.build-*
+
 .claude
 .swiftpm
 .vscode
@@ -13,6 +15,7 @@ workspaces/*/session/conversations/
 
 # Mobile (iOS) build artifacts
 Mobile/.derivedData
+Mobile/.derivedData-*
 
 # Xcode user state
 xcuserdata/

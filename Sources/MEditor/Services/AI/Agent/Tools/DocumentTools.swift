@@ -23,9 +23,8 @@ struct ReadDocumentTool: AgentTool {
         if let filename = arguments["filename"]?.stringValue, !filename.isEmpty {
             let resolved = await context.resolveFile(filename)
             guard case .found(let url) = resolved else {
-                if case .ambiguous(let urls) = resolved {
-                    let list = urls.prefix(5).map { "  - \($0.path)" }.joined(separator: "\n")
-                    return "[!] 找到 \(urls.count) 个同名文件「\(filename)」，请提供更精确的路径：\n\(list)"
+                if let message = resolved.promptMessage(forQuery: filename) {
+                    return message
                 }
                 return "未找到文件：\(filename)"
             }
@@ -60,9 +59,8 @@ struct WriteDocumentTool: AgentTool {
         if let filename = arguments["filename"]?.stringValue, !filename.isEmpty {
             // 已存在则用其绝对路径覆盖（避免裸文件名在根目录误建新文件）；否则按给定路径新建
             let resolved = await context.resolveFile(filename)
-            if case .ambiguous(let urls) = resolved {
-                let list = urls.prefix(5).map { "  - \($0.path)" }.joined(separator: "\n")
-                return "[!] 找到 \(urls.count) 个同名文件「\(filename)」，请提供更精确的路径：\n\(list)"
+            if let message = resolved.promptMessage(forQuery: filename) {
+                return message
             }
             // found 则用其绝对路径覆盖（避免裸文件名在根目录误建新文件）；notFound 则按给定路径新建
             let target: String
@@ -151,9 +149,8 @@ struct SearchDocumentTool: AgentTool {
         if let filename = arguments["filename"]?.stringValue, !filename.isEmpty {
             let resolved = await context.resolveFile(filename)
             guard case .found(let url) = resolved else {
-                if case .ambiguous(let urls) = resolved {
-                    let list = urls.prefix(5).map { "  - \($0.path)" }.joined(separator: "\n")
-                    return "[!] 找到 \(urls.count) 个同名文件「\(filename)」，请提供更精确的路径：\n\(list)"
+                if let message = resolved.promptMessage(forQuery: filename) {
+                    return message
                 }
                 return "未找到文件：\(filename)"
             }

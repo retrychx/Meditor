@@ -30,6 +30,10 @@
 		2600000000000000000002F0 /* ../Sources/MEditor/Resources/Preview/mermaid.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001F0 /* ../Sources/MEditor/Resources/Preview/mermaid.min.js */; };
 		2600000000000000000002F1 /* ../Sources/MEditor/Views/Shared/MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001F1 /* ../Sources/MEditor/Views/Shared/MarkdownText.swift */; };
 		2600000000000000000002F2 /* ../Sources/MEditor/Services/Storage/Pasteboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001F2 /* ../Sources/MEditor/Services/Storage/Pasteboard.swift */; };
+		2600000000000000000002F3 /* ../Sources/MEditor/Services/Storage/Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001F3 /* ../Sources/MEditor/Services/Storage/Keychain.swift */; };
+		2600000000000000000002F4 /* ../Sources/MEditor/Views/Shared/AgentToolDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001F4 /* ../Sources/MEditor/Views/Shared/AgentToolDisplay.swift */; };
+		2600000000000000000002F5 /* ../Sources/MEditor/Skills/SharedSkillPrompts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001F5 /* ../Sources/MEditor/Skills/SharedSkillPrompts.swift */; };
+		2600000000000000000002F6 /* ../Sources/MEditor/Utils/TextFileDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001F6 /* ../Sources/MEditor/Utils/TextFileDecoder.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -58,6 +62,10 @@
 		2600000000000000000001F0 /* ../Sources/MEditor/Resources/Preview/mermaid.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ../Sources/MEditor/Resources/Preview/mermaid.min.js; sourceTree = "<group>"; };
 		2600000000000000000001F1 /* ../Sources/MEditor/Views/Shared/MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Views/Shared/MarkdownText.swift; sourceTree = "<group>"; };
 		2600000000000000000001F2 /* ../Sources/MEditor/Services/Storage/Pasteboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/Storage/Pasteboard.swift; sourceTree = "<group>"; };
+		2600000000000000000001F3 /* ../Sources/MEditor/Services/Storage/Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/Storage/Keychain.swift; sourceTree = "<group>"; };
+		2600000000000000000001F4 /* ../Sources/MEditor/Views/Shared/AgentToolDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Views/Shared/AgentToolDisplay.swift; sourceTree = "<group>"; };
+		2600000000000000000001F5 /* ../Sources/MEditor/Skills/SharedSkillPrompts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Skills/SharedSkillPrompts.swift; sourceTree = "<group>"; };
+		2600000000000000000001F6 /* ../Sources/MEditor/Utils/TextFileDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Utils/TextFileDecoder.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -123,6 +131,10 @@
 				2600000000000000000001F0 /* ../Sources/MEditor/Resources/Preview/mermaid.min.js */,
 				2600000000000000000001F1 /* ../Sources/MEditor/Views/Shared/MarkdownText.swift */,
 				2600000000000000000001F2 /* ../Sources/MEditor/Services/Storage/Pasteboard.swift */,
+				2600000000000000000001F3 /* ../Sources/MEditor/Services/Storage/Keychain.swift */,
+				2600000000000000000001F4 /* ../Sources/MEditor/Views/Shared/AgentToolDisplay.swift */,
+				2600000000000000000001F5 /* ../Sources/MEditor/Skills/SharedSkillPrompts.swift */,
+				2600000000000000000001F6 /* ../Sources/MEditor/Utils/TextFileDecoder.swift */,
 			);
 			name = Shared;
 			sourceTree = "<group>";
@@ -231,6 +243,10 @@
 				260000000000000000000215 /* ../Sources/MEditor/Templates/BuiltinTemplates.swift in Sources */,
 				2600000000000000000002F1 /* ../Sources/MEditor/Views/Shared/MarkdownText.swift in Sources */,
 				2600000000000000000002F2 /* ../Sources/MEditor/Services/Storage/Pasteboard.swift in Sources */,
+				2600000000000000000002F3 /* ../Sources/MEditor/Services/Storage/Keychain.swift in Sources */,
+				2600000000000000000002F4 /* ../Sources/MEditor/Views/Shared/AgentToolDisplay.swift in Sources */,
+				2600000000000000000002F5 /* ../Sources/MEditor/Skills/SharedSkillPrompts.swift in Sources */,
+				2600000000000000000002F6 /* ../Sources/MEditor/Utils/TextFileDecoder.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

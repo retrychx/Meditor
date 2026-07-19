@@ -517,6 +517,16 @@ extension LocalizationManager {
             "The selected text appears multiple times in the document. Please apply the change manually.",
             "所选文本在文档中出现了多次，无法精确定位。请手动应用修改。"
         ),
+
+        // FileService errors
+        "error.file.accessDenied": ("Access denied to the file", "无权访问该文件"),
+        "error.file.readFailed": ("Failed to read file: %@", "读取文件失败：%@"),
+        "error.file.writeFailed": ("Failed to write file: %@", "写入文件失败：%@"),
+
+        // TemplateStore errors
+        "template.error.cannotDeleteBuiltin": ("Built-in templates cannot be deleted", "内置模板不可删除"),
+        "template.error.invalidName": ("Template name is invalid", "模板名称无效"),
+        "template.error.writeFailed": ("Failed to save template: %@", "保存模板失败：%@"),
     ]
 
     static let table: [String: (en: String, zh: String)] = {

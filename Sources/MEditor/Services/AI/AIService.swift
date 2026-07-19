@@ -187,11 +187,21 @@ enum AIAPIKeyStore {
 struct AIClient {
     let config: AIConfig
 
+    /// 进程级共享 session：复用连接池（HTTP/2 多路复用），避免每次聊天请求新建
+    /// URLSession 的线程/缓存开销（与 RestAgentBackend.sharedSession 同一思路）。
+    /// 细粒度超时在各 request 的 timeoutInterval 上设置。
+    private static let sharedSession: URLSession = {
+        let c = URLSessionConfiguration.default
+        c.timeoutIntervalForResource = 3600   // 兜底上限；请求级超时由 URLRequest 控制
+        c.waitsForConnectivity = false
+        return URLSession(configuration: c)
+    }()
+
     func stream(_ messages: [AIMessage]) -> AsyncThrowingStream<String, Error> {
         switch config.kind {
         case .disabled:   return previewStream()
-        case .openai:     return openAIStream(messages)
-        case .anthropic:  return anthropicStream(messages)   // 需要 x-api-key 和 anthropic-version 头
+        case .openai:     return restStream(messages, wire: .openAI)
+        case .anthropic:  return restStream(messages, wire: .anthropic)
         case .claudeCLI:  return claudeCLIStream(messages)
         }
     }
@@ -242,71 +252,33 @@ struct AIClient {
         }
     }
 
-    // MARK: Anthropic SSE
+    // MARK: REST SSE（OpenAI-compatible / Anthropic）
 
-    /// Anthropic Messages API 流式实现。
-    /// 认证头与 OpenAI 不同：x-api-key + anthropic-version。
-    private func anthropicStream(_ messages: [AIMessage]) -> AsyncThrowingStream<String, Error> {
+    /// 聊天路径与 Agent 路径共用 RestAgentBackend 的 wire format
+    /// （请求构造、认证头、SSE 行解析、429/503 退避——此前手写了三遍，行为已分叉）。
+    /// 本方法只保留聊天侧职责：AIMessage → AgentMessage 转换、逐 chunk yield、
+    /// 以及流的取消/错误语义（CancellationError 视为正常结束，URLError 包装为 AIError.network）。
+    private func restStream(_ messages: [AIMessage], wire: WireProtocol) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
+            let agentMessages = messages.map { msg -> AgentMessage in
+                let role: AgentMessage.Role
+                switch msg.role {
+                case .system:    role = .system
+                case .user:      role = .user
+                case .assistant: role = .assistant
+                }
+                return AgentMessage(role: role, content: msg.content)
+            }
+            // 注入聊天路径的共享 session（waitsForConnectivity = false），
+            // 保持与原 openAIStream/anthropicStream 一致的网络行为。
+            let backend = RestAgentBackend(config: config, wire: wire, session: Self.sharedSession)
             let task = Task {
                 do {
-                    guard config.isConfigured else { throw AIError.notConfigured }
-                    let base     = config.baseURL.isEmpty ? "https://api.anthropic.com/v1" : config.baseURL
-                    let endpoint = (base.hasSuffix("/") ? base : base + "/") + "messages"
-                    guard let url = URL(string: endpoint) else { throw AIError.badURL }
-
-                    var req = URLRequest(url: url)
-                    req.httpMethod    = "POST"
-                    req.timeoutInterval = config.requestTimeoutSeconds
-                    req.setValue("application/json",        forHTTPHeaderField: "Content-Type")
-                    req.setValue("text/event-stream",       forHTTPHeaderField: "Accept")
-                    req.setValue(config.apiKey,             forHTTPHeaderField: "x-api-key")
-                    req.setValue("2023-06-01",              forHTTPHeaderField: "anthropic-version")
-
-                    // system 单独提取，其余转成 user/assistant 交替格式
-                    let system = messages.first(where: { $0.role == .system })?.content ?? ""
-                    let convo: [[String: Any]] = messages
-                        .filter { $0.role != .system }
-                        .map    { ["role": $0.role.rawValue, "content": $0.content] }
-
-                    var body: [String: Any] = [
-                        "model":      config.model,
-                        "max_tokens": 8096,
-                        "stream":     true,
-                        "messages":   convo
-                    ]
-                    if !system.isEmpty { body["system"] = system }
-                    req.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-                    let session = URLSession(configuration: {
-                        let c = URLSessionConfiguration.default
-                        c.timeoutIntervalForRequest  = config.requestTimeoutSeconds
-                        c.timeoutIntervalForResource = config.requestTimeoutSeconds * 2
-                        return c
-                    }())
-
-                    let (bytes, response) = try await session.bytes(for: req)
-                    guard let http = response as? HTTPURLResponse else {
-                        throw AIError.network("invalid response")
-                    }
-                    guard (200..<300).contains(http.statusCode) else {
-                        var body = ""
-                        for try await line in bytes.lines { body += line; if body.count > 500 { break } }
-                        throw AIError.server(http.statusCode, body)
-                    }
-
-                    // Anthropic SSE 格式：event: content_block_delta + data: {...}
-                    for try await line in bytes.lines {
-                        guard line.hasPrefix("data:") else { continue }
-                        let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
-                        if payload == "[DONE]" { break }
-                        // {"type":"content_block_delta","delta":{"type":"text_delta","text":"..."}}
-                        if let data   = payload.data(using: .utf8),
-                           let obj    = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                           let delta  = obj["delta"] as? [String: Any],
-                           let text   = delta["text"] as? String {
-                            continuation.yield(text)
-                        }
+                    _ = try await backend.completeStreaming(
+                        messages: agentMessages,
+                        tools: []
+                    ) { chunk in
+                        continuation.yield(chunk)
                     }
                     continuation.finish()
                 } catch is CancellationError {
@@ -319,87 +291,6 @@ struct AIClient {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
-    }
-
-    // MARK: OpenAI-compatible SSE
-
-    private func openAIStream(_ messages: [AIMessage]) -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { continuation in
-            let task = Task {
-                do {
-                    guard config.isConfigured else { throw AIError.notConfigured }
-                    let endpoint = config.baseURL.hasSuffix("/")
-                        ? config.baseURL + "chat/completions"
-                        : config.baseURL + "/chat/completions"
-                    guard let url = URL(string: endpoint) else { throw AIError.badURL }
-
-                    var req = URLRequest(url: url)
-                    req.httpMethod = "POST"
-                    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                    req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-                    if !config.apiKey.isEmpty {
-                        req.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
-                    }
-                    // 超时与 Agent 路径（RestAgentBackend）一致使用配置值，
-                    // 避免设置页调整对聊天路径不生效。默认 300s，适配推理模型长思考。
-                    req.timeoutInterval = config.requestTimeoutSeconds
-
-                    let payload: [String: Any] = [
-                        "model": config.model,
-                        "stream": true,
-                        "messages": messages.map { ["role": $0.role.rawValue, "content": $0.content] }
-                    ]
-                    req.httpBody = try JSONSerialization.data(withJSONObject: payload)
-
-                    let session = URLSession(configuration: {
-                        let c = URLSessionConfiguration.default
-                        c.timeoutIntervalForRequest = config.requestTimeoutSeconds   // idle timeout between bytes
-                        c.timeoutIntervalForResource = config.requestTimeoutSeconds * 2   // overall ceiling
-                        c.waitsForConnectivity = false
-                        return c
-                    }())
-
-                    let (bytes, response) = try await session.bytes(for: req)
-                    guard let http = response as? HTTPURLResponse else {
-                        throw AIError.network("invalid response")
-                    }
-                    guard (200..<300).contains(http.statusCode) else {
-                        var body = ""
-                        for try await line in bytes.lines { body += line; if body.count > 500 { break } }
-                        throw AIError.server(http.statusCode, body)
-                    }
-
-                    for try await line in bytes.lines {
-                        guard line.hasPrefix("data:") else { continue }
-                        let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
-                        if payload == "[DONE]" { break }
-                        if let chunk = Self.decodeDelta(payload) { continuation.yield(chunk) }
-                    }
-                    continuation.finish()
-                } catch is CancellationError {
-                    continuation.finish()
-                } catch let e as AIError {
-                    continuation.finish(throwing: e)
-                } catch {
-                    continuation.finish(throwing: AIError.network(error.localizedDescription))
-                }
-            }
-            continuation.onTermination = { _ in task.cancel() }
-        }
-    }
-
-    /// Extracts `choices[0].delta.content` from one SSE JSON payload.
-    private static func decodeDelta(_ payload: String) -> String? {
-        guard let data = payload.data(using: .utf8),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let choices = obj["choices"] as? [[String: Any]],
-              let first = choices.first else { return nil }
-        if let delta = first["delta"] as? [String: Any],
-           let content = delta["content"] as? String { return content }
-        // Some servers send the full message on the final frame.
-        if let message = first["message"] as? [String: Any],
-           let content = message["content"] as? String { return content }
-        return nil
     }
 
     // MARK: Local Claude CLI

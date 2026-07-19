@@ -55,7 +55,14 @@ final class TodoStore {
         let line = "\n- [ ] \(text)"
 
         let newContent: String = try await Task.detached(priority: .userInitiated) {
-            let existing = (try? String(contentsOf: fileURL, encoding: .utf8)) ?? ""
+            // 读失败必须向上抛（调用方展示错误）：以空串兜底再原子重写会把目标文件
+            // 截断成只剩一行新 todo。仅文件不存在（首次创建）才允许以空串为基底。
+            let existing: String
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                existing = try String(contentsOf: fileURL, encoding: .utf8)
+            } else {
+                existing = ""
+            }
             let updated  = existing + line
             try updated.write(to: fileURL, atomically: true, encoding: .utf8)
             return updated

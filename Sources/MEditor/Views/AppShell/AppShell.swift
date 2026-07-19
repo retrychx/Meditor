@@ -311,8 +311,6 @@ private struct TopToolbar: View {
             // Tab bar
             tabZone
                 .frame(maxWidth: .infinity)
-
-            ToolbarActionGroup(workspaceUI: workspaceUI, focusNS: focusNS)
         }
         .frame(height: 44)
         .background(.bar, ignoresSafeAreaEdges: .top)  // macOS 原生 toolbar material：聚焦时鲜艳，失焦时变灰
@@ -332,17 +330,6 @@ private struct TopToolbar: View {
         } else {
             Color.clear
         }
-    }
-}
-
-@MainActor
-private struct ToolbarActionGroup: View {
-    @Environment(AppState.self) private var state
-    @Bindable var workspaceUI: WorkspaceUIState
-    let focusNS: Namespace.ID
-
-    var body: some View {
-        EmptyView()
     }
 }
 

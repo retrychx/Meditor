@@ -79,9 +79,9 @@ struct AgentStepView: View {
             .onAppear { withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { pulsing = true } }
             .onDisappear { pulsing = false }
         case .toolCall(_, let name, let args):
-            compactToolRow(text: toolLabel(name: name, args: args).text, done: false, isError: false)
+            compactToolRow(text: AgentToolDisplay.info(name: name, args: args).text, done: false, isError: false)
         case .toolCallDone(_, let name, let args, _, let isError):
-            compactToolRow(text: toolLabel(name: name, args: args).text, done: true, isError: isError)
+            compactToolRow(text: AgentToolDisplay.info(name: name, args: args).text, done: true, isError: isError)
         }
     }
 
@@ -126,71 +126,17 @@ struct AgentStepView: View {
 
     // MARK: - Tool Call
 
-    /// 从 JSON args 字符串中提取指定 key 的字符串值。
-    /// 使用 JSONSerialization 解析，正确处理嵌套对象、数组、转义字符等边界情况。
-    private func argValue(_ key: String, from args: String) -> String? {
-        guard let data = args.data(using: .utf8),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return nil }
-        // 字符串值直接返回；非字符串值序列化为紧凑 JSON 字符串
-        if let str = obj[key] as? String { return str }
-        if let val = obj[key] {
-            let serialized = (try? JSONSerialization.data(withJSONObject: val))
-                .flatMap { String(data: $0, encoding: .utf8) }
-            return serialized
-        }
-        return nil
-    }
-
-    /// 将工具名 + 参数转成人类可读的操作摘要
-    private func toolLabel(name: String, args: String) -> (icon: String, text: String, accent: Color) {
-        switch name {
-        case "create_file":
-            let file = argValue("filename", from: args) ?? ""
-            return ("doc.badge.plus", file.isEmpty ? "创建文件" : "创建文件 · \(URL(fileURLWithPath: file).lastPathComponent)", .blue)
-        case "write_file":
-            let file = argValue("filename", from: args) ?? ""
-            let body = argValue("content", from: args) ?? ""
-            let size = body.isEmpty ? "" : " (\(body.count) 字)"
-            return ("square.and.pencil", file.isEmpty ? "写入文件\(size)" : "写入 \(URL(fileURLWithPath: file).lastPathComponent)\(size)", .indigo)
-        case "create_directory":
-            let path = argValue("path", from: args) ?? ""
-            return ("folder.badge.plus", path.isEmpty ? "创建目录" : "创建目录 · \(path)", .purple)
-        case "write_document":
-            let body = argValue("content", from: args) ?? ""
-            let size = body.isEmpty ? "" : " (\(body.count) 字)"
-            return ("pencil.and.list.clipboard", "更新当前文档\(size)", .orange)
-        case "patch_document":
-            let find = argValue("find", from: args) ?? ""
-            let preview = find.isEmpty ? "" : " · 「\(String(find.prefix(20)))\(find.count > 20 ? "…" : "")」"
-            return ("scissors", "精准修改文档\(preview)", .orange)
-        case "read_document":
-            return ("doc.text.magnifyingglass", "读取当前文档", .gray)
-        case "read_file":
-            let file = argValue("filename", from: args) ?? ""
-            return ("doc.text.magnifyingglass", file.isEmpty ? "读取文件" : "读取 · \(file)", .gray)
-        case "open_file":
-            let file = argValue("filename", from: args) ?? ""
-            return ("arrow.up.right.square", file.isEmpty ? "打开文件" : "打开 · \(file)", .cyan)
-        case "insert_at_cursor":
-            let body = argValue("text", from: args) ?? ""
-            let size = body.isEmpty ? "" : " (\(body.count) 字)"
-            return ("text.insert", "插入内容\(size)", .teal)
-        case "list_files":
-            return ("list.bullet", "列出工作区文件", .gray)
-        case "search_workspace":
-            let q = argValue("query", from: args) ?? ""
-            return ("magnifyingglass", q.isEmpty ? "搜索工作区" : "搜索「\(q)」", .gray)
-        case "search_document":
-            let q = argValue("query", from: args) ?? ""
-            return ("magnifyingglass", q.isEmpty ? "搜索文档" : "文档内搜索「\(q)」", .gray)
-        case "run_command":
-            let cmd = argValue("command", from: args) ?? ""
-            if cmd.isEmpty { return ("terminal", "执行命令", .orange) }
-            let short = cmd.count > 36 ? String(cmd.prefix(36)) + "…" : cmd
-            return ("terminal", "执行命令 · \(short)", .orange)
-        default:
-            return ("gearshape.fill", name, .orange)
+    /// 工具名 → 展示信息（icon/text/accent token）统一走共享层 AgentToolDisplay；
+    /// accent token → Color 的映射留在本视图层（与 iOS 各自的样式维度解耦）。
+    private func accentColor(_ accent: AgentToolAccent) -> Color {
+        switch accent {
+        case .blue:   return .blue
+        case .indigo: return .indigo
+        case .purple: return .purple
+        case .orange: return .orange
+        case .gray:   return .gray
+        case .cyan:   return .cyan
+        case .teal:   return .teal
         }
     }
 
@@ -227,8 +173,8 @@ struct AgentStepView: View {
         isError: Bool = false
     ) -> some View {
         let done   = step.isDone
-        let label  = toolLabel(name: name, args: args)
-        let accent: Color = done ? (isError ? .red : label.accent) : label.accent
+        let label  = AgentToolDisplay.info(name: name, args: args)
+        let accent: Color = done ? (isError ? .red : accentColor(label.accent)) : accentColor(label.accent)
 
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {

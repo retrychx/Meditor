@@ -1,5 +1,37 @@
 import Foundation
 
+// MARK: - Errors（共享层：macOS / iOS 共用，勿在 iOS 端另设替身）
+
+struct PatchNotFoundError: LocalizedError {
+    let find: String
+    let nearbyContext: String
+    var errorDescription: String? {
+        "[!] 未找到匹配文本：「\(find.prefix(60))」\n\n\(nearbyContext)\n\n建议：请用 read_document 重新读取文件内容，确认目标文本后再 patch。"
+    }
+}
+
+enum AgentContextError: LocalizedError {
+    case noWorkspace
+    case noActiveDocument
+    case fileAlreadyExists(String)
+    case fileNotReadable(String)
+    case fileNotFound(String)
+    case fileTooLarge(String, Int)
+    case pathOutsideWorkspace(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .noWorkspace:                return "未打开工作区"
+        case .noActiveDocument:           return "没有激活的文档"
+        case .fileAlreadyExists(let n):   return "文件已存在：\(n)"
+        case .fileNotReadable(let n):     return "文件无法读取（编码不支持）：\(n)"
+        case .fileNotFound(let n):        return "未找到文件：\(n)"
+        case .fileTooLarge(let n, let s): return "文件过大（\(s / 1000)KB），超出上限 \(DefaultAgentFileRepository.maxFullReadBytes / 1_000_000)MB：\(n)"
+        case .pathOutsideWorkspace(let p): return "安全限制：目标路径不在工作区内（\(p)），已拒绝写入。"
+        }
+    }
+}
+
 // MARK: - Protocol
 
 /// 工作区文件 IO 的抽象 — 无 AppState 依赖，可独立单测。
@@ -134,15 +166,11 @@ final class DefaultAgentFileRepository: AgentFileRepository {
     }
 
     /// 共享的读盘 + 多编码解码逻辑，供同步/异步两个入口复用。
-    /// 先完整解码（utf8 失败再回退其他编码），再按**字符**截断——按字节截断可能切断
-    /// 多字节 UTF-8 字符，导致 utf8 解码整体失败、全文错误回退 isoLatin1（非 ASCII 文件乱码）。
+    /// 解码统一走 TextFileDecoder；先完整解码，再按**字符**截断——按字节截断可能切断
+    /// 多字节 UTF-8 字符，导致 utf8 解码整体失败、全文错误回退其他编码（非 ASCII 文件乱码）。
     private static func decodeFile(at url: URL, maxChars: Int) throws -> String {
         let data = try Data(contentsOf: url)
-        var decoded: String?
-        for enc: String.Encoding in [.utf8, .isoLatin1, .ascii, .unicode] {
-            if let text = String(data: data, encoding: enc) { decoded = text; break }
-        }
-        guard let full = decoded else {
+        guard let full = TextFileDecoder.decode(data) else {
             throw AgentContextError.fileNotReadable(url.lastPathComponent)
         }
         guard full.count > maxChars else { return full }
@@ -254,8 +282,9 @@ final class DefaultAgentFileRepository: AgentFileRepository {
             if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
                size > maxFileSize { continue }
             guard let data = try? Data(contentsOf: url) else { continue }
-            guard let content = String(data: data, encoding: .utf8)
-                             ?? String(data: data, encoding: .isoLatin1) else {
+            // 解码与读盘路径统一走 TextFileDecoder（不认识的编码进 skipped 清单，
+            // 不再用 isoLatin1 把二进制/非 UTF 文件当乱码文本搜）
+            guard let content = TextFileDecoder.decode(data) else {
                 skipped.append(url.lastPathComponent); continue
             }
             let relPath  = url.path.hasPrefix(rootPath)

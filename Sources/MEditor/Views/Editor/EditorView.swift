@@ -74,43 +74,6 @@ struct EditorView: View {
             .background(DotGridBackground())
         }
     }
-
-    // MARK: - Slash AI Action Handler (unused stub, kept for future extraction)
-    @available(*, unavailable)
-    func handleSlashAIAction(_ action: SlashAIAction, context: String, insertionRange: NSRange) {
-        let prompt: String
-        switch action {
-        case .continueWriting:
-            prompt = """
-            请根据以下已有内容，继续写作（保持风格和语气一致，无缝衔接）：
-
-            \(context.suffix(800))
-            """
-        case .improveCurrentParagraph:
-            let para = lastParagraph(from: context)
-            prompt = """
-            请改善以下段落的表达、逻辑和流畅度（保持核心意思不变）：
-
-            \(para)
-            """
-        case .summarizeAbove:
-            prompt = """
-            请总结以下内容，输出 3-5 条简洁要点：
-
-            \(context.suffix(2000))
-            """
-        case .ask(let question):
-            prompt = question.isEmpty ? "请回答一个问题（在此输入）：" : question
-        }
-        state.aiUI.pendingSelectionPrompt = prompt
-        withAnimation(DS.Motion.spring) { state.showingAIAssistant = true }
-    }
-
-    private func lastParagraph(from text: String) -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let parts   = trimmed.components(separatedBy: "\n\n")
-        return parts.last?.trimmingCharacters(in: .whitespaces) ?? trimmed
-    }
 }
 
 @MainActor

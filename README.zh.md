@@ -106,6 +106,15 @@ open .build/debug/MEditor.app
 
 > **注意：** `bundle.sh` 会自动对 `.app` 包进行 ad-hoc 签名。打开一次后，即可在任意 `.md` 或 `.html` 文件上使用 **显示简介 → 打开方式 → MEditor → 全部更改** 来关联文件类型。
 
+### 版本号
+
+每个平台的版本号都有唯一来源——**版本号在这里改**：
+
+- **macOS**：编辑仓库根目录的 [`VERSION`](VERSION)。`scripts/bundle.sh` 打包时会把它注入 `MEditor.app` 的 `Info.plist`（`Sources/MEditor/Info.plist` 里的版本号只是占位符）。
+- **iOS**：编辑 `Mobile/MEditorMobile.xcodeproj` 的构建设置 `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`。`Mobile/MEditorMobile/Info.plist` 通过 `$(MARKETING_VERSION)` / `$(CURRENT_PROJECT_VERSION)` 引用它们。
+
+运行 `make version` 可查看当前版本号和上述提示。
+
 ### 在 Xcode 中打开
 
 ```bash

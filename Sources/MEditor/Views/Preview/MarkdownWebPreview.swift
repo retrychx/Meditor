@@ -246,8 +246,8 @@ private struct MarkdownWebView: NSViewRepresentable {
             .replacingOccurrences(of: "{{INITIAL_CONTENT_JSON}}", with: contentJSON)
 
         // Write to caches so loadFileURL can grant readAccessTo a stable directory.
-        // We use a unique filename per session so WKWebView's file URL cache
-        // doesn't serve stale content after a force-reload.
+        // 文件名固定为 preview.html，每次初始化重写覆盖；force-reload 通过
+        // 重新 loadFileURL 加载同一 URL 来绕过 WKWebView 的缓存。
         let cacheDir = coordinator.previewDir
         try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
         // Best-effort: prune if the cache has grown unreasonably large.

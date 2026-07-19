@@ -5,10 +5,17 @@ import Foundation
 /// 实现 CalendarServiceProtocol，可与其他日历服务在 CompositeCalendarService 中组合使用。
 @MainActor
 final class CalendarService: CalendarServiceProtocol {
-    static let shared = CalendarService()
-    private let store = EKEventStore()
+    /// 默认实例；测试或需要隔离 store 的场景可直接 `CalendarService(store:)` 构造。
+    /// nonisolated：实例引用不可变且类型 Sendable，允许非隔离上下文（如 EnvironmentKey 默认值）引用。
+    nonisolated static let shared = CalendarService()
 
-    private init() {}
+    /// 仅在 init 赋值一次、之后只读；nonisolated(unsafe) 允许 nonisolated init 写入。
+    nonisolated(unsafe) private let store: EKEventStore
+
+    /// 仅给 let 属性赋值，标 nonisolated 以便非隔离上下文（如 EnvironmentKey 默认值）构造/引用。
+    nonisolated init(store: EKEventStore = EKEventStore()) {
+        self.store = store
+    }
 
     var authorizationStatus: EKAuthorizationStatus {
         EKEventStore.authorizationStatus(for: .event)

@@ -81,7 +81,7 @@ struct AgentMessage: Sendable, Codable {
                     if let raw = call.rawArgumentsJSON {
                         argsStr = raw
                     } else {
-                        let argsDict = call.arguments.reduce(into: [String: Any]()) { $0[$1.key] = unwrap($1.value) }
+                        let argsDict = call.arguments.reduce(into: [String: Any]()) { $0[$1.key] = $1.value.anyValue }
                         let argsData = (try? JSONSerialization.data(withJSONObject: argsDict)) ?? Data()
                         argsStr = String(data: argsData, encoding: .utf8) ?? "{}"
                     }
@@ -101,18 +101,6 @@ struct AgentMessage: Sendable, Codable {
                 "tool_call_id": toolCallID ?? "",
                 "content": content
             ]
-        }
-    }
-
-    private func unwrap(_ v: AnySendableValue) -> Any {
-        switch v {
-        case .string(let s):  return s
-        case .bool(let b):    return b
-        case .int(let i):     return i
-        case .double(let d):  return d
-        case .null:           return NSNull()
-        case .array(let arr): return arr.map { unwrap($0) }
-        case .dict(let d):    return d.reduce(into: [String: Any]()) { $0[$1.key] = unwrap($1.value) }
         }
     }
 }

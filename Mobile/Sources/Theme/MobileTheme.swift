@@ -7,22 +7,49 @@ enum PaperTheme {
 
     // MARK: - 颜色
 
+    /// 色板原始值：Color 与 JS 用 hex 字符串（Hex）均由此派生，改一处全局同步。
+    private enum Palette {
+        static let paper: UInt32          = 0xF4F2EC
+        static let card: UInt32           = 0xFCFBF7
+        static let ink: UInt32            = 0x201D17
+        static let inkSecondary: UInt32   = 0x6F6A5C
+        static let accent: UInt32         = 0xB8501F
+        static let codeBackground: UInt32 = 0xECE8DC
+    }
+
     /// 纸面背景（页面底）。
-    static let paper = Color(hex: 0xF4F2EC)
+    static let paper = Color(hex: Palette.paper)
     /// 卡片 / 浮层底。
-    static let card = Color(hex: 0xFCFBF7)
+    static let card = Color(hex: Palette.card)
     /// 深色分隔线 / 描边。
     static let hairline = Color(hex: 0xEAE7DE)
     /// 墨色正文。
-    static let ink = Color(hex: 0x201D17)
+    static let ink = Color(hex: Palette.ink)
     /// 次要文字。
-    static let inkSecondary = Color(hex: 0x6F6A5C)
+    static let inkSecondary = Color(hex: Palette.inkSecondary)
     /// 品牌强调色（焦橙）：按钮 / 选中态 / 链接。
-    static let accent = Color(hex: 0xB8501F)
+    static let accent = Color(hex: Palette.accent)
     /// 强调色按压态。
     static let accentPressed = Color(hex: 0x9A4418)
     /// 代码块 / 行内代码的浅色底（比纸面略深，保持同色系）。
-    static let codeBackground = Color(hex: 0xECE8DC)
+    static let codeBackground = Color(hex: Palette.codeBackground)
+
+    // MARK: - Hex 字符串（JS / WebView 场景）
+
+    /// 与 Color 同源的 #RRGGBB 字符串：Mermaid 图表等 WKWebView/JS 上下文插值用，
+    /// 改 PaperTheme 色板时图表主题自动同步。
+    enum Hex {
+        static let paper          = PaperTheme.hexString(Palette.paper)
+        static let card           = PaperTheme.hexString(Palette.card)
+        static let ink            = PaperTheme.hexString(Palette.ink)
+        static let inkSecondary   = PaperTheme.hexString(Palette.inkSecondary)
+        static let accent         = PaperTheme.hexString(Palette.accent)
+        static let codeBackground = PaperTheme.hexString(Palette.codeBackground)
+    }
+
+    private static func hexString(_ value: UInt32) -> String {
+        String(format: "#%06X", value)
+    }
 
     // MARK: - 圆角
 
@@ -50,15 +77,14 @@ enum PaperTheme {
         static func serifTitle3() -> Font {
             .system(.title3, design: .serif, weight: .semibold)
         }
-        /// Markdown 预览里的衬线标题。
+        /// Markdown 预览里的衬线标题（全 App 唯一一套标题字号）。
         static func heading(level: Int) -> Font {
-            let size: CGFloat = switch level {
-            case 1: 28
-            case 2: 24
-            case 3: 20
-            default: 17
+            switch level {
+            case 1:  return .system(size: 30, weight: .bold, design: .serif)
+            case 2:  return .system(size: 23, weight: .semibold, design: .serif)
+            case 3:  return .system(size: 19, weight: .semibold, design: .serif)
+            default: return .system(size: 17, weight: .semibold, design: .serif)
             }
-            return .system(size: size, weight: .semibold, design: .serif)
         }
         /// 编辑器正文。
         static let editorBody = Font.system(size: 16.5, design: .monospaced)
@@ -82,27 +108,6 @@ extension Color {
 }
 
 // MARK: - 可复用样式
-
-/// 纸墨卡片：浅色底 + 14 圆角 + 0.5pt 描边（比阴影更克制）。
-struct PaperCardModifier: ViewModifier {
-    var padding: CGFloat = 16
-
-    func body(content: Content) -> some View {
-        content
-            .padding(padding)
-            .background(PaperTheme.card, in: RoundedRectangle(cornerRadius: PaperTheme.Radius.card, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: PaperTheme.Radius.card, style: .continuous)
-                    .strokeBorder(PaperTheme.hairline, lineWidth: 0.5)
-            }
-    }
-}
-
-extension View {
-    func paperCard(padding: CGFloat = 16) -> some View {
-        modifier(PaperCardModifier(padding: padding))
-    }
-}
 
 /// 品牌主按钮：焦橙底白字，按压转深色。
 struct PaperPrimaryButtonStyle: ButtonStyle {

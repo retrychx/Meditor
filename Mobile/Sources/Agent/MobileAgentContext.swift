@@ -15,7 +15,8 @@ final class MobileAgentContext: AgentContextProtocol {
 
     init(store: DocumentStore) {
         self.store = store
-        self.repo  = DefaultAgentFileRepository { DocumentStore.workspaceURL }
+        // 工作区跟随 store（可注入，测试友好），不再静态直引。
+        self.repo  = DefaultAgentFileRepository { store.workspace }
     }
 
     // MARK: - DocumentContext
@@ -45,7 +46,11 @@ final class MobileAgentContext: AgentContextProtocol {
     func insertIntoDocument(_ text: String) {
         guard store.hasDocument else { return }
         let separator = store.text.hasSuffix("\n") || store.text.isEmpty ? "" : "\n"
-        try? store.noteAIReplace(store.text + separator + text)
+        do {
+            try store.noteAIReplace(store.text + separator + text)
+        } catch {
+            print("[MobileAgentContext] insert_at_cursor 写盘失败：\(error.localizedDescription)")
+        }
     }
 
     @discardableResult
@@ -53,6 +58,7 @@ final class MobileAgentContext: AgentContextProtocol {
         guard let url = resolveExistingFile(name) else {
             throw AgentContextError.fileNotFound(name)
         }
+        try validateWriteTarget(url)
         let original       = try await fileContentFull(at: url)
         let (updated, cnt) = PatchEngine.apply(to: original, find: find, replace: replace, all: all)
         if cnt == 0 {
@@ -66,9 +72,21 @@ final class MobileAgentContext: AgentContextProtocol {
         return cnt
     }
 
+    /// 写入目标合规性校验：必须位于工作区内（对应 macOS 端 AgentContext.validateWriteTarget；
+    /// iOS 无散文件 Tab 概念，工作区即全部可写范围）。
+    /// DefaultAgentFileRepository.resolveURL 接受绝对路径与 ../——读路径由沙盒兜底，
+    /// 写路径在此拒绝逃逸，防止提示注入诱导 Agent 写工作区外文件。
+    private func validateWriteTarget(_ url: URL) throws {
+        let target = url.standardizedFileURL
+        guard let root = workspaceURL?.standardizedFileURL,
+              target.path == root.path || target.path.hasPrefix(root.path + "/") else {
+            throw AgentContextError.pathOutsideWorkspace(target.path)
+        }
+    }
+
     // MARK: - WorkspaceContext
 
-    var workspaceURL: URL? { DocumentStore.workspaceURL }
+    var workspaceURL: URL? { store.workspace }
 
     func listWorkspaceFiles(extensions: [String]) async -> [URL] {
         await repo.listWorkspaceFiles(extensions: extensions)
@@ -86,17 +104,20 @@ final class MobileAgentContext: AgentContextProtocol {
     }
 
     @discardableResult func createFile(name: String, content: String) throws -> URL {
-        try repo.createFile(name: name, content: content)
+        try validateWriteTarget(repo.resolveURL(name))
+        return try repo.createFile(name: name, content: content)
     }
 
     @discardableResult func writeFile(name: String, content: String) throws -> URL {
+        try validateWriteTarget(repo.resolveURL(name))
         let url = try repo.writeFile(name: name, content: content)
         store.reloadIfCurrent(url)
         return url
     }
 
     @discardableResult func createDirectory(name: String) throws -> URL {
-        try repo.createDirectory(name: name)
+        try validateWriteTarget(repo.resolveURL(name))
+        return try repo.createDirectory(name: name)
     }
 
     @discardableResult

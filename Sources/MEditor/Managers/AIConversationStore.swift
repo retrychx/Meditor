@@ -79,7 +79,15 @@ final class AIConversation {
             return saved
         }.value
         guard let saved = result else { return }
-        // 回到 MainActor 更新状态
+        // 回到 MainActor 更新状态。
+        // 加载期间用户可能已发出首条消息：内存已有用户内容时保留内存状态，
+        // 磁盘会话并入列表（按 id 去重）；否则才整体采用磁盘数据。
+        let hasUserContent = sessions.contains { !$0.messages.isEmpty || !$0.agentHistory.isEmpty }
+        guard !hasUserContent else {
+            let existingIDs = Set(sessions.map(\.id))
+            sessions.append(contentsOf: saved.filter { !existingIDs.contains($0.id) })
+            return
+        }
         sessions = saved
         activeID = saved[0].id
     }
@@ -261,10 +269,14 @@ final class AIConversation {
                 let snapshot = self.sessions
                 let fileURL  = url
                 DispatchQueue.global(qos: .utility).async {
-                    guard let data = try? JSONEncoder().encode(snapshot) else { return }
-                    try? FileManager.default.createDirectory(
-                        at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-                    try? data.write(to: fileURL, options: .atomic)
+                    do {
+                        let data = try JSONEncoder().encode(snapshot)
+                        try FileManager.default.createDirectory(
+                            at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                        try data.write(to: fileURL, options: .atomic)
+                    } catch {
+                        AppLog.session.error("AIConversation: persist failed: \(error.localizedDescription, privacy: .public)")
+                    }
                 }
             }
         }

@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Markdown 块级预览：把原文解析成标题 / 段落 / 列表 / 任务 / 代码块 / 引用 / 分割线，
-/// 每块独立排版（系统 AttributedString 整体渲染会丢失块级结构，且无法做悬挂缩进与容器样式）。
+/// Markdown 块级预览：复用共享的 MarkdownText block parser（GFM 表格、LRU 解析缓存，
+/// 引用块合并行为与聊天气泡一致），外观保留预览独有的纸墨容器样式与悬挂缩进排版。
 struct MarkdownPreviewView: View {
     let source: String
 
@@ -10,7 +10,7 @@ struct MarkdownPreviewView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
-                ForEach(Array(Self.parse(source).enumerated()), id: \.offset) { _, block in
+                ForEach(MarkdownText.parse(source)) { block in
                     blockView(block)
                 }
             }
@@ -26,131 +26,22 @@ struct MarkdownPreviewView: View {
     /// JS 解析与首屏渲染并行，屏外的图表也不用等滚动到才开始渲染。
     private func preloadMermaidIfNeeded() {
         guard source.contains("```mermaid") else { return }
-        let codes = Self.parse(source).compactMap { block -> String? in
-            guard case .codeBlock(let language, let code) = block,
+        let codes = MarkdownText.parse(source).compactMap { block -> String? in
+            guard case .code(let code, let language) = block.kind,
                   language?.lowercased() == "mermaid" else { return nil }
             return code
         }
         MermaidRenderer.shared.preload(codes: codes, scale: displayScale)
     }
 
-    // MARK: - 块模型
-
-    enum ListMarker {
-        case bullet
-        case ordered(Int)
-        case task(checked: Bool)
-    }
-
-    enum Block {
-        case heading(level: Int, text: String)
-        case paragraph(text: String)
-        case listItem(marker: ListMarker, indent: Int, text: String)
-        case codeBlock(language: String?, code: String)
-        case quote(text: String)
-        case thematicBreak
-    }
-
-    // MARK: - 解析（按行扫描的轻量 block parser）
-
-    static func parse(_ text: String) -> [Block] {
-        var blocks: [Block] = []
-        var paragraphLines: [String] = []
-        var quoteLines: [String] = []
-        var codeLines: [String]? = nil
-        var codeLang: String? = nil
-
-        func flushParagraph() {
-            guard !paragraphLines.isEmpty else { return }
-            blocks.append(.paragraph(text: paragraphLines.joined(separator: " ")))
-            paragraphLines = []
-        }
-        func flushQuote() {
-            guard !quoteLines.isEmpty else { return }
-            blocks.append(.quote(text: quoteLines.joined(separator: " ")))
-            quoteLines = []
-        }
-
-        for rawLine in text.components(separatedBy: .newlines) {
-            //  fenced code：开闭之间原样累计
-            if rawLine.hasPrefix("```") {
-                if codeLines != nil {
-                    blocks.append(.codeBlock(language: codeLang, code: (codeLines ?? []).joined(separator: "\n")))
-                    codeLines = nil; codeLang = nil
-                } else {
-                    flushParagraph(); flushQuote()
-                    codeLines = []
-                    let lang = rawLine.dropFirst(3).trimmingCharacters(in: .whitespaces)
-                    codeLang = lang.isEmpty ? nil : lang
-                }
-                continue
-            }
-            if codeLines != nil { codeLines?.append(rawLine); continue }
-
-            let line = rawLine.trimmingCharacters(in: .whitespaces)
-            if line.isEmpty { flushParagraph(); flushQuote(); continue }
-
-            // 分割线：--- / *** / ___
-            if line.allSatisfy({ $0 == "-" || $0 == "*" || $0 == "_" }), line.count >= 3,
-               line.filter({ $0 == "-" }).count == line.count
-                || line.filter({ $0 == "*" }).count == line.count
-                || line.filter({ $0 == "_" }).count == line.count {
-                flushParagraph(); flushQuote()
-                blocks.append(.thematicBreak)
-                continue
-            }
-
-            // 标题：# … ######
-            if let match = line.firstMatch(of: /^(#{1,6})\s+(.*)$/) {
-                flushParagraph(); flushQuote()
-                blocks.append(.heading(level: match.1.count, text: String(match.2)))
-                continue
-            }
-
-            // 引用：> …（连续行合并）
-            if line.hasPrefix(">") {
-                flushParagraph()
-                quoteLines.append(String(line.dropFirst()).trimmingCharacters(in: .whitespaces))
-                continue
-            }
-            flushQuote()
-
-            // 列表：-/*/+ 、1. 、- [ ]/- [x]（按前导空格计算缩进层级）
-            let indent = rawLine.prefix(while: { $0 == " " }).count / 2
-            if let m = line.firstMatch(of: /^[-*+]\s+\[([ xX])\]\s+(.*)$/) {
-                flushParagraph()
-                blocks.append(.listItem(marker: .task(checked: m.1 != " "), indent: indent, text: String(m.2)))
-                continue
-            }
-            if let m = line.firstMatch(of: /^[-*+]\s+(.*)$/) {
-                flushParagraph()
-                blocks.append(.listItem(marker: .bullet, indent: indent, text: String(m.1)))
-                continue
-            }
-            if let m = line.firstMatch(of: /^(\d+)[.)]\s+(.*)$/) {
-                flushParagraph()
-                blocks.append(.listItem(marker: .ordered(Int(m.1) ?? 1), indent: indent, text: String(m.2)))
-                continue
-            }
-
-            paragraphLines.append(line)
-        }
-
-        flushParagraph(); flushQuote()
-        if let dangling = codeLines { // 未闭合的 fenced code 兜底
-            blocks.append(.codeBlock(language: codeLang, code: dangling.joined(separator: "\n")))
-        }
-        return blocks
-    }
-
     // MARK: - 渲染
 
     @ViewBuilder
-    private func blockView(_ block: Block) -> some View {
-        switch block {
+    private func blockView(_ block: MarkdownText.Block) -> some View {
+        switch block.kind {
         case .heading(let level, let text):
             Text(inline(text))
-                .font(Self.headingFont(level))
+                .font(PaperTheme.Typography.heading(level: level))
                 .foregroundStyle(PaperTheme.ink)
                 .lineSpacing(4)
                 .padding(.top, level <= 2 ? 14 : 8)
@@ -161,18 +52,21 @@ struct MarkdownPreviewView: View {
                 .foregroundStyle(PaperTheme.ink)
                 .lineSpacing(7)
 
-        case .listItem(let marker, let indent, let text):
-            HStack(alignment: .firstTextBaseline, spacing: 9) {
-                markerView(marker)
-                    .frame(width: 16, alignment: .trailing)
-                Text(inline(text, strikethrough: marker.isCheckedTask))
-                    .font(.system(size: 17))
-                    .foregroundStyle(marker.isCheckedTask ? PaperTheme.inkSecondary : PaperTheme.ink)
-                    .lineSpacing(6)
+        case .bullet(let items):
+            VStack(alignment: .leading, spacing: 9) {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    listItemView(marker: .bullet, text: item)
+                }
             }
-            .padding(.leading, CGFloat(indent) * 20 + 2)
 
-        case .codeBlock(let language, let code):
+        case .ordered(let items):
+            VStack(alignment: .leading, spacing: 9) {
+                ForEach(Array(items.enumerated()), id: \.offset) { idx, item in
+                    listItemView(marker: .ordered(idx + 1), text: item)
+                }
+            }
+
+        case .code(let code, let language):
             if language?.lowercased() == "mermaid" {
                 MermaidBlockView(code: code)
             } else {
@@ -191,11 +85,30 @@ struct MarkdownPreviewView: View {
             }
             .padding(.leading, 2)
 
-        case .thematicBreak:
+        case .table(let header, let rows):
+            tableView(header, rows)
+
+        case .rule:
             PaperTheme.hairline
                 .frame(height: 0.5)
                 .padding(.vertical, 6)
         }
+    }
+
+    /// 列表项：悬挂缩进（标记悬于左侧，折行与首行文本对齐）。
+    /// 任务项前缀 [ ] / [x] 的判定与 MarkdownText 一致。
+    private func listItemView(marker: ListMarker, text: String) -> some View {
+        let task = Self.taskPrefix(text)
+        let isChecked = task?.done ?? false
+        return HStack(alignment: .firstTextBaseline, spacing: 9) {
+            markerView(task.map { .task(checked: $0.done) } ?? marker)
+                .frame(width: 16, alignment: .trailing)
+            Text(inline(task?.text ?? text, strikethrough: isChecked))
+                .font(.system(size: 17))
+                .foregroundStyle(isChecked ? PaperTheme.inkSecondary : PaperTheme.ink)
+                .lineSpacing(6)
+        }
+        .padding(.leading, 2)
     }
 
     /// 普通代码块：语言标签 + 横向滚动等宽文本。
@@ -221,6 +134,63 @@ struct MarkdownPreviewView: View {
         .background(PaperTheme.codeBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
+    /// GFM 表格：纸墨容器 + 表头底色；单元格过窄时文本折行（与聊天气泡表格同策略）。
+    private func tableView(_ header: [String], _ rows: [[String]]) -> some View {
+        let columns = max(header.count, rows.map(\.count).max() ?? 0)
+        return VStack(spacing: 0) {
+            tableRow(header, columns: columns, isHeader: true)
+            ForEach(rows.indices, id: \.self) { r in
+                tableRow(rows[r], columns: columns, isHeader: false)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(PaperTheme.card)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(PaperTheme.hairline, lineWidth: 0.5)
+        }
+    }
+
+    private func tableRow(_ cells: [String], columns: Int, isHeader: Bool) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(0..<columns, id: \.self) { c in
+                Text(inline(c < cells.count ? cells[c] : ""))
+                    .font(.system(size: 14, weight: isHeader ? .semibold : .regular))
+                    .foregroundStyle(PaperTheme.ink)
+                    .lineSpacing(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                if c < columns - 1 {
+                    PaperTheme.hairline.frame(width: 0.5)
+                }
+            }
+        }
+        .background(isHeader ? PaperTheme.paper : Color.clear)
+        .overlay(alignment: .bottom) {
+            if isHeader {
+                PaperTheme.hairline.frame(height: 0.5)
+            }
+        }
+    }
+
+    // MARK: - 列表标记
+
+    enum ListMarker {
+        case bullet
+        case ordered(Int)
+        case task(checked: Bool)
+    }
+
+    /// 任务列表项前缀（[ ] / [x]），与 MarkdownText 的判定一致。
+    private static func taskPrefix(_ item: String) -> (done: Bool, text: String)? {
+        let lower = item.lowercased()
+        if lower.hasPrefix("[ ] ") { return (false, String(item.dropFirst(4))) }
+        if lower.hasPrefix("[x] ") { return (true, String(item.dropFirst(4))) }
+        return nil
+    }
+
     /// 列表标记：圆点 / 序号 / 任务勾选框。
     @ViewBuilder
     private func markerView(_ marker: ListMarker) -> some View {
@@ -238,15 +208,6 @@ struct MarkdownPreviewView: View {
                 .font(.system(size: 13.5, weight: .medium))
                 .foregroundStyle(checked ? PaperTheme.accent : PaperTheme.inkSecondary.opacity(0.6))
                 .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
-        }
-    }
-
-    private static func headingFont(_ level: Int) -> Font {
-        switch level {
-        case 1:  return .system(size: 30, weight: .bold, design: .serif)
-        case 2:  return .system(size: 23, weight: .semibold, design: .serif)
-        case 3:  return .system(size: 19, weight: .semibold, design: .serif)
-        default: return .system(size: 17, weight: .semibold, design: .serif)
         }
     }
 
@@ -268,12 +229,5 @@ struct MarkdownPreviewView: View {
             a.strikethroughStyle = .single
         }
         return a
-    }
-}
-
-private extension MarkdownPreviewView.ListMarker {
-    var isCheckedTask: Bool {
-        if case .task(let checked) = self { return checked }
-        return false
     }
 }
