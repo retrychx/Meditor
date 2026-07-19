@@ -4,8 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'docs/index.html'
-      - 'docs/images/**'
+      - 'website/**'
       - 'wrangler.toml'
       - 'scripts/deploy-docs.sh'
       - '.github/workflows/deploy-docs.yml'

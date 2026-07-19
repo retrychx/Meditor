@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// MEditor 移动端「纸墨」设计系统：与产品网页（docs/index.html）同源。
+/// MEditor 移动端「纸墨」设计系统：与产品网页（website/index.html）同源。
 /// 全 App 的颜色 / 字体 / 圆角 / 间距统一从这里取，不在各视图散落字面量。
 enum PaperTheme {
 
