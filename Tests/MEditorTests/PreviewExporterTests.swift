@@ -33,7 +33,7 @@ final class PreviewExporterTests: XCTestCase {
             expectation.fulfill()
         }
 
-        wait(for: [expectation], timeout: 1.0)
+        wait(for: [expectation], timeout: 10.0)
     }
 
     func test_export_pdf_failsWithNoWebView() {
@@ -52,7 +52,7 @@ final class PreviewExporterTests: XCTestCase {
             expectation.fulfill()
         }
 
-        wait(for: [expectation], timeout: 1.0)
+        wait(for: [expectation], timeout: 10.0)
     }
 
     func test_export_image_failsWithNoWebView() {
@@ -71,7 +71,7 @@ final class PreviewExporterTests: XCTestCase {
             expectation.fulfill()
         }
 
-        wait(for: [expectation], timeout: 1.0)
+        wait(for: [expectation], timeout: 10.0)
     }
 
     // MARK: - Export Availability

@@ -296,7 +296,7 @@ final class RestAgentBackendTests: XCTestCase {
         )!
 
         let config = makeConfig(kind: .anthropic, baseURL: "https://api.anthropic.com/v1", apiKey: "ant-key", model: "claude-3-5-sonnet-20241022")
-        let backend = RestAgentBackend(config: config, wire: .anthropic, session: mock)
+        let backend = RestAgentBackend(config: config, wire: .anthropic, session: mock, retryBaseDelayNs: 1_000_000)
         do {
             _ = try await backend.complete(messages: [AgentMessage(role: .user, content: "Hi")], tools: [])
             XCTFail("Expected server error")

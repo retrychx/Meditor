@@ -74,10 +74,11 @@ final class AppStateTests: XCTestCase {
         return state.selectedTab!
     }
 
-    func waitForCondition(timeout: TimeInterval = 1.0,
+    func waitForCondition(timeout: TimeInterval = 10.0,
                           file: StaticString = #filePath,
                           line: UInt = #line,
                           _ condition: () -> Bool) {
+        // 轮询 + 提前返回：上限放宽到 10s 不影响本地速度，只为 CI 慢机留足余量。
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if condition() { return }
@@ -90,7 +91,7 @@ final class AppStateTests: XCTestCase {
 
     /// Spin the main run loop until `condition` holds or timeout — 用于等待后台 IO
     /// (Task.detached) 异步更新 @MainActor 状态后再断言。
-    private func waitUntil(_ timeout: TimeInterval = 5,
+    private func waitUntil(_ timeout: TimeInterval = 10,
                            file: StaticString = #file, line: UInt = #line,
                            _ condition: () -> Bool) {
         let deadline = Date().addingTimeInterval(timeout)

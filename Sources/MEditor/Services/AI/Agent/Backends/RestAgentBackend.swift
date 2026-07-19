@@ -30,10 +30,15 @@ struct RestAgentBackend: AgentBackend {
     /// 可注入的 URLSession（测试用）。nil 时使用进程级共享 session（复用连接池）。
     let sessionOverride: (any URLSessionDataProtocol)?
 
-    init(config: AIConfig, wire: WireProtocol, session: (any URLSessionDataProtocol)? = nil) {
+    /// 429/503 重试的初始退避间隔（纳秒），每次重试翻倍。可注入（测试用），默认 1s。
+    let retryBaseDelayNs: UInt64
+
+    init(config: AIConfig, wire: WireProtocol, session: (any URLSessionDataProtocol)? = nil,
+         retryBaseDelayNs: UInt64 = 1_000_000_000) {
         self.config = config
         self.wire = wire
         self.sessionOverride = session
+        self.retryBaseDelayNs = retryBaseDelayNs
     }
 
     /// 进程级共享 session：复用连接池（HTTP/2 多路复用），避免每次请求新建
@@ -78,7 +83,7 @@ struct RestAgentBackend: AgentBackend {
         _ block: @Sendable () async throws -> T
     ) async throws -> T {
         var lastError: Error?
-        var delayNs: UInt64 = 1_000_000_000  // 1s
+        var delayNs: UInt64 = retryBaseDelayNs
         for attempt in 1...maxAttempts {
             do {
                 return try await block()
