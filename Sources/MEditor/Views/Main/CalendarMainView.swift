@@ -8,6 +8,39 @@ private enum CalendarViewMode: String, CaseIterable {
     case week  = "周"
 }
 
+// MARK: - Cached Formatters
+
+/// DateFormatter 创建昂贵，月视图单帧会触发几十次格式化，这里统一静态缓存（仅在 @MainActor 视图内使用）。
+private enum CalendarFmt {
+    static let monthTitle: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "yyyy年 M月"; return f
+    }()
+    static let weekStart: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "M月d日"; return f
+    }()
+    static let weekEnd: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "d日"; return f
+    }()
+    static let dayHeader: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "M月d日 EEEE"; f.locale = .current; return f
+    }()
+    static let weekdayShort: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "EEE"; f.locale = .current; return f
+    }()
+    static let weekdayFull: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "EEEE"; f.locale = .current; return f
+    }()
+    static let timeShort: DateFormatter = {
+        let f = DateFormatter(); f.timeStyle = .short; f.dateStyle = .none; return f
+    }()
+    static let dateMedium: DateFormatter = {
+        let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .none; return f
+    }()
+    static let dateTimeMedium: DateFormatter = {
+        let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .short; return f
+    }()
+}
+
 // MARK: - CalendarMainView
 
 /// 全宽日历主视图：月视图/周视图、导航、创建事件、事件详情。
@@ -25,7 +58,7 @@ struct CalendarMainView: View {
     @State private var calendarFilter: Set<String> = []     // empty = all
     @State private var allCalendars: [EKCalendar] = []
 
-    private let service = CalendarService.shared
+    @Environment(\.calendarService) private var service
 
     // Visible range for the current view
     private var visibleRange: (Date, Date) {
@@ -33,14 +66,14 @@ struct CalendarMainView: View {
         switch viewMode {
         case .month:
             let comps = cal.dateComponents([.year, .month], from: referenceDate)
-            let first = cal.date(from: comps)!
+            let first = cal.date(from: comps) ?? referenceDate
             // Extend to grid edges (Mon..Sun)
-            let gridStart = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: first))!
-            let gridEnd   = cal.date(byAdding: .day, value: 42, to: gridStart)!
+            let gridStart = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: first)) ?? first
+            let gridEnd   = cal.date(byAdding: .day, value: 42, to: gridStart) ?? gridStart
             return (gridStart, gridEnd)
         case .week:
-            let weekStart = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: referenceDate))!
-            let weekEnd   = cal.date(byAdding: .day, value: 7, to: weekStart)!
+            let weekStart = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: referenceDate)) ?? referenceDate
+            let weekEnd   = cal.date(byAdding: .day, value: 7, to: weekStart) ?? weekStart
             return (weekStart, weekEnd)
         }
     }
@@ -161,17 +194,14 @@ struct CalendarMainView: View {
     }
 
     private var navigationTitle: String {
-        let fmt = DateFormatter()
         switch viewMode {
         case .month:
-            fmt.dateFormat = "yyyy年 M月"
+            return CalendarFmt.monthTitle.string(from: referenceDate)
         case .week:
             let (s, e) = visibleRange
-            let sf = DateFormatter(); sf.dateFormat = "M月d日"
-            let ef = DateFormatter(); ef.dateFormat = "d日"
-            return "\(sf.string(from: s)) – \(ef.string(from: Calendar.current.date(byAdding: .day, value: -1, to: e)!))"
+            let lastDay = Calendar.current.date(byAdding: .day, value: -1, to: e) ?? e
+            return "\(CalendarFmt.weekStart.string(from: s)) – \(CalendarFmt.weekEnd.string(from: lastDay))"
         }
-        return fmt.string(from: referenceDate)
     }
 
     // MARK: - Month Grid
@@ -233,12 +263,9 @@ struct CalendarMainView: View {
 
     private func selectedDayEvents(for date: Date) -> some View {
         let dayEvents = eventsOn(date)
-        let fmt = DateFormatter()
-        fmt.dateFormat = "M月d日 EEEE"
-        fmt.locale = Locale.current
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(fmt.string(from: date))
+                Text(CalendarFmt.dayHeader.string(from: date))
                     .font(.system(size: 13, weight: .semibold))
                     .padding(.horizontal, 16)
                     .padding(.top, 10)
@@ -333,10 +360,7 @@ struct CalendarMainView: View {
     }
 
     private func weekdayLabel(_ date: Date) -> String {
-        let fmt = DateFormatter()
-        fmt.dateFormat = "EEE"
-        fmt.locale = Locale.current
-        return fmt.string(from: date)
+        CalendarFmt.weekdayShort.string(from: date)
     }
 
     // MARK: - Unauthorized
@@ -369,7 +393,7 @@ struct CalendarMainView: View {
     private func eventsOn(_ date: Date) -> [CalendarEventItem] {
         let cal = Calendar.current
         let dayStart = cal.startOfDay(for: date)
-        let dayEnd   = cal.date(byAdding: .day, value: 1, to: dayStart)!
+        guard let dayEnd = cal.date(byAdding: .day, value: 1, to: dayStart) else { return [] }
         return events.filter { event in
             event.startDate < dayEnd && event.endDate > dayStart
         }.map { CalendarEventItem($0) }
@@ -396,7 +420,7 @@ struct CalendarMainView: View {
         guard authStatus == .fullAccess else { return }
         isLoading = true
         let (s, e) = visibleRange
-        events = service.fetchEvents(from: s, to: e)
+        events = service.fetchEvents(from: s, to: e, calendars: nil)
         isLoading = false
     }
 }
@@ -568,10 +592,7 @@ private struct WeekDaySection: View {
     }
 
     private var dayOfWeekLabel: String {
-        let fmt = DateFormatter()
-        fmt.dateFormat = "EEEE"
-        fmt.locale = Locale.current
-        return fmt.string(from: date)
+        CalendarFmt.weekdayFull.string(from: date)
     }
 }
 
@@ -621,10 +642,7 @@ private struct EventRow: View {
 
     private var timeLabel: String {
         if event.isAllDay { return L("calendar.allDay") }
-        let fmt = DateFormatter()
-        fmt.timeStyle = .short
-        fmt.dateStyle = .none
-        return "\(fmt.string(from: event.startDate)) – \(fmt.string(from: event.endDate))"
+        return "\(CalendarFmt.timeShort.string(from: event.startDate)) – \(CalendarFmt.timeShort.string(from: event.endDate))"
     }
 }
 
@@ -644,7 +662,7 @@ struct CreateEventSheet: View {
     @State private var notes = ""
     @State private var isSaving = false
     @State private var errorMessage: String? = nil
-    private let service = CalendarService.shared
+    @Environment(\.calendarService) private var service
 
     init(defaultDate: Date, calendars: [EKCalendar]) {
         self.defaultDate = defaultDate
@@ -804,7 +822,7 @@ private struct EventDetailPopoverItem: View {
     let item: CalendarEventItem
     let onDismiss: () -> Void
     @State private var showDeleteConfirm = false
-    private let service = CalendarService.shared
+    @Environment(\.calendarService) private var service
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -884,11 +902,8 @@ private struct EventDetailPopoverItem: View {
 
     private var timeText: String {
         if item.isAllDay {
-            let fmt = DateFormatter(); fmt.dateStyle = .medium; fmt.timeStyle = .none
-            return fmt.string(from: item.startDate)
+            return CalendarFmt.dateMedium.string(from: item.startDate)
         }
-        let fmt = DateFormatter(); fmt.dateStyle = .medium; fmt.timeStyle = .short
-        let efmt = DateFormatter(); efmt.timeStyle = .short; efmt.dateStyle = .none
-        return "\(fmt.string(from: item.startDate)) – \(efmt.string(from: item.endDate))"
+        return "\(CalendarFmt.dateTimeMedium.string(from: item.startDate)) – \(CalendarFmt.timeShort.string(from: item.endDate))"
     }
 }

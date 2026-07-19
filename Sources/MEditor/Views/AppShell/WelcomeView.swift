@@ -13,6 +13,12 @@ struct WelcomeView: View {
     @State private var cursorVisible       = true
     @State private var showContent         = false
     @State private var firstCycleDone      = false
+    /// 光标闪烁 timer（onDisappear 时 invalidate，否则泄漏到进程退出）
+    @State private var cursorTimer: Timer?
+    /// 进行中的动画 timers（shuffle / typing），随视图消失统一 invalidate
+    @State private var animationTimers: [Timer] = []
+    /// 待执行的 asyncAfter 工作项（字符锁定 / 下一轮循环），随视图消失统一 cancel
+    @State private var pendingWorkItems: [DispatchWorkItem] = []
 
     // MARK: - Recent folders
     @State private var recentFolders: [URL] = []
@@ -97,7 +103,11 @@ struct WelcomeView: View {
         }
         .onAppear {
             loadRecentFolders()
+            startCursorBlink()
             startCycle()
+        }
+        .onDisappear {
+            stopAnimations()
         }
     }
 
@@ -268,6 +278,32 @@ struct WelcomeView: View {
 
     // MARK: - Animation
 
+    /// 光标闪烁 timer：onAppear 启动、onDisappear 停止（旧实现从不 invalidate，泄漏到进程退出）。
+    private func startCursorBlink() {
+        cursorTimer?.invalidate()
+        cursorTimer = Timer.scheduledTimer(withTimeInterval: 0.55, repeats: true) { _ in
+            cursorVisible.toggle()
+        }
+    }
+
+    /// 视图消失时停掉所有动画：invalidate timers + cancel 待执行的 asyncAfter，
+    /// 否则 shuffle/typing timer 和 scheduleNextCycle→startCycle 递归链会陪跑到进程退出。
+    private func stopAnimations() {
+        cursorTimer?.invalidate()
+        cursorTimer = nil
+        animationTimers.forEach { $0.invalidate() }
+        animationTimers = []
+        pendingWorkItems.forEach { $0.cancel() }
+        pendingWorkItems = []
+    }
+
+    /// 可取消的 asyncAfter：返回的工作项登记在 pendingWorkItems，onDisappear 统一取消。
+    private func schedule(after delay: TimeInterval, _ block: @escaping () -> Void) {
+        let item = DispatchWorkItem(block: block)
+        pendingWorkItems.append(item)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+    }
+
     private func startCycle() {
         displayedChars = Self.title.map { _ in Self.charset.randomElement()! }
         locked = Array(repeating: false, count: 7)
@@ -277,9 +313,10 @@ struct WelcomeView: View {
                 displayedChars[i] = Self.charset.randomElement()!
             }
         }
+        animationTimers.append(shuffleTimer)
 
         for i in 0..<7 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18 + Double(i) * 0.085) {
+            schedule(after: 0.18 + Double(i) * 0.085) {
                 locked[i] = true
                 displayedChars[i] = Self.title[i]
                 if i == 6 {
@@ -289,17 +326,11 @@ struct WelcomeView: View {
                 }
             }
         }
-
-        if !firstCycleDone {
-            Timer.scheduledTimer(withTimeInterval: 0.55, repeats: true) { _ in
-                cursorVisible.toggle()
-            }
-        }
     }
 
     private func startTyping() {
         var idx = 0
-        Timer.scheduledTimer(withTimeInterval: 0.033, repeats: true) { timer in
+        let typingTimer = Timer.scheduledTimer(withTimeInterval: 0.033, repeats: true) { timer in
             if idx < Self.subtitle.count {
                 subtitleText += String(
                     Self.subtitle[Self.subtitle.index(Self.subtitle.startIndex, offsetBy: idx)]
@@ -312,10 +343,11 @@ struct WelcomeView: View {
                 scheduleNextCycle()
             }
         }
+        animationTimers.append(typingTimer)
     }
 
     private func scheduleNextCycle() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) { startCycle() }
+        schedule(after: 4.5) { startCycle() }
     }
 }
 

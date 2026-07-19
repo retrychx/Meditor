@@ -3,9 +3,17 @@ import Foundation
 // MARK: - Insert At Cursor
 
 struct InsertAtCursorTool: AgentTool {
+    // iOS 的 SwiftUI TextEditor 拿不到光标，insertIntoDocument 实际是追加到末尾，
+    // 文案必须与行为一致，否则模型会预期插到光标处。
+    #if os(iOS)
+    private static let toolDescription = "Append text to the end of the current document. Prefer this over write_document when adding new content rather than replacing."
+    #else
+    private static let toolDescription = "Insert text at the current cursor position in the editor. Prefer this over write_document when adding new content rather than replacing."
+    #endif
+
     let spec = AgentToolSpec(
         name: "insert_at_cursor",
-        description: "Insert text at the current cursor position in the editor. Prefer this over write_document when adding new content rather than replacing.",
+        description: InsertAtCursorTool.toolDescription,
         parameters: ToolParameterSchema(
             properties: [
                 "text": ToolPropertySchema(type: "string", description: "The Markdown text to insert at the cursor.")

@@ -7,9 +7,9 @@ enum FileServiceError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .accessDenied: return "Access denied to the file"
-        case .readFailed(let e): return "Failed to read file: \(e.localizedDescription)"
-        case .writeFailed(let e): return "Failed to write file: \(e.localizedDescription)"
+        case .accessDenied: return L("error.file.accessDenied")
+        case .readFailed(let e): return L("error.file.readFailed", e.localizedDescription)
+        case .writeFailed(let e): return L("error.file.writeFailed", e.localizedDescription)
         }
     }
 }

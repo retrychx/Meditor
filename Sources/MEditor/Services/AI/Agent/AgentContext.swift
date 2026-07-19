@@ -1,38 +1,8 @@
 import Foundation
 
-// MARK: - Errors
-
-struct PatchNotFoundError: LocalizedError {
-    let find: String
-    let nearbyContext: String
-    var errorDescription: String? {
-        "[!] 未找到匹配文本：「\(find.prefix(60))」\n\n\(nearbyContext)\n\n建议：请用 read_document 重新读取文件内容，确认目标文本后再 patch。"
-    }
-}
-
-enum AgentContextError: LocalizedError {
-    case noWorkspace
-    case noActiveDocument
-    case fileAlreadyExists(String)
-    case fileNotReadable(String)
-    case fileNotFound(String)
-    case fileTooLarge(String, Int)
-    case pathOutsideWorkspace(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .noWorkspace:                return "未打开工作区"
-        case .noActiveDocument:           return "没有激活的文档"
-        case .fileAlreadyExists(let n):   return "文件已存在：\(n)"
-        case .fileNotReadable(let n):     return "文件无法读取（编码不支持）：\(n)"
-        case .fileNotFound(let n):        return "未找到文件：\(n)"
-        case .fileTooLarge(let n, let s): return "文件过大（\(s / 1000)KB），超出上限 \(DefaultAgentFileRepository.maxFullReadBytes / 1_000_000)MB：\(n)"
-        case .pathOutsideWorkspace(let p): return "安全限制：目标路径不在工作区内（\(p)），已拒绝写入。"
-        }
-    }
-}
-
 // MARK: - AgentContext（薄协调层）
+
+// PatchNotFoundError / AgentContextError 已上移至 AgentFileRepository.swift（iOS 共享编译）。
 
 /// 把 AgentFileRepository（纯磁盘 IO）和 AgentDocumentAdapter（AppState 交互）
 /// 组合成工具层所需的 AgentContextProtocol。
@@ -178,6 +148,10 @@ final class AgentContext: AgentContextProtocol {
 
     func confirmCommandExecution(_ command: String, cwd: String?) async -> Bool {
         await doc.confirmCommandExecution(command, cwd: cwd)
+    }
+
+    func cancelPendingCommandConfirmation() {
+        doc.cancelPendingCommandConfirmation()
     }
 
     func isCommandApproved(_ key: String) -> Bool {

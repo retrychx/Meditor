@@ -111,7 +111,8 @@ final class ClaudeSessionMonitor {
     }
 
     deinit {
-        // 必须在 queue 有共对止之前清理流，否则 callback 返回时会访问已释放的 self。
+        // 必须在 self 释放前停掉流并排空 queue 上已入队的 callback，
+        // 否则 callback 执行时会访问已释放的 self。
         if let stream = streamRef {
             FSEventStreamStop(stream)
             FSEventStreamInvalidate(stream)
@@ -177,9 +178,9 @@ final class ClaudeSessionMonitor {
                 currentSize = UInt64(s)
             } else { continue }
 
-            let lastOffset = _fileOffsets[key] ?? 0
+            let lastOffset = stateLock.withLock { _fileOffsets[key] ?? 0 }
             guard currentSize > lastOffset else {
-                _fileOffsets[key] = currentSize
+                stateLock.withLock { _fileOffsets[key] = currentSize }
                 continue
             }
 
@@ -188,7 +189,7 @@ final class ClaudeSessionMonitor {
             fh.seek(toFileOffset: lastOffset)
             let newData = fh.readData(ofLength: Int(currentSize - lastOffset))
             fh.closeFile()
-            _fileOffsets[key] = currentSize
+            stateLock.withLock { _fileOffsets[key] = currentSize }
 
             // 逐行解析 JSONL
             let newText = String(data: newData, encoding: .utf8) ?? ""

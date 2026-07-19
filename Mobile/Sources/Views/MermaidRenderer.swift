@@ -4,6 +4,11 @@ import WebKit
 /// 共享 Mermaid 渲染引擎：单个离线 WKWebView 常驻，mermaid.min.js（约 3MB）只加载解析一次。
 /// 渲染请求串行排队（mermaid.render 非线程安全，且共用同一个 JS 上下文），
 /// 结果 PNG 按「缩放 + 代码串」做内存缓存——滚动复用、重开文档均即时出图。
+///
+/// 健壮性设计：
+/// - 每次 JS 调用带 30s 超时 + 取消竞争，continuation 由 OnceContinuation 保证恰好 resume 一次；
+/// - 超时 / WebContent 进程终止判定引擎病态，销毁后下次 render/preload 自动重建；
+/// - 加载失败不粘性：上限 3 次内自动重建，超出后保持 engineUnavailable 防抖动。
 @MainActor
 final class MermaidRenderer: NSObject {
     static let shared = MermaidRenderer()
@@ -18,12 +23,14 @@ final class MermaidRenderer: NSObject {
         case engineUnavailable
         case jsFailed(String)
         case badImage
+        case timedOut
 
         var errorDescription: String? {
             switch self {
             case .engineUnavailable: return "图表引擎加载失败"
             case .jsFailed(let message): return message
             case .badImage: return "图表解码失败"
+            case .timedOut: return "图表渲染超时"
             }
         }
     }
@@ -42,6 +49,9 @@ final class MermaidRenderer: NSObject {
     private var webView: WKWebView?
     private var ready: Result<Void, Error>?
     private var readyWaiters: [CheckedContinuation<Result<Void, Error>, Never>] = []
+    /// 连续加载失败次数（didFinish 归零）；达到上限后不再重建，防加载失败死循环。
+    private var loadFailures = 0
+    private static let maxLoadFailures = 3
 
     // MARK: - 串行队列（baton-pass 信号量）
 
@@ -51,6 +61,8 @@ final class MermaidRenderer: NSObject {
     private override init() {
         super.init()
         cache.countLimit = 60
+        // 60 张 3x PNG 峰值可观，按 PNG 字节数再压一道总量上限。
+        cache.totalCostLimit = 32 * 1024 * 1024
     }
 
     /// 提前拉起引擎——JS 解析是冷启动大头，藏在用户阅读前文的时间里。
@@ -82,18 +94,15 @@ final class MermaidRenderer: NSObject {
         // 排队期间可能有相同代码先渲染完，再查一次。
         if let hit = cache.object(forKey: key) { return hit.value }
 
-        try await ensureReady()
-        guard let webView else { throw RenderError.engineUnavailable }
+        // 排队期间任务可能已被取消：拿到令牌后先检查，不白跑。
+        try Task.checkCancellation()
 
-        let raw: Any? = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Any?, Error>) in
-            webView.callAsyncJavaScript(
-                "return await renderMermaidPNG(code, scale);",
-                arguments: ["code": code, "scale": scale],
-                in: nil, in: .page
-            ) { result in
-                cont.resume(with: result.map { $0 as Any? })
-            }
-        }
+        let webView = try await ensureReady()
+
+        // 等引擎加载期间也可能被取消，发 JS 前再查一次。
+        try Task.checkCancellation()
+
+        let raw = try await callRenderJS(webView: webView, code: code, scale: scale)
 
         guard let dict = raw as? [String: Any] else { throw RenderError.badImage }
         if let error = dict["error"] as? String { throw RenderError.jsFailed(error) }
@@ -106,14 +115,92 @@ final class MermaidRenderer: NSObject {
               width > 0, height > 0 else { throw RenderError.badImage }
 
         let rendered = Rendered(image: image, size: CGSize(width: width, height: height))
-        cache.setObject(RenderedBox(rendered), forKey: key)
+        cache.setObject(RenderedBox(rendered), forKey: key, cost: data.count)
         return rendered
+    }
+
+    // MARK: - JS 调用（超时 / 取消竞争）
+
+    /// JS 调用：正常回调、30s 超时、任务取消三路竞争。
+    /// OnceContinuation 保证底层 continuation 恰好 resume 一次（先到先赢，后到丢弃）——
+    /// 超时触发后姗姗来迟的 JS 回调不会双重 resume 崩溃。
+    private func callRenderJS(webView: WKWebView, code: String, scale: CGFloat) async throws -> Any? {
+        let once = OnceContinuation()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Any?, Error>) in
+                once.set(cont)
+                let timeout = Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(30))
+                    // 竞争失败说明 JS 回调/取消已处理，无需动引擎。
+                    guard once.resume(with: .failure(RenderError.timedOut)) else { return }
+                    // 超时 = JS 已病态（死循环/灾难性回溯），completion 大概率永远不会来。
+                    // 销毁引擎，下次 render/preload 经 ensureReady 重建，
+                    // 防止病态输入反复毒化同一引擎。
+                    self?.destroyEngine()
+                }
+                webView.callAsyncJavaScript(
+                    "return await renderMermaidPNG(code, scale);",
+                    arguments: ["code": code, "scale": scale],
+                    in: nil, in: .page
+                ) { result in
+                    timeout.cancel()
+                    once.resume(with: result.map { $0 as Any? })
+                }
+            }
+        } onCancel: {
+            // 调用方走了（视图消失等）：立即放行队列令牌，不阻塞后续渲染。
+            // 引擎不背锅——JS 调用大概率健康，其回调晚些到达会被 OnceContinuation 丢弃，
+            // 引擎留给下次复用；若 JS 真的病态，下次调用的 30s 超时会走销毁重建路径。
+            once.resume(with: .failure(CancellationError()))
+        }
+    }
+
+    /// 恰好一次的 continuation 投递盒：JS 回调、超时 Task、取消处理器可能并发到达，
+    /// NSLock 序列化后先到先赢；set 与 resume 时序任意交叉也安全
+    ///（先 resume 则暂存结果，set 时立即补投，不会因竞态漏投）。
+    private final class OnceContinuation: @unchecked Sendable {
+        private let lock = NSLock()
+        private var cont: CheckedContinuation<Any?, Error>?
+        private var pending: Result<Any?, Error>?
+        private var fired = false
+
+        func set(_ cont: CheckedContinuation<Any?, Error>) {
+            lock.lock()
+            if let pending {
+                lock.unlock()
+                cont.resume(with: pending)
+                return
+            }
+            self.cont = cont
+            lock.unlock()
+        }
+
+        /// 返回本次是否生效（false = 已有先到者，结果被丢弃）。
+        @discardableResult
+        func resume(with result: Result<Any?, Error>) -> Bool {
+            lock.lock()
+            guard !fired else {
+                lock.unlock()
+                return false
+            }
+            fired = true
+            if let cont {
+                self.cont = nil
+                lock.unlock()
+                cont.resume(with: result)
+            } else {
+                pending = result
+                lock.unlock()
+            }
+            return true
+        }
     }
 
     // MARK: - 引擎生命周期
 
     private func ensureEngine() {
         guard webView == nil else { return }
+        guard loadFailures < Self.maxLoadFailures else { return }
         let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 1024, height: 1024))
         webView.isOpaque = false
         webView.navigationDelegate = self
@@ -121,13 +208,22 @@ final class MermaidRenderer: NSObject {
         webView.loadHTMLString(Self.shell, baseURL: Bundle.main.resourceURL)
     }
 
-    private func ensureReady() async throws {
+    /// 引擎就绪后返回可用的 webView；加载失败在重建上限内会自动重试。
+    private func ensureReady() async throws -> WKWebView {
+        if let ready {
+            try ready.get()
+            if let webView { return webView }
+            // 防御分支：ready 成功但引擎已被销毁，清掉旧状态走重建。
+            self.ready = nil
+        }
         ensureEngine()
-        if let ready { return try ready.get() }
+        guard webView != nil else { throw RenderError.engineUnavailable }
         let result = await withCheckedContinuation { (cont: CheckedContinuation<Result<Void, Error>, Never>) in
             readyWaiters.append(cont)
         }
         try result.get()
+        guard let webView else { throw RenderError.engineUnavailable }
+        return webView
     }
 
     private func finishReady(_ result: Result<Void, Error>) {
@@ -136,6 +232,25 @@ final class MermaidRenderer: NSObject {
         let pending = readyWaiters
         readyWaiters.removeAll()
         pending.forEach { $0.resume(returning: result) }
+    }
+
+    /// 加载失败：计数并销毁引擎，ready 复位为 nil——
+    /// 下次 render/preload 在重建上限内自动重建，不再永久重抛同一个旧错误。
+    private func recordLoadFailure(_ error: Error) {
+        loadFailures += 1
+        webView = nil
+        finishReady(.failure(error))
+        ready = nil
+    }
+
+    /// 引擎病态（JS 超时 / WebContent 进程终止）：销毁，下次 ensureReady 重建。
+    /// 挂起的 ready 等待者必须立即失败——它们的 finishReady 永远不会来了。
+    private func destroyEngine() {
+        webView = nil
+        ready = nil
+        let pending = readyWaiters
+        readyWaiters.removeAll()
+        pending.forEach { $0.resume(returning: .failure(RenderError.engineUnavailable)) }
     }
 
     // MARK: - 串行队列原语
@@ -170,13 +285,13 @@ final class MermaidRenderer: NSObject {
       securityLevel: 'loose',
       theme: 'base',
       themeVariables: {
-        background: '#FCFBF7',
-        primaryColor: '#F4F2EC',
-        primaryTextColor: '#201D17',
-        primaryBorderColor: '#B8501F',
-        lineColor: '#6F6A5C',
-        secondaryColor: '#ECE8DC',
-        tertiaryColor: '#ECE8DC',
+        background: '\(PaperTheme.Hex.card)',
+        primaryColor: '\(PaperTheme.Hex.paper)',
+        primaryTextColor: '\(PaperTheme.Hex.ink)',
+        primaryBorderColor: '\(PaperTheme.Hex.accent)',
+        lineColor: '\(PaperTheme.Hex.inkSecondary)',
+        secondaryColor: '\(PaperTheme.Hex.codeBackground)',
+        tertiaryColor: '\(PaperTheme.Hex.codeBackground)',
         fontFamily: '-apple-system, sans-serif'
       }
     });
@@ -215,7 +330,7 @@ final class MermaidRenderer: NSObject {
         canvas.width = Math.round(w * scale);
         canvas.height = Math.round(h * scale);
         const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#FCFBF7';
+        ctx.fillStyle = '\(PaperTheme.Hex.card)';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         return { png: canvas.toDataURL('image/png'), width: w, height: h };
@@ -233,19 +348,29 @@ final class MermaidRenderer: NSObject {
 extension MermaidRenderer: WKNavigationDelegate {
     nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         MainActor.assumeIsolated {
+            loadFailures = 0
             finishReady(.success(()))
         }
     }
 
     nonisolated func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         MainActor.assumeIsolated {
-            finishReady(.failure(error))
+            recordLoadFailure(error)
         }
     }
 
     nonisolated func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         MainActor.assumeIsolated {
-            finishReady(.failure(error))
+            recordLoadFailure(error)
+        }
+    }
+
+    /// WebContent 进程终止（OOM/崩溃）：JS completion 永远不会来——
+    /// 销毁引擎按需重建；挂起的 render 由各自的 30s 超时收尾（与超时同一道防线），
+    /// ready 等待者在 destroyEngine 里立即失败。
+    nonisolated func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        MainActor.assumeIsolated {
+            destroyEngine()
         }
     }
 }

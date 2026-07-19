@@ -35,3 +35,26 @@ jobs:
           name: MEditor-macOS14
           path: MEditor.zip
           compression-level: 0
+
+  ios:
+    name: Build (iOS Simulator)
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      # Gate only: no iOS test target exists. Generic simulator destination
+      # (no simulator ID available on CI runners); signing disabled.
+      - name: Build (iOS Simulator)
+        run: >-
+          xcodebuild
+          -project Mobile/MEditorMobile.xcodeproj
+          -scheme MEditorMobile
+          -configuration Debug
+          -destination 'generic/platform=iOS Simulator'
+          build
+          CODE_SIGNING_ALLOWED=NO

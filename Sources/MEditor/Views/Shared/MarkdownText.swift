@@ -261,7 +261,9 @@ struct MarkdownText: View {
     }()
 
     /// Returns the cached parse result when available, otherwise parses and caches.
-    private static func parse(_ text: String) -> [Block] {
+    /// internal（非 private）：iOS 端文档预览（MarkdownPreviewView）复用同一 parser，
+    /// 以获得 GFM 表格与 LRU 缓存；macOS 侧调用点与行为不变。
+    static func parse(_ text: String) -> [Block] {
         let key = text as NSString
         if let cached = parseCache.object(forKey: key) { return cached.blocks }
         let result = _parse(text)

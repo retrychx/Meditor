@@ -10,7 +10,7 @@ struct MermaidBlockView: View {
 
     private enum Phase {
         case loading
-        case rendered(UIImage)
+        case rendered(MermaidRenderer.Rendered)
         case failed(String)
     }
 
@@ -28,11 +28,13 @@ struct MermaidBlockView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 120)
 
-            case .rendered(let image):
-                Image(uiImage: image)
+            case .rendered(let rendered):
+                Image(uiImage: rendered.image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(maxWidth: .infinity)
+                    // 超高图（长流程图等）限高 600pt 等比缩小，避免一屏放不下。
+                    .frame(maxHeight: rendered.size.height > 600 ? 600 : .infinity)
                     .padding(.vertical, 10)
 
             case .failed(let message):
@@ -53,7 +55,7 @@ struct MermaidBlockView: View {
             do {
                 let rendered = try await MermaidRenderer.shared.render(code: code, scale: displayScale)
                 guard !Task.isCancelled else { return }
-                withAnimation(.easeOut(duration: 0.2)) { phase = .rendered(rendered.image) }
+                withAnimation(.easeOut(duration: 0.2)) { phase = .rendered(rendered) }
             } catch {
                 guard !Task.isCancelled else { return }
                 phase = .failed(error.localizedDescription)

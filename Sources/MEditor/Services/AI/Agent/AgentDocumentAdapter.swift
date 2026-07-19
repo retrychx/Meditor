@@ -29,11 +29,15 @@ protocol AgentDocumentAdapter: AnyObject {
 
     // 命令授权
     func confirmCommandExecution(_ command: String, cwd: String?) async -> Bool
+    /// 取消挂起的命令确认（Runner 超时/正常结束时触发），恢复工具内挂起的 continuation。
+    func cancelPendingCommandConfirmation()
 }
 
 extension AgentDocumentAdapter {
     /// 默认无打开 Tab——mock / 测试实现无需关心此方法。
     func hasOpenTab(at url: URL) -> Bool { false }
+    /// 默认无挂起确认——mock / 测试实现无需关心此方法。
+    func cancelPendingCommandConfirmation() {}
 }
 
 // MARK: - AppState Implementation
@@ -172,5 +176,14 @@ final class AppStateDocumentAdapter: AgentDocumentAdapter {
                 cont.resume(returning: approved)
             }
         }
+    }
+
+    /// Runner 超时/正常结束时拒绝挂起的命令确认，恢复工具内 withCheckedContinuation。
+    /// PendingCommand.reject 幂等（answered 标记），与 AIConversation.cancelStreaming 的
+    /// 补救路径不冲突（先到先生效，后到的是 no-op）。
+    func cancelPendingCommandConfirmation() {
+        guard let convo = appState?.aiConversation else { return }
+        convo.pendingCommand?.reject()
+        convo.pendingCommand = nil
     }
 }

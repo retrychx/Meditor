@@ -50,9 +50,8 @@ struct ReadFileTool: AgentTool {
         // 统一路径解析：支持文件名、工作区相对路径（如 test111/index.html）、绝对路径
         let resolved = await context.resolveFile(filename)
         guard case .found(let url) = resolved else {
-            if case .ambiguous(let urls) = resolved {
-                let list = urls.prefix(5).map { "  - \($0.path)" }.joined(separator: "\n")
-                return "[!] 找到 \(urls.count) 个同名文件「\(filename)」，请提供更精确的路径：\n\(list)"
+            if let message = resolved.promptMessage(forQuery: filename) {
+                return message
             }
             return "未找到文件：\(filename)"
         }

@@ -84,7 +84,9 @@ struct RestAgentBackend: AgentBackend {
                 return try await block()
             } catch AIError.server(let code, _) where (code == 429 || code == 503) && attempt < maxAttempts {
                 lastError = AIError.server(code, "retrying (attempt \(attempt))")
-                try? await Task.sleep(nanoseconds: delayNs)
+                // try? 会吞掉 CancellationError，退避期间任务被取消仍会再发一次请求
+                try await Task.sleep(nanoseconds: delayNs)
+                guard !Task.isCancelled else { throw CancellationError() }
                 delayNs *= 2
             } catch {
                 throw error
@@ -146,13 +148,19 @@ struct RestAgentBackend: AgentBackend {
             if let fr = choice["finish_reason"] as? String, fr != "null", !fr.isEmpty {
                 finishReason = fr
             }
-            guard let delta = choice["delta"] as? [String: Any] else { continue }
+            let delta = choice["delta"] as? [String: Any]
 
-            if let content = delta["content"] as? String, !content.isEmpty {
+            if let content = delta?["content"] as? String, !content.isEmpty {
+                accText += content
+                onTextChunk(content)
+            } else if let message = choice["message"] as? [String: Any],
+                      let content = message["content"] as? String, !content.isEmpty {
+                // 某些代理会在最后一帧发送完整 message（原 AIClient.decodeDelta 的兼容行为；
+                // 聊天路径收拢复用本实现后，两路统一保留）
                 accText += content
                 onTextChunk(content)
             }
-            if let tcs = delta["tool_calls"] as? [[String: Any]] {
+            if let tcs = delta?["tool_calls"] as? [[String: Any]] {
                 for tc in tcs {
                     guard let index = tc["index"] as? Int else { continue }
                     var acc = toolByIndex[index] ?? ToolCallAcc()

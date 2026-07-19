@@ -8,16 +8,18 @@ enum ActiveMainView {
 @MainActor
 @Observable
 final class WorkspaceUIState {
+    private let settings: AppSettings
+
     var showsSidebar: Bool {
-        didSet { AppSettings.shared.showSidebarOnLaunch = showsSidebar }
+        didSet { settings.showSidebarOnLaunch = showsSidebar }
     }
 
     var showsEditor: Bool {
-        didSet { AppSettings.shared.showEditorOnLaunch = showsEditor }
+        didSet { settings.showEditorOnLaunch = showsEditor }
     }
 
     var showsPreview: Bool {
-        didSet { AppSettings.shared.showPreviewOnLaunch = showsPreview }
+        didSet { settings.showPreviewOnLaunch = showsPreview }
     }
 
     var sidebarWidth: CGFloat
@@ -33,8 +35,8 @@ final class WorkspaceUIState {
         UserDefaults.standard.set(Array(expandedPaths), forKey: "sidebar.expandedPaths")
     }
 
-    init() {
-        let settings = AppSettings.shared
+    init(settings: AppSettings = .shared) {
+        self.settings = settings
         self.showsSidebar = settings.showSidebarOnLaunch
         self.showsEditor = settings.showEditorOnLaunch
         self.showsPreview = settings.showPreviewOnLaunch
@@ -45,8 +47,10 @@ final class WorkspaceUIState {
         showsSidebar: Bool,
         showsEditor: Bool,
         showsPreview: Bool,
-        sidebarWidth: CGFloat = 260
+        sidebarWidth: CGFloat = 260,
+        settings: AppSettings = .shared
     ) {
+        self.settings = settings
         self.showsSidebar = showsSidebar
         self.showsEditor = showsEditor
         self.showsPreview = showsPreview

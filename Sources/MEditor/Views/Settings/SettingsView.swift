@@ -602,49 +602,22 @@ struct SettingsView: View {
         baseURL: String, apiKey: String, model: String, isAnthropic: Bool
     ) async throws -> String {
         guard !baseURL.isEmpty else { throw URLError(.badURL) }
-        let urlString: String
-        var bodyDict: [String: Any]
-        var headers: [(String, String)] = [("Content-Type", "application/json")]
-
-        if isAnthropic {
-            urlString = baseURL.hasSuffix("/") ? "\(baseURL)messages" : "\(baseURL)/messages"
-            bodyDict = [
-                "model": model,
-                "max_tokens": 16,
-                "messages": [["role": "user", "content": "hi"]]
-            ]
-            headers.append(("x-api-key", apiKey))
-            headers.append(("anthropic-version", "2023-06-01"))
-        } else {
-            urlString = baseURL.hasSuffix("/") ? "\(baseURL)chat/completions" : "\(baseURL)/chat/completions"
-            bodyDict = [
-                "model": model,
-                "max_tokens": 16,
-                "messages": [["role": "user", "content": "hi"]]
-            ]
-            if !apiKey.isEmpty {
-                headers.append(("Authorization", "Bearer \(apiKey)"))
-            }
-        }
-
-        guard let url = URL(string: urlString) else { throw URLError(.badURL) }
-        var request = URLRequest(url: url, timeoutInterval: 10)
-        request.httpMethod = "POST"
-        for (k, v) in headers { request.setValue(v, forHTTPHeaderField: k) }
-        request.httpBody = try JSONSerialization.data(withJSONObject: bodyDict)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
-        guard (200..<300).contains(http.statusCode) else {
-            let msg = String(data: data, encoding: .utf8) ?? "HTTP \(http.statusCode)"
-            throw NSError(domain: "AI", code: http.statusCode,
-                          userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode): \(msg.prefix(120))"])
-        }
-        // Extract model name from response
-        if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let returnedModel = obj["model"] as? String {
-            return returnedModel
-        }
+        // 连接测试与聊天/Agent 共用 RestAgentBackend 的请求构造（wire format 唯一来源）；
+        // 仅收紧超时（10s）与负载（单条 "hi"，非流式）。
+        let config = AIConfig(
+            kind: isAnthropic ? .anthropic : .openai,
+            baseURL: baseURL,
+            model: model,
+            cliPath: "",
+            cliModel: "",
+            apiKey: apiKey,
+            requestTimeoutSeconds: 10
+        )
+        let backend = RestAgentBackend(config: config, wire: isAnthropic ? .anthropic : .openAI)
+        _ = try await backend.complete(
+            messages: [AgentMessage(role: .user, content: "hi")],
+            tools: []
+        )
         return model
     }
 

@@ -102,6 +102,15 @@ open .build/debug/MEditor.app
 
 > The `.app` is ad-hoc signed automatically. After first launch, associate `.md`/`.html` files via **Get Info → Open With → MEditor → Change All**.
 
+### Versioning
+
+The app version has a single source of truth per platform — **this is where you change it**:
+
+- **macOS**: edit [`VERSION`](VERSION) at the repo root. `scripts/bundle.sh` injects it into `MEditor.app`'s `Info.plist` at packaging time (the version keys in `Sources/MEditor/Info.plist` are placeholders).
+- **iOS**: edit `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `Mobile/MEditorMobile.xcodeproj` (target build settings). `Mobile/MEditorMobile/Info.plist` references them as `$(MARKETING_VERSION)` / `$(CURRENT_PROJECT_VERSION)`.
+
+Run `make version` to see the current version and these pointers.
+
 ### Open in Xcode
 
 ```bash

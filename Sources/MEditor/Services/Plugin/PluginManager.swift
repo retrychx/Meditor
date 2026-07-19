@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Observation
 
@@ -38,7 +39,7 @@ final class PluginManager {
             bookmarkTarget = rawURL.deletingLastPathComponent()
         }
 
-        let id = stableID(for: skillMD)
+        let id = persistentID(for: skillMD)
         guard !skills.contains(where: { $0.id == id }) else { return false }
 
         // 非沙盒应用：用普通书签即可。security-scoped 书签需要 sandbox entitlement，
@@ -372,12 +373,13 @@ final class PluginManager {
         return ""
     }
 
-    private func stableID(for url: URL) -> String {
+    /// 跨启动稳定的技能 ID：SHA256(标准化路径) 的前 16 个 hex 字符。
+    /// 旧实现用 Swift Hasher（进程级随机种子），跨启动去重失效导致技能重复。
+    private func persistentID(for url: URL) -> String {
         let path = url.standardizedFileURL.path
-        var hasher = Hasher()
-        hasher.combine(path)
-        let value = abs(hasher.finalize())
-        return String(value, radix: 16, uppercase: false)
+        let digest = SHA256.hash(data: Data(path.utf8))
+        let hex = digest.map { String(format: "%02x", $0) }.joined()
+        return String(hex.prefix(16))
     }
 
     private func resolveBookmark(_ data: Data) -> URL? {

@@ -95,8 +95,7 @@ enum AtMentionContextBuilder {
                 return "<!-- @\(display): file not found -->"
             }
             guard let raw = try? Data(contentsOf: url),
-                  let text = String(data: raw, encoding: .utf8)
-                           ?? String(data: raw, encoding: .isoLatin1) else {
+                  let text = TextFileDecoder.decode(raw) else {
                 return "<!-- @\(display): binary or unreadable file -->"
             }
             let content = truncate(text, maxBytes: AtMentionLimits.maxFileBytesPerToken, name: url.lastPathComponent)
@@ -127,11 +126,13 @@ enum AtMentionContextBuilder {
 
     private static func truncate(_ text: String, maxBytes: Int, name: String) -> String {
         guard let data = text.data(using: .utf8), data.count > maxBytes else { return text }
-        let prefix = data.prefix(maxBytes)
-        let truncated = String(data: prefix, encoding: .utf8)
-            ?? String(data: prefix, encoding: .isoLatin1)
+        // 解码统一走 TextFileDecoder：截断点可能落在多字节字符中间 → 去掉末尾
+        // 最多 3 字节重试 UTF-8；不做 isoLatin1 回退——该回退必然"成功"，
+        // 会把 CJK 文件尾部整段解码成乱码。
+        // text 本身是合法 UTF-8，解码必然成功；String(text.prefix) 仅为理论兜底。
+        let result = TextFileDecoder.decode(Data(data.prefix(maxBytes)))
             ?? String(text.prefix(maxBytes))
-        return truncated + "\n\n⚠️ [\(name) truncated at \(maxBytes / 1000)KB - \(data.count / 1000)KB total]"
+        return result + "\n\n⚠️ [\(name) truncated at \(maxBytes / 1000)KB - \(data.count / 1000)KB total]"
     }
 
     private static func relativePath(_ url: URL, to root: URL) -> String {
