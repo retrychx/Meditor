@@ -46,16 +46,13 @@ struct MermaidBlockView: View {
                     .padding(12)
             }
         }
-        .background(PaperTheme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(PaperTheme.hairline, lineWidth: 0.5)
-        }
+        .background(PaperTheme.card, in: RoundedRectangle(cornerRadius: PaperTheme.Radius.medium, style: .continuous))
+        .shadow(color: PaperTheme.cardShadow, radius: 10, y: 3)
         .task(id: code) {
             do {
                 let rendered = try await MermaidRenderer.shared.render(code: code, scale: displayScale)
                 guard !Task.isCancelled else { return }
-                withAnimation(.easeOut(duration: 0.2)) { phase = .rendered(rendered) }
+                withAnimation(PaperTheme.Motion.standard) { phase = .rendered(rendered) }
             } catch {
                 guard !Task.isCancelled else { return }
                 phase = .failed(error.localizedDescription)

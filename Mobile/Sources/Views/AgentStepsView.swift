@@ -39,6 +39,7 @@ struct AgentStepsView: View {
                 Image(systemName: isError ? "xmark.circle.fill" : "checkmark.circle.fill")
                     .font(.system(size: 12))
                     .foregroundStyle(isError ? .red : .green)
+                    .contentTransition(.symbolEffect(.replace))
                 Label(info.text, systemImage: info.icon)
                     .font(.footnote)
                     .foregroundStyle(isError ? .red : PaperTheme.inkSecondary)

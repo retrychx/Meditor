@@ -9,7 +9,7 @@ enum PaperTheme {
 
     /// 色板原始值：Color 与 JS 用 hex 字符串（Hex）均由此派生，改一处全局同步。
     private enum Palette {
-        static let paper: UInt32          = 0xF4F2EC
+        static let paper: UInt32          = 0xF7F5F0
         static let card: UInt32           = 0xFCFBF7
         static let ink: UInt32            = 0x201D17
         static let inkSecondary: UInt32   = 0x6F6A5C
@@ -33,6 +33,8 @@ enum PaperTheme {
     static let accentPressed = Color(hex: 0x9A4418)
     /// 代码块 / 行内代码的浅色底（比纸面略深，保持同色系）。
     static let codeBackground = Color(hex: Palette.codeBackground)
+    /// 卡片柔和投影（替代描边，hairline 只留给真正的分隔线）。
+    static let cardShadow = Color.black.opacity(0.05)
 
     // MARK: - Hex 字符串（JS / WebView 场景）
 
@@ -53,10 +55,19 @@ enum PaperTheme {
 
     // MARK: - 圆角
 
+    /// 统一圆角梯度，替换散落的魔法数字。
     enum Radius {
-        static let card: CGFloat = 14
-        static let button: CGFloat = 12
-        static let bubble: CGFloat = 16
+        static let small: CGFloat = 8
+        static let medium: CGFloat = 12
+        static let large: CGFloat = 16
+        static let xlarge: CGFloat = 20
+
+        /// 卡片 / 浮层。
+        static let card: CGFloat = medium
+        /// 按钮。
+        static let button: CGFloat = medium
+        /// 聊天气泡。
+        static let bubble: CGFloat = large
     }
 
     // MARK: - 间距
@@ -66,6 +77,18 @@ enum PaperTheme {
         static let page: CGFloat = 22
     }
 
+    // MARK: - 动效
+
+    /// 全 App 统一的动效曲线：全部为 spring（天然可中断），不在各视图散落 easeOut 魔法数字。
+    enum Motion {
+        /// 标准：视图切换、指示器滑动、卡片出现。
+        static let standard = Animation.spring(response: 0.35, dampingFraction: 0.85)
+        /// 轻快：按压回弹、消息到达、小元素入场。
+        static let quick = Animation.spring(response: 0.25, dampingFraction: 0.9)
+        /// 舒缓：空态入场、大面积渐变。
+        static let gentle = Animation.spring(response: 0.5, dampingFraction: 0.9)
+    }
+
     // MARK: - 字体
 
     enum Typography {
@@ -73,9 +96,9 @@ enum PaperTheme {
         static func brandTitle(_ size: CGFloat = 34) -> Font {
             .system(size: size, weight: .bold, design: .serif)
         }
-        /// 衬线引导语 / 空态标题。
-        static func serifTitle3() -> Font {
-            .system(.title3, design: .serif, weight: .semibold)
+        /// UI 层标题（空态标题等）：系统无衬线——衬线只保留给文档内容与品牌字。
+        static func uiTitle3() -> Font {
+            .system(.title3, weight: .semibold)
         }
         /// Markdown 预览里的衬线标题（全 App 唯一一套标题字号）。
         static func heading(level: Int) -> Font {
@@ -109,7 +132,7 @@ extension Color {
 
 // MARK: - 可复用样式
 
-/// 品牌主按钮：焦橙底白字，按压转深色。
+/// 品牌主按钮：焦橙底白字，按压缩放 + 转深色 + 轻触觉。
 struct PaperPrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -121,12 +144,31 @@ struct PaperPrimaryButtonStyle: ButtonStyle {
                 configuration.isPressed ? PaperTheme.accentPressed : PaperTheme.accent,
                 in: RoundedRectangle(cornerRadius: PaperTheme.Radius.button, style: .continuous)
             )
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .opacity(configuration.isPressed ? 0.92 : 1)
+            .animation(PaperTheme.Motion.quick, value: configuration.isPressed)
+            .sensoryFeedback(.impact(weight: .light), trigger: configuration.isPressed) { _, pressed in pressed }
     }
 }
 
 extension ButtonStyle where Self == PaperPrimaryButtonStyle {
     static var paperPrimary: PaperPrimaryButtonStyle { PaperPrimaryButtonStyle() }
+}
+
+/// 通用按压样式：不改动 label 外观，只加按压缩放 / 透明度 / 回弹 / 轻触觉。
+/// 用于 tab、头部按钮、chips、操作行等自绘外观的按钮。
+struct PressableButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .opacity(configuration.isPressed ? 0.92 : 1)
+            .animation(PaperTheme.Motion.quick, value: configuration.isPressed)
+            .sensoryFeedback(.impact(weight: .light), trigger: configuration.isPressed) { _, pressed in pressed }
+    }
+}
+
+extension ButtonStyle where Self == PressableButtonStyle {
+    static var pressable: PressableButtonStyle { PressableButtonStyle() }
 }
 
 /// 圆形图标按钮（发送 / 停止）：强调色底白色细线图标，按压缩放 + 转深色。
@@ -142,8 +184,10 @@ struct PaperCircleButtonStyle: ButtonStyle {
                 configuration.isPressed ? PaperTheme.accentPressed : PaperTheme.accent,
                 in: Circle()
             )
-            .scaleEffect(configuration.isPressed ? 0.92 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .opacity(configuration.isPressed ? 0.92 : 1)
+            .animation(PaperTheme.Motion.quick, value: configuration.isPressed)
+            .sensoryFeedback(.impact(weight: .light), trigger: configuration.isPressed) { _, pressed in pressed }
     }
 }
 
@@ -155,18 +199,21 @@ enum PaperAppearance {
     static func apply() {
         let inkUIColor = UIColor(PaperTheme.ink)
 
-        // 导航栏：纸底、发丝级分隔、衬线标题。
+        // 导航栏：纸底、发丝级分隔；标题用系统无衬线（文档文件名的衬线由 DocumentView 自绘标题承担）。
         let nav = UINavigationBarAppearance()
         nav.configureWithOpaqueBackground()
         nav.backgroundColor = UIColor(PaperTheme.paper)
         nav.shadowColor = UIColor(PaperTheme.hairline)
         nav.titleTextAttributes = [
             .foregroundColor: inkUIColor,
-            .font: serifUIFont(textStyle: .headline),
+            .font: UIFont.preferredFont(forTextStyle: .headline),
         ]
         nav.largeTitleTextAttributes = [
             .foregroundColor: inkUIColor,
-            .font: serifUIFont(textStyle: .largeTitle, weight: .bold),
+            .font: UIFont.systemFont(
+                ofSize: UIFont.preferredFont(forTextStyle: .largeTitle).pointSize,
+                weight: .bold
+            ),
         ]
         let navBar = UINavigationBar.appearance()
         navBar.standardAppearance = nav
@@ -189,15 +236,5 @@ enum PaperAppearance {
 
         // 表单分隔线贴近纸色。
         UITableView.appearance().separatorColor = UIColor(PaperTheme.hairline)
-    }
-
-    /// New York 衬线 UIFont（失败时退回系统字体）。
-    private static func serifUIFont(textStyle: UIFont.TextStyle, weight: UIFont.Weight = .semibold) -> UIFont {
-        let base = UIFontDescriptor.preferredFontDescriptor(withTextStyle: textStyle)
-        if let serif = base.withDesign(.serif) {
-            let traits = serif.addingAttributes([.traits: [UIFontDescriptor.TraitKey.weight: weight]])
-            return UIFont(descriptor: traits, size: 0)
-        }
-        return UIFont.systemFont(ofSize: UIFont.preferredFont(forTextStyle: textStyle).pointSize, weight: weight)
     }
 }

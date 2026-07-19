@@ -11,6 +11,9 @@ struct AIChatView: View {
     @State private var copyResetTask: Task<Void, Never>?
     /// 消息列表是否贴底：贴底时流式输出自动跟随滚底；用户上翻阅读时不强制拽回。
     @State private var pinnedToBottom = true
+    /// 技能 chips / 空态的入场动画开关。
+    @State private var chipsAppeared = false
+    @State private var emptyStateVisible = false
 
     /// 列表底部锚点 id（贴底检测与滚动目标共用）。
     private let bottomAnchorID = "chat-bottom"
@@ -44,9 +47,11 @@ struct AIChatView: View {
             List {
                 ForEach(model.messages) { msg in
                     bubbleRow(msg)
+                        // 新消息到达：slide-up + fade
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                        .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
                 }
                 // 底部锚点：进出视口维护「贴底」状态，也是滚动到底的目标。
                 Color.clear
@@ -62,6 +67,8 @@ struct AIChatView: View {
             .listRowSpacing(2)
             .scrollContentBackground(.hidden)
             .background(PaperTheme.paper)
+            // 仅消息条数变化时带插入动画；流式文本增长不触发
+            .animation(PaperTheme.Motion.quick, value: model.messages.count)
             // 拖动列表时键盘随手势收回
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: model.messages.count) { _ in
@@ -79,7 +86,7 @@ struct AIChatView: View {
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
-        withAnimation(.easeOut(duration: 0.2)) {
+        withAnimation(PaperTheme.Motion.quick) {
             proxy.scrollTo(bottomAnchorID, anchor: .bottom)
         }
     }
@@ -106,10 +113,7 @@ struct AIChatView: View {
                         .padding(.vertical, 10)
                         .background(PaperTheme.card)
                         .clipShape(bubbleShape(isUser: false))
-                        .overlay {
-                            bubbleShape(isUser: false)
-                                .strokeBorder(PaperTheme.hairline, lineWidth: 0.5)
-                        }
+                        .shadow(color: .black.opacity(0.04), radius: 8, y: 2)
                 } else if isUser {
                     Text(msg.text)
                         .font(.body)
@@ -133,10 +137,7 @@ struct AIChatView: View {
                     .padding(.vertical, 10)
                     .background(PaperTheme.card)
                     .clipShape(bubbleShape(isUser: false))
-                    .overlay {
-                        bubbleShape(isUser: false)
-                            .strokeBorder(PaperTheme.hairline, lineWidth: 0.5)
-                    }
+                    .shadow(color: .black.opacity(0.04), radius: 8, y: 2)
                 }
                 if !isUser && !model.isResponding && !msg.text.isEmpty {
                     actionRow(msg)
@@ -162,6 +163,8 @@ struct AIChatView: View {
             } label: {
                 Label(copiedID == msg.id ? "已复制" : "复制",
                       systemImage: copiedID == msg.id ? "checkmark" : "doc.on.doc")
+                    .contentTransition(.symbolEffect(.replace))
+                    .symbolEffect(.bounce, value: copiedID == msg.id)
             }
             if store.hasDocument {
                 Button { model.insertIntoDocument(msg.text) } label: {
@@ -171,7 +174,7 @@ struct AIChatView: View {
         }
         .font(.caption)
         .foregroundStyle(PaperTheme.inkSecondary)
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .padding(.leading, 4)
     }
 
@@ -188,6 +191,7 @@ struct AIChatView: View {
                     Button("撤销") { model.undoAIChanges() }
                         .font(.footnote.weight(.medium))
                         .foregroundStyle(PaperTheme.accent)
+                        .buttonStyle(.pressable)
                 }
                 .foregroundStyle(PaperTheme.inkSecondary)
                 .padding(.horizontal, 16)
@@ -196,8 +200,10 @@ struct AIChatView: View {
                 .overlay(alignment: .top) {
                     Rectangle().fill(PaperTheme.hairline).frame(height: 0.5)
                 }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .animation(PaperTheme.Motion.standard, value: store.canUndoAI && !model.isResponding)
     }
 
     /// 用户气泡右对齐、右下角收紧到 4；助手气泡左对齐、左下角收紧。
@@ -224,9 +230,9 @@ struct AIChatView: View {
                     .focused($inputFocused)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
-                    .background(PaperTheme.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .background(PaperTheme.card, in: RoundedRectangle(cornerRadius: PaperTheme.Radius.xlarge, style: .continuous))
                     .overlay {
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        RoundedRectangle(cornerRadius: PaperTheme.Radius.xlarge, style: .continuous)
                             .strokeBorder(PaperTheme.hairline, lineWidth: 1)
                     }
                 if model.isResponding {
@@ -238,6 +244,7 @@ struct AIChatView: View {
                 } else {
                     Button(action: model.send) {
                         Image(systemName: "arrow.up")
+                            .symbolEffect(.bounce, value: model.isResponding)
                     }
                     .buttonStyle(PaperCircleButtonStyle())
                     .disabled(!canSend)
@@ -253,14 +260,14 @@ struct AIChatView: View {
 
     // MARK: - 技能快捷指令
 
-    /// 已启用技能的快捷 chip：横滑一排，点按直接发送对应指令。
+    /// 已启用技能的快捷 chip：横滑一排，点按直接发送对应指令；出现时不齐整地错落淡入。
     private var skillChips: some View {
         let skills = MobileSkillStore.shared.enabledSkills
         return Group {
             if !skills.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(skills) { skill in
+                        ForEach(Array(skills.enumerated()), id: \.element.id) { index, skill in
                             Button {
                                 model.sendQuick(skill.quickPrompt)
                             } label: {
@@ -274,14 +281,20 @@ struct AIChatView: View {
                                         Capsule().strokeBorder(PaperTheme.hairline, lineWidth: 0.5)
                                     }
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.pressable)
                             .disabled(model.isResponding)
-                            .opacity(model.isResponding ? 0.45 : 1)
+                            .opacity(chipsAppeared ? (model.isResponding ? 0.45 : 1) : 0)
+                            .offset(y: chipsAppeared ? 0 : 10)
+                            .animation(
+                                PaperTheme.Motion.quick.delay(Double(index) * 0.05),
+                                value: chipsAppeared
+                            )
                         }
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
                 }
+                .onAppear { chipsAppeared = true }
             }
         }
     }
@@ -295,7 +308,7 @@ struct AIChatView: View {
                 .font(.system(size: 34, weight: .light))
                 .foregroundStyle(PaperTheme.inkSecondary)
             Text("把初稿交给它打磨")
-                .font(PaperTheme.Typography.serifTitle3())
+                .font(PaperTheme.Typography.uiTitle3())
                 .foregroundStyle(PaperTheme.ink)
             Text("问点什么，或让 AI 帮你修改当前文档。")
                 .font(.subheadline)
@@ -304,6 +317,11 @@ struct AIChatView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(PaperTheme.paper)
+        .opacity(emptyStateVisible ? 1 : 0)
+        .offset(y: emptyStateVisible ? 0 : 14)
+        .onAppear {
+            withAnimation(PaperTheme.Motion.gentle) { emptyStateVisible = true }
+        }
         // 空态下点击空白处收回键盘
         .onTapGesture { inputFocused = false }
     }
