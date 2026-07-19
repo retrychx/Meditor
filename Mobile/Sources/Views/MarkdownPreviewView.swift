@@ -18,6 +18,12 @@ struct MarkdownPreviewView: View {
             LazyVStack(alignment: .leading, spacing: 14) {
                 ForEach(MarkdownText.parse(source)) { block in
                     blockView(block)
+                        // 块随滚动依次浮起：进入视口时从轻提到落位，页面有呼吸感
+                        .scrollTransition(.animated(PaperTheme.Motion.quick)) { content, phase in
+                            content
+                                .opacity(phase.isIdentity ? 1 : 0.35)
+                                .offset(y: phase.isIdentity ? 0 : 14)
+                        }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
