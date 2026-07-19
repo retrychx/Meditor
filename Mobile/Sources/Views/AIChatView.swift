@@ -307,9 +307,13 @@ struct AIChatView: View {
             Image(systemName: "text.bubble")
                 .font(.system(size: 34, weight: .light))
                 .foregroundStyle(PaperTheme.inkSecondary)
-            Text("把初稿交给它打磨")
-                .font(PaperTheme.Typography.uiTitle3())
-                .foregroundStyle(PaperTheme.ink)
+            HStack(alignment: .lastTextBaseline, spacing: 8) {
+                Text("把初稿交给它打磨")
+                    .font(PaperTheme.Typography.uiTitle3())
+                    .foregroundStyle(PaperTheme.ink)
+                SealStamp(size: 22)
+                    .alignmentGuide(.lastTextBaseline) { $0[.bottom] }
+            }
             Text("问点什么，或让 AI 帮你修改当前文档。")
                 .font(.subheadline)
                 .foregroundStyle(PaperTheme.inkSecondary)
