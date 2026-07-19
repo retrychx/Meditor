@@ -57,17 +57,33 @@ final class FileWatcherServiceTests: XCTestCase {
     }
 
     func test_onChange_firesOnFileChange() {
-        let expectation = expectation(description: "onChange fires")
-        expectation.isInverted = false
-
+        // FSEvents 在 CI 慢机上延迟不可控，且 watcher 启动与首次写文件之间存在竞态：
+        // 轮询等待回调（每 100ms 检查一次），超过 2s 未触发就重写文件再制造一次事件，
+        // 最多等 15s，触发即提前结束。
+        let box = CallbackBox()
         watcher.startWatching(urls: [tempDir]) {
-            expectation.fulfill()
+            box.mark()
         }
 
-        // Create a file to trigger FSEvents
         let file = tempDir.appendingPathComponent("trigger.txt")
-        try? "hello".write(to: file, atomically: true, encoding: .utf8)
+        let deadline = Date().addingTimeInterval(15)
+        var lastWrite = Date.distantPast
+        while !box.fired && Date() < deadline {
+            if Date().timeIntervalSince(lastWrite) >= 2 {
+                try? "hello".write(to: file, atomically: true, encoding: .utf8)
+                lastWrite = Date()
+            }
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.1))
+        }
 
-        wait(for: [expectation], timeout: 5.0)
+        XCTAssertTrue(box.fired, "FileWatcher onChange 应在文件变化后 15s 内触发")
+    }
+
+    /// 回调触发标记的线程安全容器（FSEvents 回调在 watcher 的私有队列上触发）。
+    private final class CallbackBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _fired = false
+        func mark() { lock.lock(); _fired = true; lock.unlock() }
+        var fired: Bool { lock.lock(); defer { lock.unlock() }; return _fired }
     }
 }

@@ -151,7 +151,7 @@ final class AgentSSEStabilityTests: XCTestCase {
         XCTAssertEqual(response.toolCalls[1].arguments["content"], .string("v2"))
     }
 
-    // MARK: - A4 建连返回 429 再成功 → withRetry 生效（真实退避 sleep ~1s）
+    // MARK: - A4 建连返回 429 再成功 → withRetry 生效（注入 1ms 退避，避免真实 ~1s sleep）
 
     func test_streamOpenAI_connect429ThenSuccess_retriesAndCompletes() async throws {
         let rateLimited = HTTPURLResponse(
@@ -169,7 +169,7 @@ final class AgentSSEStabilityTests: XCTestCase {
             ]), okResponse()),
         ])
 
-        let backend = RestAgentBackend(config: makeEvalConfig(), wire: .openAI, session: session)
+        let backend = RestAgentBackend(config: makeEvalConfig(), wire: .openAI, session: session, retryBaseDelayNs: 1_000_000)
         let response = try await backend.completeStreaming(
             messages: [AgentMessage(role: .user, content: "hi")],
             tools: [],
