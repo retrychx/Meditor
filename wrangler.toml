@@ -1,0 +1,12 @@
+# Cloudflare Worker 部署配置（官网静态资源）
+# 首次部署前：npx wrangler login（或设置 CLOUDFLARE_API_TOKEN 环境变量）
+# 注意 name 要与 Cloudflare Dashboard 上已创建的 Worker 同名，
+# 这样部署会接管该 Worker（含其 workers.dev 子域），而不是新建一个。
+name = "meditor"
+compatibility_date = "2026-07-19"
+
+[assets]
+# 指向 scripts/deploy-docs.sh 生成的暂存目录，而不是 ./docs——
+# docs/ 里的 .md 设计文档不对外发布，脚本只打包 index.html + images/。
+directory = "./.site-dist"
+binding = "ASSETS"
