@@ -1,36 +1,38 @@
 import SwiftUI
 import UIKit
 
-/// MEditor 移动端「纸墨」设计系统：与产品网页（website/index.html）同源。
+/// MEditor 移动端「纸墨」设计系统：宣纸白 · 松烟墨 · 朱砂印。
 /// 全 App 的颜色 / 字体 / 圆角 / 间距统一从这里取，不在各视图散落字面量。
 enum PaperTheme {
 
     // MARK: - 颜色
 
     /// 色板原始值：Color 与 JS 用 hex 字符串（Hex）均由此派生，改一处全局同步。
+    /// 真正的中式纸墨不是暖黄配焦橙——宣纸是带青灰的冷白，松烟墨是蓝黑，
+    /// 全页唯一的亮色是落款那枚朱砂印。
     private enum Palette {
-        static let paper: UInt32          = 0xF7F5F0
-        static let card: UInt32           = 0xFCFBF7
-        static let ink: UInt32            = 0x201D17
-        static let inkSecondary: UInt32   = 0x6F6A5C
-        static let accent: UInt32         = 0xB8501F
-        static let codeBackground: UInt32 = 0xECE8DC
+        static let paper: UInt32          = 0xF4F5F2
+        static let card: UInt32           = 0xFCFCFA
+        static let ink: UInt32            = 0x1B2434
+        static let inkSecondary: UInt32   = 0x5D6673
+        static let accent: UInt32         = 0xC0392B
+        static let codeBackground: UInt32 = 0xECEFEA
     }
 
-    /// 纸面背景（页面底）。
+    /// 宣纸背景（页面底）：冷调米白，带一丝纸纤维的青灰。
     static let paper = Color(hex: Palette.paper)
-    /// 卡片 / 浮层底。
+    /// 卡片 / 浮层底（比宣纸更白一度，拉开色阶）。
     static let card = Color(hex: Palette.card)
-    /// 深色分隔线 / 描边。
-    static let hairline = Color(hex: 0xEAE7DE)
-    /// 墨色正文。
+    /// 冷灰分隔线 / 描边。
+    static let hairline = Color(hex: 0xE2E6E1)
+    /// 松烟墨正文（蓝黑，不是暖棕黑）。
     static let ink = Color(hex: Palette.ink)
-    /// 次要文字。
+    /// 次要文字（青灰）。
     static let inkSecondary = Color(hex: Palette.inkSecondary)
-    /// 品牌强调色（焦橙）：按钮 / 选中态 / 链接。
+    /// 朱砂（印章红）：全页唯一亮色——主按钮 / 选中态 / 开关 / FAB。
     static let accent = Color(hex: Palette.accent)
-    /// 强调色按压态。
-    static let accentPressed = Color(hex: 0x9A4418)
+    /// 朱砂按压态。
+    static let accentPressed = Color(hex: 0x9E2E22)
     /// 代码块 / 行内代码的浅色底（比纸面略深，保持同色系）。
     static let codeBackground = Color(hex: Palette.codeBackground)
     /// 卡片柔和投影（替代描边，hairline 只留给真正的分隔线）。
@@ -132,7 +134,7 @@ extension Color {
 
 // MARK: - 可复用样式
 
-/// 品牌主按钮：焦橙底白字，按压缩放 + 转深色 + 轻触觉。
+/// 品牌主按钮：朱砂底白字，按压缩放 + 转深色 + 轻触觉。
 struct PaperPrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -188,6 +190,28 @@ struct PaperCircleButtonStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.92 : 1)
             .animation(PaperTheme.Motion.quick, value: configuration.isPressed)
             .sensoryFeedback(.impact(weight: .light), trigger: configuration.isPressed) { _, pressed in pressed }
+    }
+}
+
+// MARK: - 朱砂印章
+
+/// 「墨」字朱砂印：落款签名式的品牌标记（空态等场景）。
+/// 方形朱底白字、微斜，像盖在名字旁边的一枚真印。
+struct SealStamp: View {
+    var size: CGFloat = 26
+
+    var body: some View {
+        Text("墨")
+            .font(.system(size: size * 0.58, weight: .bold, design: .serif))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(
+                PaperTheme.accent,
+                in: RoundedRectangle(cornerRadius: size * 0.19, style: .continuous)
+            )
+            .rotationEffect(.degrees(3))
+            .shadow(color: PaperTheme.accent.opacity(0.3), radius: size * 0.15, y: 1.5)
+            .accessibilityHidden(true)
     }
 }
 

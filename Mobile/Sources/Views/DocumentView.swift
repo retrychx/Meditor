@@ -205,10 +205,14 @@ struct DocumentView: View {
                 }
                 .shadow(color: .black.opacity(0.08), radius: 12, y: 4)
 
-            Text("MEditor")
-                .font(PaperTheme.Typography.brandTitle())
-                .foregroundStyle(PaperTheme.ink)
-                .padding(.top, 26)
+            HStack(alignment: .center, spacing: 10) {
+                Text("MEditor")
+                    .font(PaperTheme.Typography.brandTitle())
+                    .foregroundStyle(PaperTheme.ink)
+                SealStamp(size: 28)
+                    .offset(y: 4)
+            }
+            .padding(.top, 26)
 
             Text("纸墨之间，从容书写。")
                 .font(PaperTheme.Typography.uiTitle3())
