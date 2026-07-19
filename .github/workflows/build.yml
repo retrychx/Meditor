@@ -8,8 +8,8 @@ on:
 
 jobs:
   build:
-    name: Build & Test (macOS 14)
-    runs-on: macos-14
+    name: Build & Test (macOS 15)
+    runs-on: macos-15
 
     steps:
       - name: Checkout
@@ -32,13 +32,15 @@ jobs:
       - name: Upload .app artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MEditor-macOS14
+          name: MEditor-macOS
           path: MEditor.zip
           compression-level: 0
 
   ios:
     name: Build (iOS Simulator)
-    runs-on: macos-14
+    # macos-15 = Xcode 16+：项目文件是 objectVersion 77（文件系统同步组），
+    # macos-14 默认的 Xcode 15.4 打不开（"future Xcode project file format (77)"）。
+    runs-on: macos-15
 
     steps:
       - name: Checkout
