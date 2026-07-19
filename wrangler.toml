@@ -6,7 +6,5 @@ name = "meditor"
 compatibility_date = "2026-07-19"
 
 [assets]
-# 指向 scripts/deploy-docs.sh 生成的暂存目录，而不是 ./docs——
-# docs/ 里的 .md 设计文档不对外发布，脚本只打包 index.html + images/。
-directory = "./.site-dist"
+directory = "./website"
 binding = "ASSETS"
