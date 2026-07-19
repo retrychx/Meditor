@@ -20,3 +20,10 @@ Mobile/.derivedData-*
 # Xcode user state
 xcuserdata/
 *.xcuserstate
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
