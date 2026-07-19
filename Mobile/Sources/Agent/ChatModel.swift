@@ -12,18 +12,23 @@ final class ChatModel {
         let id = UUID()
         let role: Role
         var text: String
+        /// 本次回复的工具步骤快照（运行中为空，由 liveSteps 展示）。
+        var steps: [AgentRunnerStep] = []
     }
 
     var messages: [ChatMessage] = []
     var input: String = ""
     var isResponding = false
 
-    private var runner: AgentRunner?
+    /// 运行中的 Runner（只读暴露给视图，驱动工具步骤面板）。
+    private(set) var runner: AgentRunner?
     private var history: [AgentMessage] = []
+    private let store: DocumentStore
     private let context: MobileAgentContext
     private let settings: MobileAISettings
 
     init(store: DocumentStore, settings: MobileAISettings) {
+        self.store    = store
         self.context  = MobileAgentContext(store: store)
         self.settings = settings
     }
@@ -35,16 +40,32 @@ final class ChatModel {
         回答使用与用户相同的语言，简洁直接。
         """
 
+    /// 系统 prompt = 基础说明 + 已启用技能注入（每次发送时现取，开关即时生效）。
+    private func systemPromptWithSkills() -> String {
+        let section = MobileSkillStore.shared.promptSection
+        return section.isEmpty ? Self.systemPrompt : Self.systemPrompt + "\n\n" + section
+    }
+
+    /// 发送当前输入框内容。
     func send() {
-        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        send(text: input.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// 发送指定内容（技能快捷指令 chip 用）。
+    func sendQuick(_ text: String) {
+        send(text: text)
+    }
+
+    private func send(text: String) {
         guard !text.isEmpty, !isResponding else { return }
         input = ""
+        store.beginAIRun()
 
         messages.append(ChatMessage(role: .user, text: text))
         messages.append(ChatMessage(role: .assistant, text: ""))
         isResponding = true
 
-        var msgs = [AgentMessage(role: .system, content: Self.systemPrompt)]
+        var msgs = [AgentMessage(role: .system, content: systemPromptWithSkills())]
         msgs.append(contentsOf: history)
         msgs.append(AgentMessage(role: .user, content: text))
 
@@ -70,6 +91,19 @@ final class ChatModel {
         isResponding = false
     }
 
+    /// 把 AI 回复插入当前文档末尾（消息操作）；无打开文档时返回 false。
+    @discardableResult
+    func insertIntoDocument(_ text: String) -> Bool {
+        guard store.hasDocument else { return false }
+        context.insertIntoDocument(text)
+        return true
+    }
+
+    /// 撤销上一轮 AI 对文档的改动。
+    func undoAIChanges() {
+        store.undoAIChanges()
+    }
+
     private func updateLastAssistant(_ text: String) {
         guard !messages.isEmpty else { return }
         messages[messages.count - 1].text = text
@@ -77,6 +111,13 @@ final class ChatModel {
 
     private func finish(_ r: AgentRunner) {
         history = r.finalMessages
+        // 工具步骤快照进消息（滤掉 thinking 占位），run 结束后仍可回放。
+        if !messages.isEmpty {
+            messages[messages.count - 1].steps = r.steps.filter { step in
+                if case .thinking = step { return false }
+                return true
+            }
+        }
         if let error = r.error, messages.last?.text.isEmpty == true {
             updateLastAssistant("[!] \(error)")
         } else if let error = r.error {

@@ -7,55 +7,65 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		260000000000000000000201 /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000101 /* AIService.swift */; };
-		260000000000000000000202 /* AgentContextProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000102 /* AgentContextProtocol.swift */; };
-		260000000000000000000203 /* AgentFileRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000103 /* AgentFileRepository.swift */; };
-		260000000000000000000204 /* AgentPatchEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000104 /* AgentPatchEngine.swift */; };
-		260000000000000000000205 /* AgentRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000105 /* AgentRunner.swift */; };
-		260000000000000000000206 /* AgentRunState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000106 /* AgentRunState.swift */; };
-		260000000000000000000207 /* BuiltinAgentTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000107 /* BuiltinAgentTools.swift */; };
-		260000000000000000000208 /* AgentBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000108 /* AgentBackend.swift */; };
-		260000000000000000000209 /* RestAgentBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000109 /* RestAgentBackend.swift */; };
-		26000000000000000000020A /* URLSessionProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26000000000000000000010A /* URLSessionProtocol.swift */; };
-		26000000000000000000020B /* DocumentTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26000000000000000000010B /* DocumentTools.swift */; };
-		26000000000000000000020C /* EditorTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26000000000000000000010C /* EditorTools.swift */; };
-		26000000000000000000020D /* WorkspaceTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26000000000000000000010D /* WorkspaceTools.swift */; };
-		26000000000000000000020E /* AgentTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26000000000000000000010E /* AgentTool.swift */; };
-		26000000000000000000020F /* AIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26000000000000000000010F /* AIModels.swift */; };
-		260000000000000000000210 /* AppError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000110 /* AppError.swift */; };
-		260000000000000000000211 /* AIConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000111 /* AIConversationStore.swift */; };
-		260000000000000000000212 /* Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000112 /* Localization.swift */; };
-		260000000000000000000214 /* TemplateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000114 /* TemplateStore.swift */; };
-		260000000000000000000215 /* BuiltinTemplates.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000115 /* BuiltinTemplates.swift */; };
+		260000000000000000000201 /* ../Sources/MEditor/Services/AI/AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000101 /* ../Sources/MEditor/Services/AI/AIService.swift */; };
+		260000000000000000000202 /* ../Sources/MEditor/Services/AI/Agent/AgentContextProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000102 /* ../Sources/MEditor/Services/AI/Agent/AgentContextProtocol.swift */; };
+		260000000000000000000203 /* ../Sources/MEditor/Services/AI/Agent/AgentFileRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000103 /* ../Sources/MEditor/Services/AI/Agent/AgentFileRepository.swift */; };
+		260000000000000000000204 /* ../Sources/MEditor/Services/AI/Agent/AgentPatchEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000104 /* ../Sources/MEditor/Services/AI/Agent/AgentPatchEngine.swift */; };
+		260000000000000000000205 /* ../Sources/MEditor/Services/AI/Agent/AgentRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000105 /* ../Sources/MEditor/Services/AI/Agent/AgentRunner.swift */; };
+		260000000000000000000206 /* ../Sources/MEditor/Services/AI/Agent/AgentRunState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000106 /* ../Sources/MEditor/Services/AI/Agent/AgentRunState.swift */; };
+		260000000000000000000207 /* ../Sources/MEditor/Services/AI/Agent/BuiltinAgentTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000107 /* ../Sources/MEditor/Services/AI/Agent/BuiltinAgentTools.swift */; };
+		260000000000000000000208 /* ../Sources/MEditor/Services/AI/Agent/Backends/AgentBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000108 /* ../Sources/MEditor/Services/AI/Agent/Backends/AgentBackend.swift */; };
+		260000000000000000000209 /* ../Sources/MEditor/Services/AI/Agent/Backends/RestAgentBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000109 /* ../Sources/MEditor/Services/AI/Agent/Backends/RestAgentBackend.swift */; };
+		26000000000000000000020A /* ../Sources/MEditor/Services/AI/Agent/Backends/URLSessionProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26000000000000000000010A /* ../Sources/MEditor/Services/AI/Agent/Backends/URLSessionProtocol.swift */; };
+		26000000000000000000020B /* ../Sources/MEditor/Services/AI/Agent/Tools/DocumentTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26000000000000000000010B /* ../Sources/MEditor/Services/AI/Agent/Tools/DocumentTools.swift */; };
+		26000000000000000000020C /* ../Sources/MEditor/Services/AI/Agent/Tools/EditorTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26000000000000000000010C /* ../Sources/MEditor/Services/AI/Agent/Tools/EditorTools.swift */; };
+		26000000000000000000020D /* ../Sources/MEditor/Services/AI/Agent/Tools/WorkspaceTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26000000000000000000010D /* ../Sources/MEditor/Services/AI/Agent/Tools/WorkspaceTools.swift */; };
+		26000000000000000000020E /* ../Sources/MEditor/Models/AgentTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26000000000000000000010E /* ../Sources/MEditor/Models/AgentTool.swift */; };
+		26000000000000000000020F /* ../Sources/MEditor/Models/AIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26000000000000000000010F /* ../Sources/MEditor/Models/AIModels.swift */; };
+		260000000000000000000210 /* ../Sources/MEditor/Models/AppError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000110 /* ../Sources/MEditor/Models/AppError.swift */; };
+		260000000000000000000211 /* ../Sources/MEditor/Managers/AIConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000111 /* ../Sources/MEditor/Managers/AIConversationStore.swift */; };
+		260000000000000000000212 /* ../Sources/MEditor/Services/Core/Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000112 /* ../Sources/MEditor/Services/Core/Localization.swift */; };
+		260000000000000000000214 /* ../Sources/MEditor/Services/Storage/TemplateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000114 /* ../Sources/MEditor/Services/Storage/TemplateStore.swift */; };
+		260000000000000000000215 /* ../Sources/MEditor/Templates/BuiltinTemplates.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000115 /* ../Sources/MEditor/Templates/BuiltinTemplates.swift */; };
+		2600000000000000000002F0 /* ../Sources/MEditor/Resources/Preview/mermaid.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001F0 /* ../Sources/MEditor/Resources/Preview/mermaid.min.js */; };
+		2600000000000000000002F1 /* ../Sources/MEditor/Views/Shared/MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001F1 /* ../Sources/MEditor/Views/Shared/MarkdownText.swift */; };
+		2600000000000000000002F2 /* ../Sources/MEditor/Services/Storage/Pasteboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001F2 /* ../Sources/MEditor/Services/Storage/Pasteboard.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		260000000000000000000003 /* MEditorMobile.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MEditorMobile.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		260000000000000000000009 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = MEditorMobile/Info.plist; sourceTree = "<group>"; };
-		260000000000000000000101 /* AIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/MEditor/Services/AI/AIService.swift"; sourceTree = "<group>"; };
-		260000000000000000000102 /* AgentContextProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/MEditor/Services/AI/Agent/AgentContextProtocol.swift"; sourceTree = "<group>"; };
-		260000000000000000000103 /* AgentFileRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/MEditor/Services/AI/Agent/AgentFileRepository.swift"; sourceTree = "<group>"; };
-		260000000000000000000104 /* AgentPatchEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/MEditor/Services/AI/Agent/AgentPatchEngine.swift"; sourceTree = "<group>"; };
-		260000000000000000000105 /* AgentRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/MEditor/Services/AI/Agent/AgentRunner.swift"; sourceTree = "<group>"; };
-		260000000000000000000106 /* AgentRunState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/MEditor/Services/AI/Agent/AgentRunState.swift"; sourceTree = "<group>"; };
-		260000000000000000000107 /* BuiltinAgentTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/MEditor/Services/AI/Agent/BuiltinAgentTools.swift"; sourceTree = "<group>"; };
-		260000000000000000000108 /* AgentBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/MEditor/Services/AI/Agent/Backends/AgentBackend.swift"; sourceTree = "<group>"; };
-		260000000000000000000109 /* RestAgentBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/MEditor/Services/AI/Agent/Backends/RestAgentBackend.swift"; sourceTree = "<group>"; };
-		26000000000000000000010A /* URLSessionProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/MEditor/Services/AI/Agent/Backends/URLSessionProtocol.swift"; sourceTree = "<group>"; };
-		26000000000000000000010B /* DocumentTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/MEditor/Services/AI/Agent/Tools/DocumentTools.swift"; sourceTree = "<group>"; };
-		26000000000000000000010C /* EditorTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/MEditor/Services/AI/Agent/Tools/EditorTools.swift"; sourceTree = "<group>"; };
-		26000000000000000000010D /* WorkspaceTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/MEditor/Services/AI/Agent/Tools/WorkspaceTools.swift"; sourceTree = "<group>"; };
-		26000000000000000000010E /* AgentTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/MEditor/Models/AgentTool.swift"; sourceTree = "<group>"; };
-		26000000000000000000010F /* AIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/MEditor/Models/AIModels.swift"; sourceTree = "<group>"; };
-		260000000000000000000110 /* AppError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/MEditor/Models/AppError.swift"; sourceTree = "<group>"; };
-		260000000000000000000111 /* AIConversationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/MEditor/Managers/AIConversationStore.swift"; sourceTree = "<group>"; };
-		260000000000000000000112 /* Localization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/MEditor/Services/Core/Localization.swift"; sourceTree = "<group>"; };
-		260000000000000000000114 /* TemplateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/MEditor/Services/Storage/TemplateStore.swift"; sourceTree = "<group>"; };
-		260000000000000000000115 /* BuiltinTemplates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/MEditor/Templates/BuiltinTemplates.swift"; sourceTree = "<group>"; };
+		260000000000000000000009 /* MEditorMobile/Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = MEditorMobile/Info.plist; sourceTree = "<group>"; };
+		260000000000000000000101 /* ../Sources/MEditor/Services/AI/AIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/AI/AIService.swift; sourceTree = "<group>"; };
+		260000000000000000000102 /* ../Sources/MEditor/Services/AI/Agent/AgentContextProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/AI/Agent/AgentContextProtocol.swift; sourceTree = "<group>"; };
+		260000000000000000000103 /* ../Sources/MEditor/Services/AI/Agent/AgentFileRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/AI/Agent/AgentFileRepository.swift; sourceTree = "<group>"; };
+		260000000000000000000104 /* ../Sources/MEditor/Services/AI/Agent/AgentPatchEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/AI/Agent/AgentPatchEngine.swift; sourceTree = "<group>"; };
+		260000000000000000000105 /* ../Sources/MEditor/Services/AI/Agent/AgentRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/AI/Agent/AgentRunner.swift; sourceTree = "<group>"; };
+		260000000000000000000106 /* ../Sources/MEditor/Services/AI/Agent/AgentRunState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/AI/Agent/AgentRunState.swift; sourceTree = "<group>"; };
+		260000000000000000000107 /* ../Sources/MEditor/Services/AI/Agent/BuiltinAgentTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/AI/Agent/BuiltinAgentTools.swift; sourceTree = "<group>"; };
+		260000000000000000000108 /* ../Sources/MEditor/Services/AI/Agent/Backends/AgentBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/AI/Agent/Backends/AgentBackend.swift; sourceTree = "<group>"; };
+		260000000000000000000109 /* ../Sources/MEditor/Services/AI/Agent/Backends/RestAgentBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/AI/Agent/Backends/RestAgentBackend.swift; sourceTree = "<group>"; };
+		26000000000000000000010A /* ../Sources/MEditor/Services/AI/Agent/Backends/URLSessionProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/AI/Agent/Backends/URLSessionProtocol.swift; sourceTree = "<group>"; };
+		26000000000000000000010B /* ../Sources/MEditor/Services/AI/Agent/Tools/DocumentTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/AI/Agent/Tools/DocumentTools.swift; sourceTree = "<group>"; };
+		26000000000000000000010C /* ../Sources/MEditor/Services/AI/Agent/Tools/EditorTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/AI/Agent/Tools/EditorTools.swift; sourceTree = "<group>"; };
+		26000000000000000000010D /* ../Sources/MEditor/Services/AI/Agent/Tools/WorkspaceTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/AI/Agent/Tools/WorkspaceTools.swift; sourceTree = "<group>"; };
+		26000000000000000000010E /* ../Sources/MEditor/Models/AgentTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Models/AgentTool.swift; sourceTree = "<group>"; };
+		26000000000000000000010F /* ../Sources/MEditor/Models/AIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Models/AIModels.swift; sourceTree = "<group>"; };
+		260000000000000000000110 /* ../Sources/MEditor/Models/AppError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Models/AppError.swift; sourceTree = "<group>"; };
+		260000000000000000000111 /* ../Sources/MEditor/Managers/AIConversationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Managers/AIConversationStore.swift; sourceTree = "<group>"; };
+		260000000000000000000112 /* ../Sources/MEditor/Services/Core/Localization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/Core/Localization.swift; sourceTree = "<group>"; };
+		260000000000000000000114 /* ../Sources/MEditor/Services/Storage/TemplateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/Storage/TemplateStore.swift; sourceTree = "<group>"; };
+		260000000000000000000115 /* ../Sources/MEditor/Templates/BuiltinTemplates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Templates/BuiltinTemplates.swift; sourceTree = "<group>"; };
+		2600000000000000000001F0 /* ../Sources/MEditor/Resources/Preview/mermaid.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ../Sources/MEditor/Resources/Preview/mermaid.min.js; sourceTree = "<group>"; };
+		2600000000000000000001F1 /* ../Sources/MEditor/Views/Shared/MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Views/Shared/MarkdownText.swift; sourceTree = "<group>"; };
+		2600000000000000000001F2 /* ../Sources/MEditor/Services/Storage/Pasteboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/Storage/Pasteboard.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		260000000000000000000006 /* Sources */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Sources; sourceTree = "<group>"; };
+		260000000000000000000006 /* Sources */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Sources;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -90,26 +100,29 @@
 		260000000000000000000007 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
-				260000000000000000000101 /* AIService.swift */,
-				260000000000000000000102 /* AgentContextProtocol.swift */,
-				260000000000000000000103 /* AgentFileRepository.swift */,
-				260000000000000000000104 /* AgentPatchEngine.swift */,
-				260000000000000000000105 /* AgentRunner.swift */,
-				260000000000000000000106 /* AgentRunState.swift */,
-				260000000000000000000107 /* BuiltinAgentTools.swift */,
-				260000000000000000000108 /* AgentBackend.swift */,
-				260000000000000000000109 /* RestAgentBackend.swift */,
-				26000000000000000000010A /* URLSessionProtocol.swift */,
-				26000000000000000000010B /* DocumentTools.swift */,
-				26000000000000000000010C /* EditorTools.swift */,
-				26000000000000000000010D /* WorkspaceTools.swift */,
-				26000000000000000000010E /* AgentTool.swift */,
-				26000000000000000000010F /* AIModels.swift */,
-				260000000000000000000110 /* AppError.swift */,
-				260000000000000000000111 /* AIConversationStore.swift */,
-				260000000000000000000112 /* Localization.swift */,
-				260000000000000000000114 /* TemplateStore.swift */,
-				260000000000000000000115 /* BuiltinTemplates.swift */,
+				260000000000000000000101 /* ../Sources/MEditor/Services/AI/AIService.swift */,
+				260000000000000000000102 /* ../Sources/MEditor/Services/AI/Agent/AgentContextProtocol.swift */,
+				260000000000000000000103 /* ../Sources/MEditor/Services/AI/Agent/AgentFileRepository.swift */,
+				260000000000000000000104 /* ../Sources/MEditor/Services/AI/Agent/AgentPatchEngine.swift */,
+				260000000000000000000105 /* ../Sources/MEditor/Services/AI/Agent/AgentRunner.swift */,
+				260000000000000000000106 /* ../Sources/MEditor/Services/AI/Agent/AgentRunState.swift */,
+				260000000000000000000107 /* ../Sources/MEditor/Services/AI/Agent/BuiltinAgentTools.swift */,
+				260000000000000000000108 /* ../Sources/MEditor/Services/AI/Agent/Backends/AgentBackend.swift */,
+				260000000000000000000109 /* ../Sources/MEditor/Services/AI/Agent/Backends/RestAgentBackend.swift */,
+				26000000000000000000010A /* ../Sources/MEditor/Services/AI/Agent/Backends/URLSessionProtocol.swift */,
+				26000000000000000000010B /* ../Sources/MEditor/Services/AI/Agent/Tools/DocumentTools.swift */,
+				26000000000000000000010C /* ../Sources/MEditor/Services/AI/Agent/Tools/EditorTools.swift */,
+				26000000000000000000010D /* ../Sources/MEditor/Services/AI/Agent/Tools/WorkspaceTools.swift */,
+				26000000000000000000010E /* ../Sources/MEditor/Models/AgentTool.swift */,
+				26000000000000000000010F /* ../Sources/MEditor/Models/AIModels.swift */,
+				260000000000000000000110 /* ../Sources/MEditor/Models/AppError.swift */,
+				260000000000000000000111 /* ../Sources/MEditor/Managers/AIConversationStore.swift */,
+				260000000000000000000112 /* ../Sources/MEditor/Services/Core/Localization.swift */,
+				260000000000000000000114 /* ../Sources/MEditor/Services/Storage/TemplateStore.swift */,
+				260000000000000000000115 /* ../Sources/MEditor/Templates/BuiltinTemplates.swift */,
+				2600000000000000000001F0 /* ../Sources/MEditor/Resources/Preview/mermaid.min.js */,
+				2600000000000000000001F1 /* ../Sources/MEditor/Views/Shared/MarkdownText.swift */,
+				2600000000000000000001F2 /* ../Sources/MEditor/Services/Storage/Pasteboard.swift */,
 			);
 			name = Shared;
 			sourceTree = "<group>";
@@ -117,7 +130,7 @@
 		260000000000000000000008 /* MEditorMobile */ = {
 			isa = PBXGroup;
 			children = (
-				260000000000000000000009 /* Info.plist */,
+				260000000000000000000009 /* MEditorMobile/Info.plist */,
 			);
 			name = MEditorMobile;
 			sourceTree = "<group>";
@@ -170,6 +183,7 @@
 				Base,
 			);
 			mainGroup = 260000000000000000000004;
+			preferredProjectObjectVersion = 77;
 			productRefGroup = 260000000000000000000005 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -184,6 +198,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2600000000000000000002F0 /* ../Sources/MEditor/Resources/Preview/mermaid.min.js in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -194,26 +209,28 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				260000000000000000000201 /* AIService.swift in Sources */,
-				260000000000000000000202 /* AgentContextProtocol.swift in Sources */,
-				260000000000000000000203 /* AgentFileRepository.swift in Sources */,
-				260000000000000000000204 /* AgentPatchEngine.swift in Sources */,
-				260000000000000000000205 /* AgentRunner.swift in Sources */,
-				260000000000000000000206 /* AgentRunState.swift in Sources */,
-				260000000000000000000207 /* BuiltinAgentTools.swift in Sources */,
-				260000000000000000000208 /* AgentBackend.swift in Sources */,
-				260000000000000000000209 /* RestAgentBackend.swift in Sources */,
-				26000000000000000000020A /* URLSessionProtocol.swift in Sources */,
-				26000000000000000000020B /* DocumentTools.swift in Sources */,
-				26000000000000000000020C /* EditorTools.swift in Sources */,
-				26000000000000000000020D /* WorkspaceTools.swift in Sources */,
-				26000000000000000000020E /* AgentTool.swift in Sources */,
-				26000000000000000000020F /* AIModels.swift in Sources */,
-				260000000000000000000210 /* AppError.swift in Sources */,
-				260000000000000000000211 /* AIConversationStore.swift in Sources */,
-				260000000000000000000212 /* Localization.swift in Sources */,
-				260000000000000000000214 /* TemplateStore.swift in Sources */,
-				260000000000000000000215 /* BuiltinTemplates.swift in Sources */,
+				260000000000000000000201 /* ../Sources/MEditor/Services/AI/AIService.swift in Sources */,
+				260000000000000000000202 /* ../Sources/MEditor/Services/AI/Agent/AgentContextProtocol.swift in Sources */,
+				260000000000000000000203 /* ../Sources/MEditor/Services/AI/Agent/AgentFileRepository.swift in Sources */,
+				260000000000000000000204 /* ../Sources/MEditor/Services/AI/Agent/AgentPatchEngine.swift in Sources */,
+				260000000000000000000205 /* ../Sources/MEditor/Services/AI/Agent/AgentRunner.swift in Sources */,
+				260000000000000000000206 /* ../Sources/MEditor/Services/AI/Agent/AgentRunState.swift in Sources */,
+				260000000000000000000207 /* ../Sources/MEditor/Services/AI/Agent/BuiltinAgentTools.swift in Sources */,
+				260000000000000000000208 /* ../Sources/MEditor/Services/AI/Agent/Backends/AgentBackend.swift in Sources */,
+				260000000000000000000209 /* ../Sources/MEditor/Services/AI/Agent/Backends/RestAgentBackend.swift in Sources */,
+				26000000000000000000020A /* ../Sources/MEditor/Services/AI/Agent/Backends/URLSessionProtocol.swift in Sources */,
+				26000000000000000000020B /* ../Sources/MEditor/Services/AI/Agent/Tools/DocumentTools.swift in Sources */,
+				26000000000000000000020C /* ../Sources/MEditor/Services/AI/Agent/Tools/EditorTools.swift in Sources */,
+				26000000000000000000020D /* ../Sources/MEditor/Services/AI/Agent/Tools/WorkspaceTools.swift in Sources */,
+				26000000000000000000020E /* ../Sources/MEditor/Models/AgentTool.swift in Sources */,
+				26000000000000000000020F /* ../Sources/MEditor/Models/AIModels.swift in Sources */,
+				260000000000000000000210 /* ../Sources/MEditor/Models/AppError.swift in Sources */,
+				260000000000000000000211 /* ../Sources/MEditor/Managers/AIConversationStore.swift in Sources */,
+				260000000000000000000212 /* ../Sources/MEditor/Services/Core/Localization.swift in Sources */,
+				260000000000000000000214 /* ../Sources/MEditor/Services/Storage/TemplateStore.swift in Sources */,
+				260000000000000000000215 /* ../Sources/MEditor/Templates/BuiltinTemplates.swift in Sources */,
+				2600000000000000000002F1 /* ../Sources/MEditor/Views/Shared/MarkdownText.swift in Sources */,
+				2600000000000000000002F2 /* ../Sources/MEditor/Services/Storage/Pasteboard.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -345,7 +362,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 6Z56UQ4ZJN;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST = NO;
 				INFOPLIST_FILE = MEditorMobile/Info.plist;
@@ -367,7 +384,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 6Z56UQ4ZJN;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST = NO;
 				INFOPLIST_FILE = MEditorMobile/Info.plist;

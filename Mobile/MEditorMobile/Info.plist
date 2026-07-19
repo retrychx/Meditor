@@ -23,6 +23,8 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<false/>
+	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>CFBundleDocumentTypes</key>
 	<array>

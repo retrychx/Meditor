@@ -13,3 +13,7 @@ workspaces/*/session/conversations/
 
 # Mobile (iOS) build artifacts
 Mobile/.derivedData
+
+# Xcode user state
+xcuserdata/
+*.xcuserstate

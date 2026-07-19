@@ -142,49 +142,6 @@ struct PaperCircleButtonStyle: ButtonStyle {
     }
 }
 
-/// 纸墨分段选择器：纸色轨道 + 白色选中块 + 小圆角 + 极轻阴影。
-struct PaperSegmentedPicker<Value: Hashable>: View {
-    struct Item {
-        let title: String
-        let value: Value
-    }
-
-    let items: [Item]
-    @Binding var selection: Value
-
-    init(items: [(String, Value)], selection: Binding<Value>) {
-        self.items = items.map { Item(title: $0.0, value: $0.1) }
-        self._selection = selection
-    }
-
-    var body: some View {
-        HStack(spacing: 2) {
-            ForEach(items, id: \.value) { item in
-                let selected = item.value == selection
-                Button {
-                    withAnimation(.snappy(duration: 0.18)) { selection = item.value }
-                } label: {
-                    Text(item.title)
-                        .font(.subheadline.weight(selected ? .semibold : .regular))
-                        .foregroundStyle(selected ? PaperTheme.ink : PaperTheme.inkSecondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                        .background {
-                            if selected {
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .fill(PaperTheme.card)
-                                    .shadow(color: .black.opacity(0.08), radius: 4, y: 1)
-                            }
-                        }
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(3)
-        .background(PaperTheme.hairline.opacity(0.75), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-    }
-}
-
 // MARK: - UIKit 外观（导航栏 / 标签栏 / 列表分隔线）
 
 enum PaperAppearance {

@@ -50,6 +50,25 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    ForEach(MobileSkills.all) { skill in
+                        Toggle(isOn: skillBinding(skill.id)) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Label(skill.name, systemImage: skill.icon)
+                                Text(skill.description)
+                                    .font(.footnote)
+                                    .foregroundStyle(PaperTheme.inkSecondary)
+                            }
+                        }
+                    }
+                } header: {
+                    sectionHeader("AI 技能")
+                } footer: {
+                    Text("启用的技能会注入 AI 对话，并在输入栏上方提供快捷指令。")
+                        .font(.footnote)
+                        .foregroundStyle(PaperTheme.inkSecondary)
+                }
+
+                Section {
                     Text("配置仅保存在本机，更改即刻生效。移动端暂不支持本地 Claude CLI。")
                         .font(.footnote)
                         .foregroundStyle(PaperTheme.inkSecondary)
@@ -67,6 +86,14 @@ struct SettingsView: View {
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
             .foregroundStyle(PaperTheme.inkSecondary)
+    }
+
+    /// 技能开关绑定：读写 MobileSkillStore 单例。
+    private func skillBinding(_ id: String) -> Binding<Bool> {
+        Binding(
+            get: { MobileSkillStore.shared.isEnabled(id) },
+            set: { MobileSkillStore.shared.setEnabled(id, $0) }
+        )
     }
 
     /// 预设选择：匹配当前 baseURL 的预设，否则 "custom"。

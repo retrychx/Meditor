@@ -215,8 +215,6 @@ final class AppState {
         get { aiUI.showingAssistant }
         set { aiUI.showingAssistant = newValue }
     }
-    var externallyModifiedTab: EditorTab?
-    var showingReloadPrompt = false
     var showingBeautifySheet = false {
         didSet { if showingBeautifySheet { showingQuickOpen = false } }
     }

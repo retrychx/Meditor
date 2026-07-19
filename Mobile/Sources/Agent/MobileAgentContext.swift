@@ -24,7 +24,7 @@ final class MobileAgentContext: AgentContextProtocol {
     var currentDocumentName: String? { store.hasDocument ? store.fileName : nil }
 
     func writeDocument(_ content: String) throws {
-        try store.replaceContent(content)
+        try store.noteAIReplace(content)
     }
 
     @discardableResult
@@ -37,7 +37,7 @@ final class MobileAgentContext: AgentContextProtocol {
                 nearbyContext: PatchEngine.nearbyContext(in: store.text, around: find)
             )
         }
-        try store.replaceContent(updated)
+        try store.noteAIReplace(updated)
         return count
     }
 
@@ -45,7 +45,7 @@ final class MobileAgentContext: AgentContextProtocol {
     func insertIntoDocument(_ text: String) {
         guard store.hasDocument else { return }
         let separator = store.text.hasSuffix("\n") || store.text.isEmpty ? "" : "\n"
-        try? store.replaceContent(store.text + separator + text)
+        try? store.noteAIReplace(store.text + separator + text)
     }
 
     @discardableResult
