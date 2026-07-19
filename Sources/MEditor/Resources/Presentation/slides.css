@@ -1,0 +1,140 @@
+/* MEditor 演讲模式样式。颜色变量来自 themes.css 的 .theme-*。 */
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  overflow: hidden;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+/* 16:9 舞台，窗口内居中 */
+#stage {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  aspect-ratio: 16 / 9;
+  max-width: 100vw;
+  max-height: 100vh;
+}
+
+/* 所有页绝对定位叠放，靠 .active 显隐 */
+.slide {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 5vh 7vw;
+  box-sizing: border-box;
+  overflow: hidden;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(32px);
+  transition: opacity .28s ease, transform .28s ease, visibility 0s linear .28s;
+}
+.slide.active {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition: opacity .28s ease, transform .28s ease;
+}
+
+.slide-content {
+  width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  font-size: 3vh;
+  line-height: 1.55;
+}
+
+.slide-content h1, .slide-content h2, .slide-content h3,
+.slide-content h4, .slide-content h5, .slide-content h6 {
+  color: var(--heading);
+  line-height: 1.25;
+  margin: 0.6em 0 0.4em;
+}
+.slide-content h1 { font-size: 2.1em; }
+.slide-content h2 { font-size: 1.7em; }
+.slide-content h3 { font-size: 1.4em; }
+.slide-content h4 { font-size: 1.15em; }
+
+.slide-content p { margin: 0.5em 0; }
+
+.slide-content ul, .slide-content ol {
+  margin: 0.5em 0;
+  padding-left: 1.6em;
+}
+.slide-content li { margin: 0.3em 0; }
+
+.slide-content a { color: var(--link); text-decoration: none; }
+
+.slide-content code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 0.15em 0.4em;
+}
+
+.slide-content pre {
+  background: var(--code-bg);
+  border-radius: 10px;
+  padding: 0.8em 1em;
+  overflow: hidden;
+  font-size: 0.72em;
+  line-height: 1.45;
+}
+.slide-content pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 1em;
+}
+
+.slide-content blockquote {
+  margin: 0.6em 0;
+  padding: 0.2em 0 0.2em 0.9em;
+  border-left: 4px solid var(--blockquote-border);
+  color: var(--blockquote-text);
+}
+
+.slide-content img {
+  max-width: 100%;
+  max-height: 55vh;
+  object-fit: contain;
+}
+
+.slide-content table {
+  border-collapse: collapse;
+  margin: 0.6em 0;
+  font-size: 0.8em;
+}
+.slide-content th, .slide-content td {
+  border: 1px solid var(--table-border);
+  padding: 0.3em 0.7em;
+}
+.slide-content th { background: var(--table-bg); }
+.slide-content tr:nth-child(even) { background: var(--table-bg); }
+
+.slide-content hr {
+  border: none;
+  border-top: 1px solid var(--hr);
+  margin: 1em 0;
+}
+
+/* 页码 */
+#indicator {
+  position: fixed;
+  right: 28px;
+  bottom: 20px;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  opacity: 0.4;
+}

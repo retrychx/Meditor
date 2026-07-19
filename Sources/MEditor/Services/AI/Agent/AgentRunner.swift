@@ -33,6 +33,10 @@ final class AgentRunner {
         get { state.error }
         set { state.error = newValue }
     }
+    var wasTruncated: Bool {
+        get { state.wasTruncated }
+        set { state.wasTruncated = newValue }
+    }
     /// 运行完成后暴露的完整 AgentMessage 列表（含工具调用上下文）
     private(set) var finalMessages: [AgentMessage] = []
 
@@ -104,6 +108,7 @@ final class AgentRunner {
         steps              = []
         finalText          = ""
         error              = nil
+        wasTruncated       = false
         lastThinkingIndex  = nil
         isRunning          = true
 
@@ -192,6 +197,11 @@ final class AgentRunner {
                     }
                 )
 
+                // 输出被 max_tokens 截断：置位标记由 UI 提示，不自动续跑（避免死循环）
+                if response.finishReason == "length" || response.finishReason == "max_tokens" {
+                    wasTruncated = true
+                }
+
                 if !response.toolCalls.isEmpty {
                     removeLastThinking()
 
@@ -207,7 +217,17 @@ final class AgentRunner {
                         addToolCall(id: call.id, name: call.name, args: prettyArgs(call.arguments))
 
                         var result: AgentToolResult
-                        if call.name == "_parse_error" {
+                        if let parseError = call.argumentsParseError {
+                            // 参数 JSON 非法（对所有后端生效，同 ClaudeCLIBackend 的 _parse_error）：
+                            // 跳过执行，直接回灌错误，让模型重新生成合法 JSON
+                            let raw = call.rawArgumentsJSON ?? ""
+                            result = AgentToolResult(
+                                toolCallID: call.id,
+                                toolName:   call.name,
+                                content: "工具 '\(call.name)' 的参数 JSON 解析失败（\(parseError)），未执行。\n原始参数：\(raw.prefix(200))\n请重新生成合法的 JSON 参数后再调用该工具。",
+                                isError: true
+                            )
+                        } else if call.name == "_parse_error" {
                             // ClaudeCLIBackend 注入的占位工具：JSON 解析失败，让 AI 看到错误后重试
                             let args     = call.arguments
                             let original = args["original_tool"]?.stringValue ?? "unknown"
@@ -261,14 +281,20 @@ final class AgentRunner {
                 break
             } catch {
                 removeLastThinking()
-                self.error = error.localizedDescription
+                self.error = classifyError(error)
                 break
             }
         }
 
-        if stepCount >= maxSteps {
+        // 仅当循环耗尽且既无最终答案也无更具体错误时才报步数超限：
+        // 最终答案恰好在第 maxSteps 轮拿到时不应误报错误
+        if stepCount >= maxSteps && finalText.isEmpty && error == nil {
             self.error = "Agent 执行超过最大步数（\(maxSteps)）"
         }
+
+        // 异常结束（cancel/timeout/error）时，为未应答的 tool call 补合成 error tool result，
+        // 保证 tool_calls 与 tool result 严格配对，避免坏历史下一轮被 API 400 拒绝
+        messages = reconcileToolResults(messages)
 
         finalMessages     = messages
         isRunning         = false
@@ -314,6 +340,44 @@ final class AgentRunner {
     }
 
     // MARK: - Helpers
+
+    /// 将后端错误分类为统一的中文可操作文案；未识别的错误保留原始信息
+    private func classifyError(_ error: Error) -> String {
+        if let aiError = error as? AIError, case .server(let code, _) = aiError {
+            switch code {
+            case 401, 403: return "鉴权失败（HTTP \(code)），请检查 API Key 是否正确"
+            case 429:      return "请求过于频繁或额度不足（HTTP 429），请稍后重试"
+            default:       break
+            }
+        }
+        if let urlError = error as? URLError {
+            if urlError.code == .timedOut {
+                return "请求超时，请检查网络连接后重试"
+            }
+            return "网络连接失败：\(urlError.localizedDescription)"
+        }
+        return error.localizedDescription
+    }
+
+    /// 为没有对应 tool result 的 tool call 追加合成的中断结果（紧跟其 assistant 消息之后），
+    /// 保证持久化历史中 tool_calls 与 tool result 严格配对
+    private func reconcileToolResults(_ messages: [AgentMessage]) -> [AgentMessage] {
+        let answered = Set(messages.compactMap { $0.role == .tool ? $0.toolCallID : nil })
+        var result: [AgentMessage] = []
+        for message in messages {
+            result.append(message)
+            guard message.role == .assistant, let calls = message.toolCalls else { continue }
+            for call in calls where !answered.contains(call.id) {
+                result.append(AgentMessage(
+                    role: .tool,
+                    content: "错误：运行被中断，该工具调用未执行。",
+                    toolCallID: call.id,
+                    toolName: call.name
+                ))
+            }
+        }
+        return result
+    }
 
     private func prettyArgs(_ args: [String: AnySendableValue]) -> String {
         guard !args.isEmpty else { return "{}" }

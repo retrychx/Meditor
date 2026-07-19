@@ -38,6 +38,7 @@ final class AppState {
     let githubGistManager: GitHubGistManager
     let templateManager: TemplateManager
     let pluginManager: PluginManager
+    let presentationManager: PresentationManager
 
     /// AI assistant conversation store (multi-session, persisted).
     /// Lazy so disk I/O is deferred until the AI panel is first opened.
@@ -272,6 +273,7 @@ final class AppState {
         self.githubGistManager = GitHubGistManager()
         self.templateManager = TemplateManager()
         self.pluginManager   = PluginManager()
+        self.presentationManager = PresentationManager()
         wireTabManagerCallbacks()
         setupAutoSaveTimer()
         pluginManager.load()
@@ -500,6 +502,68 @@ final class AppState {
                 showToast("已新增待办到 \(targetURL.lastPathComponent)", icon: "checkmark.circle")
             } catch {
                 setError(error.localizedDescription)
+            }
+        }
+    }
+
+    // MARK: - Presentation Mode
+
+    /// 是否正在演讲模式放映中。
+    var isPresenting: Bool { presentationManager.isPresenting }
+
+    /// 放映期间的主题跟踪是否已注册（withObservationTracking 单次触发，防止重复挂链）。
+    @ObservationIgnored private var isObservingPresentationTheme = false
+
+    /// 以当前选中的 Markdown 文档进入演讲模式（无选中或非 Markdown 时无操作）。
+    func startPresentation() {
+        guard let tab = selectedTab, tab.language == .markdown else { return }
+        presentationManager.start(markdown: tab.content, sourceURL: tab.url, theme: themeStore.current)
+        // 放映期间跟踪预览主题切换，实时同步到放映页
+        if presentationManager.isPresenting {
+            observePresentationThemeChanges()
+        }
+    }
+
+    /// 把当前 Markdown 文档导出为单文件自包含的演讲 HTML（无选中或非 Markdown 时无操作）。
+    func exportPresentation() {
+        guard let tab = selectedTab, tab.language == .markdown else { return }
+        let slides = SlideSplitter.split(tab.content)
+        // file:// 形式的 <base href>，使导出的 HTML 在浏览器中能加载相对路径图片
+        let baseHref = tab.url.deletingLastPathComponent().absoluteString
+        guard let html = PresentationExporter.makeHTML(slides: slides, theme: themeStore.current, baseHref: baseHref) else {
+            showToast("演讲模式资源缺失，无法导出", icon: "exclamationmark.triangle")
+            return
+        }
+
+        let savePanel = NSSavePanel()
+        savePanel.canCreateDirectories = true
+        savePanel.title = "Export Presentation"
+        savePanel.nameFieldStringValue = tab.url.deletingPathExtension().lastPathComponent + "-slides.html"
+        savePanel.allowedContentTypes = [.html]
+        savePanel.begin { response in
+            guard response == .OK, let url = savePanel.url else { return }
+            do {
+                try html.write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                self.setError(error.localizedDescription)
+            }
+        }
+    }
+
+    /// 放映期间用 withObservationTracking 跟踪预览主题并转发给放映窗口。
+    /// 该跟踪单次触发，因此每次变化后需要续订，直到放映结束。
+    private func observePresentationThemeChanges() {
+        guard !isObservingPresentationTheme else { return }
+        isObservingPresentationTheme = true
+        withObservationTracking {
+            _ = themeStore.current
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.isObservingPresentationTheme = false
+                guard self.presentationManager.isPresenting else { return }
+                self.presentationManager.applyTheme(self.themeStore.current)
+                self.observePresentationThemeChanges()
             }
         }
     }

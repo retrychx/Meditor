@@ -10,3 +10,6 @@ workspaces/*/session/conversations/
 
 # Release artifacts
 *.dmg
+
+# Mobile (iOS) build artifacts
+Mobile/.derivedData
