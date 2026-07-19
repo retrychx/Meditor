@@ -40,6 +40,11 @@ struct RootView: View {
             // 透明度隐藏，隐藏页的 UINavigationBar（UIKit 层）仍会盖住底部页面
             // 吃掉导航栏按钮的点击——工具栏按钮因此全部失灵（本组件此前的回归）。
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .id(tab)
+            .transition(.asymmetric(
+                insertion: .opacity.combined(with: .offset(y: 10)),
+                removal: .opacity
+            ))
             .animation(PaperTheme.Motion.standard, value: tab)
             tabBar
         }

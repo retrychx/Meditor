@@ -14,6 +14,7 @@ struct AIChatView: View {
     /// 技能 chips / 空态的入场动画开关。
     @State private var chipsAppeared = false
     @State private var emptyStateVisible = false
+    @State private var sealStamped = false
 
     /// 列表底部锚点 id（贴底检测与滚动目标共用）。
     private let bottomAnchorID = "chat-bottom"
@@ -233,8 +234,12 @@ struct AIChatView: View {
                     .background(PaperTheme.card, in: RoundedRectangle(cornerRadius: PaperTheme.Radius.xlarge, style: .continuous))
                     .overlay {
                         RoundedRectangle(cornerRadius: PaperTheme.Radius.xlarge, style: .continuous)
-                            .strokeBorder(PaperTheme.hairline, lineWidth: 1)
+                            .strokeBorder(
+                                inputFocused ? PaperTheme.accent.opacity(0.55) : PaperTheme.hairline,
+                                lineWidth: 1
+                            )
                     }
+                    .animation(PaperTheme.Motion.quick, value: inputFocused)
                 if model.isResponding {
                     Button(action: model.cancel) {
                         Image(systemName: "stop.fill")
@@ -249,6 +254,8 @@ struct AIChatView: View {
                     .buttonStyle(PaperCircleButtonStyle())
                     .disabled(!canSend)
                     .opacity(canSend ? 1 : 0.35)
+                    .scaleEffect(canSend ? 1 : 0.88)
+                    .animation(PaperTheme.Motion.quick, value: canSend)
                     .accessibilityLabel("发送")
                 }
             }
@@ -313,6 +320,9 @@ struct AIChatView: View {
                     .foregroundStyle(PaperTheme.ink)
                 SealStamp(size: 22)
                     .alignmentGuide(.lastTextBaseline) { $0[.bottom] }
+                    .scaleEffect(sealStamped ? 1 : 1.8)
+                    .opacity(sealStamped ? 1 : 0)
+                    .rotationEffect(.degrees(sealStamped ? 0 : 12))
             }
             Text("问点什么，或让 AI 帮你修改当前文档。")
                 .font(.subheadline)
@@ -325,6 +335,9 @@ struct AIChatView: View {
         .offset(y: emptyStateVisible ? 0 : 14)
         .onAppear {
             withAnimation(PaperTheme.Motion.gentle) { emptyStateVisible = true }
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.62).delay(0.4)) {
+                sealStamped = true
+            }
         }
         // 空态下点击空白处收回键盘
         .onTapGesture { inputFocused = false }

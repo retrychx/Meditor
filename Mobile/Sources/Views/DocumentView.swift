@@ -13,6 +13,11 @@ struct DocumentView: View {
     @State private var contentScrolled = false
     /// 空态入场动画开关。
     @State private var emptyStateVisible = false
+    /// FAB：下滚收起、回滚唤回。
+    @State private var fabHidden = false
+    @State private var lastScrollY: CGFloat = 0
+    /// 空态印章「盖下」动画开关。
+    @State private var sealStamped = false
 
     /// 可导入的文件类型：Markdown / HTML / 纯文本。
     private static let importableTypes: [UTType] = [
@@ -49,6 +54,11 @@ struct DocumentView: View {
             .animation(PaperTheme.Motion.gentle, value: transparentHeader)
             .onPreferenceChange(PreviewScrollOffsetKey.self) { minY in
                 contentScrolled = minY < -8
+                // 下滚（minY 变小）收 FAB，回滚唤回；6pt 滞回防抖
+                let delta = minY - lastScrollY
+                if delta < -6 { fabHidden = true }
+                else if delta > 6 { fabHidden = false }
+                lastScrollY = minY
             }
             .toolbar {
                 // 标题自绘：文档文件名 / 品牌字保留衬线（UI chrome 其余部分是无衬线）。
@@ -109,12 +119,14 @@ struct DocumentView: View {
         }
     }
 
-    /// 悬浮 AI 钮：单钮 FAB，强调色底 + 同色柔投影。
+    /// 悬浮 AI 钮：单钮 FAB，朱砂底 + 同色柔投影；图标微光闪烁，
+    /// 下滚缩小收起、回滚唤回。
     private var aiFab: some View {
         Button { showingAIChat = true } label: {
             Image(systemName: "sparkles")
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(.white)
+                .symbolEffect(.variableColor.iterative, options: .repeating)
                 .frame(width: 50, height: 50)
                 .background(PaperTheme.accent, in: Circle())
                 .overlay { Circle().strokeBorder(.white.opacity(0.25), lineWidth: 0.5) }
@@ -122,6 +134,10 @@ struct DocumentView: View {
         }
         .buttonStyle(.pressable)
         .accessibilityLabel("AI 助手")
+        .scaleEffect(fabHidden ? 0.5 : 1)
+        .opacity(fabHidden ? 0 : 1)
+        .allowsHitTesting(!fabHidden)
+        .animation(PaperTheme.Motion.quick, value: fabHidden)
     }
 
     /// 单钮模式切换：预览态显示铅笔（点去编辑），编辑态显示文档（点去预览）。
@@ -209,8 +225,12 @@ struct DocumentView: View {
                 Text("MEditor")
                     .font(PaperTheme.Typography.brandTitle())
                     .foregroundStyle(PaperTheme.ink)
+                // 印章「盖下」：放大淡入后弹落到名旁，像真章落纸
                 SealStamp(size: 28)
                     .offset(y: 4)
+                    .scaleEffect(sealStamped ? 1 : 1.8)
+                    .opacity(sealStamped ? 1 : 0)
+                    .rotationEffect(.degrees(sealStamped ? 0 : 12))
             }
             .padding(.top, 26)
 
@@ -243,6 +263,10 @@ struct DocumentView: View {
         .offset(y: emptyStateVisible ? 0 : 14)
         .onAppear {
             withAnimation(PaperTheme.Motion.gentle) { emptyStateVisible = true }
+            // 印章晚半拍盖下，等名字先落纸
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.62).delay(0.4)) {
+                sealStamped = true
+            }
         }
     }
 }
