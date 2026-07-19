@@ -52,32 +52,29 @@ extension AppState {
               tabManager.openTabs.contains(where: { $0.id == tab.id }),
               !tab.isModified   // 就地再检查一次，防止异步间用户已编辑
         else { return }
-        externallyModifiedTab = tab
-        showingReloadPrompt   = true
+        silentlyReloadTab(tab, url: url)
     }
 
-    func reloadExternallyModifiedTab() {
-        guard let tab = externallyModifiedTab else { return }
-        let url = tab.url, tabID = tab.id
-        showingReloadPrompt = false; externallyModifiedTab = nil
+    /// 本地无未保存改动的 tab 被外部修改时，直接静默重载（无需打断用户的弹窗）。
+    /// 有未保存改动的 tab 在快照阶段已被过滤，永远不会走到这里。
+    private func silentlyReloadTab(_ tab: EditorTab, url: URL) {
+        let tabID = tab.id
         Task.detached(priority: .userInitiated) { [weak self, svc = fileService] in
             guard let content = try? svc.readFile(at: url) else { return }
             await MainActor.run { [weak self] in
                 guard let self,
-                      let t = self.tabManager.openTabs.first(where: { $0.id == tabID }) else { return }
+                      let t = self.tabManager.openTabs.first(where: { $0.id == tabID }),
+                      !t.isModified else { return }
                 t.content = content; t.isModified = false
+                t.contentRevision &+= 1   // 推送到可见编辑器
                 self.recordModDate(for: url)
                 if self.tabManager.selectedTabID == tabID {
                     self.syncPreviewContent(from: t)
                     self.previewManager.reloadHTML(url: url)
                 }
+                self.showToast("已从磁盘更新：\(url.lastPathComponent)", icon: "arrow.triangle.2.circlepath")
             }
         }
-    }
-
-    func dismissReloadPrompt() {
-        if let tab = externallyModifiedTab { recordModDate(for: tab.url) }
-        showingReloadPrompt = false; externallyModifiedTab = nil
     }
 
     // MARK: - Auto-save

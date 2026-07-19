@@ -6,6 +6,7 @@ struct DocumentActionBar: View {
     @Environment(AppState.self) private var state
 
     @State private var hoveredAction: String? = nil
+    @State private var isExpanded = true
 
     private var theme: PreviewTheme { state.themeStore.current }
 
@@ -40,6 +41,29 @@ struct DocumentActionBar: View {
 
     var body: some View {
         HStack(spacing: 0) {
+            if isExpanded {
+                expandedContent
+                    .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .trailing)))
+            } else {
+                collapsedHandle
+                    .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .trailing)))
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+        .shadow(color: .black.opacity(theme.isDark ? 0.35 : 0.12), radius: 6, x: 0, y: 2)
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                .strokeBorder(Color.primary.opacity(theme.isDark ? 0.12 : 0.07), lineWidth: 0.5)
+        )
+        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: isExpanded)
+    }
+
+    /// 展开态：完整动作组 + 尾部收起手柄。
+    private var expandedContent: some View {
+        HStack(spacing: 0) {
             actionButton(
                 id: "present",
                 icon: "play.rectangle",
@@ -67,16 +91,57 @@ struct DocumentActionBar: View {
             dividerSeparator
 
             shareMenuButton()
+
+            dividerSeparator
+
+            collapseHandle
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 5)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
-        .shadow(color: .black.opacity(theme.isDark ? 0.35 : 0.12), radius: 6, x: 0, y: 2)
-        .overlay(
-            RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
-                .strokeBorder(Color.primary.opacity(theme.isDark ? 0.12 : 0.07), lineWidth: 0.5)
-        )
+    }
+
+    /// 收起态：单个圆钮，点击展开。
+    private var collapsedHandle: some View {
+        Button {
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { isExpanded = true }
+        } label: {
+            Image(systemName: "ellipsis")
+                .symbolRenderingMode(.hierarchical)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(hoveredAction == "expand" ? Color.primary.opacity(0.85) : Color.primary.opacity(0.55))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
+                        .fill(hoveredAction == "expand" ? Color.primary.opacity(0.07) : Color.clear)
+                )
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .help("展开操作栏")
+        .onHover { hoveredAction = $0 ? "expand" : nil }
+        .animation(DS.Motion.micro, value: hoveredAction)
+    }
+
+    /// 展开态尾部的收起手柄。
+    private var collapseHandle: some View {
+        Button {
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { isExpanded = false }
+        } label: {
+            Image(systemName: "chevron.right")
+                .symbolRenderingMode(.hierarchical)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(hoveredAction == "collapse" ? Color.primary.opacity(0.85) : Color.primary.opacity(0.45))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
+                        .fill(hoveredAction == "collapse" ? Color.primary.opacity(0.07) : Color.clear)
+                )
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .help("收起操作栏")
+        .onHover { hoveredAction = $0 ? "collapse" : nil }
+        .animation(DS.Motion.micro, value: hoveredAction)
     }
 
     @ViewBuilder

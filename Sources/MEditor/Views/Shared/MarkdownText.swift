@@ -12,6 +12,31 @@ struct MarkdownText: View {
     var codeBackground: Color = Color.primary.opacity(0.06)
     var accent: Color = .accentColor
 
+    // 平台字号：桌面面板 13pt 正文；移动端全宽对话，整体放大一档。
+    #if os(iOS)
+    fileprivate static let bodySize: CGFloat = 16
+    fileprivate static let codeSize: CGFloat = 14
+    private static func headingSize(_ level: Int) -> CGFloat {
+        switch level {
+        case 1: return 21
+        case 2: return 19
+        case 3: return 17.5
+        default: return 16.5
+        }
+    }
+    #else
+    fileprivate static let bodySize: CGFloat = 13
+    fileprivate static let codeSize: CGFloat = 12
+    private static func headingSize(_ level: Int) -> CGFloat {
+        switch level {
+        case 1: return 18
+        case 2: return 16
+        case 3: return 14.5
+        default: return 13.5
+        }
+    }
+    #endif
+
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             ForEach(Self.parse(markdown)) { block in
@@ -27,7 +52,7 @@ struct MarkdownText: View {
         switch block.kind {
         case .heading(let level, let text):
             inline(text)
-                .font(.system(size: headingSize(level), weight: level <= 2 ? .bold : .semibold))
+                .font(.system(size: Self.headingSize(level), weight: level <= 2 ? .bold : .semibold))
                 .kerning(-0.2)
                 .foregroundStyle(textColor)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -35,7 +60,7 @@ struct MarkdownText: View {
 
         case .paragraph(let text):
             inline(text)
-                .font(.system(size: 13))
+                .font(.system(size: Self.bodySize))
                 .foregroundStyle(textColor)
                 .lineSpacing(4)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -54,7 +79,7 @@ struct MarkdownText: View {
                         Text("\(idx + 1).")
                             .font(.system(size: 12.5, weight: .semibold).monospacedDigit())
                             .foregroundStyle(accent.opacity(0.85))
-                        inline(item).font(.system(size: 13)).foregroundStyle(textColor)
+                        inline(item).font(.system(size: Self.bodySize)).foregroundStyle(textColor)
                             .lineSpacing(3)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -74,7 +99,7 @@ struct MarkdownText: View {
                     .fill(accent.opacity(0.5))
                     .frame(width: 3)
                 inline(text)
-                    .font(.system(size: 13))
+                    .font(.system(size: Self.bodySize))
                     .foregroundStyle(secondaryColor)
                     .lineSpacing(3)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -104,7 +129,7 @@ struct MarkdownText: View {
                 Image(systemName: task.done ? "checkmark.square.fill" : "square")
                     .font(.system(size: 12.5))
                     .foregroundStyle(task.done ? accent : secondaryColor)
-                inline(task.text).font(.system(size: 13))
+                inline(task.text).font(.system(size: Self.bodySize))
                     .foregroundStyle(task.done ? secondaryColor : textColor)
                     .strikethrough(task.done, color: secondaryColor)
                     .lineSpacing(3)
@@ -116,7 +141,7 @@ struct MarkdownText: View {
                     .fill(accent.opacity(0.55))
                     .frame(width: 4.5, height: 4.5)
                     .padding(.top, 6)
-                inline(item).font(.system(size: 13)).foregroundStyle(textColor)
+                inline(item).font(.system(size: Self.bodySize)).foregroundStyle(textColor)
                     .lineSpacing(3)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -180,15 +205,6 @@ struct MarkdownText: View {
         }
     }
 
-    private func headingSize(_ level: Int) -> CGFloat {
-        switch level {
-        case 1: return 18
-        case 2: return 16
-        case 3: return 14.5
-        default: return 13.5
-        }
-    }
-
     /// Inline markdown (bold/italic/code/links) for a single block of text.
     /// Inline `code` spans get a tinted background + monospaced font; links use
     /// the accent color.
@@ -204,7 +220,7 @@ struct MarkdownText: View {
         }
         for run in attr.runs {
             if run.inlinePresentationIntent?.contains(.code) == true {
-                attr[run.range].font = .system(size: 12, weight: .medium, design: .monospaced)
+                attr[run.range].font = .system(size: Self.codeSize, weight: .medium, design: .monospaced)
                 attr[run.range].foregroundColor = accent
                 attr[run.range].backgroundColor = codeBackground
             }
@@ -432,10 +448,18 @@ private struct CodeBlockView: View {
     @State private var copied = false
 
     private var hasHeader: Bool { (lang?.isEmpty == false) }
+    // 触屏没有 hover：iOS 上代码块头部（语言标签 + 复制钮）常驻显示。
+    private var showHeader: Bool {
+        #if os(iOS)
+        true
+        #else
+        hasHeader || hovered
+        #endif
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if hasHeader || hovered {
+            if showHeader {
                 HStack {
                     if let lang, !lang.isEmpty {
                         Text(lang)
@@ -443,7 +467,12 @@ private struct CodeBlockView: View {
                             .foregroundStyle(secondaryColor)
                     }
                     Spacer(minLength: 0)
-                    if hovered || copied {
+                    #if os(iOS)
+                    let showCopy = true
+                    #else
+                    let showCopy = hovered || copied
+                    #endif
+                    if showCopy {
                         Button(action: copy) {
                             HStack(spacing: 3) {
                                 Image(systemName: copied ? "checkmark" : "doc.on.doc")
@@ -463,7 +492,7 @@ private struct CodeBlockView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(code)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.system(size: MarkdownText.codeSize, design: .monospaced))
                     .foregroundStyle(textColor)
                     .textSelection(.enabled)
                     .padding(.horizontal, 11)
