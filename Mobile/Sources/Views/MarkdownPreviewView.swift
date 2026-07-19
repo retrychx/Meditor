@@ -1,5 +1,11 @@
 import SwiftUI
 
+/// 预览滚动偏移（内容相对滚动视口的 minY）：DocumentView 用它驱动导航栏透明 ↔ 纸底过渡。
+struct PreviewScrollOffsetKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
 /// Markdown 块级预览：复用共享的 MarkdownText block parser（GFM 表格、LRU 解析缓存，
 /// 引用块合并行为与聊天气泡一致），外观保留预览独有的纸墨容器样式与悬挂缩进排版。
 struct MarkdownPreviewView: View {
@@ -17,10 +23,21 @@ struct MarkdownPreviewView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, PaperTheme.Spacing.page)
             .padding(.vertical, 20)
+            .background {
+                GeometryReader { geo in
+                    Color.clear.preference(
+                        key: PreviewScrollOffsetKey.self,
+                        value: geo.frame(in: .named(Self.scrollSpace)).minY
+                    )
+                }
+            }
         }
+        .coordinateSpace(name: Self.scrollSpace)
         .onAppear { preloadMermaidIfNeeded() }
         .onChange(of: source) { preloadMermaidIfNeeded() }
     }
+
+    private static let scrollSpace = "markdown-preview-scroll"
 
     /// 文档含 mermaid 块时：预热共享引擎，并把全部图表按文档顺序预渲染进缓存——
     /// JS 解析与首屏渲染并行，屏外的图表也不用等滚动到才开始渲染。
@@ -131,10 +148,11 @@ struct MarkdownPreviewView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(PaperTheme.codeBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(PaperTheme.codeBackground, in: RoundedRectangle(cornerRadius: PaperTheme.Radius.medium, style: .continuous))
     }
 
     /// GFM 表格：纸墨容器 + 表头底色；单元格过窄时文本折行（与聊天气泡表格同策略）。
+    /// 容器去描边：柔和投影 + 干净填充，hairline 只留内部单元格分隔。
     private func tableView(_ header: [String], _ rows: [[String]]) -> some View {
         let columns = max(header.count, rows.map(\.count).max() ?? 0)
         return VStack(spacing: 0) {
@@ -145,11 +163,8 @@ struct MarkdownPreviewView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(PaperTheme.card)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(PaperTheme.hairline, lineWidth: 0.5)
-        }
+        .clipShape(RoundedRectangle(cornerRadius: PaperTheme.Radius.medium, style: .continuous))
+        .shadow(color: PaperTheme.cardShadow, radius: 10, y: 3)
     }
 
     private func tableRow(_ cells: [String], columns: Int, isHeader: Bool) -> some View {

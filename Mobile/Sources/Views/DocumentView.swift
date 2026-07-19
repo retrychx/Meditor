@@ -9,6 +9,10 @@ struct DocumentView: View {
     @State private var showingFilePicker = false
     @State private var showingAIChat = false
     @State private var showingOpenError = false
+    /// 预览滚动越顶：导航栏从透明过渡到纸底 + 发丝分隔。
+    @State private var contentScrolled = false
+    /// 空态入场动画开关。
+    @State private var emptyStateVisible = false
 
     /// 可导入的文件类型：Markdown / HTML / 纯文本。
     private static let importableTypes: [UTType] = [
@@ -17,19 +21,43 @@ struct DocumentView: View {
         UTType(filenameExtension: "markdown"),
     ].compactMap { $0 }
 
+    /// 顶部是否透明：空态、或预览未滚动时透明；滚动 / 编辑态回到纸底。
+    private var transparentHeader: Bool {
+        store.hasDocument ? (store.showPreview && !contentScrolled) : true
+    }
+
     var body: some View {
         NavigationStack {
             Group {
                 if store.hasDocument {
                     content
+                        .id(store.showPreview)
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.98)).combined(with: .offset(y: 8)),
+                            removal: .opacity
+                        ))
                 } else {
                     emptyState
                 }
             }
+            .animation(PaperTheme.Motion.standard, value: store.showPreview)
             .background(PaperTheme.paper.ignoresSafeArea())
             .navigationTitle(store.hasDocument ? store.fileName : "MEditor")
             .navigationBarTitleDisplayMode(.inline)
+            // 透明 ↔ 纸底的过渡随滚动状态缓动
+            .toolbarBackground(transparentHeader ? .hidden : .visible, for: .navigationBar)
+            .animation(PaperTheme.Motion.gentle, value: transparentHeader)
+            .onPreferenceChange(PreviewScrollOffsetKey.self) { minY in
+                contentScrolled = minY < -8
+            }
             .toolbar {
+                // 标题自绘：文档文件名 / 品牌字保留衬线（UI chrome 其余部分是无衬线）。
+                ToolbarItem(placement: .principal) {
+                    Text(store.hasDocument ? store.fileName : "MEditor")
+                        .font(.system(.headline, design: .serif, weight: .semibold))
+                        .foregroundStyle(PaperTheme.ink)
+                        .lineLimit(1)
+                }
                 if store.hasDocument {
                     ToolbarItem(placement: .topBarLeading) {
                         Button { showingFilePicker = true } label: {
@@ -37,6 +65,7 @@ struct DocumentView: View {
                                 .font(.system(size: 15))
                                 .foregroundStyle(PaperTheme.inkSecondary)
                         }
+                        .buttonStyle(.pressable)
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         HStack(spacing: 10) {
@@ -52,10 +81,10 @@ struct DocumentView: View {
                     aiFab
                         .padding(.trailing, 20)
                         .padding(.bottom, 16)
-                        .transition(.scale(scale: 0.6).combined(with: .opacity))
+                        .transition(.scale(scale: 0.5).combined(with: .opacity))
                 }
             }
-            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: store.hasDocument)
+            .animation(PaperTheme.Motion.standard, value: store.hasDocument)
         }
         .fileImporter(
             isPresented: $showingFilePicker,
@@ -91,6 +120,7 @@ struct DocumentView: View {
                 .overlay { Circle().strokeBorder(.white.opacity(0.25), lineWidth: 0.5) }
                 .shadow(color: PaperTheme.accent.opacity(0.35), radius: 14, y: 6)
         }
+        .buttonStyle(.pressable)
         .accessibilityLabel("AI 助手")
     }
 
@@ -105,6 +135,7 @@ struct DocumentView: View {
                 .foregroundStyle(PaperTheme.inkSecondary)
                 .contentTransition(.symbolEffect(.replace.downUp))
         }
+        .buttonStyle(.pressable)
         .accessibilityLabel(store.showPreview ? "编辑" : "预览")
     }
 
@@ -159,7 +190,7 @@ struct DocumentView: View {
         }
     }
 
-    /// 空态：品牌标识 + 打开文件入口。
+    /// 空态：品牌标识 + 打开文件入口（轻微入场：fade + 上移）。
     private var emptyState: some View {
         VStack(spacing: 0) {
             Spacer()
@@ -167,9 +198,9 @@ struct DocumentView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 88, height: 88)
-                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: PaperTheme.Radius.xlarge, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    RoundedRectangle(cornerRadius: PaperTheme.Radius.xlarge, style: .continuous)
                         .strokeBorder(PaperTheme.hairline, lineWidth: 0.5)
                 }
                 .shadow(color: .black.opacity(0.08), radius: 12, y: 4)
@@ -180,7 +211,7 @@ struct DocumentView: View {
                 .padding(.top, 26)
 
             Text("纸墨之间，从容书写。")
-                .font(PaperTheme.Typography.serifTitle3())
+                .font(PaperTheme.Typography.uiTitle3())
                 .foregroundStyle(PaperTheme.inkSecondary)
                 .padding(.top, 8)
 
@@ -204,5 +235,10 @@ struct DocumentView: View {
         }
         .padding(.horizontal, PaperTheme.Spacing.page)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .opacity(emptyStateVisible ? 1 : 0)
+        .offset(y: emptyStateVisible ? 0 : 14)
+        .onAppear {
+            withAnimation(PaperTheme.Motion.gentle) { emptyStateVisible = true }
+        }
     }
 }
