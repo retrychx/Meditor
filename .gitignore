@@ -20,3 +20,6 @@ Mobile/.derivedData-*
 # Xcode user state
 xcuserdata/
 *.xcuserstate
+
+# Cloudflare deploy staging
+.site-dist
