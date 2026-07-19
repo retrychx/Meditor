@@ -8,26 +8,31 @@ import Foundation
 ///   WorkspaceTools.swift — 文件/目录操作
 ///   EditorTools.swift    — 编辑器交互（光标、打开文件）
 enum BuiltinAgentTools {
-    static let all: [any AgentTool] = [
-        // Document
-        ReadDocumentTool(),
-        WriteDocumentTool(),
-        PatchDocumentTool(),
-        SearchDocumentTool(),
-        // Workspace
-        ListFilesTool(),
-        ReadFileTool(),
-        CreateFileTool(),
-        WriteFileTool(),
-        CreateDirectoryTool(),
-        SearchWorkspaceTool(),
-        // Editor
-        InsertAtCursorTool(),
-        OpenFileTool(),
-        GetHTMLTemplateTool(),
+    static let all: [any AgentTool] = {
+        var tools: [any AgentTool] = [
+            // Document
+            ReadDocumentTool(),
+            WriteDocumentTool(),
+            PatchDocumentTool(),
+            SearchDocumentTool(),
+            // Workspace
+            ListFilesTool(),
+            ReadFileTool(),
+            CreateFileTool(),
+            WriteFileTool(),
+            CreateDirectoryTool(),
+            SearchWorkspaceTool(),
+            // Editor
+            InsertAtCursorTool(),
+            OpenFileTool(),
+            GetHTMLTemplateTool(),
+        ]
         // Shell (script-based skills; gated by per-session user confirmation)
-        RunCommandTool(),
-    ]
+#if os(macOS)
+        tools.append(RunCommandTool())   // iOS 无 Process 子进程能力，不注册 shell 工具
+#endif
+        return tools
+    }()
 
     static func tool(named name: String) -> (any AgentTool)? {
         all.first { $0.spec.name == name }

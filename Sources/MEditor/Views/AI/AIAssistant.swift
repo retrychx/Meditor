@@ -1012,6 +1012,10 @@ struct AIAssistantPanel: View {
             } else if !finalText.isEmpty {
                 if let idx = convo.messages.firstIndex(where: { $0.id == replyID }) {
                     convo.messages[idx].text = finalText
+                    // 输出达到 max_tokens 上限被截断时，在答案下方追加一行提示
+                    if runner?.state.wasTruncated == true {
+                        convo.messages[idx].text += "\n\n⚠️ 输出达到长度上限，内容可能被截断。"
+                    }
                 }
             } else {
                 // Agent 做了工具调用但没有最终文本

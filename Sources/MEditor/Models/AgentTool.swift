@@ -163,16 +163,32 @@ struct AgentToolCall: Sendable {
     var id: String
     var name: String
     var arguments: [String: AnySendableValue]
+    /// 后端返回的原始参数 JSON 字符串（用于 wire 回放与错误诊断）
+    var rawArgumentsJSON: String? = nil
+    /// 参数 JSON 解析失败的错误摘要；非 nil 表示 arguments 为空是解析失败所致，
+    /// Runner 应跳过执行并直接回灌错误，避免工具误报「缺少参数」误导模型
+    var argumentsParseError: String? = nil
 
     // Parse arguments from JSON string
     init(id: String, name: String, argumentsJSON: String) {
         self.id = id
         self.name = name
-        if let data = argumentsJSON.data(using: .utf8),
-           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            self.arguments = Self.convert(obj)
+        self.rawArgumentsJSON = argumentsJSON
+        if let data = argumentsJSON.data(using: .utf8) {
+            do {
+                if let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    self.arguments = Self.convert(obj)
+                } else {
+                    self.arguments = [:]
+                    self.argumentsParseError = "参数不是 JSON 对象"
+                }
+            } catch {
+                self.arguments = [:]
+                self.argumentsParseError = error.localizedDescription
+            }
         } else {
             self.arguments = [:]
+            self.argumentsParseError = "参数不是有效的 UTF-8 文本"
         }
     }
 
@@ -197,6 +213,8 @@ struct AgentToolCall: Sendable {
         self.id = id
         self.name = name
         self.arguments = arguments
+        self.rawArgumentsJSON = nil
+        self.argumentsParseError = nil
     }
 
     /// 递归将 [String: Any] 转换为 [String: AnySendableValue]

@@ -36,7 +36,7 @@ final class DefaultAgentFileRepository: AgentFileRepository {
     /// workspaceURL 通过闭包延迟求值，保证每次都是 AppState 最新的 rootURL
     private let workspaceProvider: () -> URL?
 
-    static let maxReadBytes     = 64_000       // ~64 KB，约 16 k tokens
+    static let maxReadBytes     = 64_000       // 截断阈值（按字符数，约 64 KB ASCII 等量，~16 k tokens）
     static let maxFullReadBytes = 5_000_000    // 5 MB
 
     /// 枚举工作区文件时跳过的噪音目录名
@@ -125,23 +125,29 @@ final class DefaultAgentFileRepository: AgentFileRepository {
     func readFile(at url: URL) async throws -> String {
         let fileURL = url
         return try await Task.detached(priority: .userInitiated) {
-            try Self.decodeFile(at: fileURL, maxBytes: Self.maxReadBytes)
+            try Self.decodeFile(at: fileURL, maxChars: Self.maxReadBytes)
         }.value
     }
 
     func readFileSyncFallback(at url: URL) throws -> String {
-        try Self.decodeFile(at: url, maxBytes: Self.maxReadBytes)
+        try Self.decodeFile(at: url, maxChars: Self.maxReadBytes)
     }
 
     /// 共享的读盘 + 多编码解码逻辑，供同步/异步两个入口复用。
-    private static func decodeFile(at url: URL, maxBytes: Int) throws -> String {
+    /// 先完整解码（utf8 失败再回退其他编码），再按**字符**截断——按字节截断可能切断
+    /// 多字节 UTF-8 字符，导致 utf8 解码整体失败、全文错误回退 isoLatin1（非 ASCII 文件乱码）。
+    private static func decodeFile(at url: URL, maxChars: Int) throws -> String {
         let data = try Data(contentsOf: url)
-        let truncated = data.count > maxBytes ? data.prefix(maxBytes) : data
-        if let text = String(data: truncated, encoding: .utf8) { return text }
-        for enc: String.Encoding in [.isoLatin1, .ascii, .unicode] {
-            if let text = String(data: truncated, encoding: enc) { return text }
+        var decoded: String?
+        for enc: String.Encoding in [.utf8, .isoLatin1, .ascii, .unicode] {
+            if let text = String(data: data, encoding: enc) { decoded = text; break }
         }
-        throw AgentContextError.fileNotReadable(url.lastPathComponent)
+        guard let full = decoded else {
+            throw AgentContextError.fileNotReadable(url.lastPathComponent)
+        }
+        guard full.count > maxChars else { return full }
+        return String(full.prefix(maxChars))
+            + "\n\n…[truncated: showing first \(maxChars) of \(full.count) characters]"
     }
 
     func readDiskFull(at url: URL) async throws -> String {
@@ -207,6 +213,7 @@ final class DefaultAgentFileRepository: AgentFileRepository {
     // MARK: - Search internals
 
     private func grepSearch(query: String, extensions: [String], root: URL) async -> [String]? {
+#if os(macOS)
         let unsafeForGrep = CharacterSet(charactersIn: ".+*?^${}[]|()\\")
         guard query.unicodeScalars.allSatisfy({ !unsafeForGrep.contains($0) }),
               !query.isEmpty else { return nil }
@@ -231,6 +238,10 @@ final class DefaultAgentFileRepository: AgentFileRepository {
                 .prefix(100)
                 .map     { $0.hasPrefix(prefix) ? String($0.dropFirst(prefix.count)) : $0 })
         }.value
+#else
+        // iOS 无 Process：返回 nil，由 searchWorkspace 回退到 swiftSearch 慢路径
+        return nil
+#endif
     }
 
     private static func swiftSearch(query: String, files: [URL], rootPath: String) -> [String] {

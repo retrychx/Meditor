@@ -75,10 +75,16 @@ struct AgentMessage: Sendable, Codable {
             if let calls = toolCalls, !calls.isEmpty {
                 d["content"] = content.isEmpty ? nil : content as Any
                 d["tool_calls"] = calls.map { call -> [String: Any] in
-                    // Re-serialize arguments back to JSON for wire format
-                    let argsDict = call.arguments.reduce(into: [String: Any]()) { $0[$1.key] = unwrap($1.value) }
-                    let argsData = (try? JSONSerialization.data(withJSONObject: argsDict)) ?? Data()
-                    let argsStr = String(data: argsData, encoding: .utf8) ?? "{}"
+                    // 优先回放后端返回的原始参数 JSON（保持历史与线上完全一致）；
+                    // 缺失时（手工构造的 call）由强类型 arguments 重新序列化
+                    let argsStr: String
+                    if let raw = call.rawArgumentsJSON {
+                        argsStr = raw
+                    } else {
+                        let argsDict = call.arguments.reduce(into: [String: Any]()) { $0[$1.key] = unwrap($1.value) }
+                        let argsData = (try? JSONSerialization.data(withJSONObject: argsDict)) ?? Data()
+                        argsStr = String(data: argsData, encoding: .utf8) ?? "{}"
+                    }
                     return [
                         "id": call.id,
                         "type": "function",
@@ -120,7 +126,13 @@ enum AgentBackendFactory {
         case .disabled:   return DisabledBackend()
         case .openai:     return RestAgentBackend(config: config, wire: .openAI)
         case .anthropic:  return RestAgentBackend(config: config, wire: .anthropic)
-        case .claudeCLI:  return ClaudeCLIBackend(config: config)
+        case .claudeCLI:
+#if os(macOS)
+            return ClaudeCLIBackend(config: config)
+#else
+            // iOS 无 Process 子进程能力：claude CLI 后端不可用，降级为 Disabled
+            return DisabledBackend()
+#endif
         }
     }
 }

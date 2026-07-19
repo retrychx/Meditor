@@ -208,6 +208,8 @@ extension LocalizationManager {
         "menu.previousTab": ("Previous Tab", "上一个标签"),
         "menu.quickOpen": ("Quick Open…", "快速打开…"),
         "menu.commandPalette": ("Command Palette…", "命令面板…"),
+        "menu.presentation": ("Presentation Mode", "演讲模式"),
+        "menu.exportPresentation": ("Export Presentation…", "导出演示文稿…"),
         "menu.copyAbsolutePath": ("Copy Absolute Path", "复制绝对路径"),
         "menu.copyRelativePath": ("Copy Relative Path", "复制相对路径"),
         "menu.revealInFinder": ("Reveal in Finder", "在 Finder 中显示"),
@@ -496,6 +498,7 @@ extension LocalizationManager {
         // Document action bar
         "action.export": ("Export", "导出"),
         "action.share": ("Share", "分享"),
+        "action.present": ("Present", "放映"),
 
         // Tab share / publish actions
         "tab.shareViaLAN": ("Share via LAN", "通过局域网分享"),

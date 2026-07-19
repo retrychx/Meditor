@@ -178,6 +178,19 @@ struct MEditorApp: App {
                 }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
                 .disabled(appState.rootURL == nil)
+
+                Divider()
+
+                Button(L("menu.presentation")) {
+                    appState.startPresentation()
+                }
+                .keyboardShortcut("p", modifiers: [.command, .option])
+                .disabled(appState.selectedTab == nil || appState.selectedTab?.language != .markdown)
+
+                Button(L("menu.exportPresentation")) {
+                    appState.exportPresentation()
+                }
+                .disabled(appState.selectedTab == nil || appState.selectedTab?.language != .markdown)
             }
             CommandGroup(after: .appVisibility) {
                 Button("Install CLI Tool…") {

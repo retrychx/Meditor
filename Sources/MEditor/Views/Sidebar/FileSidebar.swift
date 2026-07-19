@@ -68,16 +68,10 @@ struct FileSidebar: View {
             // ── 始终显示文件树 ──
             if searchText.isEmpty { mainContent } else { searchResultsView }
 
-            // ── Pinned app views (Tasks / Calendar Tab 切换条) ──
-            if searchText.isEmpty {
-                PinnedViewsBar(activeMainView: workspaceUI.activeMainView) { newView in
-                    workspaceUI.activeMainView = newView
-                }
-            }
-
-
-            // ── Bottom toolbar ──
+            // ── Bottom toolbar（文件操作 | 视图切换 | 应用开关，一行收编） ──
             SidebarBottomBar(
+                activeMainView: workspaceUI.activeMainView,
+                onSelectView: { newView in workspaceUI.activeMainView = newView },
                 onNewFile: {
                     state.templateCreateParentURL = state.rootURL
                     createIsFolder = false
@@ -525,71 +519,13 @@ private struct CraftSectionHeader: View {
     }
 }
 
-private struct PinnedViewsBar: View {
-    let activeMainView: ActiveMainView
-    let onSelect: (ActiveMainView) -> Void
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Divider().opacity(0.3)
-            HStack(spacing: 0) {
-                PinnedTabButton(
-                    icon: "checkmark.circle",
-                    label: L("sidebar.tasks"),
-                    isSelected: activeMainView == .todos
-                ) { onSelect(activeMainView == .todos ? .document : .todos) }
-
-                PinnedTabButton(
-                    icon: "calendar",
-                    label: L("sidebar.calendar"),
-                    isSelected: activeMainView == .calendar
-                ) { onSelect(activeMainView == .calendar ? .document : .calendar) }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-        }
-    }
-}
-
-private struct PinnedTabButton: View {
-    let icon: String
-    let label: String
-    let isSelected: Bool
-    let action: () -> Void
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .symbolRenderingMode(.hierarchical)
-                    .font(.system(size: 13))
-                    .foregroundStyle(isSelected ? Color.appAccent : .secondary)
-                Text(label)
-                    .font(.system(size: 13))
-                    .foregroundStyle(isSelected ? Color.appAccent : .primary)
-                Spacer()
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(isSelected
-                          ? Color.appAccent.opacity(0.12)
-                          : isHovered ? Color.primary.opacity(0.05) : Color.clear)
-            )
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
-        .animation(DS.Motion.micro, value: isHovered)
-        .animation(DS.Motion.fast, value: isSelected)
-    }
-}
-
+/// 底栏（一行收编）：文件操作 | 主区视图切换（待办/日历） | 应用开关（专注/设置）。
 @MainActor
 private struct SidebarBottomBar: View {
     @Environment(AppState.self) private var state
     @Environment(WorkspaceUIState.self) private var workspaceUI
+    let activeMainView: ActiveMainView
+    let onSelectView: (ActiveMainView) -> Void
     let onNewFile: () -> Void
     let onNewFolder: () -> Void
 
@@ -599,12 +535,24 @@ private struct SidebarBottomBar: View {
             HStack {
                 SidebarIconButton(icon: "doc.badge.plus", help: L("sidebar.newDocument"), action: onNewFile)
                     .disabled(state.rootURL == nil)
-                Spacer()
                 SidebarIconButton(icon: "folder.badge.plus", help: L("sidebar.newFolder"), action: onNewFolder)
                     .disabled(state.rootURL == nil)
+                Spacer()
+                // 主区视图切换：待办 / 日历（再点一次回到文档）
+                SidebarIconButton(
+                    icon: "checkmark.circle",
+                    help: L("sidebar.tasks"),
+                    isActive: activeMainView == .todos
+                ) { onSelectView(activeMainView == .todos ? .document : .todos) }
+                SidebarIconButton(
+                    icon: "calendar",
+                    help: L("sidebar.calendar"),
+                    isActive: activeMainView == .calendar
+                ) { onSelectView(activeMainView == .calendar ? .document : .calendar) }
+                Spacer()
                 // 专注模式切换
                 SidebarIconButton(
-                    icon: workspaceUI.isFocusMode ? "scope" : "scope",
+                    icon: "scope",
                     help: workspaceUI.isFocusMode ? L("tooltip.exitFocus") : L("tooltip.focusMode"),
                     isActive: workspaceUI.isFocusMode
                 ) {

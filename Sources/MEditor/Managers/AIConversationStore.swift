@@ -146,7 +146,8 @@ final class AIConversation {
 
     /// 当对话历史超过 context limit 时，自动滑动窗口截断早期消息。
     /// 策略：保留第一条用户消息（初始上下文）+ 最近 N 轮对话（一对 = user + assistant 各一条）。
-    /// 调用后 agentHistory 同步重置，避免旧历史影响新轮工具上下文。
+    /// agentHistory 同步从最老一端滑动裁剪（保持 tool_calls / tool result 配对完整），
+    /// 避免长任务后工具上下文全丢导致模型重复已做过的操作。
     @discardableResult
     func truncateIfOverLimit(keepRecentPairs: Int = 10) -> Bool {
         guard isApproachingContextLimit else { return false }
@@ -165,8 +166,22 @@ final class AIConversation {
             sessions[activeIndex].messages = msgs
         }
 
-        // 重置 agentHistory：旧工具调用上下文不再有效
-        sessions[activeIndex].agentHistory = []
+        // 滑动裁剪 agentHistory（而不是整体清空）：从最老一端丢弃，但裁剪边界不能
+        // 落在 assistant(toolCalls) 与其 tool results 之间，也不能让历史以半个工具轮次开头。
+        let history = sessions[activeIndex].agentHistory
+        if history.count > totalPairs {
+            // system prompt（若有）固定在头部，不参与裁剪
+            let head: [AgentMessage] = history.first?.role == .system ? [history[0]] : []
+            var tail = Array(history.dropFirst(head.count))
+            if tail.count > totalPairs {
+                var start = tail.count - totalPairs
+                // tool 结果必须跟在对应 assistant(toolCalls) 之后：起点落在 tool 消息上
+                // 则继续后移，把它连同前面的 assistant(toolCalls) 一起整轮丢弃
+                while start < tail.count, tail[start].role == .tool { start += 1 }
+                tail = Array(tail[start...])
+            }
+            sessions[activeIndex].agentHistory = head + tail
+        }
         persist()
         return true
     }

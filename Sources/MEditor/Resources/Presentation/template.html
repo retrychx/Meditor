@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en" class="theme-github">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MEditor Presentation</title>
+
+<!-- 复用预览主题样式：切主题只改 <html> class -->
+<link rel="stylesheet" href="../Preview/css/themes.css">
+<link rel="stylesheet" href="slides.css">
+
+<!-- 复用预览的 marked / highlight.js -->
+<script src="../Preview/marked.min.js"></script>
+<script src="../Preview/highlight.min.js"></script>
+<script src="slides.js"></script>
+</head>
+<body>
+<div id="stage"></div>
+<div id="indicator"></div>
+<!-- 幻灯片数据由 Swift 在 didFinish 后通过 MEditorSlides.boot(...) 注入 -->
+</body>
+</html>

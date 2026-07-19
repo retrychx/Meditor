@@ -11,6 +11,8 @@ final class AgentRunState {
     var isRunning: Bool = false
     var finalText: String = ""
     var error: String? = nil
+    /// 最终回复因 max_tokens/length 被截断（UI 提示用，不自动续跑）
+    var wasTruncated: Bool = false
     /// 流式累积文本（实时显示用，每个 step 重置）
     var streamText: String = ""
 }

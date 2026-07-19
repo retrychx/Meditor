@@ -114,6 +114,8 @@ struct AIConfig: Sendable {
     var apiKey: String      // resolved from Keychain
     /// 单次 HTTP 请求超时（秒）。推理模型可能需要较长的思考时间。默认 300s。
     var requestTimeoutSeconds: TimeInterval
+    /// CLI 请求级超时（秒）。超时后终止 claude 子进程并报错。默认 120s。
+    var cliTimeoutSeconds: TimeInterval = 120
 
     @MainActor
     static func current(_ s: AppSettings, scene: AIScene = .chat) -> AIConfig {
@@ -403,9 +405,10 @@ struct AIClient {
     // MARK: Local Claude CLI
 
     private func claudeCLIStream(_ messages: [AIMessage]) -> AsyncThrowingStream<String, Error> {
+#if os(macOS)
         AsyncThrowingStream { continuation in
             // Box lets the termination closure reach the process after it starts.
-            final class ProcessBox { var process: Process? }
+            final class ProcessBox { var process: Process?; var timedOut = false }
             let box = ProcessBox()
 
             let task = Task.detached {
@@ -429,7 +432,10 @@ struct AIClient {
                     // `-p` = print mode (non-interactive). The prompt is fed via
                     // stdin (not argv) so content starting with "-"/"---" isn't
                     // mis-parsed as a CLI option.
-                    process.arguments = ["-p"]
+                    var args = ["-p"]
+                    // 设置页的 CLI 模型选择（aiCLIModel）；空则用 CLI 默认模型
+                    if !config.cliModel.isEmpty { args += ["--model", config.cliModel] }
+                    process.arguments = args
 
                     // GUI 应用不继承 shell 环境，需要从 login shell 读取关键变量
                     // （包括 ANTHROPIC_BASE_URL 等自定义代理地址）
@@ -480,11 +486,28 @@ struct AIClient {
                     // 管道缓冲（64KB）时死锁——进程阻塞在 stderr 写，stdout 永远等不到 EOF。
                     async let outRead = outPipe.fileHandleForReading.readDataToEndOfFile()
                     async let errRead = errPipe.fileHandleForReading.readDataToEndOfFile()
+
+                    // 请求级超时哨兵：超时后 terminate（SIGTERM 关闭管道，解除
+                    // waitUntilExit / readDataToEndOfFile 的阻塞）。主流程结束后
+                    // cancel 哨兵，正常退出不触发超时。
+                    let watchdog = Task.detached {
+                        try? await Task.sleep(for: .seconds(config.cliTimeoutSeconds))
+                        guard !Task.isCancelled else { return }
+                        if process.isRunning {
+                            box.timedOut = true
+                            process.terminate()
+                        }
+                    }
                     process.waitUntilExit()
+                    watchdog.cancel()
                     let outData = await outRead
                     let errData = await errRead
 
                     if Task.isCancelled { continuation.finish(); return }
+
+                    if box.timedOut {
+                        throw AIError.cliFailed("CLI 请求超时（\(Int(config.cliTimeoutSeconds))s），进程已终止")
+                    }
 
                     if process.terminationStatus != 0 {
                         let msg = String(data: errData, encoding: .utf8) ?? "exit \(process.terminationStatus)"
@@ -505,6 +528,12 @@ struct AIClient {
                 box.process?.terminate()
             }
         }
+#else
+        // iOS 无 Process 子进程能力：claude CLI 流式路径在移动端不可用
+        AsyncThrowingStream { continuation in
+            continuation.finish(throwing: AIError.cliFailed("Claude CLI 仅支持 macOS"))
+        }
+#endif
     }
 }
 
@@ -540,6 +569,7 @@ extension AIClient {
     private static let _shellEnvLock = NSLock()
 
     private static func _collectShellEnvironment() -> [String: String]? {
+#if os(macOS)
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let p = Process()
         p.executableURL = URL(fileURLWithPath: shell)
@@ -560,6 +590,10 @@ extension AIClient {
             result[key] = value
         }
         return result.isEmpty ? nil : result
+#else
+        // iOS 无 Process：无法 spawn login shell，返回 nil（调用方仅用于 CLI 场景）
+        return nil
+#endif
     }
 }
 
@@ -593,6 +627,7 @@ extension AIClient {
     /// Best-effort detection of the local `claude` CLI: a login shell lookup
     /// first, then a scan of common install locations. Returns an absolute path.
     static func detectClaudeCLI() async -> String? {
+#if os(macOS)
         if let p = await loginShellWhich("claude"),
            FileManager.default.isExecutableFile(atPath: p) {
             return p
@@ -607,9 +642,14 @@ extension AIClient {
             "\(home)/.volta/bin/claude"
         ]
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+#else
+        // iOS 无 CLI：直接视为未安装
+        return nil
+#endif
     }
 
     private static func loginShellWhich(_ tool: String) async -> String? {
+#if os(macOS)
         await withCheckedContinuation { cont in
             DispatchQueue.global().async {
                 let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
@@ -627,5 +667,9 @@ extension AIClient {
                 cont.resume(returning: (out?.isEmpty == false) ? out : nil)
             }
         }
+#else
+        // iOS 无 Process：直接视为未找到
+        return nil
+#endif
     }
 }

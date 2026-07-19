@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 // MARK: - Disabled Backend
 
@@ -46,6 +47,9 @@ struct RestAgentBackend: AgentBackend {
     /// 返回实际使用的 session：有注入时用注入的，否则用共享 session。
     var resolvedSession: any URLSessionDataProtocol { sessionOverride ?? Self.sharedSession }
 
+    /// SSE 解析诊断日志（畸形行计数等）。subsystem 与 AppLog 一致。
+    private static let logger = Logger(subsystem: "com.meditor.app", category: "agent")
+
     // MARK: - AgentBackend
 
     func complete(
@@ -61,7 +65,7 @@ struct RestAgentBackend: AgentBackend {
             }
             guard (200..<300).contains(http.statusCode) else {
                 let body = String(data: data, encoding: .utf8) ?? "(empty)"
-                throw AIError.server(http.statusCode, body)
+                throw AIError.server(http.statusCode, String(body.prefix(500)))   // 与流式路径一致，截断 ~500 字符
             }
             return try self.parseResponse(data: data)
         }
@@ -109,18 +113,23 @@ struct RestAgentBackend: AgentBackend {
         onTextChunk: @escaping @Sendable (String) -> Void
     ) async throws -> AgentCompletionResponse {
         let req = try openAIRequest(messages: messages, tools: tools, stream: true)
-        let (bytes, response) = try await Self.sharedSession.bytes(for: req)
-        guard let http = response as? HTTPURLResponse else { throw AIError.network("invalid response") }
-        guard (200..<300).contains(http.statusCode) else {
-            var body = ""
-            for try await line in bytes.lines { body += line; if body.count > 500 { break } }
-            throw AIError.server(http.statusCode, body)
+        // 建连/首响应阶段纳入 429/503 重试；拿到 2xx 开始消费事件流后不再重试（避免重复输出）
+        let bytes = try await withRetry {
+            let (bytes, response) = try await resolvedSession.bytes(for: req)
+            guard let http = response as? HTTPURLResponse else { throw AIError.network("invalid response") }
+            guard (200..<300).contains(http.statusCode) else {
+                var body = ""
+                for try await line in bytes.lines { body += line; if body.count > 500 { break } }
+                throw AIError.server(http.statusCode, body)
+            }
+            return bytes
         }
 
         struct ToolCallAcc { var id = ""; var name = ""; var args = "" }
         var accText = ""
         var toolByIndex: [Int: ToolCallAcc] = [:]
         var finishReason = "stop"
+        var malformedCount = 0   // 解析失败的 data 行计数，流结束后统一记录
 
         for try await line in bytes.lines {
             guard line.hasPrefix("data:") else { continue }
@@ -129,7 +138,10 @@ struct RestAgentBackend: AgentBackend {
             guard let data = payload.data(using: .utf8),
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let choices = obj["choices"] as? [[String: Any]],
-                  let choice = choices.first else { continue }
+                  let choice = choices.first else {
+                malformedCount += 1
+                continue
+            }
 
             if let fr = choice["finish_reason"] as? String, fr != "null", !fr.isEmpty {
                 finishReason = fr
@@ -158,6 +170,9 @@ struct RestAgentBackend: AgentBackend {
             guard !acc.id.isEmpty, !acc.name.isEmpty else { return nil }
             return AgentToolCall(id: acc.id, name: acc.name, argumentsJSON: acc.args.isEmpty ? "{}" : acc.args)
         }
+        if malformedCount > 0 {
+            Self.logger.debug("OpenAI SSE: skipped \(malformedCount) malformed data line(s)")
+        }
         return AgentCompletionResponse(text: accText, toolCalls: toolCalls, finishReason: finishReason)
     }
 
@@ -167,18 +182,23 @@ struct RestAgentBackend: AgentBackend {
         onTextChunk: @escaping @Sendable (String) -> Void
     ) async throws -> AgentCompletionResponse {
         let req = try anthropicRequest(messages: messages, tools: tools, stream: true)
-        let (bytes, response) = try await Self.sharedSession.bytes(for: req)
-        guard let http = response as? HTTPURLResponse else { throw AIError.network("invalid response") }
-        guard (200..<300).contains(http.statusCode) else {
-            var body = ""
-            for try await line in bytes.lines { body += line; if body.count > 500 { break } }
-            throw AIError.server(http.statusCode, body)
+        // 建连/首响应阶段纳入 429/503 重试；拿到 2xx 开始消费事件流后不再重试（避免重复输出）
+        let bytes = try await withRetry {
+            let (bytes, response) = try await resolvedSession.bytes(for: req)
+            guard let http = response as? HTTPURLResponse else { throw AIError.network("invalid response") }
+            guard (200..<300).contains(http.statusCode) else {
+                var body = ""
+                for try await line in bytes.lines { body += line; if body.count > 500 { break } }
+                throw AIError.server(http.statusCode, body)
+            }
+            return bytes
         }
 
         struct ToolUseAcc { var id = ""; var name = ""; var inputJSON = "" }
         var accText = ""
         var toolByIndex: [Int: ToolUseAcc] = [:]
         var stopReason = "end_turn"
+        var malformedCount = 0   // 解析失败的 data 行计数，流结束后统一记录
 
         for try await line in bytes.lines {
             // Anthropic SSE: ignore event lines, only parse data lines
@@ -186,7 +206,10 @@ struct RestAgentBackend: AgentBackend {
             let payload = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
             guard let data = payload.data(using: .utf8),
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let type = obj["type"] as? String else { continue }
+                  let type = obj["type"] as? String else {
+                malformedCount += 1
+                continue
+            }
 
             switch type {
             case "content_block_start":
@@ -224,6 +247,9 @@ struct RestAgentBackend: AgentBackend {
         let toolCalls = toolByIndex.sorted { $0.key < $1.key }.compactMap { _, acc -> AgentToolCall? in
             guard !acc.id.isEmpty, !acc.name.isEmpty else { return nil }
             return AgentToolCall(id: acc.id, name: acc.name, argumentsJSON: acc.inputJSON.isEmpty ? "{}" : acc.inputJSON)
+        }
+        if malformedCount > 0 {
+            Self.logger.debug("Anthropic SSE: skipped \(malformedCount) malformed data line(s)")
         }
         let finishReason = stopReason == "tool_use" ? "tool_calls" : "stop"
         return AgentCompletionResponse(text: accText, toolCalls: toolCalls, finishReason: finishReason)

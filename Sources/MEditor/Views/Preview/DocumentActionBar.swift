@@ -41,6 +41,17 @@ struct DocumentActionBar: View {
     var body: some View {
         HStack(spacing: 0) {
             actionButton(
+                id: "present",
+                icon: "play.rectangle",
+                label: L("action.present"),
+                isDisabled: state.selectedTab == nil || state.selectedTab?.language != .markdown
+            ) {
+                state.startPresentation()
+            }
+
+            dividerSeparator
+
+            actionButton(
                 id: "beautify",
                 icon: "wand.and.stars",
                 label: "美化",
@@ -96,6 +107,8 @@ struct DocumentActionBar: View {
             )
         }
         .buttonStyle(.plain)
+        // 防止 HStack 压缩时首个文本被截断成省略号（导出/分享菜单已有 fixedSize）
+        .fixedSize()
         .disabled(isDisabled)
         .onHover { hoveredAction = $0 ? id : nil }
         .animation(DS.Motion.micro, value: hoveredAction)

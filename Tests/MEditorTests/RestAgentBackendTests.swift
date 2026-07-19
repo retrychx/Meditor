@@ -19,16 +19,48 @@ final class MockURLSession: URLSessionDataProtocol, @unchecked Sendable {
     /// 记录所有发出的请求，供断言使用。
     private(set) var capturedRequests: [URLRequest] = []
 
+    /// 持有 bytes(for:) 创建的临时 session，防止流未读完就被释放。
+    private var byteSessions: [URLSession] = []
+
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         capturedRequests.append(request)
         if let error = stubbedError { throw error }
         return (stubbedData, stubbedResponse)
     }
 
-    // bytes(for:) 无法真正 mock AsyncBytes，抛 unimplemented 错误即可
+    // URLSession.AsyncBytes 无公开构造器，用一次性 URLProtocol 回放 stub 数据来生成真实 AsyncBytes
     func bytes(for request: URLRequest) async throws -> (URLSession.AsyncBytes, URLResponse) {
-        fatalError("bytes(for:) not supported in MockURLSession; test the complete() path instead")
+        capturedRequests.append(request)
+        if let error = stubbedError { throw error }
+        MockURLProtocol.stub = (stubbedData, stubbedResponse)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        let session = URLSession(configuration: config)
+        byteSessions.append(session)
+        return try await session.bytes(for: request)
     }
+}
+
+// MARK: - MockURLProtocol
+
+/// 回放 MockURLSession 预置响应的 URLProtocol，仅供 bytes(for:) 路径构造 AsyncBytes。
+private final class MockURLProtocol: URLProtocol {
+    static var stub: (data: Data, response: URLResponse)?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let stub = Self.stub, let client else {
+            client?.urlProtocol(self, didFailWithError: URLError(.unknown))
+            return
+        }
+        client.urlProtocol(self, didReceive: stub.response, cacheStoragePolicy: .notAllowed)
+        client.urlProtocol(self, didLoad: stub.data)
+        client.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }
 
 // MARK: - Helpers
