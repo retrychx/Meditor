@@ -8,28 +8,27 @@ enum PaperTheme {
     // MARK: - 颜色
 
     /// 色板原始值：Color 与 JS 用 hex 字符串（Hex）均由此派生，改一处全局同步。
-    /// 真正的中式纸墨不是暖黄配焦橙——宣纸是带青灰的冷白，松烟墨是蓝黑，
-    /// 全页唯一的亮色是落款那枚朱砂印。
+    /// 浅色走 Craft 式浅灰底 + 纯白卡 + 亮蓝交互色；朱砂只留給「墨」字印章当品牌印记。
     /// 浅色 / 墨夜（深色）两套：Color 走 UIColor 动态色，JS 走 Hex.Light / Hex.Dark。
     fileprivate enum Palette {
         enum Light {
-            static let paper: UInt32          = 0xF4F5F2
-            static let card: UInt32           = 0xFCFCFA
+            static let paper: UInt32          = 0xF2F3F6
+            static let card: UInt32           = 0xFFFFFF
             static let ink: UInt32            = 0x1B2434
-            static let inkSecondary: UInt32   = 0x5D6673
-            static let accent: UInt32         = 0xC0392B
-            static let accentPressed: UInt32  = 0x9E2E22
-            static let hairline: UInt32       = 0xE2E6E1
-            static let codeBackground: UInt32 = 0xECEFEA
+            static let inkSecondary: UInt32   = 0x6B7280
+            static let accent: UInt32         = 0x2E6BFF
+            static let accentPressed: UInt32  = 0x1F56D8
+            static let hairline: UInt32       = 0xE5E7EB
+            static let codeBackground: UInt32 = 0xF3F4F6
         }
-        /// 墨夜：墨黑泛蓝的底（不用纯黑），宣纸白字微暖，朱砂略亮保对比。
+        /// 墨夜：墨黑泛蓝的底（不用纯黑），宣纸白字微暖，蓝略亮保对比。
         enum Dark {
             static let paper: UInt32          = 0x14181F
             static let card: UInt32           = 0x1C222C
             static let ink: UInt32            = 0xE8E4DC
             static let inkSecondary: UInt32   = 0x8B93A1
-            static let accent: UInt32         = 0xD04A3A
-            static let accentPressed: UInt32  = 0xA83A2C
+            static let accent: UInt32         = 0x5B8CFF
+            static let accentPressed: UInt32  = 0x3F6FE0
             static let hairline: UInt32       = 0x2A3140
             static let codeBackground: UInt32 = 0x232A37
         }
@@ -64,6 +63,8 @@ enum PaperTheme {
             ? UIColor(white: 0, alpha: 0.35)
             : UIColor(white: 0, alpha: 0.05)
     })
+    /// 朱砂印章红（品牌印记，不随交互蓝变化）：仅 SealStamp 与品牌场景使用。
+    static let seal = Color(light: 0xC0392B, dark: 0xD04A3A)
 
     // MARK: - Hex 字符串（JS / WebView 场景）
 
@@ -283,11 +284,11 @@ struct SealStamp: View {
             .foregroundStyle(.white)
             .frame(width: size, height: size)
             .background(
-                PaperTheme.accent,
+                PaperTheme.seal,
                 in: RoundedRectangle(cornerRadius: size * 0.19, style: .continuous)
             )
             .rotationEffect(.degrees(3))
-            .shadow(color: PaperTheme.accent.opacity(0.3), radius: size * 0.15, y: 1.5)
+            .shadow(color: PaperTheme.seal.opacity(0.3), radius: size * 0.15, y: 1.5)
             .accessibilityHidden(true)
     }
 }

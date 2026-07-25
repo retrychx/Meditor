@@ -51,22 +51,22 @@ struct RootView: View {
         .background(PaperTheme.paper)
     }
 
-    // MARK: - 底栏
+    // MARK: - 底栏（Craft 式悬浮胶囊）
 
     private var tabBar: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 4) {
             ForEach(Tab.allCases, id: \.self) { item in
                 tabButton(item)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 7)
-        .padding(.bottom, 5)
-        .frame(maxWidth: .infinity)
-        .background(PaperTheme.card.ignoresSafeArea(edges: .bottom))
-        .overlay(alignment: .top) {
-            PaperTheme.hairline.frame(height: 0.5)
-        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
+        .background(PaperTheme.card, in: Capsule(style: .continuous))
+        .shadow(color: PaperTheme.cardShadow, radius: 18, y: 8)
+        .padding(.horizontal, 32)
+        .padding(.bottom, 4)
+        // 键盘弹出时底栏保持贴底（被键盘遮住），不被顶上去
+        .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 
     private func tabButton(_ item: Tab) -> some View {
@@ -74,25 +74,21 @@ struct RootView: View {
         return Button {
             withAnimation(PaperTheme.Motion.standard) { tab = item }
         } label: {
-            VStack(spacing: 3) {
-                Image(systemName: item.icon)
-                    .font(.system(size: 18, weight: .medium))
-                    .symbolEffect(.bounce, value: selected)
-                Text(item.title)
-                    .font(.system(size: 10, weight: .medium))
-            }
-            .foregroundStyle(selected ? PaperTheme.accent : PaperTheme.inkSecondary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 6)
-            .background {
-                if selected {
-                    Capsule(style: .continuous)
-                        .fill(PaperTheme.accent.opacity(0.12))
-                        .padding(.horizontal, 26)
-                        .matchedGeometryEffect(id: "tab-indicator", in: tabIndicator)
+            Image(systemName: item.icon)
+                .font(.system(size: 19, weight: .medium))
+                .symbolEffect(.bounce, value: selected)
+                .foregroundStyle(selected ? PaperTheme.accent : PaperTheme.inkSecondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background {
+                    if selected {
+                        Capsule(style: .continuous)
+                            .fill(PaperTheme.accent.opacity(0.12))
+                            .padding(.horizontal, 12)
+                            .matchedGeometryEffect(id: "tab-indicator", in: tabIndicator)
+                    }
                 }
-            }
-            .contentShape(Rectangle())
+                .contentShape(Capsule())
         }
         .buttonStyle(.pressable)
         .accessibilityLabel(item.title)

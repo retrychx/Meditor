@@ -124,18 +124,18 @@ struct DocumentView: View {
         }
     }
 
-    /// 悬浮 AI 钮：单钮 FAB，朱砂底 + 同色柔投影；图标微光闪烁，
+    /// 悬浮 AI 钮：单钮 FAB，墨底纸字 + 柔投影；图标微光闪烁，
     /// 下滚缩小收起、回滚唤回。
     private var aiFab: some View {
         Button { showingAIChat = true } label: {
             Image(systemName: "sparkles")
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(PaperTheme.paper)
                 .symbolEffect(.variableColor.iterative, options: .repeating)
                 .frame(width: 50, height: 50)
-                .background(PaperTheme.accent, in: Circle())
-                .overlay { Circle().strokeBorder(.white.opacity(0.25), lineWidth: 0.5) }
-                .shadow(color: PaperTheme.accent.opacity(0.35), radius: 14, y: 6)
+                .background(PaperTheme.ink, in: Circle())
+                .overlay { Circle().strokeBorder(PaperTheme.paper.opacity(0.2), lineWidth: 0.5) }
+                .shadow(color: PaperTheme.ink.opacity(0.3), radius: 14, y: 6)
         }
         .buttonStyle(.pressable)
         .accessibilityLabel("AI 助手")

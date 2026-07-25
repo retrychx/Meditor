@@ -13,6 +13,8 @@ struct DocumentHomeView: View {
     @State private var renameText = ""
     /// 操作失败的简单提示。
     @State private var actionError: String? = nil
+    /// 列表搜索词。
+    @State private var query = ""
 
     /// 与 DocumentView 保持一致的可导入类型。
     private static let importableTypes: [UTType] = [
@@ -90,57 +92,57 @@ struct DocumentHomeView: View {
         .onAppear { store.refreshWorkspaceDocuments() }
     }
 
-    // MARK: - 列表
+    // MARK: - 列表（Craft 式：搜索 + 白卡列表）
+
+    private var filteredDocs: [DocumentStore.RecentDocument] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return store.recentDocuments }
+        return store.recentDocuments.filter { $0.fileName.localizedCaseInsensitiveContains(q) }
+    }
 
     private var documentList: some View {
-        List {
-            // 「打开文件」入口行：保持在列表顶部，触手可及。
-            Button { showingFilePicker = true } label: {
-                Label("打开文件…", systemImage: "folder")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(PaperTheme.accent)
-            }
-            .listRowBackground(PaperTheme.card)
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                searchField
 
-            ForEach(store.recentDocuments, id: \.relativePath) { doc in
-                row(for: doc)
-                    .listRowBackground(PaperTheme.card)
-                    .swipeActions(edge: .leading) {
-                        Button { store.togglePin(doc.relativePath) } label: {
-                            Label(doc.pinned ? "取消置顶" : "置顶",
-                                  systemImage: doc.pinned ? "pin.slash" : "pin")
-                        }
-                        .tint(PaperTheme.accent)
-                    }
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) { delete(doc) } label: {
-                            Label("删除", systemImage: "trash")
-                        }
-                        Button { beginRename(doc) } label: {
-                            Label("重命名", systemImage: "pencil")
-                        }
-                        .tint(PaperTheme.inkSecondary)
-                    }
-                    .contextMenu {
-                        Button { beginRename(doc) } label: {
-                            Label("重命名", systemImage: "pencil")
-                        }
-                        Button { store.togglePin(doc.relativePath) } label: {
-                            Label(doc.pinned ? "取消置顶" : "置顶",
-                                  systemImage: doc.pinned ? "pin.slash" : "pin")
-                        }
-                        Divider()
-                        Button(role: .destructive) { delete(doc) } label: {
-                            Label("删除", systemImage: "trash")
-                        }
-                    }
+                // 「打开文件」入口：保持在列表顶部，触手可及。
+                Button { showingFilePicker = true } label: {
+                    Label("打开文件…", systemImage: "folder")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(PaperTheme.accent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .background(PaperTheme.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .shadow(color: PaperTheme.cardShadow, radius: 8, y: 3)
+                }
+                .buttonStyle(.pressable)
+
+                ForEach(filteredDocs, id: \.relativePath) { doc in
+                    card(for: doc)
+                }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
         }
-        .listStyle(.plain)
         .scrollContentBackground(.hidden)
     }
 
-    private func row(for doc: DocumentStore.RecentDocument) -> some View {
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 15))
+                .foregroundStyle(PaperTheme.inkSecondary)
+            TextField("搜索文档", text: $query)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(PaperTheme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .shadow(color: PaperTheme.cardShadow, radius: 8, y: 3)
+    }
+
+    private func card(for doc: DocumentStore.RecentDocument) -> some View {
         Button { open(doc) } label: {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -161,14 +163,50 @@ struct DocumentHomeView: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
-                Text(doc.lastOpened.formatted(.relative(presentation: .named)))
-                    .font(.caption)
-                    .foregroundStyle(PaperTheme.inkSecondary)
+                VStack(alignment: .trailing, spacing: 6) {
+                    Text(doc.lastOpened.formatted(.relative(presentation: .named)))
+                        .font(.caption)
+                        .foregroundStyle(PaperTheme.inkSecondary)
+                    Menu {
+                        Button { beginRename(doc) } label: {
+                            Label("重命名", systemImage: "pencil")
+                        }
+                        Button { store.togglePin(doc.relativePath) } label: {
+                            Label(doc.pinned ? "取消置顶" : "置顶",
+                                  systemImage: doc.pinned ? "pin.slash" : "pin")
+                        }
+                        Divider()
+                        Button(role: .destructive) { delete(doc) } label: {
+                            Label("删除", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(PaperTheme.inkSecondary)
+                            .frame(width: 26, height: 26)
+                            .contentShape(Rectangle())
+                    }
+                }
             }
-            .padding(.vertical, 4)
+            .padding(14)
+            .background(PaperTheme.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .shadow(color: PaperTheme.cardShadow, radius: 8, y: 3)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            Button { beginRename(doc) } label: {
+                Label("重命名", systemImage: "pencil")
+            }
+            Button { store.togglePin(doc.relativePath) } label: {
+                Label(doc.pinned ? "取消置顶" : "置顶",
+                      systemImage: doc.pinned ? "pin.slash" : "pin")
+            }
+            Divider()
+            Button(role: .destructive) { delete(doc) } label: {
+                Label("删除", systemImage: "trash")
+            }
+        }
     }
 
     // MARK: - 空态
