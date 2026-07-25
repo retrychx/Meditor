@@ -1,11 +1,3 @@
-# Cloudflare Worker 部署配置（官网静态资源）
-# 首次部署前：npx wrangler login（或设置 CLOUDFLARE_API_TOKEN 环境变量）
-# 注意 name 要与 Cloudflare Dashboard 上已创建的 Worker 同名，
-# 这样部署会接管该 Worker（含其 workers.dev 子域），而不是新建一个。
-name = "meditor"
+name = "meditor-app"
 compatibility_date = "2026-07-19"
-
-[assets]
-# 纯静态站点（无 Worker 脚本）：不能配 binding，否则会报
-# "Cannot use assets with a binding in an assets-only Worker"。
-directory = "./website"
+pages_build_output_dir = "website"

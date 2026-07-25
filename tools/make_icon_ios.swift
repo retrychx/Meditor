@@ -6,8 +6,10 @@ import AppKit
 let outPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "appicon-1024.png"
 
 let ink    = NSColor(srgbRed: 0.09, green: 0.09, blue: 0.11, alpha: 1)
-let accent = NSColor(srgbRed: 0.42, green: 0.55, blue: 1.00, alpha: 1)
-let line   = NSColor(white: 0.97, alpha: 1)
+// 朱砂 #C0392B（纸墨主题印章红，替换旧蓝色条）
+let accent = NSColor(srgbRed: 0.753, green: 0.224, blue: 0.169, alpha: 1)
+// 微偏暖的白 #F9F6F1，与朱砂条更和谐
+let line   = NSColor(srgbRed: 0.976, green: 0.965, blue: 0.945, alpha: 1)
 
 func rr(_ r: CGRect, _ rad: CGFloat) -> CGPath {
     CGPath(roundedRect: r, cornerWidth: rad, cornerHeight: rad, transform: nil)

@@ -17,6 +17,14 @@ final class DocumentStore {
         case other
     }
 
+    /// 最近文档记录：相对路径（稳定标识）+ 展示名 + 最后打开时间 + 置顶标志。
+    struct RecentDocument: Codable, Equatable {
+        var relativePath: String
+        var fileName: String
+        var lastOpened: Date
+        var pinned: Bool
+    }
+
     /// 文档纯文本内容（编辑经 applyManualEdit 改这里，以便触发自动保存）。
     private(set) var text: String = ""
     /// 展示用文件名。
@@ -33,6 +41,13 @@ final class DocumentStore {
     /// 上次打开文档在沙盒 Documents 下的相对路径（重启后恢复）。
     private static let lastDocKey = "lastDocumentRelativePath"
 
+    /// 最近文档列表（已排序：置顶在前，其余按最后打开时间倒序）。
+    private(set) var recentDocuments: [RecentDocument] = []
+    /// 最近文档持久化 key / 条数上限 / 纳入列表的扩展名。
+    private static let recentsKey = "recentDocuments"
+    private static let maxRecents = 50
+    private static let documentExtensions: Set<String> = ["md", "markdown", "html", "htm"]
+
     /// 工作区目录提供者：默认返回沙盒 Documents，测试可注入临时目录。
     private let workspaceProvider: () -> URL
 
@@ -41,14 +56,21 @@ final class DocumentStore {
 
     init(workspaceProvider: @escaping () -> URL = { DocumentStore.workspaceURL }) {
         self.workspaceProvider = workspaceProvider
+        if let data = UserDefaults.standard.data(forKey: Self.recentsKey),
+           let decoded = try? JSONDecoder().decode([RecentDocument].self, from: data) {
+            recentDocuments = decoded
+        }
         if let rel = UserDefaults.standard.string(forKey: Self.lastDocKey) {
             let url = workspaceProvider().appendingPathComponent(rel)
             if let content = try? String(contentsOf: url, encoding: .utf8) {
                 sandboxURL = url
                 fileName   = url.lastPathComponent
                 text       = content
+                touchRecent(url)
             }
         }
+        // 把工作区里现存的文档（含微信转存进来的）补入最近列表。
+        refreshWorkspaceDocuments()
     }
 
     var kind: ContentKind {
@@ -157,12 +179,169 @@ final class DocumentStore {
         return true
     }
 
-    /// 记录相对路径，供下次启动恢复。
+    /// 记录相对路径，供下次启动恢复；同时更新最近文档记录。
     private func remember(_ url: URL) {
+        UserDefaults.standard.set(relativePath(for: url), forKey: Self.lastDocKey)
+        touchRecent(url)
+    }
+
+    /// 沙盒 Documents 下的相对路径（不在工作区内则退化为文件名）。
+    private func relativePath(for url: URL) -> String {
         let base = workspace.standardizedFileURL.path
         let full = url.standardizedFileURL.path
-        let rel = full.hasPrefix(base + "/") ? String(full.dropFirst(base.count + 1)) : url.lastPathComponent
-        UserDefaults.standard.set(rel, forKey: Self.lastDocKey)
+        return full.hasPrefix(base + "/") ? String(full.dropFirst(base.count + 1)) : url.lastPathComponent
+    }
+
+    // MARK: - 最近文档
+
+    /// 新增/更新一条最近记录（已有路径保留置顶标志），重排、裁剪并持久化。
+    private func touchRecent(_ url: URL, date: Date = Date()) {
+        let rel = relativePath(for: url)
+        if let idx = recentDocuments.firstIndex(where: { $0.relativePath == rel }) {
+            recentDocuments[idx].fileName = url.lastPathComponent
+            recentDocuments[idx].lastOpened = date
+        } else {
+            recentDocuments.append(RecentDocument(
+                relativePath: rel, fileName: url.lastPathComponent, lastOpened: date, pinned: false))
+        }
+        sortRecents()
+        trimRecents()
+        persistRecents()
+    }
+
+    /// 扫描工作区（Documents 根 + Opened/）现存的文档文件并入最近列表：
+    /// 未记录的文件以修改时间作为最后打开时间补入（微信等渠道转存进来的也能被看到）；
+    /// 记录里文件已不存在的（仅限这两个扫描范围内）顺手清掉，不留僵尸条目。
+    func refreshWorkspaceDocuments() {
+        var scanned: [String: (name: String, date: Date)] = [:]
+        for dir in [workspace, openedURL] {
+            guard let urls = try? FileManager.default.contentsOfDirectory(
+                at: dir,
+                includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+                options: [.skipsHiddenFiles]) else { continue }
+            for url in urls {
+                guard Self.documentExtensions.contains(url.pathExtension.lowercased()),
+                      let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey]),
+                      values.isRegularFile == true else { continue }
+                scanned[relativePath(for: url)] = (url.lastPathComponent, values.contentModificationDate ?? .distantPast)
+            }
+        }
+        var changed = false
+        let before = recentDocuments.count
+        recentDocuments.removeAll { rec in
+            let dir = (rec.relativePath as NSString).deletingLastPathComponent
+            let inScannedScope = dir.isEmpty || dir == "." || dir == "Opened"
+            return inScannedScope && scanned[rec.relativePath] == nil
+        }
+        changed = recentDocuments.count != before
+        for (rel, info) in scanned {
+            if let idx = recentDocuments.firstIndex(where: { $0.relativePath == rel }) {
+                if recentDocuments[idx].fileName != info.name {
+                    recentDocuments[idx].fileName = info.name
+                    changed = true
+                }
+            } else {
+                recentDocuments.append(RecentDocument(
+                    relativePath: rel, fileName: info.name, lastOpened: info.date, pinned: false))
+                changed = true
+            }
+        }
+        if changed {
+            sortRecents()
+            trimRecents()
+            persistRecents()
+        }
+    }
+
+    /// 置顶 / 取消置顶。
+    func togglePin(_ rel: String) {
+        guard let idx = recentDocuments.firstIndex(where: { $0.relativePath == rel }) else { return }
+        recentDocuments[idx].pinned.toggle()
+        sortRecents()
+        persistRecents()
+    }
+
+    /// 重命名沙盒内文件（只改文件名，保留扩展名）：目标名冲突时自动追加 "-2" 递增后缀。
+    /// 同步更新最近记录；若改的是当前打开文档，先落盘 pending 编辑，再同步当前状态与恢复路径。
+    /// 返回实际采用的新文件名，失败返回 nil。
+    @discardableResult
+    func renameDocument(at rel: String, to newBaseName: String) -> String? {
+        let trimmed = newBaseName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let oldURL = workspace.appendingPathComponent(rel)
+        guard FileManager.default.fileExists(atPath: oldURL.path) else { return nil }
+
+        let ext = (rel as NSString).pathExtension
+        let dir = (rel as NSString).deletingLastPathComponent
+        let dirURL = dir.isEmpty || dir == "." ? workspace : workspace.appendingPathComponent(dir, isDirectory: true)
+        // 原名未变：直接成功返回，不做无意义的移动。
+        let desired = ext.isEmpty ? trimmed : "\(trimmed).\(ext)"
+        if desired == oldURL.lastPathComponent { return desired }
+        var candidate = desired
+        var n = 2
+        while FileManager.default.fileExists(atPath: dirURL.appendingPathComponent(candidate).path) {
+            candidate = ext.isEmpty ? "\(trimmed)-\(n)" : "\(trimmed)-\(n).\(ext)"
+            n += 1
+        }
+        let newURL = dirURL.appendingPathComponent(candidate)
+        let isCurrent = sandboxURL?.standardizedFileURL == oldURL.standardizedFileURL
+        if isCurrent {
+            // 挂起的防抖保存捕获的是旧 URL，移动前先落盘并取消，避免旧文件被重建。
+            autosaveTask?.cancel()
+            try? text.write(to: oldURL, atomically: true, encoding: .utf8)
+        }
+        guard (try? FileManager.default.moveItem(at: oldURL, to: newURL)) != nil else { return nil }
+
+        let newRel = relativePath(for: newURL)
+        if let idx = recentDocuments.firstIndex(where: { $0.relativePath == rel }) {
+            recentDocuments[idx].relativePath = newRel
+            recentDocuments[idx].fileName = candidate
+            persistRecents()
+        }
+        if isCurrent {
+            sandboxURL = newURL
+            fileName   = candidate
+            UserDefaults.standard.set(newRel, forKey: Self.lastDocKey)
+        }
+        return candidate
+    }
+
+    /// 删除沙盒文件 + 最近记录；若删的是当前打开文档，回到无文档空态。
+    func deleteDocument(at rel: String) {
+        let url = workspace.appendingPathComponent(rel)
+        let wasCurrent = sandboxURL?.standardizedFileURL == url.standardizedFileURL
+        try? FileManager.default.removeItem(at: url)
+        recentDocuments.removeAll { $0.relativePath == rel }
+        persistRecents()
+        if wasCurrent {
+            autosaveTask?.cancel()
+            sandboxURL = nil
+            fileName   = ""
+            text       = ""
+            aiSnapshot = nil
+            aiFinalText = nil
+            UserDefaults.standard.removeObject(forKey: Self.lastDocKey)
+        }
+    }
+
+    /// 排序：置顶在前，其余按最后打开时间倒序。
+    private func sortRecents() {
+        recentDocuments.sort { a, b in
+            if a.pinned != b.pinned { return a.pinned }
+            return a.lastOpened > b.lastOpened
+        }
+    }
+
+    /// 裁剪到上限：优先淘汰最旧的非置顶记录。
+    private func trimRecents() {
+        while recentDocuments.count > Self.maxRecents,
+              let idx = recentDocuments.lastIndex(where: { !$0.pinned }) {
+            recentDocuments.remove(at: idx)
+        }
+    }
+
+    private func persistRecents() {
+        UserDefaults.standard.set(try? JSONEncoder().encode(recentDocuments), forKey: Self.recentsKey)
     }
 
     // MARK: - Mutations（Agent 文档写工具用）

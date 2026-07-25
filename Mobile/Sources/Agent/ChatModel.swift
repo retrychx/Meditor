@@ -2,27 +2,32 @@ import Foundation
 import Observation
 
 /// AI 对话面板的状态：消息列表 + AgentRunner 流式接入。
-/// 骨架级：单会话、不落盘，多轮上下文通过 AgentRunner.finalMessages 保留。
+/// 会话存储复用桌面端 AIConversation（多会话、磁盘持久化、滑动窗口截断），
+/// 本类只负责移动端的运行编排（runner 生命周期、文档上下文、技能注入）。
+/// 工具步骤快照不入盘（macOS 同样只保留在内存），App 生命周期内按会话保留可回放。
 @MainActor
 @Observable
 final class ChatModel {
 
+    /// 视图层消息：在 AIChatMessage 之上附带本次回复的工具步骤快照（仅内存）。
     struct ChatMessage: Identifiable {
-        enum Role { case user, assistant }
-        let id = UUID()
-        let role: Role
+        let id: UUID
+        let role: AIChatMessage.Role
         var text: String
         /// 本次回复的工具步骤快照（运行中为空；运行中的实时步骤由 runner.steps 展示）。
-        var steps: [AgentRunnerStep] = []
+        var steps: [AgentRunnerStep]
     }
 
-    var messages: [ChatMessage] = []
+    /// 持久化引擎（桌面端同款）：多会话 + 落盘 + 截断，构造注入便于测试。
+    let convo: AIConversation
+
     var input: String = ""
     var isResponding = false
 
     /// 运行中的 Runner（只读暴露给视图，驱动工具步骤面板）。
     private(set) var runner: AgentRunner?
-    private var history: [AgentMessage] = []
+    /// 工具步骤快照：sessionID → messageID → steps。只活在本进程内，不随会话入盘。
+    private var stepSnapshots: [UUID: [UUID: [AgentRunnerStep]]] = [:]
     private let store: DocumentStore
     private let context: MobileAgentContext
     private let settings: MobileAISettings
@@ -33,16 +38,26 @@ final class ChatModel {
     init(
         store: DocumentStore,
         settings: MobileAISettings,
-        // 默认 nil → init 内取 .shared（默认参数表达式在非隔离上下文求值，
+        // 默认 nil → init 内取 .shared / 新建（默认参数表达式在非隔离上下文求值，
         // 直接写 = .shared 会在 Swift 6 模式报错）。
         skillStore: MobileSkillStore? = nil,
+        convo: AIConversation? = nil,
         backendFactory: @escaping @Sendable (AIConfig) -> any AgentBackend = AgentBackendFactory.make
     ) {
         self.store          = store
         self.context        = MobileAgentContext(store: store)
         self.settings       = settings
         self.skillStore     = skillStore ?? .shared
+        self.convo          = convo ?? AIConversation()
         self.backendFactory = backendFactory
+    }
+
+    /// 当前会话消息（持久化文本 + 内存中的步骤快照合并视图）。
+    var messages: [ChatMessage] {
+        let snapshots = stepSnapshots[convo.activeID] ?? [:]
+        return convo.messages.map {
+            ChatMessage(id: $0.id, role: $0.role, text: $0.text, steps: snapshots[$0.id] ?? [])
+        }
     }
 
     private static let systemPrompt = """
@@ -73,19 +88,19 @@ final class ChatModel {
         input = ""
         store.beginAIRun()
 
-        // 对话过长时先做滑动窗口截断（对齐 macOS AIAssistant 的发送前行为）。
-        if truncateIfOverLimit() {
-            messages.append(ChatMessage(role: .assistant, text: "⚠️ 对话历史过长，已自动保留最近 10 轮对话。"))
+        // 对话过长时先做滑动窗口截断（复用 AIConversation 的实现，与 macOS 同源）。
+        if convo.truncateIfOverLimit() {
+            convo.messages.append(AIChatMessage(role: .assistant, text: "⚠️ 对话历史过长，已自动保留最近 10 轮对话。"))
         }
 
-        messages.append(ChatMessage(role: .user, text: text))
-        messages.append(ChatMessage(role: .assistant, text: ""))
+        convo.messages.append(AIChatMessage(role: .user, text: text))
+        convo.messages.append(AIChatMessage(role: .assistant, text: ""))
         isResponding = true
 
-        // history（= 上轮 runner.finalMessages）首条已含 system 消息。
+        // agentHistory（= 上轮 runner.finalMessages）首条已含 system 消息。
         // 对齐 macOS AIAssistant 的策略：替换首条而非再前置一条——
         // 保证 system prompt 有且仅有一条，且始终是当前最新（技能开关即时生效）。
-        var msgs = history
+        var msgs = convo.agentHistory
         let systemMessage = AgentMessage(role: .system, content: systemPromptWithSkills())
         if msgs.first?.role == .system {
             msgs[0] = systemMessage
@@ -96,14 +111,18 @@ final class ChatModel {
 
         let r = AgentRunner(backendFactory: backendFactory)
         runner = r
+        // 会话切换/删除会先 cancel()，但 runner 的收尾（onComplete）与在途的
+        // chunk 仍可能异步落到回调里——用发送时的会话 id 把关，跨会话一律丢弃，
+        // 避免把旧会话的文本/历史写进新会话。
+        let sessionID = convo.activeID
         r.onChunk = { [weak self] fullText in
-            self?.updateLastAssistant(fullText)
+            self?.updateLastAssistant(fullText, in: sessionID)
         }
         // 双 weak 捕获：避免 闭包 → runner → 闭包 的 retain cycle
         // （对齐 macOS AIAssistant.swift 的 onComplete 写法）。
         r.onComplete = { [weak self, weak r] in
             guard let self, let r else { return }
-            self.finish(r)
+            self.finish(r, sessionID: sessionID)
         }
         r.run(
             messages: msgs,
@@ -117,6 +136,7 @@ final class ChatModel {
         runner?.cancel()
         runner = nil
         isResponding = false
+        convo.persist()
     }
 
     /// 把 AI 回复插入当前文档末尾（消息操作）；无打开文档时返回 false。
@@ -132,76 +152,56 @@ final class ChatModel {
         store.undoAIChanges()
     }
 
-    private func updateLastAssistant(_ text: String) {
-        guard !messages.isEmpty else { return }
-        messages[messages.count - 1].text = text
+    private func updateLastAssistant(_ text: String, in sessionID: UUID) {
+        guard convo.activeID == sessionID, !convo.messages.isEmpty else { return }
+        convo.messages[convo.messages.count - 1].text = text
     }
 
-    // MARK: - 上下文长度管理
+    // MARK: - 多会话（转发给 AIConversation，先停掉本进程内的 runner）
 
-    /// 上下文占用上限（token 估算 = 字符数 ÷ 4）：128K 窗口的 80%，与 macOS 一致。
-    private static let contextTokenLimit = 102_400
-    /// 截断后保留的最近对话轮数（一轮 = user + assistant 各一条），与 macOS 一致。
-    private static let keepRecentPairs = 10
+    /// 历史会话列表，最近更新的在前。
+    var sessions: [AISession] { convo.history }
 
-    /// 粗略 token 估算：UI 消息 + agent 历史（工具结果原始内容，单条可达 64KB）。
-    private var estimatedTokenCount: Int {
-        messages.reduce(0) { $0 + $1.text.count / 4 }
-            + history.reduce(0) { $0 + $1.content.count / 4 }
+    var activeSessionID: UUID { convo.activeID }
+
+    func newSession() {
+        cancel()
+        convo.newSession()
     }
 
-    /// 历史超过上下文上限时做滑动窗口截断，避免长会话被 API 400 拒绝。
-    /// 策略与 macOS 对齐（同步来源：Sources/MEditor/Managers/AIConversationStore.swift
-    /// 的 truncateIfOverLimit）：保留首条用户消息（初始上下文）+ system prompt
-    /// + 最近 N 轮完整消息对；agent 历史从最老一端裁剪，裁剪边界不落在
-    /// assistant(toolCalls) 与其 tool results 之间。
-    @discardableResult
-    private func truncateIfOverLimit() -> Bool {
-        guard estimatedTokenCount > Self.contextTokenLimit else { return false }
-        let totalPairs = Self.keepRecentPairs * 2
-
-        if messages.count > totalPairs + 1 {
-            let tail = Array(messages.suffix(totalPairs))
-            // 保留最早的用户消息（初始上下文）；首条与 recent 不可能重叠
-            // （count > totalPairs + 1 时 suffix 不含首条）
-            if let seed = messages.first(where: { $0.role == .user }) {
-                messages = [seed] + tail
-            } else {
-                messages = tail
-            }
-        }
-
-        if history.count > totalPairs {
-            // system prompt（若有）固定在头部，不参与裁剪
-            let head: [AgentMessage] = history.first?.role == .system ? [history[0]] : []
-            var tail = Array(history.dropFirst(head.count))
-            if tail.count > totalPairs {
-                var start = tail.count - totalPairs
-                // tool 结果必须跟在对应 assistant(toolCalls) 之后：起点落在 tool 消息上
-                // 则继续后移，把它连同前面的 assistant(toolCalls) 一起整轮丢弃
-                while start < tail.count, tail[start].role == .tool { start += 1 }
-                tail = Array(tail[start...])
-            }
-            history = head + tail
-        }
-        return true
+    func activateSession(_ id: UUID) {
+        guard id != convo.activeID else { return }
+        cancel()
+        convo.activate(id)
     }
 
-    private func finish(_ r: AgentRunner) {
-        history = r.finalMessages
-        // 工具步骤快照进消息（滤掉 thinking 占位），run 结束后仍可回放。
-        if !messages.isEmpty {
-            messages[messages.count - 1].steps = r.steps.filter { step in
+    func deleteSession(_ id: UUID) {
+        if id == convo.activeID { cancel() }
+        convo.delete(id)
+    }
+
+    private func finish(_ r: AgentRunner, sessionID: UUID) {
+        // 会话已切换/删除时（cancel 后 runner 收尾仍异步触发本回调）：
+        // runner/isResponding 已被 cancel() 复位，直接丢弃这次收尾，
+        // 避免把旧会话的 agentHistory / 错误文本写进新会话。
+        guard convo.activeID == sessionID else { return }
+        convo.agentHistory = r.finalMessages
+        // 工具步骤快照进内存映射（滤掉 thinking 占位），run 结束后仍可回放；
+        // 切换会话再切回（本进程内）快照仍在，重启后随进程消失（macOS 同样不落盘）。
+        if let last = convo.messages.last {
+            let steps = r.steps.filter { step in
                 if case .thinking = step { return false }
                 return true
             }
+            stepSnapshots[sessionID, default: [:]][last.id] = steps
         }
-        if let error = r.error, messages.last?.text.isEmpty == true {
-            updateLastAssistant("[!] \(error)")
+        if let error = r.error, convo.messages.last?.text.isEmpty == true {
+            updateLastAssistant("[!] \(error)", in: sessionID)
         } else if let error = r.error {
-            updateLastAssistant((messages.last?.text ?? "") + "\n\n[!] \(error)")
+            updateLastAssistant((convo.messages.last?.text ?? "") + "\n\n[!] \(error)", in: sessionID)
         }
         runner = nil
         isResponding = false
+        convo.persist()
     }
 }
