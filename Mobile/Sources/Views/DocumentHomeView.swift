@@ -1,13 +1,18 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// 最近文档首页（sheet）：纸墨风格的文档列表——打开 / 置顶 / 重命名 / 删除，
-/// 顶部保留「打开文件」入口（系统文件选择器），空态给出引导。
+/// 文件列表页（App 根页面）：搜索 + 白卡列表——打开 / 置顶 / 重命名 / 删除，
+/// 底部动作条（新建 + AI）；头部齿轮进设置页。
 struct DocumentHomeView: View {
     @Environment(DocumentStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
+
+    /// 打开文档成功后的回调（RootView 推进文档页）。
+    let onOpenDocument: () -> Void
+    /// 打开设置页的回调。
+    let onOpenSettings: () -> Void
 
     @State private var showingFilePicker = false
+    @State private var showingAI = false
     /// 重命名目标（非 nil 时弹输入框）。
     @State private var renaming: DocumentStore.RecentDocument? = nil
     @State private var renameText = ""
@@ -24,7 +29,7 @@ struct DocumentHomeView: View {
     ].compactMap { $0 }
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
             Group {
                 if store.recentDocuments.isEmpty {
                     emptyState
@@ -32,33 +37,27 @@ struct DocumentHomeView: View {
                     documentList
                 }
             }
-            .background(PaperTheme.paper.ignoresSafeArea())
-            .navigationTitle("文档")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                // 与 DocumentView 一致的自绘衬线标题。
-                ToolbarItem(placement: .principal) {
-                    Text("文档")
-                        .font(.system(.headline, design: .serif, weight: .semibold))
-                        .foregroundStyle(PaperTheme.ink)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            actionBar
+        }
+        .background(PaperTheme.paper.ignoresSafeArea())
+        .navigationTitle("文档")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // 与 DocumentView 一致的自绘衬线标题。
+            ToolbarItem(placement: .principal) {
+                Text("文档")
+                    .font(.system(.headline, design: .serif, weight: .semibold))
+                    .foregroundStyle(PaperTheme.ink)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(action: onOpenSettings) {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 15))
+                        .foregroundStyle(PaperTheme.inkSecondary)
                 }
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 15))
-                            .foregroundStyle(PaperTheme.inkSecondary)
-                    }
-                    .buttonStyle(.pressable)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showingFilePicker = true } label: {
-                        Image(systemName: "folder.badge.plus")
-                            .font(.system(size: 15))
-                            .foregroundStyle(PaperTheme.inkSecondary)
-                    }
-                    .buttonStyle(.pressable)
-                    .accessibilityLabel("打开文件")
-                }
+                .buttonStyle(.pressable)
+                .accessibilityLabel("设置")
             }
         }
         .fileImporter(
@@ -68,9 +67,10 @@ struct DocumentHomeView: View {
         ) { result in
             if case .success(let urls) = result, let url = urls.first {
                 store.openIncoming(url)
-                dismiss()
+                if store.lastError == nil { onOpenDocument() }
             }
         }
+        .sheet(isPresented: $showingAI) { AIChatView() }
         .alert("重命名", isPresented: Binding(
             get: { renaming != nil },
             set: { if !$0 { renaming = nil } }
@@ -90,6 +90,47 @@ struct DocumentHomeView: View {
             Text(actionError ?? "")
         }
         .onAppear { store.refreshWorkspaceDocuments() }
+    }
+
+    // MARK: - 底部动作条（与文档页同一语言：左胶囊 + 右 AI 圆钮）
+
+    private var actionBar: some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 4) {
+                Button { store.createDocument() } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(PaperTheme.inkSecondary)
+                        .frame(width: 48)
+                        .padding(.vertical, 8)
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.pressable)
+                .accessibilityLabel("新建文档")
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 5)
+            .background(PaperTheme.card, in: Capsule(style: .continuous))
+            .shadow(color: PaperTheme.cardShadow, radius: 18, y: 8)
+
+            Spacer()
+
+            Button { showingAI = true } label: {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(PaperTheme.paper)
+                    .symbolEffect(.variableColor.iterative, options: .repeating)
+                    .frame(width: 48, height: 48)
+                    .background(PaperTheme.ink, in: Circle())
+                    .shadow(color: PaperTheme.ink.opacity(0.3), radius: 12, y: 5)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.pressable)
+            .accessibilityLabel("AI 助手")
+        }
+        .padding(.horizontal, 32)
+        .padding(.bottom, 4)
+        .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 
     // MARK: - 列表（Craft 式：搜索 + 白卡列表）
@@ -244,7 +285,7 @@ struct DocumentHomeView: View {
     private func open(_ doc: DocumentStore.RecentDocument) {
         let url = store.workspace.appendingPathComponent(doc.relativePath)
         if store.loadFromSandbox(url) {
-            dismiss()
+            onOpenDocument()
         } else {
             // 文件可能已被外部删除：刷新列表清掉失效记录，并告知用户。
             store.refreshWorkspaceDocuments()
@@ -266,11 +307,8 @@ struct DocumentHomeView: View {
     }
 
     private func delete(_ doc: DocumentStore.RecentDocument) {
-        let url = store.workspace.appendingPathComponent(doc.relativePath)
-        let wasCurrent = store.sandboxURL?.standardizedFileURL == url.standardizedFileURL
         store.deleteDocument(at: doc.relativePath)
-        // 删的是当前打开文档：关掉首页，回到无文档空态。
-        if wasCurrent { dismiss() }
+        // 删的是当前打开文档：store.sandboxURL 变 nil，RootView 会自动退回列表页。
     }
 
     /// 首行内容摘要：只读前 4KB，取第一个非空行并去掉 Markdown 标题/引用/列表标记。

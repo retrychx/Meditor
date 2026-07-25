@@ -8,6 +8,7 @@ struct DocumentView: View {
     @Environment(ReaderSettings.self) private var reader
 
     @State private var showingFilePicker = false
+    @State private var showingAI = false
     @State private var showingOpenError = false
     /// 预览滚动越顶：导航栏从透明过渡到纸底 + 发丝分隔。
     @State private var contentScrolled = false
@@ -29,7 +30,7 @@ struct DocumentView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
             Group {
                 if store.hasDocument {
                     content
@@ -42,29 +43,31 @@ struct DocumentView: View {
                     emptyState
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .animation(PaperTheme.Motion.standard, value: store.showPreview)
-            .background(PaperTheme.paper.ignoresSafeArea())
-            .navigationTitle(store.hasDocument ? store.fileName : "MEditor")
-            .navigationBarTitleDisplayMode(.inline)
-            // 透明 ↔ 纸底的过渡随滚动状态缓动
-            .toolbarBackground(transparentHeader ? .hidden : .visible, for: .navigationBar)
-            .animation(PaperTheme.Motion.gentle, value: transparentHeader)
-            .onPreferenceChange(PreviewScrollOffsetKey.self) { minY in
-                contentScrolled = minY < -8
+            actionBar
+        }
+        .background(PaperTheme.paper.ignoresSafeArea())
+        .navigationTitle(store.hasDocument ? store.fileName : "MEditor")
+        .navigationBarTitleDisplayMode(.inline)
+        // 透明 ↔ 纸底的过渡随滚动状态缓动
+        .toolbarBackground(transparentHeader ? .hidden : .visible, for: .navigationBar)
+        .animation(PaperTheme.Motion.gentle, value: transparentHeader)
+        .onPreferenceChange(PreviewScrollOffsetKey.self) { minY in
+            contentScrolled = minY < -8
+        }
+        .toolbar {
+            // 标题自绘：文档文件名 / 品牌字保留衬线（UI chrome 其余部分是无衬线）。
+            // 操作动作全部沉到底部动作条，头部只留标题和 ⋯ 菜单。
+            ToolbarItem(placement: .principal) {
+                Text(store.hasDocument ? store.fileName : "MEditor")
+                    .font(.system(.headline, design: .serif, weight: .semibold))
+                    .foregroundStyle(PaperTheme.ink)
+                    .lineLimit(1)
             }
-            .toolbar {
-                // 标题自绘：文档文件名 / 品牌字保留衬线（UI chrome 其余部分是无衬线）。
-                // 操作动作全部沉到底部动作条（RootView），头部只留标题和 ⋯ 菜单。
-                ToolbarItem(placement: .principal) {
-                    Text(store.hasDocument ? store.fileName : "MEditor")
-                        .font(.system(.headline, design: .serif, weight: .semibold))
-                        .foregroundStyle(PaperTheme.ink)
-                        .lineLimit(1)
-                }
-                if store.hasDocument {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        documentMenu
-                    }
+            if store.hasDocument {
+                ToolbarItem(placement: .topBarTrailing) {
+                    documentMenu
                 }
             }
         }
@@ -77,6 +80,7 @@ struct DocumentView: View {
                 store.openIncoming(url)
             }
         }
+        .sheet(isPresented: $showingAI) { AIChatView() }
         // 打开失败：无论空态还是已有文档，都明确弹窗告知（真机权限/iCloud 问题全靠它暴露）
         .onChange(of: store.lastError) { _, newValue in
             showingOpenError = newValue != nil
@@ -86,6 +90,68 @@ struct DocumentView: View {
         } message: {
             Text(store.lastError ?? "")
         }
+    }
+
+    // MARK: - 底部动作条（与列表页同一语言：左胶囊 + 右 AI 圆钮）
+
+    private var actionBar: some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 4) {
+                barButton(icon: "plus", label: "新建文档") { store.createDocument() }
+                modeButton
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 5)
+            .background(PaperTheme.card, in: Capsule(style: .continuous))
+            .shadow(color: PaperTheme.cardShadow, radius: 18, y: 8)
+
+            Spacer()
+
+            Button { showingAI = true } label: {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(PaperTheme.paper)
+                    .symbolEffect(.variableColor.iterative, options: .repeating)
+                    .frame(width: 48, height: 48)
+                    .background(PaperTheme.ink, in: Circle())
+                    .shadow(color: PaperTheme.ink.opacity(0.3), radius: 12, y: 5)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.pressable)
+            .accessibilityLabel("AI 助手")
+        }
+        .padding(.horizontal, 32)
+        .padding(.bottom, 4)
+        // 键盘弹出时动作条保持贴底（被键盘遮住），不被顶上去
+        .ignoresSafeArea(.keyboard, edges: .bottom)
+    }
+
+    private func barButton(icon: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(PaperTheme.inkSecondary)
+                .frame(width: 48)
+                .padding(.vertical, 8)
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(label)
+    }
+
+    /// 编辑/预览切换：预览态铅笔（点去编辑）、编辑态文档高亮（点回预览），morph 过渡。
+    private var modeButton: some View {
+        Button { store.showPreview.toggle() } label: {
+            Image(systemName: store.showPreview ? "pencil" : "doc.richtext")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(store.showPreview ? PaperTheme.inkSecondary : PaperTheme.accent)
+                .contentTransition(.symbolEffect(.replace.downUp))
+                .frame(width: 48)
+                .padding(.vertical, 8)
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(store.showPreview ? "编辑" : "预览")
     }
 
     /// 导航栏「⋯」菜单：阅读设置 / 分享 / 复制等文档级操作的归宿。
