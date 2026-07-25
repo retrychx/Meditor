@@ -10,45 +10,102 @@ enum PaperTheme {
     /// 色板原始值：Color 与 JS 用 hex 字符串（Hex）均由此派生，改一处全局同步。
     /// 真正的中式纸墨不是暖黄配焦橙——宣纸是带青灰的冷白，松烟墨是蓝黑，
     /// 全页唯一的亮色是落款那枚朱砂印。
-    private enum Palette {
-        static let paper: UInt32          = 0xF4F5F2
-        static let card: UInt32           = 0xFCFCFA
-        static let ink: UInt32            = 0x1B2434
-        static let inkSecondary: UInt32   = 0x5D6673
-        static let accent: UInt32         = 0xC0392B
-        static let codeBackground: UInt32 = 0xECEFEA
+    /// 浅色 / 墨夜（深色）两套：Color 走 UIColor 动态色，JS 走 Hex.Light / Hex.Dark。
+    fileprivate enum Palette {
+        enum Light {
+            static let paper: UInt32          = 0xF4F5F2
+            static let card: UInt32           = 0xFCFCFA
+            static let ink: UInt32            = 0x1B2434
+            static let inkSecondary: UInt32   = 0x5D6673
+            static let accent: UInt32         = 0xC0392B
+            static let accentPressed: UInt32  = 0x9E2E22
+            static let hairline: UInt32       = 0xE2E6E1
+            static let codeBackground: UInt32 = 0xECEFEA
+        }
+        /// 墨夜：墨黑泛蓝的底（不用纯黑），宣纸白字微暖，朱砂略亮保对比。
+        enum Dark {
+            static let paper: UInt32          = 0x14181F
+            static let card: UInt32           = 0x1C222C
+            static let ink: UInt32            = 0xE8E4DC
+            static let inkSecondary: UInt32   = 0x8B93A1
+            static let accent: UInt32         = 0xD04A3A
+            static let accentPressed: UInt32  = 0xA83A2C
+            static let hairline: UInt32       = 0x2A3140
+            static let codeBackground: UInt32 = 0x232A37
+        }
     }
 
-    /// 宣纸背景（页面底）：冷调米白，带一丝纸纤维的青灰。
-    static let paper = Color(hex: Palette.paper)
+    /// 动态 UIColor：浅 / 深两套值按 trait 解析（SwiftUI Color 与 UIKit appearance 共用同一条动态链）。
+    static func dynamicUIColor(light: UInt32, dark: UInt32) -> UIColor {
+        UIColor { traits in
+            UIColor(hex: traits.userInterfaceStyle == .dark ? dark : light)
+        }
+    }
+
+    /// 宣纸背景（页面底）：冷调米白，带一丝纸纤维的青灰；墨夜为墨黑泛蓝。
+    static let paper = Color(light: Palette.Light.paper, dark: Palette.Dark.paper)
     /// 卡片 / 浮层底（比宣纸更白一度，拉开色阶）。
-    static let card = Color(hex: Palette.card)
+    static let card = Color(light: Palette.Light.card, dark: Palette.Dark.card)
     /// 冷灰分隔线 / 描边。
-    static let hairline = Color(hex: 0xE2E6E1)
-    /// 松烟墨正文（蓝黑，不是暖棕黑）。
-    static let ink = Color(hex: Palette.ink)
+    static let hairline = Color(light: Palette.Light.hairline, dark: Palette.Dark.hairline)
+    /// 松烟墨正文（蓝黑，不是暖棕黑）；墨夜反转为宣纸白。
+    static let ink = Color(light: Palette.Light.ink, dark: Palette.Dark.ink)
     /// 次要文字（青灰）。
-    static let inkSecondary = Color(hex: Palette.inkSecondary)
-    /// 朱砂（印章红）：全页唯一亮色——主按钮 / 选中态 / 开关 / FAB。
-    static let accent = Color(hex: Palette.accent)
+    static let inkSecondary = Color(light: Palette.Light.inkSecondary, dark: Palette.Dark.inkSecondary)
+    /// 朱砂（印章红）：全页唯一亮色——主按钮 / 选中态 / 开关 / FAB。墨夜里略亮保对比。
+    static let accent = Color(light: Palette.Light.accent, dark: Palette.Dark.accent)
     /// 朱砂按压态。
-    static let accentPressed = Color(hex: 0x9E2E22)
+    static let accentPressed = Color(light: Palette.Light.accentPressed, dark: Palette.Dark.accentPressed)
     /// 代码块 / 行内代码的浅色底（比纸面略深，保持同色系）。
-    static let codeBackground = Color(hex: Palette.codeBackground)
-    /// 卡片柔和投影（替代描边，hairline 只留给真正的分隔线）。
-    static let cardShadow = Color.black.opacity(0.05)
+    static let codeBackground = Color(light: Palette.Light.codeBackground, dark: Palette.Dark.codeBackground)
+    /// 卡片柔和投影（替代描边，hairline 只留给真正的分隔线）；墨夜里加重才能看得见。
+    static let cardShadow = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(white: 0, alpha: 0.35)
+            : UIColor(white: 0, alpha: 0.05)
+    })
 
     // MARK: - Hex 字符串（JS / WebView 场景）
 
     /// 与 Color 同源的 #RRGGBB 字符串：Mermaid 图表等 WKWebView/JS 上下文插值用，
-    /// 改 PaperTheme 色板时图表主题自动同步。
+    /// 改 PaperTheme 色板时图表主题自动同步。浅 / 深两套，按当前外观取。
     enum Hex {
-        static let paper          = PaperTheme.hexString(Palette.paper)
-        static let card           = PaperTheme.hexString(Palette.card)
-        static let ink            = PaperTheme.hexString(Palette.ink)
-        static let inkSecondary   = PaperTheme.hexString(Palette.inkSecondary)
-        static let accent         = PaperTheme.hexString(Palette.accent)
-        static let codeBackground = PaperTheme.hexString(Palette.codeBackground)
+        enum Light {
+            static let paper          = PaperTheme.hexString(Palette.Light.paper)
+            static let card           = PaperTheme.hexString(Palette.Light.card)
+            static let ink            = PaperTheme.hexString(Palette.Light.ink)
+            static let inkSecondary   = PaperTheme.hexString(Palette.Light.inkSecondary)
+            static let accent         = PaperTheme.hexString(Palette.Light.accent)
+            static let codeBackground = PaperTheme.hexString(Palette.Light.codeBackground)
+        }
+        enum Dark {
+            static let paper          = PaperTheme.hexString(Palette.Dark.paper)
+            static let card           = PaperTheme.hexString(Palette.Dark.card)
+            static let ink            = PaperTheme.hexString(Palette.Dark.ink)
+            static let inkSecondary   = PaperTheme.hexString(Palette.Dark.inkSecondary)
+            static let accent         = PaperTheme.hexString(Palette.Dark.accent)
+            static let codeBackground = PaperTheme.hexString(Palette.Dark.codeBackground)
+        }
+
+        /// 一套外观的全部 hex 值：Mermaid 渲染按调用时的 colorScheme 注入（引擎常驻不重建）。
+        struct Values {
+            let paper: String
+            let card: String
+            let ink: String
+            let inkSecondary: String
+            let accent: String
+            let codeBackground: String
+        }
+
+        static func values(dark: Bool) -> Values {
+            dark
+                ? Values(paper: Dark.paper, card: Dark.card, ink: Dark.ink,
+                         inkSecondary: Dark.inkSecondary, accent: Dark.accent,
+                         codeBackground: Dark.codeBackground)
+                : Values(paper: Light.paper, card: Light.card, ink: Light.ink,
+                         inkSecondary: Light.inkSecondary, accent: Light.accent,
+                         codeBackground: Light.codeBackground)
+        }
     }
 
     private static func hexString(_ value: UInt32) -> String {
@@ -103,22 +160,25 @@ enum PaperTheme {
             .system(.title3, weight: .semibold)
         }
         /// Markdown 预览里的衬线标题（全 App 唯一一套标题字号）。
-        static func heading(level: Int) -> Font {
+        /// scale：阅读设置的字号系数，层级比例不变。
+        static func heading(level: Int, scaledBy scale: CGFloat = 1) -> Font {
             switch level {
-            case 1:  return .system(size: 30, weight: .bold, design: .serif)
-            case 2:  return .system(size: 23, weight: .semibold, design: .serif)
-            case 3:  return .system(size: 19, weight: .semibold, design: .serif)
-            default: return .system(size: 17, weight: .semibold, design: .serif)
+            case 1:  return .system(size: 30 * scale, weight: .bold, design: .serif)
+            case 2:  return .system(size: 23 * scale, weight: .semibold, design: .serif)
+            case 3:  return .system(size: 19 * scale, weight: .semibold, design: .serif)
+            default: return .system(size: 17 * scale, weight: .semibold, design: .serif)
             }
         }
-        /// 编辑器正文。
+        /// 编辑器正文基准字号（阅读设置系数在 MarkdownTextEditor 里乘）。
         static let editorBody = Font.system(size: 16.5, design: .monospaced)
-        /// 代码块。
-        static let code = Font.system(size: 14.5, design: .monospaced)
+        /// 代码块。scale：阅读设置的字号系数。
+        static func code(scaledBy scale: CGFloat = 1) -> Font {
+            .system(size: 14.5 * scale, design: .monospaced)
+        }
     }
 }
 
-// MARK: - Color(hex:)
+// MARK: - Color(hex:) / Color(light:dark:)
 
 extension Color {
     init(hex: UInt32, opacity: Double = 1) {
@@ -128,6 +188,23 @@ extension Color {
             green: Double((hex >> 8) & 0xFF) / 255,
             blue: Double(hex & 0xFF) / 255,
             opacity: opacity
+        )
+    }
+
+    /// 动态色：浅 / 墨夜两套 hex，按 trait 解析（底层是 UIColor dynamicProvider，
+    /// 转回 UIKit（UIColor(color)）仍保持动态）。
+    init(light: UInt32, dark: UInt32) {
+        self.init(uiColor: PaperTheme.dynamicUIColor(light: light, dark: dark))
+    }
+}
+
+extension UIColor {
+    convenience init(hex: UInt32, alpha: CGFloat = 1) {
+        self.init(
+            red: CGFloat((hex >> 16) & 0xFF) / 255,
+            green: CGFloat((hex >> 8) & 0xFF) / 255,
+            blue: CGFloat(hex & 0xFF) / 255,
+            alpha: alpha
         )
     }
 }
@@ -219,15 +296,22 @@ struct SealStamp: View {
 
 enum PaperAppearance {
     /// 应用启动时调用一次：让系统控件也落在纸墨色系里。
+    /// 颜色全部走动态 UIColor，外观切换（含 App 内手动切换）系统自动重解析。
     @MainActor
     static func apply() {
-        let inkUIColor = UIColor(PaperTheme.ink)
+        typealias Light = PaperTheme.Palette.Light
+        typealias Dark = PaperTheme.Palette.Dark
+        let inkUIColor = PaperTheme.dynamicUIColor(light: Light.ink, dark: Dark.ink)
+        let paperUIColor = PaperTheme.dynamicUIColor(light: Light.paper, dark: Dark.paper)
+        let cardUIColor = PaperTheme.dynamicUIColor(light: Light.card, dark: Dark.card)
+        let hairlineUIColor = PaperTheme.dynamicUIColor(light: Light.hairline, dark: Dark.hairline)
+        let secondaryUIColor = PaperTheme.dynamicUIColor(light: Light.inkSecondary, dark: Dark.inkSecondary)
 
         // 导航栏：纸底、发丝级分隔；标题用系统无衬线（文档文件名的衬线由 DocumentView 自绘标题承担）。
         let nav = UINavigationBarAppearance()
         nav.configureWithOpaqueBackground()
-        nav.backgroundColor = UIColor(PaperTheme.paper)
-        nav.shadowColor = UIColor(PaperTheme.hairline)
+        nav.backgroundColor = paperUIColor
+        nav.shadowColor = hairlineUIColor
         nav.titleTextAttributes = [
             .foregroundColor: inkUIColor,
             .font: UIFont.preferredFont(forTextStyle: .headline),
@@ -247,18 +331,17 @@ enum PaperAppearance {
         // 标签栏：卡片底、发丝级顶边、未选中次要色。
         let tab = UITabBarAppearance()
         tab.configureWithOpaqueBackground()
-        tab.backgroundColor = UIColor(PaperTheme.card)
-        tab.shadowColor = UIColor(PaperTheme.hairline)
-        let secondary = UIColor(PaperTheme.inkSecondary)
+        tab.backgroundColor = cardUIColor
+        tab.shadowColor = hairlineUIColor
         for item in [tab.stackedLayoutAppearance, tab.inlineLayoutAppearance, tab.compactInlineLayoutAppearance] {
-            item.normal.iconColor = secondary
-            item.normal.titleTextAttributes = [.foregroundColor: secondary]
+            item.normal.iconColor = secondaryUIColor
+            item.normal.titleTextAttributes = [.foregroundColor: secondaryUIColor]
         }
         let tabBar = UITabBar.appearance()
         tabBar.standardAppearance = tab
         tabBar.scrollEdgeAppearance = tab
 
         // 表单分隔线贴近纸色。
-        UITableView.appearance().separatorColor = UIColor(PaperTheme.hairline)
+        UITableView.appearance().separatorColor = hairlineUIColor
     }
 }

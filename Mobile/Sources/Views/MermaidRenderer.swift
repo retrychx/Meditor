@@ -70,22 +70,27 @@ final class MermaidRenderer: NSObject {
         ensureEngine()
     }
 
+    /// 缓存 key：外观 | 缩放 | 代码——切换浅色 / 墨夜后不能命中旧图。
+    private static func cacheKey(code: String, scale: CGFloat, dark: Bool) -> NSString {
+        "\(dark ? "dark" : "light")|\(scale)|\(code)" as NSString
+    }
+
     /// 预渲染一批图表：引擎预热后按文档顺序在后台填满缓存。
     /// 视图出现前的预热调用；块真正展示时 render() 命中缓存即时返回，
     /// 屏外的图表也不再等滚动到才开始渲染。失败忽略（视图会自行展示错误）。
-    func preload(codes: [String], scale: CGFloat) {
-        let pending = codes.filter { cache.object(forKey: "\(scale)|\($0)" as NSString) == nil }
+    func preload(codes: [String], scale: CGFloat, dark: Bool) {
+        let pending = codes.filter { cache.object(forKey: Self.cacheKey(code: $0, scale: scale, dark: dark)) == nil }
         guard !pending.isEmpty else { return }
         prewarm()
         Task {
             for code in pending {
-                _ = try? await render(code: code, scale: scale)
+                _ = try? await render(code: code, scale: scale, dark: dark)
             }
         }
     }
 
-    func render(code: String, scale: CGFloat) async throws -> Rendered {
-        let key = "\(scale)|\(code)" as NSString
+    func render(code: String, scale: CGFloat, dark: Bool) async throws -> Rendered {
+        let key = Self.cacheKey(code: code, scale: scale, dark: dark)
         if let hit = cache.object(forKey: key) { return hit.value }
 
         await acquire()
@@ -102,7 +107,7 @@ final class MermaidRenderer: NSObject {
         // 等引擎加载期间也可能被取消，发 JS 前再查一次。
         try Task.checkCancellation()
 
-        let raw = try await callRenderJS(webView: webView, code: code, scale: scale)
+        let raw = try await callRenderJS(webView: webView, code: code, scale: scale, dark: dark)
 
         guard let dict = raw as? [String: Any] else { throw RenderError.badImage }
         if let error = dict["error"] as? String { throw RenderError.jsFailed(error) }
@@ -124,8 +129,20 @@ final class MermaidRenderer: NSObject {
     /// JS 调用：正常回调、30s 超时、任务取消三路竞争。
     /// OnceContinuation 保证底层 continuation 恰好 resume 一次（先到先赢，后到丢弃）——
     /// 超时触发后姗姗来迟的 JS 回调不会双重 resume 崩溃。
-    private func callRenderJS(webView: WKWebView, code: String, scale: CGFloat) async throws -> Any? {
+    /// 主题按调用时的外观注入（引擎常驻，浅 / 墨夜共用，不重建）。
+    private func callRenderJS(webView: WKWebView, code: String, scale: CGFloat, dark: Bool) async throws -> Any? {
         let once = OnceContinuation()
+        let hex = PaperTheme.Hex.values(dark: dark)
+        let themeVariables: [String: String] = [
+            "background": hex.card,
+            "primaryColor": hex.paper,
+            "primaryTextColor": hex.ink,
+            "primaryBorderColor": hex.accent,
+            "lineColor": hex.inkSecondary,
+            "secondaryColor": hex.codeBackground,
+            "tertiaryColor": hex.codeBackground,
+            "fontFamily": "-apple-system, sans-serif",
+        ]
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Any?, Error>) in
                 once.set(cont)
@@ -139,8 +156,13 @@ final class MermaidRenderer: NSObject {
                     self?.destroyEngine()
                 }
                 webView.callAsyncJavaScript(
-                    "return await renderMermaidPNG(code, scale);",
-                    arguments: ["code": code, "scale": scale],
+                    "return await renderMermaidPNG(code, scale, themeVariables, canvasFill);",
+                    arguments: [
+                        "code": code,
+                        "scale": scale,
+                        "themeVariables": themeVariables,
+                        "canvasFill": hex.card,
+                    ],
                     in: nil, in: .page
                 ) { result in
                     timeout.cancel()
@@ -280,24 +302,16 @@ final class MermaidRenderer: NSObject {
     <meta charset="utf-8">
     <script src="mermaid.min.js"></script>
     <script>
-    mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: 'loose',
-      theme: 'base',
-      themeVariables: {
-        background: '\(PaperTheme.Hex.card)',
-        primaryColor: '\(PaperTheme.Hex.paper)',
-        primaryTextColor: '\(PaperTheme.Hex.ink)',
-        primaryBorderColor: '\(PaperTheme.Hex.accent)',
-        lineColor: '\(PaperTheme.Hex.inkSecondary)',
-        secondaryColor: '\(PaperTheme.Hex.codeBackground)',
-        tertiaryColor: '\(PaperTheme.Hex.codeBackground)',
-        fontFamily: '-apple-system, sans-serif'
-      }
-    });
     var renderSeq = 0;
-    async function renderMermaidPNG(code, scale) {
+    async function renderMermaidPNG(code, scale, themeVariables, canvasFill) {
       try {
+        // 主题随每次渲染注入：引擎常驻，浅色 / 墨夜共用同一 JS 上下文。
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: 'loose',
+          theme: 'base',
+          themeVariables: themeVariables
+        });
         const { svg } = await mermaid.render('mmd-' + (renderSeq++), code);
         const host = document.getElementById('host');
         host.innerHTML = svg;
@@ -330,7 +344,7 @@ final class MermaidRenderer: NSObject {
         canvas.width = Math.round(w * scale);
         canvas.height = Math.round(h * scale);
         const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '\(PaperTheme.Hex.card)';
+        ctx.fillStyle = canvasFill;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         return { png: canvas.toDataURL('image/png'), width: w, height: h };

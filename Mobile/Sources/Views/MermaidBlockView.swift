@@ -6,6 +6,8 @@ struct MermaidBlockView: View {
     let code: String
 
     @Environment(\.displayScale) private var displayScale
+    /// 外观切换（浅色 / 墨夜）要重渲染：图表 PNG 是按外观配色的位图。
+    @Environment(\.colorScheme) private var colorScheme
     @State private var phase: Phase = .loading
 
     private enum Phase {
@@ -48,9 +50,11 @@ struct MermaidBlockView: View {
         }
         .background(PaperTheme.card, in: RoundedRectangle(cornerRadius: PaperTheme.Radius.medium, style: .continuous))
         .shadow(color: PaperTheme.cardShadow, radius: 10, y: 3)
-        .task(id: code) {
+        .task(id: "\(colorScheme == .dark)|\(code)") {
             do {
-                let rendered = try await MermaidRenderer.shared.render(code: code, scale: displayScale)
+                let rendered = try await MermaidRenderer.shared.render(
+                    code: code, scale: displayScale, dark: colorScheme == .dark
+                )
                 guard !Task.isCancelled else { return }
                 withAnimation(PaperTheme.Motion.standard) { phase = .rendered(rendered) }
             } catch {

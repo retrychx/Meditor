@@ -12,6 +12,13 @@ struct MarkdownPreviewView: View {
     let source: String
 
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(ReaderSettings.self) private var reader
+
+    /// 阅读设置缩放后的正文基准字号（17pt × 系数）。
+    private var bodySize: CGFloat { reader.scaled(17) }
+    /// 行距系数换算的 SwiftUI lineSpacing（以正文字号为基准）。
+    private var lineGap: CGFloat { reader.lineGap(for: bodySize) }
 
     var body: some View {
         ScrollView {
@@ -41,6 +48,8 @@ struct MarkdownPreviewView: View {
         .coordinateSpace(name: Self.scrollSpace)
         .onAppear { preloadMermaidIfNeeded() }
         .onChange(of: source) { preloadMermaidIfNeeded() }
+        // 外观切换（浅色 / 墨夜）：按新配色重渲染缓存（缓存 key 含外观，不命中旧图）。
+        .onChange(of: colorScheme) { preloadMermaidIfNeeded() }
     }
 
     private static let scrollSpace = "markdown-preview-scroll"
@@ -54,7 +63,7 @@ struct MarkdownPreviewView: View {
                   language?.lowercased() == "mermaid" else { return nil }
             return code
         }
-        MermaidRenderer.shared.preload(codes: codes, scale: displayScale)
+        MermaidRenderer.shared.preload(codes: codes, scale: displayScale, dark: colorScheme == .dark)
     }
 
     // MARK: - 渲染
@@ -64,16 +73,16 @@ struct MarkdownPreviewView: View {
         switch block.kind {
         case .heading(let level, let text):
             Text(inline(text))
-                .font(PaperTheme.Typography.heading(level: level))
+                .font(PaperTheme.Typography.heading(level: level, scaledBy: reader.scaleFactor))
                 .foregroundStyle(PaperTheme.ink)
-                .lineSpacing(4)
+                .lineSpacing(lineGap)
                 .padding(.top, level <= 2 ? 14 : 8)
 
         case .paragraph(let text):
             Text(inline(text))
-                .font(.system(size: 17))
+                .font(.system(size: bodySize))
                 .foregroundStyle(PaperTheme.ink)
-                .lineSpacing(7)
+                .lineSpacing(lineGap)
 
         case .bullet(let items):
             VStack(alignment: .leading, spacing: 9) {
@@ -102,9 +111,9 @@ struct MarkdownPreviewView: View {
                     .fill(PaperTheme.accent.opacity(0.45))
                     .frame(width: 3)
                 Text(inline(text))
-                    .font(.system(size: 16.5))
+                    .font(.system(size: reader.scaled(16.5)))
                     .foregroundStyle(PaperTheme.inkSecondary)
-                    .lineSpacing(7)
+                    .lineSpacing(lineGap)
             }
             .padding(.leading, 2)
 
@@ -127,9 +136,9 @@ struct MarkdownPreviewView: View {
             markerView(task.map { .task(checked: $0.done) } ?? marker)
                 .frame(width: 16, alignment: .trailing)
             Text(inline(task?.text ?? text, strikethrough: isChecked))
-                .font(.system(size: 17))
+                .font(.system(size: bodySize))
                 .foregroundStyle(isChecked ? PaperTheme.inkSecondary : PaperTheme.ink)
-                .lineSpacing(6)
+                .lineSpacing(lineGap)
         }
         .padding(.leading, 2)
     }
@@ -146,7 +155,7 @@ struct MarkdownPreviewView: View {
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(code)
-                    .font(PaperTheme.Typography.code)
+                    .font(PaperTheme.Typography.code(scaledBy: reader.fontScale.rawValue))
                     .foregroundStyle(PaperTheme.ink)
                     .lineSpacing(5)
                     .padding(.horizontal, 14)
@@ -239,7 +248,7 @@ struct MarkdownPreviewView: View {
         var a = (try? AttributedString(markdown: s, options: options)) ?? AttributedString(s)
         for run in a.runs {
             if run.inlinePresentationIntent?.contains(.code) == true {
-                a[run.range].font = .system(size: 15, design: .monospaced)
+                a[run.range].font = .system(size: reader.scaled(15), design: .monospaced)
                 a[run.range].backgroundColor = PaperTheme.codeBackground
             }
             if run.link != nil {

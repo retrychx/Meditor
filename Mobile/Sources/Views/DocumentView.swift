@@ -5,8 +5,10 @@ import UniformTypeIdentifiers
 /// 文档视图：编辑（TextEditor）与预览（Markdown 原生渲染 / HTML WebView）切换。
 struct DocumentView: View {
     @Environment(DocumentStore.self) private var store
+    @Environment(ReaderSettings.self) private var reader
 
     @State private var showingFilePicker = false
+    @State private var showingDocumentHome = false
     @State private var showingAIChat = false
     @State private var showingOpenError = false
     /// 预览滚动越顶：导航栏从透明过渡到纸底 + 发丝分隔。
@@ -70,7 +72,7 @@ struct DocumentView: View {
                 }
                 if store.hasDocument {
                     ToolbarItem(placement: .topBarLeading) {
-                        Button { showingFilePicker = true } label: {
+                        Button { showingDocumentHome = true } label: {
                             Image(systemName: "folder")
                                 .font(.system(size: 15))
                                 .foregroundStyle(PaperTheme.inkSecondary)
@@ -107,6 +109,9 @@ struct DocumentView: View {
         }
         .sheet(isPresented: $showingAIChat) {
             AIChatView()
+        }
+        .sheet(isPresented: $showingDocumentHome) {
+            DocumentHomeView()
         }
         // 打开失败：无论空态还是已有文档，都明确弹窗告知（真机权限/iCloud 问题全靠它暴露）
         .onChange(of: store.lastError) { _, newValue in
@@ -155,9 +160,39 @@ struct DocumentView: View {
         .accessibilityLabel(store.showPreview ? "编辑" : "预览")
     }
 
-    /// 导航栏「⋯」菜单：分享 / 复制等文档级操作的归宿。
+    /// 导航栏「⋯」菜单：阅读设置 / 分享 / 复制等文档级操作的归宿。
     private var documentMenu: some View {
         Menu {
+            Menu {
+                Section("字号") {
+                    ForEach(ReaderSettings.FontScale.allCases) { scale in
+                        Button {
+                            reader.fontScale = scale
+                        } label: {
+                            if reader.fontScale == scale {
+                                Label(scale.displayName, systemImage: "checkmark")
+                            } else {
+                                Text(scale.displayName)
+                            }
+                        }
+                    }
+                }
+                Section("行距") {
+                    ForEach(ReaderSettings.LineSpacing.allCases) { spacing in
+                        Button {
+                            reader.lineSpacing = spacing
+                        } label: {
+                            if reader.lineSpacing == spacing {
+                                Label(spacing.displayName, systemImage: "checkmark")
+                            } else {
+                                Text(spacing.displayName)
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Label("阅读设置", systemImage: "textformat.size")
+            }
             ShareLink(item: store.text, subject: Text(store.fileName)) {
                 Label("分享全文", systemImage: "square.and.arrow.up")
             }
@@ -193,16 +228,11 @@ struct DocumentView: View {
             }
         } else {
             // 手动编辑经 applyManualEdit 进 store：触发防抖自动保存，进程退出不丢内容。
-            TextEditor(text: Binding(
+            // UITextView 封装：拿得到光标，挂 Markdown 键盘工具条。
+            MarkdownTextEditor(text: Binding(
                 get: { store.text },
                 set: { store.applyManualEdit($0) }
-            ))
-                .font(PaperTheme.Typography.editorBody)
-                .foregroundStyle(PaperTheme.ink)
-                .lineSpacing(6)
-                .scrollContentBackground(.hidden)
-                .padding(.horizontal, 14)
-                .padding(.top, 6)
+            ), fontScale: reader.scaleFactor)
         }
     }
 
@@ -219,7 +249,7 @@ struct DocumentView: View {
                     RoundedRectangle(cornerRadius: PaperTheme.Radius.xlarge, style: .continuous)
                         .strokeBorder(PaperTheme.hairline, lineWidth: 0.5)
                 }
-                .shadow(color: .black.opacity(0.08), radius: 12, y: 4)
+                .shadow(color: PaperTheme.cardShadow, radius: 12, y: 4)
 
             HStack(alignment: .center, spacing: 10) {
                 Text("MEditor")

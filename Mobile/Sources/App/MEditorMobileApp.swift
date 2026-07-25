@@ -6,6 +6,9 @@ struct MEditorMobileApp: App {
     @State private var settings: MobileAISettings
     /// 全局唯一的 AI 会话：Tab 与文档页悬浮入口共用同一段对话。
     @State private var chat: ChatModel
+    /// 外观（跟随系统 / 浅色 / 墨夜）与阅读设置：UserDefaults 持久化，全局注入。
+    @State private var appearance = AppAppearance()
+    @State private var reader = ReaderSettings()
 
     init() {
         PaperAppearance.apply()
@@ -27,8 +30,10 @@ struct MEditorMobileApp: App {
                 .environment(store)
                 .environment(settings)
                 .environment(chat)
+                .environment(appearance)
+                .environment(reader)
                 .tint(PaperTheme.accent)
-                .preferredColorScheme(.light)
+                .preferredColorScheme(appearance.mode.colorScheme)
                 .onOpenURL { url in
                     store.openIncoming(url)
                 }

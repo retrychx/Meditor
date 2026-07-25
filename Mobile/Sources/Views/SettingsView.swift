@@ -4,8 +4,10 @@ import SwiftUI
 /// 行尾带当前状态摘要（系统设置范式），页面不再一屏滚到底。
 struct SettingsView: View {
     @Environment(MobileAISettings.self) private var settings
+    @Environment(AppAppearance.self) private var appearance
 
     var body: some View {
+        @Bindable var appearance = appearance
         NavigationStack {
             Form {
                 Section {
@@ -34,6 +36,16 @@ struct SettingsView: View {
                     }
                 } header: {
                     sectionHeader("AI")
+                }
+
+                Section {
+                    Picker(selection: $appearance.mode) {
+                        ForEach(AppearanceMode.allCases) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
+                    } label: {
+                        Label("外观", systemImage: "circle.lefthalf.filled")
+                    }
                 }
 
                 Section {
