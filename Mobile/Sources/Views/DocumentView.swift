@@ -8,7 +8,6 @@ struct DocumentView: View {
     @Environment(ReaderSettings.self) private var reader
 
     @State private var showingFilePicker = false
-    @State private var showingDocumentHome = false
     @State private var showingOpenError = false
     /// 预览滚动越顶：导航栏从透明过渡到纸底 + 发丝分隔。
     @State private var contentScrolled = false
@@ -55,6 +54,7 @@ struct DocumentView: View {
             }
             .toolbar {
                 // 标题自绘：文档文件名 / 品牌字保留衬线（UI chrome 其余部分是无衬线）。
+                // 操作动作全部沉到底部动作条（RootView），头部只留标题和 ⋯ 菜单。
                 ToolbarItem(placement: .principal) {
                     Text(store.hasDocument ? store.fileName : "MEditor")
                         .font(.system(.headline, design: .serif, weight: .semibold))
@@ -62,19 +62,8 @@ struct DocumentView: View {
                         .lineLimit(1)
                 }
                 if store.hasDocument {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button { showingDocumentHome = true } label: {
-                            Image(systemName: "folder")
-                                .font(.system(size: 15))
-                                .foregroundStyle(PaperTheme.inkSecondary)
-                        }
-                        .buttonStyle(.pressable)
-                    }
                     ToolbarItem(placement: .topBarTrailing) {
-                        HStack(spacing: 10) {
-                            modeToggle
-                            documentMenu
-                        }
+                        documentMenu
                     }
                 }
             }
@@ -88,9 +77,6 @@ struct DocumentView: View {
                 store.openIncoming(url)
             }
         }
-        .sheet(isPresented: $showingDocumentHome) {
-            DocumentHomeView()
-        }
         // 打开失败：无论空态还是已有文档，都明确弹窗告知（真机权限/iCloud 问题全靠它暴露）
         .onChange(of: store.lastError) { _, newValue in
             showingOpenError = newValue != nil
@@ -100,21 +86,6 @@ struct DocumentView: View {
         } message: {
             Text(store.lastError ?? "")
         }
-    }
-
-    /// 单钮模式切换：预览态显示铅笔（点去编辑），编辑态显示文档（点去预览）。
-    /// 普通 toolbar 按钮，和左侧文件夹钮、右侧 ⋯ 共享同一套系统玻璃圆形样式。
-    private var modeToggle: some View {
-        Button {
-            store.showPreview.toggle()
-        } label: {
-            Image(systemName: store.showPreview ? "pencil" : "doc.richtext")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(PaperTheme.inkSecondary)
-                .contentTransition(.symbolEffect(.replace.downUp))
-        }
-        .buttonStyle(.pressable)
-        .accessibilityLabel(store.showPreview ? "编辑" : "预览")
     }
 
     /// 导航栏「⋯」菜单：阅读设置 / 分享 / 复制等文档级操作的归宿。

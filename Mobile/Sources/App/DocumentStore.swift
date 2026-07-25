@@ -179,9 +179,31 @@ final class DocumentStore {
         return candidate
     }
 
+    /// 新建空文档：工作区根目录生成唯一命名的 .md，打开并直接进入编辑态。
+    func createDocument() {
+        var name = "未命名.md"
+        var n = 2
+        while FileManager.default.fileExists(atPath: workspace.appendingPathComponent(name).path) {
+            name = "未命名-\(n).md"
+            n += 1
+        }
+        let url = workspace.appendingPathComponent(name)
+        do {
+            try "".write(to: url, atomically: true, encoding: .utf8)
+            autosaveTask?.cancel()
+            sandboxURL = url
+            fileName   = name
+            text       = ""
+            showPreview = false
+            lastError  = nil
+            remember(url)
+        } catch {
+            lastError = "新建失败：\(error.localizedDescription)"
+        }
+    }
+
     /// 打开沙盒工作区内的文件（Agent open_file 工具用）。
-    func loadFromSandbox(_ url: URL) -> Bool {
-        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return false }
+    func loadFromSandbox(_ url: URL) -> Bool {        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return false }
         autosaveTask?.cancel()
         sandboxURL = url
         fileName   = url.lastPathComponent
