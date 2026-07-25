@@ -44,20 +44,11 @@ struct DocumentHomeView: View {
         .navigationTitle("文档")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            // 与 DocumentView 一致的自绘衬线标题。
+            // 与 DocumentView 一致的自绘衬线标题；设置入口在底部胶囊里。
             ToolbarItem(placement: .principal) {
                 Text("文档")
                     .font(.system(.headline, design: .serif, weight: .semibold))
                     .foregroundStyle(PaperTheme.ink)
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(action: onOpenSettings) {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 15))
-                        .foregroundStyle(PaperTheme.inkSecondary)
-                }
-                .buttonStyle(.pressable)
-                .accessibilityLabel("设置")
             }
         }
         .fileImporter(
@@ -97,16 +88,8 @@ struct DocumentHomeView: View {
     private var actionBar: some View {
         HStack(spacing: 0) {
             HStack(spacing: 4) {
-                Button { store.createDocument() } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(PaperTheme.inkSecondary)
-                        .frame(width: 48)
-                        .padding(.vertical, 8)
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.pressable)
-                .accessibilityLabel("新建文档")
+                barButton(icon: "plus", label: "新建文档") { store.createDocument() }
+                barButton(icon: "gearshape", label: "设置", action: onOpenSettings)
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 5)
@@ -133,7 +116,20 @@ struct DocumentHomeView: View {
         .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 
-    // MARK: - 列表（Craft 式：搜索 + 白卡列表）
+    private func barButton(icon: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(PaperTheme.inkSecondary)
+                .frame(width: 48)
+                .padding(.vertical, 8)
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(label)
+    }
+
+    // MARK: - 列表（Craft 式：搜索 + 白卡；滑动置顶/重命名/删除）
 
     private var filteredDocs: [DocumentStore.RecentDocument] {
         let q = query.trimmingCharacters(in: .whitespaces)
@@ -141,11 +137,20 @@ struct DocumentHomeView: View {
         return store.recentDocuments.filter { $0.fileName.localizedCaseInsensitiveContains(q) }
     }
 
-    private var documentList: some View {
-        ScrollView {
-            LazyVStack(spacing: 12) {
-                searchField
+    /// 让 List 行呈现白卡外观的统一配置：透明行底、隐藏分隔、留边距。
+    private func cardRow<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+    }
 
+    private var documentList: some View {
+        List {
+            cardRow {
+                searchField
+            }
+            cardRow {
                 // 「打开文件」入口：保持在列表顶部，触手可及。
                 Button { showingFilePicker = true } label: {
                     Label("打开文件…", systemImage: "folder")
@@ -157,14 +162,30 @@ struct DocumentHomeView: View {
                         .shadow(color: PaperTheme.cardShadow, radius: 8, y: 3)
                 }
                 .buttonStyle(.pressable)
-
-                ForEach(filteredDocs, id: \.relativePath) { doc in
+            }
+            ForEach(filteredDocs, id: \.relativePath) { doc in
+                cardRow {
                     card(for: doc)
                 }
+                .swipeActions(edge: .leading) {
+                    Button { store.togglePin(doc.relativePath) } label: {
+                        Label(doc.pinned ? "取消置顶" : "置顶",
+                              systemImage: doc.pinned ? "pin.slash" : "pin")
+                    }
+                    .tint(PaperTheme.accent)
+                }
+                .swipeActions(edge: .trailing) {
+                    Button(role: .destructive) { delete(doc) } label: {
+                        Label("删除", systemImage: "trash")
+                    }
+                    Button { beginRename(doc) } label: {
+                        Label("重命名", systemImage: "pencil")
+                    }
+                    .tint(PaperTheme.inkSecondary)
+                }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
         }
+        .listStyle(.plain)
         .scrollContentBackground(.hidden)
     }
 
@@ -235,19 +256,6 @@ struct DocumentHomeView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .contextMenu {
-            Button { beginRename(doc) } label: {
-                Label("重命名", systemImage: "pencil")
-            }
-            Button { store.togglePin(doc.relativePath) } label: {
-                Label(doc.pinned ? "取消置顶" : "置顶",
-                      systemImage: doc.pinned ? "pin.slash" : "pin")
-            }
-            Divider()
-            Button(role: .destructive) { delete(doc) } label: {
-                Label("删除", systemImage: "trash")
-            }
-        }
     }
 
     // MARK: - 空态
