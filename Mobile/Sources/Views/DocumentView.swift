@@ -9,15 +9,11 @@ struct DocumentView: View {
 
     @State private var showingFilePicker = false
     @State private var showingDocumentHome = false
-    @State private var showingAIChat = false
     @State private var showingOpenError = false
     /// 预览滚动越顶：导航栏从透明过渡到纸底 + 发丝分隔。
     @State private var contentScrolled = false
     /// 空态入场动画开关。
     @State private var emptyStateVisible = false
-    /// FAB：下滚收起、回滚唤回。
-    @State private var fabHidden = false
-    @State private var lastScrollY: CGFloat = 0
     /// 空态印章「盖下」动画开关。
     @State private var sealStamped = false
 
@@ -56,11 +52,6 @@ struct DocumentView: View {
             .animation(PaperTheme.Motion.gentle, value: transparentHeader)
             .onPreferenceChange(PreviewScrollOffsetKey.self) { minY in
                 contentScrolled = minY < -8
-                // 下滚（minY 变小）收 FAB，回滚唤回；6pt 滞回防抖
-                let delta = minY - lastScrollY
-                if delta < -6 { fabHidden = true }
-                else if delta > 6 { fabHidden = false }
-                lastScrollY = minY
             }
             .toolbar {
                 // 标题自绘：文档文件名 / 品牌字保留衬线（UI chrome 其余部分是无衬线）。
@@ -87,16 +78,6 @@ struct DocumentView: View {
                     }
                 }
             }
-            // 文档打开时：右下角悬浮 AI 钮
-            .overlay(alignment: .bottomTrailing) {
-                if store.hasDocument {
-                    aiFab
-                        .padding(.trailing, 20)
-                        .padding(.bottom, 16)
-                        .transition(.scale(scale: 0.5).combined(with: .opacity))
-                }
-            }
-            .animation(PaperTheme.Motion.standard, value: store.hasDocument)
         }
         .fileImporter(
             isPresented: $showingFilePicker,
@@ -106,9 +87,6 @@ struct DocumentView: View {
             if case .success(let urls) = result, let url = urls.first {
                 store.openIncoming(url)
             }
-        }
-        .sheet(isPresented: $showingAIChat) {
-            AIChatView()
         }
         .sheet(isPresented: $showingDocumentHome) {
             DocumentHomeView()
@@ -122,27 +100,6 @@ struct DocumentView: View {
         } message: {
             Text(store.lastError ?? "")
         }
-    }
-
-    /// 悬浮 AI 钮：单钮 FAB，墨底纸字 + 柔投影；图标微光闪烁，
-    /// 下滚缩小收起、回滚唤回。
-    private var aiFab: some View {
-        Button { showingAIChat = true } label: {
-            Image(systemName: "sparkles")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(PaperTheme.paper)
-                .symbolEffect(.variableColor.iterative, options: .repeating)
-                .frame(width: 50, height: 50)
-                .background(PaperTheme.ink, in: Circle())
-                .overlay { Circle().strokeBorder(PaperTheme.paper.opacity(0.2), lineWidth: 0.5) }
-                .shadow(color: PaperTheme.ink.opacity(0.3), radius: 14, y: 6)
-        }
-        .buttonStyle(.pressable)
-        .accessibilityLabel("AI 助手")
-        .scaleEffect(fabHidden ? 0.5 : 1)
-        .opacity(fabHidden ? 0 : 1)
-        .allowsHitTesting(!fabHidden)
-        .animation(PaperTheme.Motion.quick, value: fabHidden)
     }
 
     /// 单钮模式切换：预览态显示铅笔（点去编辑），编辑态显示文档（点去预览）。

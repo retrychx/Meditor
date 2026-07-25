@@ -51,18 +51,43 @@ struct RootView: View {
         .background(PaperTheme.paper)
     }
 
-    // MARK: - 底栏（Craft 式悬浮胶囊）
+    // MARK: - 底栏（Craft 式：左侧胶囊 + 右侧独立 AI 圆钮）
 
     private var tabBar: some View {
-        HStack(spacing: 4) {
-            ForEach(Tab.allCases, id: \.self) { item in
-                tabButton(item)
+        HStack(spacing: 0) {
+            // 胶囊：文档 / 设置
+            HStack(spacing: 4) {
+                tabButton(.document)
+                tabButton(.settings)
             }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 5)
+            .background(PaperTheme.card, in: Capsule(style: .continuous))
+            .shadow(color: PaperTheme.cardShadow, radius: 18, y: 8)
+
+            Spacer()
+
+            // 独立 AI 圆钮：与文档页 FAB 同一视觉（墨底 + sparkles 微光），
+            // 激活时变交互蓝，一眼看出当前所在。
+            Button {
+                withAnimation(PaperTheme.Motion.standard) { tab = .assistant }
+            } label: {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(PaperTheme.paper)
+                    .symbolEffect(.variableColor.iterative, options: .repeating)
+                    .symbolEffect(.bounce, value: tab == .assistant)
+                    .frame(width: 48, height: 48)
+                    .background(
+                        tab == .assistant ? PaperTheme.accent : PaperTheme.ink,
+                        in: Circle()
+                    )
+                    .shadow(color: PaperTheme.ink.opacity(0.3), radius: 12, y: 5)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.pressable)
+            .accessibilityLabel("AI 助手")
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 5)
-        .background(PaperTheme.card, in: Capsule(style: .continuous))
-        .shadow(color: PaperTheme.cardShadow, radius: 18, y: 8)
         .padding(.horizontal, 32)
         .padding(.bottom, 4)
         // 键盘弹出时底栏保持贴底（被键盘遮住），不被顶上去
@@ -78,13 +103,12 @@ struct RootView: View {
                 .font(.system(size: 19, weight: .medium))
                 .symbolEffect(.bounce, value: selected)
                 .foregroundStyle(selected ? PaperTheme.accent : PaperTheme.inkSecondary)
-                .frame(maxWidth: .infinity)
+                .frame(width: 56)
                 .padding(.vertical, 8)
                 .background {
                     if selected {
                         Capsule(style: .continuous)
                             .fill(PaperTheme.accent.opacity(0.12))
-                            .padding(.horizontal, 12)
                             .matchedGeometryEffect(id: "tab-indicator", in: tabIndicator)
                     }
                 }
