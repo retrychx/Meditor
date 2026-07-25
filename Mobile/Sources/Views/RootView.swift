@@ -1,64 +1,37 @@
 import SwiftUI
 
-/// 根视图：文档 / AI 助手 / 设置 三个 Tab。
-/// 自绘底栏：激活胶囊用 matchedGeometryEffect 在 tab 间滑动，图标选中弹跳。
-/// 页面只渲染当前 Tab（三个页面各自的 NavigationStack 常驻会互相盖住导航栏命中）。
+/// 根视图：以文档为中心的单页结构，不再有底部 tab 导航层级。
+/// 底部动作条：左侧胶囊（文档首页 / 新建 / 编辑预览切换 / 设置）+ 右侧 AI 圆钮
+/// （sheet 唤起，直接作用于当前文档）。
 struct RootView: View {
-    @State private var tab: Tab = .document
-    @Namespace private var tabIndicator
+    @Environment(DocumentStore.self) private var store
 
-    private enum Tab: CaseIterable {
-        case document, assistant, settings
-
-        var title: String {
-            switch self {
-            case .document:  return "文档"
-            case .assistant: return "AI 助手"
-            case .settings:  return "设置"
-            }
-        }
-
-        var icon: String {
-            switch self {
-            case .document:  return "doc.text"
-            case .assistant: return "bubble.left.and.bubble.right"
-            case .settings:  return "gearshape"
-            }
-        }
-    }
+    @State private var showingHome = false
+    @State private var showingSettings = false
+    @State private var showingAI = false
 
     var body: some View {
         VStack(spacing: 0) {
-            ZStack {
-                switch tab {
-                case .document:  DocumentView()
-                case .assistant: AIChatView()
-                case .settings:  SettingsView()
-                }
-            }
-            // 只渲染当前页：三个页面各自带 NavigationStack 时，若常驻视图树仅靠
-            // 透明度隐藏，隐藏页的 UINavigationBar（UIKit 层）仍会盖住底部页面
-            // 吃掉导航栏按钮的点击——工具栏按钮因此全部失灵（本组件此前的回归）。
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .id(tab)
-            .transition(.asymmetric(
-                insertion: .opacity.combined(with: .offset(y: 10)),
-                removal: .opacity
-            ))
-            .animation(PaperTheme.Motion.standard, value: tab)
-            tabBar
+            DocumentView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            actionBar
         }
         .background(PaperTheme.paper)
+        .sheet(isPresented: $showingHome) { DocumentHomeView() }
+        .sheet(isPresented: $showingSettings) { SettingsView() }
+        .sheet(isPresented: $showingAI) { AIChatView() }
     }
 
-    // MARK: - 底栏（Craft 式：左侧胶囊 + 右侧独立 AI 圆钮）
+    // MARK: - 底部动作条（Craft 式：左胶囊 + 右 AI 圆钮）
 
-    private var tabBar: some View {
+    private var actionBar: some View {
         HStack(spacing: 0) {
-            // 胶囊：文档 / 设置
+            // 胶囊：文档首页 / 新建 / 编辑预览切换 / 设置
             HStack(spacing: 4) {
-                tabButton(.document)
-                tabButton(.settings)
+                barButton(icon: "folder", label: "文档首页") { showingHome = true }
+                barButton(icon: "plus", label: "新建文档") { store.createDocument() }
+                modeButton
+                barButton(icon: "gearshape", label: "设置") { showingSettings = true }
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 5)
@@ -67,21 +40,14 @@ struct RootView: View {
 
             Spacer()
 
-            // 独立 AI 圆钮：与文档页 FAB 同一视觉（墨底 + sparkles 微光），
-            // 激活时变交互蓝，一眼看出当前所在。
-            Button {
-                withAnimation(PaperTheme.Motion.standard) { tab = .assistant }
-            } label: {
+            // AI 圆钮：sheet 浮出，直接作用于当前文档
+            Button { showingAI = true } label: {
                 Image(systemName: "sparkles")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(PaperTheme.paper)
                     .symbolEffect(.variableColor.iterative, options: .repeating)
-                    .symbolEffect(.bounce, value: tab == .assistant)
                     .frame(width: 48, height: 48)
-                    .background(
-                        tab == .assistant ? PaperTheme.accent : PaperTheme.ink,
-                        in: Circle()
-                    )
+                    .background(PaperTheme.ink, in: Circle())
                     .shadow(color: PaperTheme.ink.opacity(0.3), radius: 12, y: 5)
                     .contentShape(Circle())
             }
@@ -90,31 +56,35 @@ struct RootView: View {
         }
         .padding(.horizontal, 32)
         .padding(.bottom, 4)
-        // 键盘弹出时底栏保持贴底（被键盘遮住），不被顶上去
+        // 键盘弹出时动作条保持贴底（被键盘遮住），不被顶上去
         .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 
-    private func tabButton(_ item: Tab) -> some View {
-        let selected = tab == item
-        return Button {
-            withAnimation(PaperTheme.Motion.standard) { tab = item }
-        } label: {
-            Image(systemName: item.icon)
-                .font(.system(size: 19, weight: .medium))
-                .symbolEffect(.bounce, value: selected)
-                .foregroundStyle(selected ? PaperTheme.accent : PaperTheme.inkSecondary)
-                .frame(width: 56)
+    private func barButton(icon: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(PaperTheme.inkSecondary)
+                .frame(width: 48)
                 .padding(.vertical, 8)
-                .background {
-                    if selected {
-                        Capsule(style: .continuous)
-                            .fill(PaperTheme.accent.opacity(0.12))
-                            .matchedGeometryEffect(id: "tab-indicator", in: tabIndicator)
-                    }
-                }
                 .contentShape(Capsule())
         }
         .buttonStyle(.pressable)
-        .accessibilityLabel(item.title)
+        .accessibilityLabel(label)
+    }
+
+    /// 编辑/预览切换：预览态铅笔（点去编辑）、编辑态文档高亮（点回预览），morph 过渡。
+    private var modeButton: some View {
+        Button { store.showPreview.toggle() } label: {
+            Image(systemName: store.showPreview ? "pencil" : "doc.richtext")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(store.showPreview ? PaperTheme.inkSecondary : PaperTheme.accent)
+                .contentTransition(.symbolEffect(.replace.downUp))
+                .frame(width: 48)
+                .padding(.vertical, 8)
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(store.showPreview ? "编辑" : "预览")
     }
 }
