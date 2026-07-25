@@ -139,8 +139,20 @@ final class DocumentStore {
                 content = legacy
             }
             try FileManager.default.createDirectory(at: openedURL, withIntermediateDirectories: true)
-            let dest = uniqueDestination(for: url.lastPathComponent)
-            try content.write(to: dest, atomically: true, encoding: .utf8)
+            // 去重：Opened/ 已有同名且内容一致的文件 → 直接打开现有副本，
+            // 否则才写新副本（同名不同内容才加 -2/-3 后缀），不再开一次多一份。
+            var dest = openedURL.appendingPathComponent(url.lastPathComponent)
+            if let existing = try? String(contentsOf: dest, encoding: .utf8), existing == content {
+                // 内容一致，复用现有副本（mtime 不刷新，避免误当新文件）。
+            } else {
+                dest = uniqueDestination(for: url.lastPathComponent)
+                try content.write(to: dest, atomically: true, encoding: .utf8)
+            }
+            // 系统投递到 Inbox 的原件：转存/复用成功后清理，杜绝一份文件变两份。
+            let inboxDir = workspace.appendingPathComponent("Inbox", isDirectory: true).standardizedFileURL
+            if url.standardizedFileURL.path.hasPrefix(inboxDir.path + "/") {
+                try? FileManager.default.removeItem(at: url)
+            }
             autosaveTask?.cancel()
             sandboxURL = dest
             fileName = dest.lastPathComponent
