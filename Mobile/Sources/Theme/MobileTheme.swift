@@ -13,7 +13,7 @@ enum PaperTheme {
     fileprivate enum Palette {
         enum Light {
             static let paper: UInt32          = 0xF4F5F2
-            static let card: UInt32           = 0xFCFCFA
+            static let card: UInt32           = 0xFFFFFF
             static let ink: UInt32            = 0x1B2434
             static let inkSecondary: UInt32   = 0x5D6673
             static let accent: UInt32         = 0xC0392B
@@ -289,6 +289,20 @@ struct SealStamp: View {
             )
             .rotationEffect(.degrees(3))
             .shadow(color: PaperTheme.seal.opacity(0.3), radius: size * 0.15, y: 1.5)
+            .accessibilityHidden(true)
+    }
+}
+
+/// AI 助手的品牌图标：朱砂圆底 + 衬线「墨」，与印章同源的品牌印记。
+struct SealCircle: View {
+    var size: CGFloat = 46
+
+    var body: some View {
+        Text("墨")
+            .font(.system(size: size * 0.42, weight: .bold, design: .serif))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(PaperTheme.seal, in: Circle())
             .accessibilityHidden(true)
     }
 }

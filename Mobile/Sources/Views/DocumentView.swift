@@ -8,7 +8,6 @@ struct DocumentView: View {
     @Environment(ReaderSettings.self) private var reader
 
     @State private var showingFilePicker = false
-    @State private var showingAI = false
     @State private var showingOpenError = false
     /// 预览滚动越顶：导航栏从透明过渡到纸底 + 发丝分隔。
     @State private var contentScrolled = false
@@ -30,23 +29,22 @@ struct DocumentView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Group {
-                if store.hasDocument {
-                    content
-                        .id(store.showPreview)
-                        .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .scale(scale: 0.98)).combined(with: .offset(y: 8)),
-                            removal: .opacity
-                        ))
-                } else {
-                    emptyState
-                }
+        Group {
+            if store.hasDocument {
+                content
+                    .id(store.showPreview)
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .scale(scale: 0.98)).combined(with: .offset(y: 8)),
+                        removal: .opacity
+                    ))
+            } else {
+                emptyState
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .animation(PaperTheme.Motion.standard, value: store.showPreview)
-            actionBar
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(PaperTheme.Motion.standard, value: store.showPreview)
+        // 底栏悬浮在内容之上（safearea 透底），不占布局高度
+        .overlay(alignment: .bottom) { actionBar }
         .background(PaperTheme.paper.ignoresSafeArea())
         .navigationTitle(store.hasDocument ? store.fileName : "MEditor")
         .navigationBarTitleDisplayMode(.inline)
@@ -80,7 +78,6 @@ struct DocumentView: View {
                 store.openIncoming(url)
             }
         }
-        .sheet(isPresented: $showingAI) { AIChatView() }
         // 打开失败：无论空态还是已有文档，都明确弹窗告知（真机权限/iCloud 问题全靠它暴露）
         .onChange(of: store.lastError) { _, newValue in
             showingOpenError = newValue != nil
@@ -92,51 +89,44 @@ struct DocumentView: View {
         }
     }
 
-    // MARK: - 底部动作条（与列表页同一语言：左胶囊 + 右 AI 圆钮）
+    // MARK: - 底部栏（与一级页面同一语言：双胶囊白底玻璃态）
+
+    /// 胶囊底：白底毛玻璃 + 细描边 + 轻投影。
+    private var capsuleBackground: some View {
+        Capsule(style: .continuous)
+            .fill(.regularMaterial)
+            .overlay {
+                Capsule(style: .continuous)
+                    .strokeBorder(PaperTheme.hairline.opacity(0.5), lineWidth: 0.5)
+            }
+            .shadow(color: PaperTheme.cardShadow, radius: 14, y: 6)
+    }
 
     private var actionBar: some View {
         HStack(spacing: 0) {
+            // 编辑/预览胶囊
             HStack(spacing: 4) {
-                barButton(icon: "plus", label: "新建文档") { store.createDocument() }
                 modeButton
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 5)
-            .background(PaperTheme.card, in: Capsule(style: .continuous))
-            .shadow(color: PaperTheme.cardShadow, radius: 18, y: 8)
+            .background(capsuleBackground)
 
             Spacer()
 
-            Button { showingAI = true } label: {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(PaperTheme.paper)
-                    .symbolEffect(.variableColor.iterative, options: .repeating)
-                    .frame(width: 48, height: 48)
-                    .background(PaperTheme.ink, in: Circle())
-                    .shadow(color: PaperTheme.ink.opacity(0.3), radius: 12, y: 5)
-                    .contentShape(Circle())
+            // 动作胶囊：墨（AI）/ ＋（新建）
+            HStack(spacing: 8) {
+                BarAIButton(context: "doc")
+                BarPlusButton(context: "doc")
             }
-            .buttonStyle(.pressable)
-            .accessibilityLabel("AI 助手")
+            .padding(.horizontal, 6)
+            .padding(.vertical, 5)
+            .background(capsuleBackground)
         }
-        .padding(.horizontal, 32)
+        .padding(.horizontal, 28)
         .padding(.bottom, 4)
         // 键盘弹出时动作条保持贴底（被键盘遮住），不被顶上去
         .ignoresSafeArea(.keyboard, edges: .bottom)
-    }
-
-    private func barButton(icon: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(PaperTheme.inkSecondary)
-                .frame(width: 48)
-                .padding(.vertical, 8)
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.pressable)
-        .accessibilityLabel(label)
     }
 
     /// 编辑/预览切换：预览态铅笔（点去编辑）、编辑态文档高亮（点回预览），morph 过渡。
@@ -146,7 +136,7 @@ struct DocumentView: View {
                 .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(store.showPreview ? PaperTheme.inkSecondary : PaperTheme.accent)
                 .contentTransition(.symbolEffect(.replace.downUp))
-                .frame(width: 48)
+                .frame(width: 52)
                 .padding(.vertical, 8)
                 .contentShape(Capsule())
         }

@@ -46,6 +46,8 @@ struct MarkdownPreviewView: View {
             }
         }
         .coordinateSpace(name: Self.scrollSpace)
+        // 底部悬浮栏不挡内容：滚动内容底部留白
+        .contentMargins(.bottom, 84, for: .scrollContent)
         .onAppear { preloadMermaidIfNeeded() }
         .onChange(of: source) { preloadMermaidIfNeeded() }
         // 外观切换（浅色 / 墨夜）：按新配色重渲染缓存（缓存 key 含外观，不命中旧图）。
