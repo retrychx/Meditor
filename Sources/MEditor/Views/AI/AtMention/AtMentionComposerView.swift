@@ -388,6 +388,9 @@ final class MentionTextView: NSTextView {
         switch event.keyCode {
         case 36: // Return
             if !event.modifierFlags.contains(.shift) {
+                // IME 组字（marked text）期间回车归输入法上屏/确认候选，
+                // 不能拦截成发送——否则拼音还没上屏就被发出并清空（丢字）。
+                guard !hasMarkedText() else { break }
                 if isPickerVisible {
                     // 让 picker 先处理（确认高亮项）
                     NotificationCenter.default.post(
@@ -400,7 +403,8 @@ final class MentionTextView: NSTextView {
                 return
             }
         case 53: // Escape
-            if isPickerVisible {
+            // 同理：组字期间 Esc 优先给输入法取消组字，而不是关 mention picker。
+            if isPickerVisible, !hasMarkedText() {
                 NotificationCenter.default.post(
                     name: .atMentionKeyEvent,
                     object: AtMentionKeyEvent.dismiss
