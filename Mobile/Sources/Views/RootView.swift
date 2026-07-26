@@ -68,15 +68,9 @@ struct RootView: View {
 
     // MARK: - 底部栏（Craft 式双胶囊：白底玻璃态，safearea 透底）
 
-    /// 胶囊底：白底毛玻璃 + 细描边 + 轻投影（Craft 同款）。
+    /// 胶囊底：与文档页共用同一玻璃质感（GlassCapsuleBackground）。
     private var capsuleBackground: some View {
-        Capsule(style: .continuous)
-            .fill(.regularMaterial)
-            .overlay {
-                Capsule(style: .continuous)
-                    .strokeBorder(PaperTheme.hairline.opacity(0.5), lineWidth: 0.5)
-            }
-            .shadow(color: PaperTheme.cardShadow, radius: 14, y: 6)
+        GlassCapsuleBackground()
     }
 
     private var bottomBar: some View {
