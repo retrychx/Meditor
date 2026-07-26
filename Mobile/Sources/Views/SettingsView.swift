@@ -39,6 +39,23 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    NavigationLink {
+                        ShareSettingsView()
+                    } label: {
+                        HStack {
+                            Label("在线分享", systemImage: "globe")
+                            Spacer()
+                            Text(ShareLinkPublisher.shared.isConfigured ? "已配置" : "未配置")
+                                .font(.subheadline)
+                                .foregroundStyle(PaperTheme.inkSecondary)
+                                .lineLimit(1)
+                        }
+                    }
+                } header: {
+                    sectionHeader("分享")
+                }
+
+                Section {
                     Picker(selection: $appearance.mode) {
                         ForEach(AppearanceMode.allCases) { mode in
                             Text(mode.displayName).tag(mode)
@@ -155,6 +172,75 @@ private struct AIServiceSettingsView: View {
                 }
             }
         )
+    }
+}
+
+// MARK: - 在线分享
+
+/// 分享配置页：服务地址 + Token（需与 Worker 的 SHARE_TOKEN 一致）。
+private struct ShareSettingsView: View {
+    @State private var tokenInput = ""
+    @State private var publisher = ShareLinkPublisher.shared
+
+    var body: some View {
+        Form {
+            Section {
+                TextField("服务地址", text: Binding(
+                    get: { publisher.baseURL },
+                    set: { publisher.baseURL = $0 }
+                ))
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            } header: {
+                header("服务")
+            } footer: {
+                Text("自建分享服务地址，发布前可换成自定义域名。")
+                    .font(.footnote)
+                    .foregroundStyle(PaperTheme.inkSecondary)
+            }
+
+            Section {
+                if publisher.hasToken {
+                    HStack {
+                        Text("•••••••• 已配置")
+                            .foregroundStyle(PaperTheme.inkSecondary)
+                        Spacer()
+                        Button("清除") { publisher.clearToken() }
+                            .foregroundStyle(PaperTheme.seal)
+                    }
+                } else {
+                    HStack {
+                        SecureField("分享 Token", text: $tokenInput)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        Button("保存") {
+                            publisher.saveToken(tokenInput)
+                            tokenInput = ""
+                        }
+                        .disabled(tokenInput.isEmpty)
+                    }
+                }
+            } header: {
+                header("Token")
+            } footer: {
+                Text("需与 Worker 的 SHARE_TOKEN 密钥一致，仅保存在本机钥匙串。")
+                    .font(.footnote)
+                    .foregroundStyle(PaperTheme.inkSecondary)
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(PaperTheme.paper)
+        .listRowBackground(PaperTheme.card)
+        .foregroundStyle(PaperTheme.ink)
+        .navigationTitle("在线分享")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { publisher.refreshTokenStatus() }
+    }
+
+    private func header(_ title: String) -> some View {
+        Text(title)
+            .foregroundStyle(PaperTheme.inkSecondary)
     }
 }
 
