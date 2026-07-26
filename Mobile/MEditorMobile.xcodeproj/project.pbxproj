@@ -34,6 +34,14 @@
 		2600000000000000000002F4 /* ../Sources/MEditor/Views/Shared/AgentToolDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001F4 /* ../Sources/MEditor/Views/Shared/AgentToolDisplay.swift */; };
 		2600000000000000000002F5 /* ../Sources/MEditor/Skills/SharedSkillPrompts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001F5 /* ../Sources/MEditor/Skills/SharedSkillPrompts.swift */; };
 		2600000000000000000002F6 /* ../Sources/MEditor/Utils/TextFileDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001F6 /* ../Sources/MEditor/Utils/TextFileDecoder.swift */; };
+		2600000000000000000002F7 /* ../Sources/MEditor/Services/Network/ShareLinkService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001F7 /* ../Sources/MEditor/Services/Network/ShareLinkService.swift */; };
+		2600000000000000000003F0 /* ../Sources/MEditor/Resources/Preview/template.html in Resources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000004F0 /* ../Sources/MEditor/Resources/Preview/template.html */; };
+		2600000000000000000003F1 /* ../Sources/MEditor/Resources/Preview/css/themes.css in Resources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000004F1 /* ../Sources/MEditor/Resources/Preview/css/themes.css */; };
+		2600000000000000000003F2 /* ../Sources/MEditor/Resources/Preview/css/base.css in Resources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000004F2 /* ../Sources/MEditor/Resources/Preview/css/base.css */; };
+		2600000000000000000003F3 /* ../Sources/MEditor/Resources/Preview/scripts/render.js in Resources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000004F3 /* ../Sources/MEditor/Resources/Preview/scripts/render.js */; };
+		2600000000000000000003F4 /* ../Sources/MEditor/Resources/Preview/scripts/bridge.js in Resources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000004F4 /* ../Sources/MEditor/Resources/Preview/scripts/bridge.js */; };
+		2600000000000000000003F5 /* ../Sources/MEditor/Resources/Preview/marked.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000004F5 /* ../Sources/MEditor/Resources/Preview/marked.min.js */; };
+		2600000000000000000003F6 /* ../Sources/MEditor/Resources/Preview/highlight.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000004F6 /* ../Sources/MEditor/Resources/Preview/highlight.min.js */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -66,6 +74,14 @@
 		2600000000000000000001F4 /* ../Sources/MEditor/Views/Shared/AgentToolDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Views/Shared/AgentToolDisplay.swift; sourceTree = "<group>"; };
 		2600000000000000000001F5 /* ../Sources/MEditor/Skills/SharedSkillPrompts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Skills/SharedSkillPrompts.swift; sourceTree = "<group>"; };
 		2600000000000000000001F6 /* ../Sources/MEditor/Utils/TextFileDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Utils/TextFileDecoder.swift; sourceTree = "<group>"; };
+		2600000000000000000001F7 /* ../Sources/MEditor/Services/Network/ShareLinkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/Network/ShareLinkService.swift; sourceTree = "<group>"; };
+		2600000000000000000004F0 /* ../Sources/MEditor/Resources/Preview/template.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = ../Sources/MEditor/Resources/Preview/template.html; sourceTree = "<group>"; };
+		2600000000000000000004F1 /* ../Sources/MEditor/Resources/Preview/css/themes.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = ../Sources/MEditor/Resources/Preview/css/themes.css; sourceTree = "<group>"; };
+		2600000000000000000004F2 /* ../Sources/MEditor/Resources/Preview/css/base.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = ../Sources/MEditor/Resources/Preview/css/base.css; sourceTree = "<group>"; };
+		2600000000000000000004F3 /* ../Sources/MEditor/Resources/Preview/scripts/render.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ../Sources/MEditor/Resources/Preview/scripts/render.js; sourceTree = "<group>"; };
+		2600000000000000000004F4 /* ../Sources/MEditor/Resources/Preview/scripts/bridge.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ../Sources/MEditor/Resources/Preview/scripts/bridge.js; sourceTree = "<group>"; };
+		2600000000000000000004F5 /* ../Sources/MEditor/Resources/Preview/marked.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ../Sources/MEditor/Resources/Preview/marked.min.js; sourceTree = "<group>"; };
+		2600000000000000000004F6 /* ../Sources/MEditor/Resources/Preview/highlight.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ../Sources/MEditor/Resources/Preview/highlight.min.js; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -135,6 +151,14 @@
 				2600000000000000000001F4 /* ../Sources/MEditor/Views/Shared/AgentToolDisplay.swift */,
 				2600000000000000000001F5 /* ../Sources/MEditor/Skills/SharedSkillPrompts.swift */,
 				2600000000000000000001F6 /* ../Sources/MEditor/Utils/TextFileDecoder.swift */,
+				2600000000000000000001F7 /* ../Sources/MEditor/Services/Network/ShareLinkService.swift */,
+				2600000000000000000004F0 /* ../Sources/MEditor/Resources/Preview/template.html */,
+				2600000000000000000004F1 /* ../Sources/MEditor/Resources/Preview/css/themes.css */,
+				2600000000000000000004F2 /* ../Sources/MEditor/Resources/Preview/css/base.css */,
+				2600000000000000000004F3 /* ../Sources/MEditor/Resources/Preview/scripts/render.js */,
+				2600000000000000000004F4 /* ../Sources/MEditor/Resources/Preview/scripts/bridge.js */,
+				2600000000000000000004F5 /* ../Sources/MEditor/Resources/Preview/marked.min.js */,
+				2600000000000000000004F6 /* ../Sources/MEditor/Resources/Preview/highlight.min.js */,
 			);
 			name = Shared;
 			sourceTree = "<group>";
@@ -211,6 +235,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				2600000000000000000002F0 /* ../Sources/MEditor/Resources/Preview/mermaid.min.js in Resources */,
+				2600000000000000000003F0 /* ../Sources/MEditor/Resources/Preview/template.html in Resources */,
+				2600000000000000000003F1 /* ../Sources/MEditor/Resources/Preview/css/themes.css in Resources */,
+				2600000000000000000003F2 /* ../Sources/MEditor/Resources/Preview/css/base.css in Resources */,
+				2600000000000000000003F3 /* ../Sources/MEditor/Resources/Preview/scripts/render.js in Resources */,
+				2600000000000000000003F4 /* ../Sources/MEditor/Resources/Preview/scripts/bridge.js in Resources */,
+				2600000000000000000003F5 /* ../Sources/MEditor/Resources/Preview/marked.min.js in Resources */,
+				2600000000000000000003F6 /* ../Sources/MEditor/Resources/Preview/highlight.min.js in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -247,6 +278,7 @@
 				2600000000000000000002F4 /* ../Sources/MEditor/Views/Shared/AgentToolDisplay.swift in Sources */,
 				2600000000000000000002F5 /* ../Sources/MEditor/Skills/SharedSkillPrompts.swift in Sources */,
 				2600000000000000000002F6 /* ../Sources/MEditor/Utils/TextFileDecoder.swift in Sources */,
+				2600000000000000000002F7 /* ../Sources/MEditor/Services/Network/ShareLinkService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

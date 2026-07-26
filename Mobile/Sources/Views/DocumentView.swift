@@ -9,6 +9,8 @@ struct DocumentView: View {
 
     @State private var showingFilePicker = false
     @State private var showingOpenError = false
+    /// 发布在线链接的结果弹窗（成功=链接已复制 / 失败=错误信息）。
+    @State private var publishAlert: (message: String, url: String?)? = nil
     /// 预览滚动越顶：导航栏从透明过渡到纸底 + 发丝分隔。
     @State private var contentScrolled = false
     /// 空态入场动画开关。
@@ -86,6 +88,18 @@ struct DocumentView: View {
             Button("好", role: .cancel) { store.lastError = nil }
         } message: {
             Text(store.lastError ?? "")
+        }
+        // 发布结果：成功显示链接已复制（可打开），失败显示原因
+        .alert("在线分享", isPresented: Binding(
+            get: { publishAlert != nil },
+            set: { if !$0 { publishAlert = nil } }
+        )) {
+            if let url = publishAlert?.url, let link = URL(string: url) {
+                Button("打开链接") { UIApplication.shared.open(link) }
+            }
+            Button("好", role: .cancel) { publishAlert = nil }
+        } message: {
+            Text(publishAlert?.message ?? "")
         }
     }
 
@@ -180,6 +194,18 @@ struct DocumentView: View {
             ShareLink(item: store.text, subject: Text(store.fileName)) {
                 Label("分享全文", systemImage: "square.and.arrow.up")
             }
+            if store.kind == .markdown {
+                Button {
+                    publishOnline()
+                } label: {
+                    if ShareLinkPublisher.shared.isPublishing {
+                        Label("正在发布…", systemImage: "globe")
+                    } else {
+                        Label("发布在线链接", systemImage: "globe")
+                    }
+                }
+                .disabled(ShareLinkPublisher.shared.isPublishing)
+            }
             Button {
                 UIPasteboard.general.string = store.text
             } label: {
@@ -189,6 +215,24 @@ struct DocumentView: View {
             Image(systemName: "ellipsis")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(PaperTheme.inkSecondary)
+        }
+    }
+
+    /// 发布当前 Markdown 文档为在线链接；结果经弹窗反馈。
+    private func publishOnline() {
+        let publisher = ShareLinkPublisher.shared
+        publisher.refreshTokenStatus()
+        guard publisher.isConfigured else {
+            publishAlert = (message: "请先在 设置 → 在线分享 中配置 Token", url: nil)
+            return
+        }
+        Task {
+            await publisher.publish(fileName: store.fileName, markdown: store.text)
+            if let url = publisher.lastResultURL {
+                publishAlert = (message: "链接已复制到剪贴板：\n\(url)", url: url)
+            } else {
+                publishAlert = (message: publisher.lastError ?? "发布失败", url: nil)
+            }
         }
     }
 
