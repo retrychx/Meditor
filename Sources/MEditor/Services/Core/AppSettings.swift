@@ -26,6 +26,7 @@ final class AppSettings {
         static let autoSave = "MEditor.autoSave"
         static let autoSaveInterval = "MEditor.autoSaveInterval"
         static let githubGistPublic = "MEditor.githubGistPublic"
+        static let shareBaseURL = "MEditor.shareBaseURL"
         static let aiAccentStyle = "MEditor.aiAccentStyle"
         static let aiProvider = "MEditor.aiProvider"
         static let aiBaseURL = "MEditor.aiBaseURL"
@@ -99,6 +100,11 @@ final class AppSettings {
     /// Whether new GitHub Gists are created as public (true) or secret (false).
     var githubGistPublic: Bool {
         didSet { defaults.set(githubGistPublic, forKey: Key.githubGistPublic) }
+    }
+
+    /// 在线分享服务的 Base URL（默认 workers.dev；发布前换成自定义域名，只改这一处）。
+    var shareBaseURL: String {
+        didSet { defaults.set(shareBaseURL, forKey: Key.shareBaseURL) }
     }
 
     /// AI assistant accent style: "system" (app accent) or "shadcn" (mono black/white).
@@ -281,6 +287,7 @@ final class AppSettings {
         autoSave = d.bool(forKey: Key.autoSave)
         autoSaveInterval = d.integer(forKey: Key.autoSaveInterval) != 0 ? d.integer(forKey: Key.autoSaveInterval) : 30
         githubGistPublic = d.bool(forKey: Key.githubGistPublic)  // default false = secret
+        shareBaseURL = d.string(forKey: Key.shareBaseURL) ?? "https://meditor-app.863129776.workers.dev"
         aiAccentStyle = d.string(forKey: Key.aiAccentStyle) ?? "system"
         aiProvider = d.string(forKey: Key.aiProvider) ?? "disabled"
         aiBaseURL = d.string(forKey: Key.aiBaseURL) ?? "https://api.openai.com/v1"

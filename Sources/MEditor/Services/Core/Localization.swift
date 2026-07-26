@@ -295,6 +295,29 @@ extension LocalizationManager {
         "gitlab.error.server": ("GitLab error %d: %@", "GitLab 错误 %d：%@"),
         "gitlab.error.badResponse": ("Unexpected response from GitLab.", "GitLab 返回异常。"),
         "gitlab.error.keychain": ("Keychain error (%d).", "钥匙串错误（%d）。"),
+
+        // 在线分享链接（自建 Worker）
+        "sharelink.title": ("Online Share", "在线分享"),
+        "sharelink.publish": ("Publish Online Link", "发布在线链接"),
+        "sharelink.republish": ("Republish Online Link", "重新发布在线链接"),
+        "sharelink.publishing": ("Publishing…", "正在发布…"),
+        "sharelink.copyLink": ("Copy Link", "复制链接"),
+        "sharelink.openInBrowser": ("Open in Browser", "在浏览器中打开"),
+        "sharelink.baseURL": ("Share Service URL", "分享服务地址"),
+        "sharelink.baseURLHint": ("Self-hosted share endpoint. Switch to your custom domain before release.", "自建分享服务地址，发布前可换成自定义域名。"),
+        "sharelink.token": ("Share Token", "分享 Token"),
+        "sharelink.tokenHint": ("Must match the Worker's SHARE_TOKEN secret.", "需与 Worker 的 SHARE_TOKEN 密钥一致。"),
+        "sharelink.tokenConfigured": ("Configured", "已配置"),
+        "sharelink.clearToken": ("Clear", "清除"),
+        "sharelink.saveToken": ("Save", "保存"),
+        "sharelink.error.notConfigured": ("Share not configured — set a token in Settings → Sharing first.", "在线分享未配置——请先在 设置 → 分享 中设置 Token。"),
+        "sharelink.error.invalidToken": ("Invalid share token — please reconfigure.", "分享 Token 无效，请重新配置。"),
+        "sharelink.error.tooLarge": ("Document too large (>4MB) to publish.", "文档过大（>4MB），无法发布。"),
+        "sharelink.error.network": ("Cannot reach the share service — check your network.", "无法连接分享服务，请检查网络。"),
+        "sharelink.error.server": ("Share service error %d: %@", "分享服务错误 %d：%@"),
+        "sharelink.error.badResponse": ("Unexpected response from the share service.", "分享服务返回异常。"),
+        "sharelink.error.noWebView": ("Preview is not ready yet — try again in a moment.", "预览尚未就绪，请稍后重试。"),
+        "sharelink.error.renderFailed": ("Failed to render the document: %@", "文档渲染失败：%@"),
     ]
 
     private static let table2: [String: (en: String, zh: String)] = [

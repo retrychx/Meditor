@@ -1,3 +1,12 @@
 name = "meditor-app"
 compatibility_date = "2026-07-19"
-pages_build_output_dir = "website"
+main = "worker/index.js"
+
+# 官网静态资源（website/ 目录）
+[assets]
+directory = "./website"
+
+# 分享文档存储（GET /d/:id）
+[[kv_namespaces]]
+binding = "SHARES"
+id = "5347b6339e844206963de1732708d375"

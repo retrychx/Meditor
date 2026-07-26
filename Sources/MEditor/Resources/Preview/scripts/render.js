@@ -234,6 +234,10 @@
     return Promise.resolve();
   }
 
+  // 最近一次 renderInto 提取出的全部 mermaid 图（id 按文档顺序稳定），
+  // 供 renderAllDiagrams 找到还没懒渲染的占位。
+  var latestDiagrams = [];
+
   function configureMermaidFromTheme() {
     if (typeof mermaid === 'undefined') return;
     var themeVar = getComputedStyle(document.documentElement)
@@ -242,7 +246,9 @@
   }
 
   function renderMermaidDiagrams(diagrams) {
-    if (!diagrams || diagrams.length === 0) return;
+    if (!diagrams) return;
+    latestDiagrams = diagrams;
+    if (diagrams.length === 0) return;
     loadMermaidIfNeeded().then(function () {
       configureMermaidFromTheme();
       if (typeof window.IntersectionObserver !== 'function') {
@@ -264,8 +270,20 @@
     }).catch(function () {});
   }
 
+  /** 立即渲染所有仍是占位的 mermaid 图（导出/发布前调用），全部完成后 resolve。 */
+  function renderAllDiagrams() {
+    return loadMermaidIfNeeded().then(function () {
+      configureMermaidFromTheme();
+      var pending = latestDiagrams.filter(function (d) {
+        var el = document.getElementById(d.id);
+        return el && el.classList.contains('mermaid-placeholder');
+      });
+      return Promise.all(pending.map(renderOneMermaid));
+    }).then(function () { return true; }, function () { return true; });
+  }
+
   function renderOneMermaid(d) {
-    mermaid.render(d.id + '-svg', d.code).then(function (r) {
+    return mermaid.render(d.id + '-svg', d.code).then(function (r) {
       var el = document.getElementById(d.id);
       if (el && r && r.svg) {
         el.outerHTML = '<div class="mermaid-container">' + r.svg + '</div>';
@@ -421,6 +439,7 @@
   global.MEditorRender = {
     renderInto: renderInto,
     configureMermaidFromTheme: configureMermaidFromTheme,
-    refreshMermaidForTheme: refreshMermaidForTheme
+    refreshMermaidForTheme: refreshMermaidForTheme,
+    renderAllDiagrams: renderAllDiagrams
   };
 })(window);
