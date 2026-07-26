@@ -36,6 +36,7 @@ final class AppState {
     let previewManager: PreviewManager
     let shareManager: ShareManager
     let githubGistManager: GitHubGistManager
+    let shareLinkPublisher: ShareLinkPublisher
     let templateManager: TemplateManager
     let pluginManager: PluginManager
     let presentationManager: PresentationManager
@@ -269,6 +270,9 @@ final class AppState {
         self.previewManager  = PreviewManager()
         self.shareManager    = ShareManager()
         self.githubGistManager = GitHubGistManager()
+        // 发布在线链接的 HTML 取自预览 webview（PreviewExporter 持有弱引用）
+        let exporter = self.previewManager.exporter
+        self.shareLinkPublisher = ShareLinkPublisher(webViewProvider: { [weak exporter] in exporter?.webView })
         self.templateManager = TemplateManager()
         self.pluginManager   = PluginManager()
         self.presentationManager = PresentationManager()

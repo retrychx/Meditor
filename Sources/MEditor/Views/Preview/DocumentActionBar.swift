@@ -305,6 +305,39 @@ struct DocumentActionBar: View {
                 }
                 .disabled(state.selectedTab == nil || state.githubGistManager.isPublishing)
             }
+
+            // 在线分享链接（自建 Worker）
+            if state.shareLinkPublisher.isConfigured {
+                Divider()
+                if let linkURL = state.shareLinkPublisher.lastResultURL {
+                    Button(L("sharelink.copyLink")) {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(linkURL, forType: .string)
+                    }
+                    Button(L("sharelink.openInBrowser")) {
+                        if let url = URL(string: linkURL) { NSWorkspace.shared.open(url) }
+                    }
+                    Divider()
+                }
+                Button(state.shareLinkPublisher.isPublishing
+                    ? L("sharelink.publishing")
+                    : (state.shareLinkPublisher.lastResultURL != nil
+                        ? L("sharelink.republish")
+                        : L("sharelink.publish"))
+                ) {
+                    if let tab = state.selectedTab {
+                        Task {
+                            await state.shareLinkPublisher.publish(tab: tab)
+                            if let error = state.shareLinkPublisher.lastError {
+                                state.setError(error)
+                            } else if let url = state.shareLinkPublisher.lastResultURL {
+                                state.showToast(L("sharelink.publish") + " · " + url, icon: "globe")
+                            }
+                        }
+                    }
+                }
+                .disabled(state.selectedTab == nil || state.shareLinkPublisher.isPublishing)
+            }
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: isActive ? "square.and.arrow.up.fill" : "square.and.arrow.up")

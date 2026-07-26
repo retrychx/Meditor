@@ -49,9 +49,25 @@ struct ShareStatusChip: View {
                 .buttonStyle(.plain)
                 .help(L("statusBar.copyGistLink") + "\n" + gistURL)
             }
+
+            // 在线分享上次发布链接
+            if let linkURL = state.shareLinkPublisher.lastResultURL {
+                if state.shareServer.isRunning || state.githubGistManager.lastResultURL != nil {
+                    theme.separator.frame(width: 1, height: 10).opacity(0.5).padding(.horizontal, 6)
+                }
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(linkURL, forType: .string)
+                } label: {
+                    shareChipLabel(icon: "globe", text: L("sharelink.title"))
+                }
+                .buttonStyle(.plain)
+                .help(linkURL)
+            }
         }
         .animation(DS.Motion.fast, value: state.shareServer.isRunning)
         .animation(DS.Motion.fast, value: state.githubGistManager.lastResultURL != nil)
+        .animation(DS.Motion.fast, value: state.shareLinkPublisher.lastResultURL != nil)
     }
 
     private func shareChipLabel(icon: String, text: String) -> some View {

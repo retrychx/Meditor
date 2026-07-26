@@ -8,6 +8,7 @@ struct SettingsView: View {
     let loc = LocalizationManager.shared
     @State private var selectedTab: SettingsTab = .general
     @State var githubTokenInput = ""
+    @State var shareLinkTokenInput = ""
     @State var aiKeyInput = ""
     @State var aiHasKey = AIAPIKeyStore.hasKey
     @State var aiModels: [String] = []

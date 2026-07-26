@@ -301,9 +301,13 @@
     for (var k = 0; k < styleTags.length; k++) {
       styles += styleTags[k].innerHTML + '\n';
     }
+    // 带上 <html> 的 theme-X class——themes.css 的变量都挂在主题选择器下，
+    // 不带 class 导出会丢全部主题色。
+    var htmlClass = document.documentElement.className;
     return [
       '<!DOCTYPE html>',
-      '<html lang="en"><head><meta charset="UTF-8">',
+      '<html lang="zh-CN" class="' + escapeHtml(htmlClass) + '"><head><meta charset="UTF-8">',
+      '<meta name="viewport" content="width=device-width, initial-scale=1">',
       '<title>' + escapeHtml(title) + '</title>',
       '<style>' + styles + '</style>',
       '</head><body><div id="content">',
@@ -436,6 +440,12 @@
     scrollToPercent: scrollToPercent,
     scrollToLine: scrollToLine,
     getRenderedHTML: getRenderedHTML,
+    // 发布/导出前调用：把所有懒渲染的 mermaid 占位先渲染完（返回 Promise）
+    renderAllDiagrams: function () {
+      return (global.MEditorRender && global.MEditorRender.renderAllDiagrams)
+        ? global.MEditorRender.renderAllDiagrams()
+        : Promise.resolve(true);
+    },
     invalidateLayoutMetrics: invalidateLayoutMetrics,
     reportPerf: reportPerf,
     setCodeHighlightObserver: function (observer) {
