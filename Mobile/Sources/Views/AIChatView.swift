@@ -15,43 +15,27 @@ struct AIChatView: View {
     @State private var chipsAppeared = false
     @State private var emptyStateVisible = false
     @State private var sealStamped = false
-    /// 历史会话弹层。
-    @State private var showHistory = false
 
     /// 列表底部锚点 id（贴底检测与滚动目标共用）。
     private let bottomAnchorID = "chat-bottom"
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                if model.messages.isEmpty {
-                    emptyState
-                } else {
-                    messageList
-                }
-                undoBanner
-                skillChips
-                inputBar
+        // 面板化内容视图：标题栏/历史入口由 AIHeroOverlay 的抓手区统一提供，
+        // 这里不再带自己的 NavigationStack（避免顶部叠两层）。
+        VStack(spacing: 0) {
+            if model.messages.isEmpty {
+                emptyState
+            } else {
+                messageList
             }
-            .background(PaperTheme.paper)
-            .navigationTitle("AI 助手")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showHistory = true } label: {
-                        Image(systemName: "clock.arrow.circlepath")
-                    }
-                    .accessibilityLabel("历史会话")
-                }
-            }
-            .sheet(isPresented: $showHistory) {
-                AIHistorySheet()
-                    .presentationDetents([.medium, .large])
-            }
-            .onDisappear {
-                copyResetTask?.cancel()
-                copiedID = nil
-            }
+            undoBanner
+            skillChips
+            inputBar
+        }
+        .background(PaperTheme.paper)
+        .onDisappear {
+            copyResetTask?.cancel()
+            copiedID = nil
         }
     }
 
@@ -276,7 +260,8 @@ struct AIChatView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
         }
-        .background(PaperTheme.card)
+        // 输入区背景延到面板底边，不留死空间
+        .background(PaperTheme.card.ignoresSafeArea(edges: .bottom))
     }
 
     // MARK: - 技能快捷指令

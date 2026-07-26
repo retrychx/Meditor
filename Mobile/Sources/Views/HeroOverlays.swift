@@ -100,6 +100,7 @@ struct AIHeroOverlay: View {
 
     @Environment(HeroState.self) private var hero
     @State private var contentVisible = false
+    @State private var showHistory = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -114,34 +115,32 @@ struct AIHeroOverlay: View {
             VStack(spacing: 0) {
                 Spacer(minLength: 44)
                 VStack(spacing: 0) {
-                    // 顶部把手行（SwiftUI 层）：面板里的 UIKit 导航栏会盖住叠层按钮、
-                    // 列表又抢占下拉手势——关闭出口必须在这行。
-                    HStack {
-                        Button(action: close) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(PaperTheme.inkSecondary)
-                                .frame(width: 30, height: 30)
-                                .background(PaperTheme.hairline.opacity(0.6), in: Circle())
-                        }
-                        .buttonStyle(.pressable)
-                        .accessibilityLabel("关闭")
-                        Spacer()
+                    // 顶部抓手区（iOS sheet 风格：只有抓手，不用 X）；
+                    // 历史钮收进同一行，与 AIChatView 的标题栏不再叠两层。
+                    ZStack {
                         Capsule()
                             .fill(PaperTheme.inkSecondary.opacity(0.3))
                             .frame(width: 36, height: 5)
-                        Spacer()
-                        // 与左侧 X 对称的占位，让把手居中
-                        Color.clear.frame(width: 30, height: 30)
+                        HStack {
+                            Spacer()
+                            Button { showHistory = true } label: {
+                                Image(systemName: "clock.arrow.circlepath")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundStyle(PaperTheme.inkSecondary)
+                                    .frame(width: 32, height: 32)
+                                    .contentShape(Circle())
+                            }
+                            .buttonStyle(.pressable)
+                            .accessibilityLabel("历史会话")
+                        }
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.top, 8)
-                    .padding(.bottom, 2)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 9)
+                    .padding(.bottom, 3)
                     .contentShape(Rectangle())
                     .opacity(contentVisible ? 1 : 0)
                     .allowsHitTesting(contentVisible)
-                    // simultaneousGesture：普通 .gesture 的 DragGesture 按下即识别，
-                    // 会抢走行内 X 按钮的点击
+                    // 整行可下拉关闭；simultaneousGesture 防 DragGesture 抢历史钮点击
                     .simultaneousGesture(
                         DragGesture().onEnded { value in
                             if value.translation.height > 40 { close() }
@@ -149,7 +148,9 @@ struct AIHeroOverlay: View {
                     )
 
                     if contentVisible {
+                        // 隐藏 AIChatView 自带导航栏，面板头部只有抓手这一层
                         AIChatView()
+                            .toolbar(.hidden, for: .navigationBar)
                             .transition(.opacity)
                     }
                 }
@@ -159,6 +160,10 @@ struct AIHeroOverlay: View {
                 // 面板撑满可用高度：包内容高度会在输入区下留出奇怪的灰色空区
                 .frame(maxHeight: .infinity, alignment: .top)
                 .matchedGeometryEffect(id: hero.aiZoomID, in: namespace)
+            }
+            .sheet(isPresented: $showHistory) {
+                AIHistorySheet()
+                    .presentationDetents([.medium, .large])
             }
         }
         .onAppear {
