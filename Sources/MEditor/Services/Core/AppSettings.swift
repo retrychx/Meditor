@@ -284,7 +284,11 @@ final class AppSettings {
         aiAccentStyle = d.string(forKey: Key.aiAccentStyle) ?? "system"
         aiProvider = d.string(forKey: Key.aiProvider) ?? "disabled"
         aiBaseURL = d.string(forKey: Key.aiBaseURL) ?? "https://api.openai.com/v1"
-        aiModel = d.string(forKey: Key.aiModel) ?? "gpt-4o-mini"
+        // 迁移：DeepSeek 旧模型已下线，映射到 v4 系列。
+        let rawAIModel = d.string(forKey: Key.aiModel) ?? "gpt-4o-mini"
+        aiModel = rawAIModel == "deepseek-chat" ? "deepseek-v4-flash"
+                : rawAIModel == "deepseek-reasoner" ? "deepseek-v4-pro"
+                : rawAIModel
         aiCLIPath    = d.string(forKey: Key.aiCLIPath)    ?? "/usr/local/bin/claude"
         aiCLIModel   = d.string(forKey: Key.aiCLIModel)   ?? ""
         aiAgentModel    = d.string(forKey: Key.aiAgentModel) ?? ""

@@ -35,7 +35,11 @@ final class MobileAISettings {
         let d = UserDefaults.standard
         provider = AIProviderKind(rawValue: d.string(forKey: Key.provider) ?? "") ?? .disabled
         baseURL  = d.string(forKey: Key.baseURL) ?? "https://api.openai.com/v1"
-        model    = d.string(forKey: Key.model) ?? "gpt-4o-mini"
+        // 迁移：DeepSeek 旧模型已下线，映射到 v4 系列。
+        let rawModel = d.string(forKey: Key.model) ?? "gpt-4o-mini"
+        model    = rawModel == "deepseek-chat" ? "deepseek-v4-flash"
+                 : rawModel == "deepseek-reasoner" ? "deepseek-v4-pro"
+                 : rawModel
         // 迁移：旧版明文存 UserDefaults 的 API Key 搬进 Keychain 并删除明文。
         if let legacy = d.string(forKey: Key.legacyApiKey) {
             if !legacy.isEmpty { Self.keychain.save(legacy) }
