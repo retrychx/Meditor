@@ -221,7 +221,11 @@ struct DocumentView: View {
             return
         }
         Task {
-            await publisher.publish(fileName: store.fileName, markdown: store.text)
+            await publisher.publish(
+                fileName: store.fileName,
+                markdown: store.text,
+                baseDirectory: store.sandboxURL?.deletingLastPathComponent()
+            )
             if let url = publisher.lastResultURL {
                 publishAlert = (message: "链接已复制到剪贴板：\n\(url)", url: url)
             } else {

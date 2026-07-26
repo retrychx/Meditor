@@ -58,8 +58,9 @@ final class ShareLinkPublisher {
 
     // MARK: - 发布
 
-    /// 发布当前文档：Markdown 渲染成自包含 HTML 上传；成功复制链接到剪贴板。
-    func publish(fileName: String, markdown: String) async {
+    /// 发布当前文档：Markdown 渲染成自包含 HTML（本地图片内联为 data URI）上传；
+    /// 成功复制链接到剪贴板。baseDirectory 用于解析文档里的相对路径图片。
+    func publish(fileName: String, markdown: String, baseDirectory: URL?) async {
         lastError = nil
         lastResultURL = nil
         guard let token = Self.keychain.load() else {
@@ -72,7 +73,10 @@ final class ShareLinkPublisher {
 
         do {
             let title = (fileName as NSString).deletingPathExtension
-            let html = try await PreviewHTMLRenderer.render(markdown: markdown, title: title)
+            let rendered = try await PreviewHTMLRenderer.render(markdown: markdown, title: title)
+            let html = baseDirectory.map {
+                ShareImageInliner.inlineImages(in: rendered, baseDirectory: $0)
+            } ?? rendered
             let url = try await service.publish(baseURL: baseURL, token: token, title: title, html: html)
             lastResultURL = url
             UIPasteboard.general.string = url

@@ -80,7 +80,10 @@ final class ShareLinkPublisher {
 
         do {
             let title = tab.url.deletingPathExtension().lastPathComponent
-            let html = try await Self.renderedHTML(webView: webView, title: title)
+            let rendered = try await Self.renderedHTML(webView: webView, title: title)
+            // 本地图片（meditor-asset / file:// / 相对路径）内联成 data URI，否则线上全挂
+            let html = ShareImageInliner.inlineImages(
+                in: rendered, baseDirectory: tab.url.deletingLastPathComponent())
             let url = try await service.publish(
                 baseURL: settings.shareBaseURL, token: token, title: title, html: html)
             lastResultURL = url
