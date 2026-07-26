@@ -1,18 +1,15 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// 文件列表页（App 根页面）：搜索 + 白卡列表——打开 / 置顶 / 重命名 / 删除，
-/// 底部动作条（新建 + AI）；头部齿轮进设置页。
+/// 文件列表页（App 一级页面）：搜索 + 白卡列表——打开 / 置顶 / 重命名 / 删除。
+/// 页面切换（文档/设置）与底部栏由 RootView 提供；AI 经 hero 浮层唤起。
 struct DocumentHomeView: View {
     @Environment(DocumentStore.self) private var store
 
     /// 打开文档成功后的回调（RootView 推进文档页）。
     let onOpenDocument: () -> Void
-    /// 打开设置页的回调。
-    let onOpenSettings: () -> Void
 
     @State private var showingFilePicker = false
-    @State private var showingAI = false
     /// 重命名目标（非 nil 时弹输入框）。
     @State private var renaming: DocumentStore.RecentDocument? = nil
     @State private var renameText = ""
@@ -29,22 +26,19 @@ struct DocumentHomeView: View {
     ].compactMap { $0 }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Group {
-                if store.recentDocuments.isEmpty {
-                    emptyState
-                } else {
-                    documentList
-                }
+        Group {
+            if store.recentDocuments.isEmpty {
+                emptyState
+            } else {
+                documentList
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            actionBar
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(PaperTheme.paper.ignoresSafeArea())
         .navigationTitle("文档")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            // 与 DocumentView 一致的自绘衬线标题；设置入口在底部胶囊里。
+            // 与 DocumentView 一致的自绘衬线标题；页面切换与底栏在 RootView。
             ToolbarItem(placement: .principal) {
                 Text("文档")
                     .font(.system(.headline, design: .serif, weight: .semibold))
@@ -61,7 +55,6 @@ struct DocumentHomeView: View {
                 if store.lastError == nil { onOpenDocument() }
             }
         }
-        .sheet(isPresented: $showingAI) { AIChatView() }
         .alert("重命名", isPresented: Binding(
             get: { renaming != nil },
             set: { if !$0 { renaming = nil } }
@@ -81,52 +74,6 @@ struct DocumentHomeView: View {
             Text(actionError ?? "")
         }
         .onAppear { store.refreshWorkspaceDocuments() }
-    }
-
-    // MARK: - 底部动作条（与文档页同一语言：左胶囊 + 右 AI 圆钮）
-
-    private var actionBar: some View {
-        HStack(spacing: 0) {
-            HStack(spacing: 4) {
-                barButton(icon: "plus", label: "新建文档") { store.createDocument() }
-                barButton(icon: "gearshape", label: "设置", action: onOpenSettings)
-            }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 5)
-            .background(PaperTheme.card, in: Capsule(style: .continuous))
-            .shadow(color: PaperTheme.cardShadow, radius: 18, y: 8)
-
-            Spacer()
-
-            Button { showingAI = true } label: {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(PaperTheme.paper)
-                    .symbolEffect(.variableColor.iterative, options: .repeating)
-                    .frame(width: 48, height: 48)
-                    .background(PaperTheme.ink, in: Circle())
-                    .shadow(color: PaperTheme.ink.opacity(0.3), radius: 12, y: 5)
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.pressable)
-            .accessibilityLabel("AI 助手")
-        }
-        .padding(.horizontal, 32)
-        .padding(.bottom, 4)
-        .ignoresSafeArea(.keyboard, edges: .bottom)
-    }
-
-    private func barButton(icon: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(PaperTheme.inkSecondary)
-                .frame(width: 48)
-                .padding(.vertical, 8)
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.pressable)
-        .accessibilityLabel(label)
     }
 
     // MARK: - 列表（Craft 式：搜索 + 白卡；滑动置顶/重命名/删除）
@@ -187,6 +134,8 @@ struct DocumentHomeView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        // 底部悬浮栏不挡卡片：滚动内容底部留白
+        .contentMargins(.bottom, 84, for: .scrollContent)
     }
 
     private var searchField: some View {
