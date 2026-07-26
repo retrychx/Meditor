@@ -40,8 +40,8 @@ private struct HeroMatch: ViewModifier {
     }
 }
 
-/// ＋ 新建：墨底白加号（Craft 同款），点击 hero 放大成整页纸底再推入新文档。
-/// 收在右侧动作胶囊里：小圆钮、不带自己的投影（由胶囊承载）。
+/// ＋ 新建：与左胶囊一致的线图标（plus 墨色），轻量不突兀。
+/// 点击 hero 放大成整页纸底再推入新文档。
 struct BarPlusButton: View {
     /// 按钮所在栏位的标识（"root" / "doc"），用于区分 matchedGeometry 源。
     let context: String
@@ -55,10 +55,9 @@ struct BarPlusButton: View {
             withAnimation(PaperTheme.Motion.standard) { hero.plusZoom = true }
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(PaperTheme.paper)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(PaperTheme.ink)
                 .frame(width: 34, height: 34)
-                .background(PaperTheme.ink, in: Circle())
                 .contentShape(Circle())
                 .modifier(HeroMatch(id: "plus-\(context)", namespace: heroNS, hidden: hero.plusZoom))
         }
@@ -67,7 +66,7 @@ struct BarPlusButton: View {
     }
 }
 
-/// AI 助手：朱砂圆 + 衬线「墨」（品牌印记），点击 hero 展开 AI 面板。
+/// AI 助手：朱砂浅底小圆徽 + 衬线「墨」——保留品牌印记但去实心重感。
 struct BarAIButton: View {
     let context: String
 
@@ -79,7 +78,11 @@ struct BarAIButton: View {
             hero.aiZoomID = "ai-\(context)"
             withAnimation(PaperTheme.Motion.standard) { hero.aiOpen = true }
         } label: {
-            SealCircle(size: 34)
+            Text("墨")
+                .font(.system(size: 14, weight: .bold, design: .serif))
+                .foregroundStyle(PaperTheme.seal)
+                .frame(width: 34, height: 34)
+                .background(PaperTheme.seal.opacity(0.12), in: Circle())
                 .contentShape(Circle())
                 .modifier(HeroMatch(id: "ai-\(context)", namespace: heroNS, hidden: hero.aiOpen))
         }
@@ -153,6 +156,8 @@ struct AIHeroOverlay: View {
                 .background(PaperTheme.card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .shadow(color: .black.opacity(0.18), radius: 24, y: 10)
+                // 面板撑满可用高度：包内容高度会在输入区下留出奇怪的灰色空区
+                .frame(maxHeight: .infinity, alignment: .top)
                 .matchedGeometryEffect(id: hero.aiZoomID, in: namespace)
             }
         }
