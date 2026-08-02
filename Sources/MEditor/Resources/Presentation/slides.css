@@ -31,7 +31,7 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 5vh 7vw;
+  padding: 6vh 8vw;
   box-sizing: border-box;
   overflow: hidden;
   opacity: 0;
@@ -51,45 +51,74 @@ body {
   max-height: 100%;
   overflow: hidden;
   font-size: 3vh;
-  line-height: 1.55;
+  line-height: 1.65;
 }
 
+/* ---- 标题：左侧强调条 + 收紧字距，形成统一的页面锚点 ---- */
 .slide-content h1, .slide-content h2, .slide-content h3,
 .slide-content h4, .slide-content h5, .slide-content h6 {
   color: var(--heading);
   line-height: 1.25;
-  margin: 0.6em 0 0.4em;
+  letter-spacing: -0.01em;
+  margin: 0.7em 0 0.5em;
 }
-.slide-content h1 { font-size: 2.1em; }
-.slide-content h2 { font-size: 1.7em; }
-.slide-content h3 { font-size: 1.4em; }
-.slide-content h4 { font-size: 1.15em; }
+.slide-content > h1:first-child,
+.slide-content > h2:first-child,
+.slide-content > h3:first-child {
+  margin-top: 0;
+}
+.slide-content h1 { font-size: 2.2em; }
+.slide-content h2 { font-size: 1.75em; }
+.slide-content h3 { font-size: 1.35em; }
+.slide-content h4 { font-size: 1.12em; }
 
-.slide-content p { margin: 0.5em 0; }
+/* h2/h3 前的强调竖条（页面主标题的视觉锚点） */
+.slide-content h2, .slide-content h3 {
+  position: relative;
+  padding-left: 0.55em;
+}
+.slide-content h2::before, .slide-content h3::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.18em;
+  bottom: 0.18em;
+  width: 0.14em;
+  border-radius: 0.07em;
+  background: var(--link);
+}
 
+.slide-content p { margin: 0.55em 0; }
+
+/* ---- 列表：强调色圆点标记，拉开行距 ---- */
 .slide-content ul, .slide-content ol {
   margin: 0.5em 0;
-  padding-left: 1.6em;
+  padding-left: 1.4em;
 }
-.slide-content li { margin: 0.3em 0; }
+.slide-content li { margin: 0.42em 0; }
+.slide-content li::marker { color: var(--link); }
+.slide-content ul > li::marker { font-size: 0.8em; }
 
 .slide-content a { color: var(--link); text-decoration: none; }
 
+/* 行内代码 */
 .slide-content code {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 0.85em;
+  font-size: 0.82em;
   background: var(--code-bg);
   border-radius: 6px;
-  padding: 0.15em 0.4em;
+  padding: 0.12em 0.4em;
 }
 
+/* 代码块：细边框 + 大圆角 + 充足内边距 */
 .slide-content pre {
   background: var(--code-bg);
-  border-radius: 10px;
-  padding: 0.8em 1em;
+  border: 1px solid var(--table-border);
+  border-radius: 14px;
+  padding: 0.9em 1.15em;
   overflow: hidden;
-  font-size: 0.72em;
-  line-height: 1.45;
+  font-size: 0.68em;
+  line-height: 1.55;
 }
 .slide-content pre code {
   background: transparent;
@@ -97,12 +126,16 @@ body {
   font-size: 1em;
 }
 
+/* 引用：强调色竖条 + 浅底色 */
 .slide-content blockquote {
-  margin: 0.6em 0;
-  padding: 0.2em 0 0.2em 0.9em;
-  border-left: 4px solid var(--blockquote-border);
+  margin: 0.7em 0;
+  padding: 0.35em 1em;
+  border-left: 4px solid var(--link);
+  border-radius: 0 8px 8px 0;
+  background: var(--code-bg);
   color: var(--blockquote-text);
 }
+.slide-content blockquote p { margin: 0.2em 0; }
 
 .slide-content img {
   max-width: 100%;
@@ -110,17 +143,26 @@ body {
   object-fit: contain;
 }
 
+/* ---- 表格：去竖线的书版式（booktabs）风格 ---- */
 .slide-content table {
   border-collapse: collapse;
-  margin: 0.6em 0;
-  font-size: 0.8em;
+  margin: 0.7em 0;
+  font-size: 0.78em;
 }
 .slide-content th, .slide-content td {
-  border: 1px solid var(--table-border);
-  padding: 0.3em 0.7em;
+  border: none;
+  border-bottom: 1px solid var(--table-border);
+  padding: 0.38em 0.9em 0.38em 0;
+  text-align: left;
 }
-.slide-content th { background: var(--table-bg); }
-.slide-content tr:nth-child(even) { background: var(--table-bg); }
+.slide-content th {
+  border-bottom: 2px solid var(--link);
+  background: transparent;
+  color: var(--heading);
+  font-weight: 600;
+}
+.slide-content tr:nth-child(even) { background: transparent; }
+.slide-content th:last-child, .slide-content td:last-child { padding-right: 0; }
 
 .slide-content hr {
   border: none;
@@ -128,13 +170,51 @@ body {
   margin: 1em 0;
 }
 
-/* 页码 */
+/* ---- 封面页（首个元素是 h1 的页）：更大标题 + 强调短条 + 弱化副信息 ---- */
+.slide.cover { text-align: left; }
+.slide.cover .slide-content h1 {
+  font-size: 2.9em;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.35em;
+}
+.slide.cover .slide-content h1::after {
+  content: "";
+  display: block;
+  width: 1.6em;
+  height: 0.09em;
+  border-radius: 0.05em;
+  background: var(--link);
+  margin-top: 0.5em;
+}
+.slide.cover .slide-content p {
+  font-size: 1.15em;
+  color: var(--blockquote-text);
+  margin: 0.25em 0;
+}
+.slide.cover .slide-content p:last-child {
+  font-size: 0.85em;
+  opacity: 0.75;
+  margin-top: 1.2em;
+}
+
+/* ---- 底部进度条 + 页码 ---- */
+#progress {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: 0;
+  background: var(--link);
+  opacity: 0.85;
+  transition: width .28s ease;
+}
+
 #indicator {
   position: fixed;
   right: 28px;
-  bottom: 20px;
-  font-size: 15px;
+  bottom: 18px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
   color: var(--text);
-  opacity: 0.4;
+  opacity: 0.45;
 }
