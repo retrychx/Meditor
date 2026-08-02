@@ -95,10 +95,12 @@ make test           # short alias
 ### Create a .app bundle
 
 ```bash
-swift build
-bash scripts/bundle.sh
+bash scripts/bundle.sh          # builds both arches and creates a Universal .app
 open .build/debug/MEditor.app
 ```
+
+The bundle script compiles `arm64` + `x86_64` and `lipo`s them into a single
+Universal binary, so the app runs natively on both Apple Silicon and Intel Macs.
 
 > The `.app` is ad-hoc signed automatically. After first launch, associate `.md`/`.html` files via **Get Info → Open With → MEditor → Change All**.
 

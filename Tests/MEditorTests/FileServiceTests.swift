@@ -102,6 +102,19 @@ final class FileServiceTests: XCTestCase {
         XCTAssertTrue(items.isEmpty)
     }
 
+    func test_loadImmediateChildren_skipsICloudPlaceholders() {
+        // iCloud Drive 占位符（.xxx.icloud）不应出现在文件树
+        createFile(".note.md.icloud")
+        createFile(".archive.zip.icloud")
+        createFile("note.md")
+
+        let items = service.loadImmediateChildren(of: tempDir)
+        let names = items.map(\.name)
+        XCTAssertFalse(names.contains(".note.md.icloud"))
+        XCTAssertFalse(names.contains(".archive.zip.icloud"))
+        XCTAssertTrue(names.contains("note.md"))
+    }
+
     // MARK: - Sort order
 
     func test_loadImmediateChildren_directoriesFirst() {
@@ -252,6 +265,26 @@ final class FileServiceTests: XCTestCase {
         XCTAssertTrue(names.contains("keep.md"))
         XCTAssertFalse(names.contains("pkg.md"), "node_modules 子树应被跳过")
         XCTAssertFalse(names.contains("config.md"), ".git 子树应被跳过")
+    }
+
+    func test_loadAllItems_skipsICloudPlaceholders() {
+        // 递归索引同样跳过 iCloud 占位符（包括子目录内的）
+        createFile(".note.md.icloud")
+        createDir("sub")
+        createFile("sub/.deep.md.icloud")
+        createFile("sub/deep.md")
+
+        let items = service.loadAllItems(under: tempDir)
+        let names = Set(items.map(\.name))
+        XCTAssertFalse(names.contains(".note.md.icloud"))
+        XCTAssertFalse(names.contains(".deep.md.icloud"))
+        XCTAssertTrue(names.contains("deep.md"))
+
+        let files = service.loadAllFiles(under: tempDir)
+        let fileNames = Set(files.map(\.name))
+        XCTAssertFalse(fileNames.contains(".note.md.icloud"))
+        XCTAssertFalse(fileNames.contains(".deep.md.icloud"))
+        XCTAssertTrue(fileNames.contains("deep.md"))
     }
 
     func test_loadAllItems_newlyAddedFileFoundOnRescan() {

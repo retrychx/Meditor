@@ -37,6 +37,8 @@ final class FileService: FileServiceProtocol {
         let items = urls.compactMap { url -> FileItem? in
             let name = url.lastPathComponent
             guard !Self.hiddenNames.contains(name) else { return nil }
+            // iCloud Drive 占位符（.xxx.icloud）不进文件树，下载完成后真实文件才会出现
+            guard url.pathExtension.lowercased() != "icloud" else { return nil }
 
             guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey]),
                   let isDir = values.isDirectory
@@ -76,6 +78,8 @@ final class FileService: FileServiceProtocol {
                 enumerator.skipDescendants()
                 continue
             }
+            // iCloud Drive 占位符（.xxx.icloud）不进索引，见 loadImmediateChildren
+            if url.pathExtension.lowercased() == "icloud" { continue }
             guard let values = try? url.resourceValues(forKeys: Set(indexedResourceKeys)) else { continue }
             if values.isDirectory == true {
                 items.append(FileItem(url: url, isDirectory: true, childrenLoaded: true))
@@ -103,6 +107,8 @@ final class FileService: FileServiceProtocol {
                 enumerator.skipDescendants()
                 continue
             }
+            // iCloud Drive 占位符（.xxx.icloud）不进索引，见 loadImmediateChildren
+            if url.pathExtension.lowercased() == "icloud" { continue }
             guard let values = try? url.resourceValues(forKeys: Set(indexedResourceKeys)) else { continue }
             if values.isDirectory == true { continue }
             guard values.isRegularFile == true else { continue }
