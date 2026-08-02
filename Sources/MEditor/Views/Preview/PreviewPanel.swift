@@ -64,20 +64,18 @@ struct PreviewPanel: View {
                         sourceURL: state.selectedTab?.url,
                         fontSize: fontSize,
                         findController: state.previewFindController,
-                        onSelectionChange: { text in
+                        onSelectionChange: { text, rect in
                             withAnimation(DS.Motion.fast) {
                                 state.previewSelectedText = text
+                                state.previewSelectedRect = rect
                             }
                         },
                         onAddTodo: { text in
                             state.appendTodoToCurrentFile(text)
                         }
                     )
-                    .overlay(alignment: .bottom) {
-                        if !state.previewSelectedText.isEmpty {
-                            PreviewInlineEditBar(selectedText: state.previewSelectedText)
-                                .transition(AnyTransition.move(edge: .bottom).combined(with: .opacity))
-                        }
+                    .overlay {
+                        inlineEditBarOverlay
                     }
                 } else if showsHTML {
                     WebPreviewView(
@@ -86,23 +84,18 @@ struct PreviewPanel: View {
                         exporter: state.previewExporter,
                         rootURL: state.rootURL,
                         findController: state.previewFindController,
-                        onSelectionChange: { text in
+                        onSelectionChange: { text, rect in
                             withAnimation(DS.Motion.fast) {
                                 state.previewSelectedText = text
+                                state.previewSelectedRect = rect
                             }
                         },
                         onAddTodo: { text in
                             state.appendTodoToCurrentFile(text)
                         }
                     )
-                    .overlay(alignment: .bottom) {
-                        if !state.previewSelectedText.isEmpty {
-                            PreviewInlineEditBar(
-                                selectedText: state.previewSelectedText,
-                                onDismiss: { state.previewSelectedText = "" }
-                            )
-                            .transition(AnyTransition.move(edge: .bottom).combined(with: .opacity))
-                        }
+                    .overlay {
+                        inlineEditBarOverlay
                     }
                 } else {
                     emptyState
@@ -164,6 +157,30 @@ struct PreviewPanel: View {
     private var showsMarkdown: Bool { state.previewMode == .markdown }
     private var showsHTML: Bool { state.previewMode == .html }
     private var isLoadingMarkdown: Bool { showsMarkdown && (state.selectedTab?.awaitingInitialContent ?? false) }
+
+    /// 圈选操作浮动条：跟随选区位置摆放（选区下方，贴底时翻到上方；
+    /// 无位置信息时回退到底部居中）。
+    private var inlineEditBarOverlay: some View {
+        GeometryReader { geo in
+            if !state.previewSelectedText.isEmpty {
+                let r = state.previewSelectedRect
+                let hasRect = r != .zero
+                let x = hasRect
+                    ? min(max(r.midX, 90), max(90, geo.size.width - 90))
+                    : geo.size.width / 2
+                let belowY = r.maxY + 30
+                let y = !hasRect
+                    ? geo.size.height - 30
+                    : (belowY > geo.size.height - 34 ? r.minY - 30 : belowY)
+                PreviewInlineEditBar(
+                    selectedText: state.previewSelectedText,
+                    onDismiss: { state.previewSelectedText = "" }
+                )
+                .position(x: x, y: y)
+                .transition(.opacity)
+            }
+        }
+    }
 
     private func updateActiveTOC(visibleLine: Int) {
         guard !tocItems.isEmpty else { activeTOCIndex = -1; return }

@@ -9,6 +9,8 @@ final class AIUIState {
     var editorSelectedText: String = ""
     /// Current preview selection text (for preview-side inline edit).
     var previewSelectedText: String = ""
+    /// 预览选区的视口位置（操作浮动条跟随选区摆放）；.zero = 无位置信息。
+    var previewSelectedRect: CGRect = .zero
     /// 「问 AI」带入的引用选段，显示为输入框上方的引用卡片（独立于用户输入框文本）。
     var quotedContext: String? = nil
     /// Text to insert at the current caret position (driven by AI panel).

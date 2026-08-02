@@ -1,6 +1,14 @@
 import SwiftUI
 import WebKit
 
+/// 从 selectionchange 消息体解析选区的视口位置（用于把操作浮动条放到选区旁边）。
+func previewSelectionRect(from body: [String: Any]) -> CGRect {
+    guard let t = body["top"] as? Double, let l = body["left"] as? Double,
+          let b = body["bottom"] as? Double, let r = body["right"] as? Double,
+          r > l || b > t else { return .zero }
+    return CGRect(x: l, y: t, width: r - l, height: b - t)
+}
+
 /// Renders Markdown content inside a long-lived `WKWebView`.
 ///
 /// Loads `template.html` once, then uses `MEditor.update(content)` JS calls
@@ -26,7 +34,7 @@ struct MarkdownWebPreview: View {
     /// Preview font size in px (from settings).
     var fontSize: Int = 15
     var findController: PreviewFindController? = nil
-    var onSelectionChange: ((String) -> Void)? = nil
+    var onSelectionChange: ((String, CGRect) -> Void)? = nil
     /// 右键菜单：将选中文字新增为待办
     var onAddTodo: ((String) -> Void)? = nil
 
@@ -71,7 +79,7 @@ private struct MarkdownWebView: NSViewRepresentable {
     let sourceURL: URL?
     let fontSize: Int
     let findController: PreviewFindController?
-    var onSelectionChange: ((String) -> Void)? = nil
+    var onSelectionChange: ((String, CGRect) -> Void)? = nil
     var onAddTodo: ((String) -> Void)? = nil
 
     static let scrollHandlerName = "scrollHandler"
@@ -334,7 +342,7 @@ extension MarkdownWebView {
         var onTOCUpdate: (([TOCItem]) -> Void)?
         weak var exporter: PreviewExporter?
         var findController: PreviewFindController?
-        var onSelectionChange: ((String) -> Void)?
+        var onSelectionChange: ((String, CGRect) -> Void)?
         var onAddTodo: ((String) -> Void)?
 
         /// JS snippet that installs a `selectionchange` listener and forwards
@@ -351,8 +359,15 @@ extension MarkdownWebView {
                 var text = sel ? sel.toString().trim() : '';
                 if (text === _lastSel) return;
                 _lastSel = text;
+                var rect = { top: 0, left: 0, bottom: 0, right: 0 };
+                if (sel && sel.rangeCount > 0) {
+                    var r = sel.getRangeAt(0).getBoundingClientRect();
+                    rect = { top: r.top, left: r.left, bottom: r.bottom, right: r.right };
+                }
                 if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.selectionHandler) {
-                    window.webkit.messageHandlers.selectionHandler.postMessage({ text: text });
+                    window.webkit.messageHandlers.selectionHandler.postMessage({
+                        text: text, top: rect.top, left: rect.left, bottom: rect.bottom, right: rect.right
+                    });
                 }
             });
         })();
@@ -425,7 +440,7 @@ extension MarkdownWebView {
              onTOCUpdate: (([TOCItem]) -> Void)? = nil,
              exporter: PreviewExporter? = nil,
              findController: PreviewFindController? = nil,
-             onSelectionChange: ((String) -> Void)? = nil,
+             onSelectionChange: ((String, CGRect) -> Void)? = nil,
              onAddTodo: ((String) -> Void)? = nil) {
             self.onVisibleLineChange = onVisibleLineChange
             self.onTOCUpdate = onTOCUpdate
@@ -553,6 +568,13 @@ extension MarkdownWebView {
 // MARK: - WKNavigationDelegate
 
 extension MarkdownWebView.Coordinator: WKNavigationDelegate {
+    /// 链接点击不替换预览内容：锚点放行，外部链接交给系统浏览器打开。
+    func webView(_ webView: WKWebView,
+                 decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        PreviewLinkNavigator.decidePolicy(for: navigationAction, webView: webView, decisionHandler: decisionHandler)
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         PerformanceTracer.event("PreviewTemplateReady", log: PerformanceTracer.preview)
         isReady = true
@@ -628,8 +650,9 @@ extension MarkdownWebView.Coordinator: WKScriptMessageHandler {
     private func handleSelectionMessage(_ message: WKScriptMessage) {
         guard let body = message.body as? [String: Any] else { return }
         let text = (body["text"] as? String) ?? ""
+        let rect = previewSelectionRect(from: body)
         DispatchQueue.main.async {
-            self.onSelectionChange?(text)
+            self.onSelectionChange?(text, rect)
         }
     }
 
@@ -662,6 +685,17 @@ extension MarkdownWebView.Coordinator: WKScriptMessageHandler {
 // MARK: - WKUIDelegate (右键菜单：新增为待办)
 
 extension MarkdownWebView.Coordinator: WKUIDelegate {
+    /// target="_blank" / window.open 的链接同样交给系统浏览器打开。
+    func webView(_ webView: WKWebView,
+                 createWebViewWith configuration: WKWebViewConfiguration,
+                 for navigationAction: WKNavigationAction,
+                 windowFeatures: WKWindowFeatures) -> WKWebView? {
+        if let url = navigationAction.request.url {
+            PreviewLinkNavigator.openExternally(url)
+        }
+        return nil
+    }
+
     /// macOS 右键菜单拦截：在默认菜单中注入"新增为待办"条目。
     func webView(_ webView: WKWebView, willOpenMenu menu: NSMenu, with event: NSEvent) {
         // 读取当前选中文本；evaluateJavaScript 是异步的，

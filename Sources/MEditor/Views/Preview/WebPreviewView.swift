@@ -19,7 +19,7 @@ struct WebPreviewView: NSViewRepresentable {
     var exporter: PreviewExporter? = nil
     var rootURL: URL? = nil
     var findController: PreviewFindController? = nil
-    var onSelectionChange: ((String) -> Void)? = nil
+    var onSelectionChange: ((String, CGRect) -> Void)? = nil
     var onAddTodo: ((String) -> Void)? = nil
 
     static let selectionHandlerName = "selectionHandler"
@@ -76,12 +76,12 @@ extension WebPreviewView {
         weak var webView: WKWebView?
         var rootURL: URL?
         var findController: PreviewFindController?
-        var onSelectionChange: ((String) -> Void)?
+        var onSelectionChange: ((String, CGRect) -> Void)?
         var onAddTodo: ((String) -> Void)?
         private var lastFileURL: URL?
         private var lastReloadToken: Int = -1
 
-        init(findController: PreviewFindController? = nil, onSelectionChange: ((String) -> Void)? = nil, onAddTodo: ((String) -> Void)? = nil) {
+        init(findController: PreviewFindController? = nil, onSelectionChange: ((String, CGRect) -> Void)? = nil, onAddTodo: ((String) -> Void)? = nil) {
             self.findController = findController
             self.onSelectionChange = onSelectionChange
             self.onAddTodo = onAddTodo
@@ -132,9 +132,11 @@ extension WebPreviewView.Coordinator {
             pb.clearContents()
             pb.setString(text, forType: .string)
         case "selectionHandler":
-            let text = ((message.body as? [String: Any])?["text"] as? String) ?? ""
+            guard let body = message.body as? [String: Any] else { return }
+            let text = (body["text"] as? String) ?? ""
+            let rect = previewSelectionRect(from: body)
             DispatchQueue.main.async {
-                self.onSelectionChange?(text)
+                self.onSelectionChange?(text, rect)
             }
         default:
             break
@@ -143,6 +145,13 @@ extension WebPreviewView.Coordinator {
 }
 
 extension WebPreviewView.Coordinator {
+    /// 链接点击不替换预览内容：锚点放行，外部链接交给系统浏览器打开。
+    func webView(_ webView: WKWebView,
+                 decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        PreviewLinkNavigator.decidePolicy(for: navigationAction, webView: webView, decisionHandler: decisionHandler)
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         // Inject copy buttons into <pre><code> blocks, mirroring render.js behaviour.
         let js = """
@@ -190,8 +199,15 @@ extension WebPreviewView.Coordinator {
                 var text = sel ? sel.toString().trim() : '';
                 if (text === _lastSel) return;
                 _lastSel = text;
+                var rect = { top: 0, left: 0, bottom: 0, right: 0 };
+                if (sel && sel.rangeCount > 0) {
+                    var r = sel.getRangeAt(0).getBoundingClientRect();
+                    rect = { top: r.top, left: r.left, bottom: r.bottom, right: r.right };
+                }
                 if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.selectionHandler) {
-                    window.webkit.messageHandlers.selectionHandler.postMessage({ text: text });
+                    window.webkit.messageHandlers.selectionHandler.postMessage({
+                        text: text, top: rect.top, left: rect.left, bottom: rect.bottom, right: rect.right
+                    });
                 }
             });
         })();
@@ -203,6 +219,17 @@ extension WebPreviewView.Coordinator {
 // MARK: - WKUIDelegate (右键菜单：新增为待办)
 
 extension WebPreviewView.Coordinator: WKUIDelegate {
+    /// target="_blank" / window.open 的链接同样交给系统浏览器打开。
+    func webView(_ webView: WKWebView,
+                 createWebViewWith configuration: WKWebViewConfiguration,
+                 for navigationAction: WKNavigationAction,
+                 windowFeatures: WKWindowFeatures) -> WKWebView? {
+        if let url = navigationAction.request.url {
+            PreviewLinkNavigator.openExternally(url)
+        }
+        return nil
+    }
+
     func webView(_ webView: WKWebView, willOpenMenu menu: NSMenu, with event: NSEvent) {
         webView.evaluateJavaScript("window.getSelection().toString().trim()") { [weak self, weak menu] result, _ in
             guard let self = self,
