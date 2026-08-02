@@ -210,6 +210,11 @@ Rules:
         if !userSkills.isEmpty {
             ctx += "\n\n---\n\n# 用户自定义技能\n\n" + userSkills
         }
+        // 用户在设置里填的自定义系统提示词：始终注入（最高优先级的个人偏好）
+        let custom = AppSettings.shared.aiCustomSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !custom.isEmpty {
+            ctx += "\n\n---\n\n# 用户自定义指令（务必遵守）\n\n" + custom
+        }
         return ctx
     }
 }

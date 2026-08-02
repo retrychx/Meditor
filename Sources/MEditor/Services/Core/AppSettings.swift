@@ -37,6 +37,7 @@ final class AppSettings {
         static let aiAgentMaxSteps    = "MEditor.aiAgentMaxSteps"
         static let aiRequestTimeout   = "MEditor.aiRequestTimeout"
         static let aiInlineModel      = "MEditor.aiInlineModel"
+        static let aiCustomSystemPrompt = "MEditor.aiCustomSystemPrompt"
         static let userDocPathBookmark = "MEditor.userDocPathBookmark"
         static let appDocPathBookmark  = "MEditor.appDocPathBookmark"
         // Claude Code 监听
@@ -155,6 +156,11 @@ final class AppSettings {
     /// 内联编辑（改写/扩写/精简/翻译）专用模型（空则回退到 aiModel）。
     var aiInlineModel: String {
         didSet { defaults.set(aiInlineModel, forKey: Key.aiInlineModel) }
+    }
+
+    /// 用户自定义系统提示词：追加到 AI 助手/Agent 的系统提示词末尾（空则不注入）。
+    var aiCustomSystemPrompt: String {
+        didSet { defaults.set(aiCustomSystemPrompt, forKey: Key.aiCustomSystemPrompt) }
     }
 
     // MARK: - Claude Code 监听
@@ -304,6 +310,7 @@ final class AppSettings {
         let rawTimeout  = d.double(forKey: Key.aiRequestTimeout)
         aiRequestTimeout = rawTimeout >= 30 ? rawTimeout : 300   // 默认 300s
         aiInlineModel = d.string(forKey: Key.aiInlineModel) ?? ""
+        aiCustomSystemPrompt = d.string(forKey: Key.aiCustomSystemPrompt) ?? ""
         // Claude Code 监听
         claudeMonitorEnabled    = d.object(forKey: Key.claudeMonitorEnabled) != nil ? d.bool(forKey: Key.claudeMonitorEnabled) : false
         claudeMonitorCustomPath = d.string(forKey: Key.claudeMonitorCustomPath) ?? ""

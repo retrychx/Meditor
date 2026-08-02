@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // MARK: - Plugins tab
 
@@ -73,6 +74,13 @@ extension SettingsView {
                         Label("添加技能", systemImage: "plus")
                             .font(.system(size: 13))
                     }
+                    Button {
+                        Task { await state.pluginManager.reloadAll() }
+                    } label: {
+                        Label("重新加载", systemImage: "arrow.clockwise")
+                            .font(.system(size: 13))
+                    }
+                    .help("重新扫描全部技能文件（改了 SKILL.md 后点这里）")
                     Spacer()
                 }
                 .padding(.top, 4)
@@ -295,6 +303,29 @@ extension SettingsView {
             }
 
             Spacer()
+
+            // 技能文件操作：在 App 内打开编辑 / Finder 显示 / 移除
+            if FileManager.default.fileExists(atPath: skill.skillPath.path) {
+                Button {
+                    state.openFile(FileItem(url: skill.skillPath, isDirectory: false))
+                } label: {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("在 MEditor 中打开编辑")
+
+                Button {
+                    NSWorkspace.shared.activateFileViewerSelecting([skill.skillPath])
+                } label: {
+                    Image(systemName: "folder")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("在 Finder 中显示")
+            }
 
             Button {
                 state.pluginManager.remove(id: skill.id)
