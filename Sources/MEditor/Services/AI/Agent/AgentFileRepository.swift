@@ -17,6 +17,7 @@ enum AgentContextError: LocalizedError {
     case fileNotReadable(String)
     case fileNotFound(String)
     case fileTooLarge(String, Int)
+    case fileNotDownloaded(String)
     case pathOutsideWorkspace(String)
 
     var errorDescription: String? {
@@ -27,6 +28,7 @@ enum AgentContextError: LocalizedError {
         case .fileNotReadable(let n):     return "文件无法读取（编码不支持）：\(n)"
         case .fileNotFound(let n):        return "未找到文件：\(n)"
         case .fileTooLarge(let n, let s): return "文件过大（\(s / 1000)KB），超出上限 \(DefaultAgentFileRepository.maxFullReadBytes / 1_000_000)MB：\(n)"
+        case .fileNotDownloaded(let n):   return "文件尚未从 iCloud 下载到本地：\(n)。已开始下载，请稍后重试。"
         case .pathOutsideWorkspace(let p): return "安全限制：目标路径不在工作区内（\(p)），已拒绝写入。"
         }
     }
@@ -169,6 +171,11 @@ final class DefaultAgentFileRepository: AgentFileRepository {
     /// 解码统一走 TextFileDecoder；先完整解码，再按**字符**截断——按字节截断可能切断
     /// 多字节 UTF-8 字符，导致 utf8 解码整体失败、全文错误回退其他编码（非 ASCII 文件乱码）。
     private static func decodeFile(at url: URL, maxChars: Int) throws -> String {
+        // iCloud 占位符：触发后台下载，抛出可读错误让模型稍后重试（下载完成由 FSEvents 刷新）
+        if UbiquitousFileHelper.isUbiquitousItemNotDownloaded(url) {
+            UbiquitousFileHelper.startDownloadingIfNeeded(url)
+            throw AgentContextError.fileNotDownloaded(url.lastPathComponent)
+        }
         let data = try Data(contentsOf: url)
         guard let full = TextFileDecoder.decode(data) else {
             throw AgentContextError.fileNotReadable(url.lastPathComponent)
@@ -181,6 +188,11 @@ final class DefaultAgentFileRepository: AgentFileRepository {
     func readDiskFull(at url: URL) async throws -> String {
         let fileURL = url
         return try await Task.detached(priority: .userInitiated) {
+            // iCloud 占位符：同 decodeFile，先触发下载再报可读错误
+            if UbiquitousFileHelper.isUbiquitousItemNotDownloaded(fileURL) {
+                UbiquitousFileHelper.startDownloadingIfNeeded(fileURL)
+                throw AgentContextError.fileNotDownloaded(fileURL.lastPathComponent)
+            }
             if let size = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize,
                size > DefaultAgentFileRepository.maxFullReadBytes {
                 throw AgentContextError.fileTooLarge(fileURL.lastPathComponent, size)

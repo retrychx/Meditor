@@ -16,7 +16,23 @@ enum TextFileDecoder {
     ]
 
     static func decode(contentsOf url: URL) throws -> String {
-        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        // iCloud 占位符（本地无数据）：触发后台下载后抛出可读错误，用户稍候重试即可；
+        // 下载完成后 FSEvents 会自动刷新文件树/重载 tab。
+        if UbiquitousFileHelper.isUbiquitousItemNotDownloaded(url) {
+            UbiquitousFileHelper.startDownloadingIfNeeded(url)
+            throw UbiquitousFileError.notDownloaded(url)
+        }
+        let data: Data
+        do {
+            data = try Data(contentsOf: url, options: .mappedIfSafe)
+        } catch {
+            // ubiquitous 文件读取失败（如下载中断、已 eviction）时包装成用户可懂的错误
+            if UbiquitousFileHelper.isUbiquitousItem(url) {
+                UbiquitousFileHelper.startDownloadingIfNeeded(url)
+                throw UbiquitousFileError.readFailed(url, underlying: error)
+            }
+            throw error
+        }
         if let decoded = decode(data) {
             return decoded
         }

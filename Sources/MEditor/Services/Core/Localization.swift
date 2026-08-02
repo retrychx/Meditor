@@ -511,6 +511,8 @@ extension LocalizationManager {
         "error.exportFailed": ("Export to %@ failed: %@.", "导出为 %@ 失败：%@。"),
         "error.unknown": ("unknown error", "未知错误"),
         "error.sessionRestoreFailed": ("Couldn't restore previous session: %@.", "无法恢复上次会话：%@。"),
+        "error.icloudNotDownloaded": ("\"%@\" hasn't been downloaded from iCloud yet. Download started — please try again shortly.", "\"%@\" 尚未从 iCloud 下载，已开始下载，请稍后重试。"),
+        "error.icloudReadFailed": ("Couldn't read iCloud file \"%@\": %@", "无法读取 iCloud 文件\"%@\"：%@"),
 
         // Export errors
         "export.err.noWebView": ("Preview is not available.", "预览不可用。"),
