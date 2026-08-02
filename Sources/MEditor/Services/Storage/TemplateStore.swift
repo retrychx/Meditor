@@ -200,10 +200,18 @@ final class TemplateStore: TemplateStoreProtocol {
         DocumentTemplate(id: "tech-design",  name: L("template.techDesign"), description: L("template.techDesignDesc"), content: BuiltinTemplates.techDesign,    isBuiltin: true, createdAt: .distantPast, fileExtension: "md",   category: .markdown),
         DocumentTemplate(id: "weekly-report",name: L("template.weekly"),     description: L("template.weeklyDesc"),     content: BuiltinTemplates.weekly,        isBuiltin: true, createdAt: .distantPast, fileExtension: "md",   category: .markdown),
         DocumentTemplate(id: "journal",      name: L("template.journal"),    description: L("template.journalDesc"),    content: BuiltinTemplates.journal,       isBuiltin: true, createdAt: .distantPast, fileExtension: "md",   category: .markdown),
+        DocumentTemplate(id: "prd",          name: "产品需求 PRD",            description: "背景・用户故事・功能清单",      content: BuiltinTemplates.prd,           isBuiltin: true, createdAt: .distantPast, fileExtension: "md",   category: .markdown),
+        DocumentTemplate(id: "bug-report",   name: "Bug 报告",                description: "现象・复现步骤・分析结论",      content: BuiltinTemplates.bugReport,     isBuiltin: true, createdAt: .distantPast, fileExtension: "md",   category: .markdown),
+        DocumentTemplate(id: "reading-notes",name: "读书笔记",                description: "观点・摘抄・想法・行动",        content: BuiltinTemplates.readingNotes,  isBuiltin: true, createdAt: .distantPast, fileExtension: "md",   category: .markdown),
+        DocumentTemplate(id: "release-notes",name: "发布说明",                description: "新功能・改进・修复・升级指引",  content: BuiltinTemplates.releaseNotes,  isBuiltin: true, createdAt: .distantPast, fileExtension: "md",   category: .markdown),
+        DocumentTemplate(id: "retrospective",name: "项目复盘",                description: "数据回顾・根因分析・行动项",    content: BuiltinTemplates.retrospective, isBuiltin: true, createdAt: .distantPast, fileExtension: "md",   category: .markdown),
         DocumentTemplate(id: "html-doc",     name: L("template.htmlDoc"),    description: L("template.htmlDocDesc"),    content: htmlDocFromBundle,              isBuiltin: true, createdAt: .distantPast, fileExtension: "html", category: .htmlTheme),
         DocumentTemplate(id: "html-tufte",   name: "Tufte 学术风",            description: "衬线字体・学术风格",           content: BuiltinTemplates.htmlTufte,    isBuiltin: true, createdAt: .distantPast, fileExtension: "html", category: .htmlTheme),
         DocumentTemplate(id: "html-craft",   name: "Craft 现代风",            description: "卡片布局・现代简洁",           content: BuiltinTemplates.htmlCraft,    isBuiltin: true, createdAt: .distantPast, fileExtension: "html", category: .htmlTheme),
         DocumentTemplate(id: "html-dark",    name: "Dark 代码风",             description: "深色主题・技术风格",           content: BuiltinTemplates.htmlDark,     isBuiltin: true, createdAt: .distantPast, fileExtension: "html", category: .htmlTheme),
+        DocumentTemplate(id: "html-landing", name: "产品落地页",              description: "Hero・特性卡片・CTA",           content: BuiltinTemplates.htmlLanding,  isBuiltin: true, createdAt: .distantPast, fileExtension: "html", category: .htmlTheme),
+        DocumentTemplate(id: "html-report",  name: "数据报告页",              description: "KPI 卡片・明细表・结论",        content: BuiltinTemplates.htmlReport,   isBuiltin: true, createdAt: .distantPast, fileExtension: "html", category: .htmlTheme),
+        DocumentTemplate(id: "html-resume",  name: "个人简历",                description: "打印友好・简洁专业版式",        content: BuiltinTemplates.htmlResume,   isBuiltin: true, createdAt: .distantPast, fileExtension: "html", category: .htmlTheme),
     ]}
 
     private static var htmlDocFromBundle: String {

@@ -120,6 +120,21 @@ extension SettingsView {
                     }
                 }
 
+                // MARK: 个性化（对所有 provider 生效）
+                settingsGroup(title: "个性化") {
+                    settingsStackedRow(
+                        label: "自定义系统提示词",
+                        subtitle: "追加到每次对话的系统提示词末尾。例如：「回答一律用中文，风格简洁直接」"
+                    ) {
+                        TextEditor(text: bindableSettings.aiCustomSystemPrompt)
+                            .font(.system(size: 12))
+                            .frame(minHeight: 64, maxHeight: 96)
+                            .scrollContentBackground(.hidden)
+                            .padding(6)
+                            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    }
+                }
+
                 // MARK: Claude Code 集成
                 claudeMonitorSection
             }
