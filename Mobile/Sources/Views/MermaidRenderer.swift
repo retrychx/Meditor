@@ -65,9 +65,14 @@ final class MermaidRenderer: NSObject {
         cache.totalCostLimit = 32 * 1024 * 1024
     }
 
-    /// 提前拉起引擎——JS 解析是冷启动大头，藏在用户阅读前文的时间里。
+    /// 预热 WebContent 进程：仅创建 WKWebView，不加载任何 JS。
+    /// 首帧后调用，把进程创建开销（~150ms）移到启动之后，用户无感知。
     func prewarm() {
-        ensureEngine()
+        guard webView == nil else { return }
+        guard loadFailures < Self.maxLoadFailures else { return }
+        webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 1024, height: 1024))
+        webView?.isOpaque = false
+        // 不设置 navigationDelegate，不加载 HTML——引擎空闲但进程已驻留
     }
 
     /// 缓存 key：外观 | 缩放 | 代码——切换浅色 / 墨夜后不能命中旧图。
@@ -220,14 +225,18 @@ final class MermaidRenderer: NSObject {
 
     // MARK: - 引擎生命周期
 
+    /// 确保 WKWebView 存在（如果 prewarm 没创建过，现在创建）。
+    /// 首次加载 JS 引擎：设置 delegate 并加载含 mermaid.min.js 的 HTML。
+    /// 如果 webView 已存在但未初始化引擎（prewarm 创建的），现在补上。
     private func ensureEngine() {
-        guard webView == nil else { return }
-        guard loadFailures < Self.maxLoadFailures else { return }
-        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 1024, height: 1024))
-        webView.isOpaque = false
-        webView.navigationDelegate = self
-        self.webView = webView
-        webView.loadHTMLString(Self.shell, baseURL: Bundle.main.resourceURL)
+        if webView == nil {
+            guard loadFailures < Self.maxLoadFailures else { return }
+            webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 1024, height: 1024))
+            webView?.isOpaque = false
+        }
+        guard let wv = webView, wv.navigationDelegate == nil else { return }
+        wv.navigationDelegate = self
+        wv.loadHTMLString(Self.shell, baseURL: Bundle.main.resourceURL)
     }
 
     /// 引擎就绪后返回可用的 webView；加载失败在重建上限内会自动重试。
@@ -240,6 +249,7 @@ final class MermaidRenderer: NSObject {
         }
         ensureEngine()
         guard webView != nil else { throw RenderError.engineUnavailable }
+        // 如果 webView 已存在但 shell 尚未加载（prewarm 创建的），ensureEngine 已触发加载
         let result = await withCheckedContinuation { (cont: CheckedContinuation<Result<Void, Error>, Never>) in
             readyWaiters.append(cont)
         }

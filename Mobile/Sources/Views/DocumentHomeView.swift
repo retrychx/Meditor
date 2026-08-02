@@ -5,18 +5,22 @@ import UniformTypeIdentifiers
 /// 页面切换（文档/设置）与底部栏由 RootView 提供；AI 经 hero 浮层唤起。
 struct DocumentHomeView: View {
     @Environment(DocumentStore.self) private var store
+    @Environment(RecentHistory.self) private var recents
 
     /// 打开文档成功后的回调（RootView 推进文档页）。
     let onOpenDocument: () -> Void
 
     @State private var showingFilePicker = false
     /// 重命名目标（非 nil 时弹输入框）。
-    @State private var renaming: DocumentStore.RecentDocument? = nil
+    @State private var renaming: RecentHistory.RecentDocument? = nil
     @State private var renameText = ""
     /// 操作失败的简单提示。
     @State private var actionError: String? = nil
+    /// 待确认删除的目标（非 nil 时弹确认对话框）。
+    @State private var confirmDelete: RecentHistory.RecentDocument? = nil
     /// 列表搜索词。
     @State private var query = ""
+    @FocusState private var searchFocused: Bool
 
     /// 与 DocumentView 保持一致的可导入类型。
     private static let importableTypes: [UTType] = [
@@ -26,19 +30,23 @@ struct DocumentHomeView: View {
     ].compactMap { $0 }
 
     var body: some View {
-        Group {
-            if store.recentDocuments.isEmpty {
+        VStack(spacing: 0) {
+            // 搜索框始终可见，无论是否有文档
+            searchField
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+
+            if recents.documents.isEmpty {
                 emptyState
             } else {
                 documentList
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(PaperTheme.paper.ignoresSafeArea())
+        .background(PaperTheme.paperBackground)
         .navigationTitle("文档")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            // 与 DocumentView 一致的自绘衬线标题；页面切换与底栏在 RootView。
             ToolbarItem(placement: .principal) {
                 Text("文档")
                     .font(.system(.headline, design: .serif, weight: .semibold))
@@ -73,15 +81,28 @@ struct DocumentHomeView: View {
         } message: {
             Text(actionError ?? "")
         }
-        .onAppear { store.refreshWorkspaceDocuments() }
+        .confirmationDialog(
+            "确定删除此文档？",
+            isPresented: Binding(
+                get: { confirmDelete != nil },
+                set: { if !$0 { confirmDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("删除", role: .destructive) { if let doc = confirmDelete { delete(doc) } }
+            Button("取消", role: .cancel) { confirmDelete = nil }
+        } message: {
+            Text(confirmDelete.map { "「\($0.fileName)」将被永久删除。" } ?? "")
+        }
+        .onAppear { recents.refreshWorkspaceDocuments() }
     }
 
     // MARK: - 列表（Craft 式：搜索 + 白卡；滑动置顶/重命名/删除）
 
-    private var filteredDocs: [DocumentStore.RecentDocument] {
+    private var filteredDocs: [RecentHistory.RecentDocument] {
         let q = query.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return store.recentDocuments }
-        return store.recentDocuments.filter { $0.fileName.localizedCaseInsensitiveContains(q) }
+        guard !q.isEmpty else { return recents.documents }
+        return recents.documents.filter { $0.fileName.localizedCaseInsensitiveContains(q) }
     }
 
     /// 让 List 行呈现白卡外观的统一配置：透明行底、隐藏分隔、留边距。
@@ -94,46 +115,52 @@ struct DocumentHomeView: View {
 
     private var documentList: some View {
         List {
-            cardRow {
-                searchField
-            }
-            cardRow {
-                // 「打开文件」入口：保持在列表顶部，触手可及。
-                Button { showingFilePicker = true } label: {
-                    Label("打开文件…", systemImage: "folder")
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(PaperTheme.accent)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 13)
-                        .background(PaperTheme.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .shadow(color: PaperTheme.cardShadow, radius: 8, y: 3)
-                }
-                .buttonStyle(.pressable)
-            }
             ForEach(filteredDocs, id: \.relativePath) { doc in
                 cardRow {
                     card(for: doc)
                 }
                 .swipeActions(edge: .leading) {
-                    Button { store.togglePin(doc.relativePath) } label: {
+                    Button { recents.togglePin(doc.relativePath) } label: {
                         Label(doc.pinned ? "取消置顶" : "置顶",
                               systemImage: doc.pinned ? "pin.slash" : "pin")
                     }
                     .tint(PaperTheme.accent)
                 }
                 .swipeActions(edge: .trailing) {
-                    Button(role: .destructive) { delete(doc) } label: {
-                        Label("删除", systemImage: "trash")
+                    // 沙盒外文档（iCloud Drive 等）不支持在 App 内删除/重命名
+                    if !doc.isExternal {
+                        Button(role: .destructive) { confirmDelete = doc } label: {
+                            Label("删除", systemImage: "trash")
+                        }
+                        Button { beginRename(doc) } label: {
+                            Label("重命名", systemImage: "pencil")
+                        }
+                        .tint(PaperTheme.inkSecondary)
                     }
-                    Button { beginRename(doc) } label: {
-                        Label("重命名", systemImage: "pencil")
+                }
+            }
+            // 搜索无结果
+            if !query.isEmpty && filteredDocs.isEmpty {
+                cardRow {
+                    VStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 20))
+                            .foregroundStyle(PaperTheme.inkSecondary)
+                        Text("没有找到匹配的文档")
+                            .font(.subheadline)
+                            .foregroundStyle(PaperTheme.inkSecondary)
+                        Text("试试换个关键词")
+                            .font(.caption)
+                            .foregroundStyle(PaperTheme.inkSecondary.opacity(0.7))
                     }
-                    .tint(PaperTheme.inkSecondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 30)
                 }
             }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .refreshable { recents.refreshWorkspaceDocuments() }
         // 底部悬浮栏不挡卡片：滚动内容底部留白
         .contentMargins(.bottom, 84, for: .scrollContent)
     }
@@ -146,6 +173,9 @@ struct DocumentHomeView: View {
             TextField("搜索文档", text: $query)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+                .focused($searchFocused)
+                .submitLabel(.search)
+                .onSubmit { searchFocused = false }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -153,7 +183,25 @@ struct DocumentHomeView: View {
         .shadow(color: PaperTheme.cardShadow, radius: 8, y: 3)
     }
 
-    private func card(for doc: DocumentStore.RecentDocument) -> some View {
+    /// 当前文档是否正在打开。沙盒外文档的 relativePath 是完整路径，直接比对。
+    private func isCurrentDoc(_ doc: RecentHistory.RecentDocument) -> Bool {
+        guard let url = store.sandboxURL else { return false }
+        if doc.isExternal {
+            return url.standardizedFileURL.path == doc.relativePath
+        }
+        let rel = (url.path.hasPrefix(recents.workspace.path + "/")
+                   ? String(url.path.dropFirst(recents.workspace.path.count + 1))
+                   : url.lastPathComponent)
+        return rel == doc.relativePath
+    }
+
+    /// 从文件名提取扩展名（如 "md" / "html"）。
+    private func fileExtension(_ name: String) -> String? {
+        let ext = (name as NSString).pathExtension.lowercased()
+        return ext.isEmpty || ext == name ? nil : ext
+    }
+
+    private func card(for doc: RecentHistory.RecentDocument) -> some View {
         Button { open(doc) } label: {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -163,32 +211,51 @@ struct DocumentHomeView: View {
                                 .font(.system(size: 11))
                                 .foregroundStyle(PaperTheme.accent)
                         }
-                        Text(doc.fileName)
+                        Text(doc.baseName)
                             .font(.system(.headline, design: .serif, weight: .semibold))
                             .foregroundStyle(PaperTheme.ink)
                             .lineLimit(1)
+                        if let ext = fileExtension(doc.fileName) {
+                            Text(ext)
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(PaperTheme.accent)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(PaperTheme.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
+                        }
+                        // 沙盒外原地打开的文档（iCloud Drive 等）标注云朵
+                        if doc.isExternal {
+                            Image(systemName: "icloud")
+                                .font(.system(size: 11))
+                                .foregroundStyle(PaperTheme.inkSecondary)
+                        }
                     }
-                    Text(snippet(for: doc.relativePath))
+                    Text(doc.snippet)
                         .font(.subheadline)
                         .foregroundStyle(PaperTheme.inkSecondary)
-                        .lineLimit(1)
+                        .lineLimit(3)
                 }
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 6) {
-                    Text(doc.lastOpened.formatted(.relative(presentation: .named)))
+                    Text(dateLabel(doc.lastOpened))
                         .font(.caption)
                         .foregroundStyle(PaperTheme.inkSecondary)
                     Menu {
-                        Button { beginRename(doc) } label: {
-                            Label("重命名", systemImage: "pencil")
+                        // 沙盒外文档（iCloud Drive 等）不支持在 App 内重命名/删除
+                        if !doc.isExternal {
+                            Button { beginRename(doc) } label: {
+                                Label("重命名", systemImage: "pencil")
+                            }
                         }
-                        Button { store.togglePin(doc.relativePath) } label: {
+                        Button { recents.togglePin(doc.relativePath) } label: {
                             Label(doc.pinned ? "取消置顶" : "置顶",
                                   systemImage: doc.pinned ? "pin.slash" : "pin")
                         }
-                        Divider()
-                        Button(role: .destructive) { delete(doc) } label: {
-                            Label("删除", systemImage: "trash")
+                        if !doc.isExternal {
+                            Divider()
+                            Button(role: .destructive) { delete(doc) } label: {
+                                Label("删除", systemImage: "trash")
+                            }
                         }
                     } label: {
                         Image(systemName: "ellipsis")
@@ -201,6 +268,15 @@ struct DocumentHomeView: View {
             }
             .padding(14)
             .background(PaperTheme.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(alignment: .leading) {
+                if isCurrentDoc(doc) {
+                    Rectangle()
+                        .fill(PaperTheme.accent)
+                        .frame(width: 3, height: 32)
+                        .clipShape(RoundedRectangle(cornerRadius: 2))
+                        .padding(.leading, -1)
+                }
+            }
             .shadow(color: PaperTheme.cardShadow, radius: 8, y: 3)
             .contentShape(Rectangle())
         }
@@ -226,10 +302,18 @@ struct DocumentHomeView: View {
                 .lineSpacing(4)
                 .frame(maxWidth: 300)
                 .padding(.top, 12)
-            Button { showingFilePicker = true } label: {
-                Label("打开文件", systemImage: "folder")
+            HStack(spacing: 16) {
+                Button { showingFilePicker = true } label: {
+                    Label("打开文件", systemImage: "folder")
+                }
+                Button {
+                    store.createDocument()
+                    onOpenDocument()
+                } label: {
+                    Label("新建文档", systemImage: "plus")
+                }
+                .buttonStyle(.paperPrimary)
             }
-            .buttonStyle(.paperPrimary)
             .padding(.top, 24)
             Spacer()
         }
@@ -239,18 +323,19 @@ struct DocumentHomeView: View {
 
     // MARK: - 操作
 
-    private func open(_ doc: DocumentStore.RecentDocument) {
-        let url = store.workspace.appendingPathComponent(doc.relativePath)
-        if store.loadFromSandbox(url) {
+    private func open(_ doc: RecentHistory.RecentDocument) {
+        // 延迟到下一 runloop，让按钮按压动画和触感先完成，再同步读文件 + 导航
+        Task { @MainActor in
+            guard store.openRecent(doc) else {
+                recents.refreshWorkspaceDocuments()
+                actionError = store.lastError ?? "无法打开「\(doc.fileName)」，文件可能已被移除。"
+                return
+            }
             onOpenDocument()
-        } else {
-            // 文件可能已被外部删除：刷新列表清掉失效记录，并告知用户。
-            store.refreshWorkspaceDocuments()
-            actionError = "无法打开「\(doc.fileName)」，文件可能已被移除。"
         }
     }
 
-    private func beginRename(_ doc: DocumentStore.RecentDocument) {
+    private func beginRename(_ doc: RecentHistory.RecentDocument) {
         renaming = doc
         renameText = (doc.fileName as NSString).deletingPathExtension
     }
@@ -263,22 +348,23 @@ struct DocumentHomeView: View {
         renaming = nil
     }
 
-    private func delete(_ doc: DocumentStore.RecentDocument) {
+    private func delete(_ doc: RecentHistory.RecentDocument) {
         store.deleteDocument(at: doc.relativePath)
         // 删的是当前打开文档：store.sandboxURL 变 nil，RootView 会自动退回列表页。
     }
 
-    /// 首行内容摘要：只读前 4KB，取第一个非空行并去掉 Markdown 标题/引用/列表标记。
-    private func snippet(for rel: String) -> String {
-        let url = store.workspace.appendingPathComponent(rel)
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return "" }
-        defer { try? handle.close() }
-        guard let data = try? handle.read(upToCount: 4096), !data.isEmpty else { return "" }
-        // read(upToCount:) 可能截断在多字节字符中间，String(decoding:) 保证不失败。
-        let raw = String(decoding: data, as: UTF8.self)
-        let line = raw.components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .first { !$0.isEmpty } ?? ""
-        return line.replacingOccurrences(of: "^[#>\\-*+\\s]+", with: "", options: .regularExpression)
+    /// 日期标签：今天→"今天"，昨天→"昨天"，更早→"M月d日"（跨年带年份）。
+    /// iOS 内部对 FormatStyle 有缓存，但 static 复用更明确避免重复构造。
+    private static let thisYearStyle = Date.FormatStyle().month(.abbreviated).day()
+    private static let otherYearStyle = Date.FormatStyle().year().month(.abbreviated).day()
+
+    private func dateLabel(_ date: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDateInToday(date) { return "今天" }
+        if cal.isDateInYesterday(date) { return "昨天" }
+        if cal.isDate(date, equalTo: .now, toGranularity: .year) {
+            return date.formatted(Self.thisYearStyle)
+        }
+        return date.formatted(Self.otherYearStyle)
     }
 }

@@ -23,6 +23,8 @@ final class ChatModel {
 
     var input: String = ""
     var isResponding = false
+    /// 待替换的原文：AI 优化选中文本后存储，AI 回复完成后可用 replacePendingText 替换。
+    private(set) var pendingOriginalText: String? = nil
 
     /// 运行中的 Runner（只读暴露给视图，驱动工具步骤面板）。
     private(set) var runner: AgentRunner?
@@ -70,7 +72,13 @@ final class ChatModel {
     /// 系统 prompt = 基础说明 + 已启用技能注入（每次发送时现取，开关即时生效）。
     private func systemPromptWithSkills() -> String {
         let section = skillStore.promptSection
-        return section.isEmpty ? Self.systemPrompt : Self.systemPrompt + "\n\n" + section
+        var prompt = section.isEmpty ? Self.systemPrompt : Self.systemPrompt + "\n\n" + section
+        // 用户在设置里填的自定义系统提示词：始终注入（最高优先级的个人偏好）
+        let custom = settings.customSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !custom.isEmpty {
+            prompt += "\n\n# 用户自定义指令（务必遵守）\n\n" + custom
+        }
+        return prompt
     }
 
     /// 发送当前输入框内容。
@@ -152,6 +160,32 @@ final class ChatModel {
         store.undoAIChanges()
     }
 
+    /// 记录待替换原文（选中文本优化场景）。
+    func setPendingReplace(original: String) {
+        pendingOriginalText = original
+    }
+
+    /// 用 AI 回复替换原文（查找第一个匹配替换）。
+    func replacePendingText(with aiText: String) {
+        guard let original = pendingOriginalText, !original.isEmpty, !aiText.isEmpty else { return }
+        pendingOriginalText = nil
+        if let range = store.text.range(of: original) {
+            var newText = store.text
+            newText.replaceSubrange(range, with: aiText)
+            store.applyManualEdit(newText)
+        }
+    }
+
+    /// 重试最后一次回复：移除最后一条 AI 消息（含错误），重新发送上一条用户消息。
+    func retryLast() {
+        guard !isResponding, convo.messages.count >= 2 else { return }
+        // 移除最后一条 AI 回复（含错误文本）
+        convo.messages.removeLast()
+        // 上一条应该是用户消息，用它重发
+        guard let lastUser = convo.messages.last, lastUser.role == .user else { return }
+        send(text: lastUser.text)
+    }
+
     private func updateLastAssistant(_ text: String, in sessionID: UUID) {
         guard convo.activeID == sessionID, !convo.messages.isEmpty else { return }
         convo.messages[convo.messages.count - 1].text = text
@@ -180,8 +214,7 @@ final class ChatModel {
         convo.delete(id)
     }
 
-    private func finish(_ r: AgentRunner, sessionID: UUID) {
-        // 会话已切换/删除时（cancel 后 runner 收尾仍异步触发本回调）：
+    private func finish(_ r: AgentRunner, sessionID: UUID) {        // 会话已切换/删除时（cancel 后 runner 收尾仍异步触发本回调）：
         // runner/isResponding 已被 cancel() 复位，直接丢弃这次收尾，
         // 避免把旧会话的 agentHistory / 错误文本写进新会话。
         guard convo.activeID == sessionID else { return }
@@ -204,4 +237,44 @@ final class ChatModel {
         isResponding = false
         convo.persist()
     }
+
+#if DEBUG
+    /// 演示会话：仅 DEBUG 用（launch argument `-debugSeedChat YES` 触发），
+    /// 供模拟器截图/设计走查，不依赖真实 API。
+    func seedDemoConversation() {
+        convo.messages.removeAll()  // 幂等：重复启动不叠加
+        convo.messages.append(AIChatMessage(role: .user, text: "帮我把文档里「产品演进」这一节改得更简洁"))
+        convo.messages.append(AIChatMessage(role: .assistant, text: """
+            已通读文档并完成了精简，主要改动：
+
+            - **删繁就简**：三个重复论述的段落合并为一段
+            - 结构重排：按「现状 → 方向 → 路径」组织
+            - 保留了所有关键数据点和版本对比表格
+
+            其中精简幅度最大的一段：
+
+            > 原文 87 字压缩到 31 字，信息无损。
+
+            如需进一步压缩到一页以内，可以继续。
+            """))
+        if let last = convo.messages.last {
+            stepSnapshots[convo.activeID, default: [:]][last.id] = [
+                .toolCallDone(id: "d1", name: "read_document", args: "{}", result: "ok", isError: false),
+                .toolCallDone(id: "d2", name: "search_workspace", args: "{\"query\":\"产品演进\"}", result: "ok", isError: false),
+                .toolCallDone(id: "d3", name: "patch_document", args: "{\"find\":\"...\"}", result: "ok", isError: false),
+                .toolCallDone(id: "d4", name: "patch_document", args: "{\"find\":\"...\"}", result: "ok", isError: false),
+            ]
+        }
+        convo.messages.append(AIChatMessage(role: .user, text: "好的，再帮我看看还有没有语病"))
+        convo.messages.append(AIChatMessage(role: .assistant, text: """
+            检查完了，有两处小问题：
+
+            1. 第二段「的的」重复，已修正
+            2. 结尾「进行一个推进」建议改为「推进」
+
+            其他部分读起来都很顺。
+            """))
+        convo.persist()
+    }
+#endif
 }

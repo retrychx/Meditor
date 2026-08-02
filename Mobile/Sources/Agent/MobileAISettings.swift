@@ -12,6 +12,7 @@ final class MobileAISettings {
         static let provider = "meditor.mobile.aiProvider"
         static let baseURL  = "meditor.mobile.aiBaseURL"
         static let model    = "meditor.mobile.aiModel"
+        static let customSystemPrompt = "meditor.mobile.aiCustomSystemPrompt"
         /// 旧版明文存储 key，仅用于一次性迁移（迁移后删除）。
         static let legacyApiKey = "meditor.mobile.aiApiKey"
     }
@@ -31,6 +32,11 @@ final class MobileAISettings {
         didSet { Self.keychain.save(apiKey) }   // 空字符串等同清除
     }
 
+    /// 用户自定义系统提示词：追加到 AI 对话的系统提示词末尾（空则不注入）。
+    var customSystemPrompt: String {
+        didSet { UserDefaults.standard.set(customSystemPrompt, forKey: Key.customSystemPrompt) }
+    }
+
     init() {
         let d = UserDefaults.standard
         provider = AIProviderKind(rawValue: d.string(forKey: Key.provider) ?? "") ?? .disabled
@@ -46,6 +52,7 @@ final class MobileAISettings {
             d.removeObject(forKey: Key.legacyApiKey)
         }
         apiKey = Self.keychain.load() ?? ""
+        customSystemPrompt = d.string(forKey: Key.customSystemPrompt) ?? ""
     }
 
     /// 选中预设：自动填 provider / baseURL，并给出一个默认模型。

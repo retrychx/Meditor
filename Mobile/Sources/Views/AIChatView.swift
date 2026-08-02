@@ -5,7 +5,6 @@ import SwiftUI
 struct AIChatView: View {
     @Environment(ChatModel.self) private var model
     @Environment(DocumentStore.self) private var store
-    @FocusState private var inputFocused: Bool
     @State private var copiedID: UUID?
     /// 「已复制」确认的重置任务：视图消失时取消，不再用不跟踪取消的 asyncAfter。
     @State private var copyResetTask: Task<Void, Never>?
@@ -30,9 +29,10 @@ struct AIChatView: View {
             }
             undoBanner
             skillChips
-            inputBar
+            ChatInputBar()
         }
-        .background(PaperTheme.paper)
+        .background(PaperTheme.card)
+        .safeAreaPadding(.bottom)
         .onDisappear {
             copyResetTask?.cancel()
             copiedID = nil
@@ -42,10 +42,11 @@ struct AIChatView: View {
     // MARK: - 消息列表
 
     private var messageList: some View {
-        ScrollViewReader { proxy in
+        let liveID = model.isResponding ? model.messages.last?.id : nil
+        return ScrollViewReader { proxy in
             List {
                 ForEach(model.messages) { msg in
-                    bubbleRow(msg)
+                    bubbleRow(msg, isLive: msg.id == liveID)
                         // 新消息到达：slide-up + fade
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                         .listRowSeparator(.hidden)
@@ -75,12 +76,17 @@ struct AIChatView: View {
                 pinnedToBottom = true
                 scrollToBottom(proxy)
             }
-            .onChange(of: model.messages.last?.text) { _ in
-                // 流式增长：仅贴底时跟随。
-                guard pinnedToBottom else { return }
+            .onChange(of: model.messages.last?.text) { _, newText in
+                // 流式增长：有内容时贴底跟随；新消息到达时空文本不触发（已由 count onChange 处理）。
+                guard pinnedToBottom, let text = newText, !text.isEmpty else { return }
                 scrollToBottom(proxy)
             }
-            .onAppear { proxy.scrollTo(bottomAnchorID, anchor: .bottom) }
+            .onAppear {
+                // 面板入场过渡完成后才滚到底，否则 List 尚未布局 scrollTo 无效
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    proxy.scrollTo(bottomAnchorID, anchor: .bottom)
+                }
+            }
         }
     }
 
@@ -90,17 +96,18 @@ struct AIChatView: View {
         }
     }
 
-    private func bubbleRow(_ msg: ChatModel.ChatMessage) -> some View {
+    private func bubbleRow(_ msg: ChatModel.ChatMessage, isLive: Bool) -> some View {
         let isUser = msg.role == .user
-        // 进行中的最后一条：实时步骤；历史消息：用快照回放
-        let isLive = !isUser && model.isResponding && msg.id == model.messages.last?.id
+        // 进行中的最后一条：实时步骤；历史消息：用快照回放（折叠）
         let displaySteps = isLive ? (model.runner?.steps ?? []) : msg.steps
         let thinking = isLive && msg.text.isEmpty && displaySteps.isEmpty
+        /// 操作行只挂在最新一条助手消息上；历史消息用长按菜单，列表更干净。
+        let isLastAssistant = !isUser && msg.id == model.messages.last?.id
         return HStack(alignment: .top) {
             if isUser { Spacer(minLength: 44) }
             VStack(alignment: isUser ? .trailing : .leading, spacing: 6) {
                 if !displaySteps.isEmpty {
-                    AgentStepsView(steps: displaySteps)
+                    AgentStepsView(steps: displaySteps, live: isLive)
                         .padding(.vertical, 2)
                 }
                 if thinking {
@@ -123,7 +130,10 @@ struct AIChatView: View {
                         .padding(.vertical, 10)
                         .background(PaperTheme.accent)
                         .clipShape(bubbleShape(isUser: true))
+                        .shadow(color: .black.opacity(0.08), radius: 4, y: 1)
                 } else if !msg.text.isEmpty {
+                    // 助手回复平铺（去卡片气泡）：类 ChatGPT/Claude 的阅读感，
+                    // 列表里只剩内容本身，没有成排的气泡阴影。
                     MarkdownText(
                         markdown: msg.text,
                         textColor: PaperTheme.ink,
@@ -132,17 +142,34 @@ struct AIChatView: View {
                         accent: PaperTheme.accent
                     )
                     .textSelection(.enabled)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(PaperTheme.card)
-                    .clipShape(bubbleShape(isUser: false))
-                    .shadow(color: PaperTheme.cardShadow, radius: 8, y: 2)
+                    .padding(.horizontal, 2)
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .contextMenu { messageMenu(msg) }
                 }
-                if !isUser && !model.isResponding && !msg.text.isEmpty {
+                if isLastAssistant && !model.isResponding && !msg.text.isEmpty {
                     actionRow(msg)
                 }
             }
             if !isUser { Spacer(minLength: 44) }
+        }
+    }
+
+    /// 历史助手消息的长按菜单（复制 / 插入文档）。
+    @ViewBuilder
+    private func messageMenu(_ msg: ChatModel.ChatMessage) -> some View {
+        Button {
+            Pasteboard.copy(msg.text)
+        } label: {
+            Label("复制", systemImage: "doc.on.doc")
+        }
+        if store.hasDocument {
+            Button {
+                model.insertIntoDocument(msg.text)
+            } label: {
+                Label("插入文档", systemImage: "text.insert")
+            }
         }
     }
 
@@ -165,10 +192,23 @@ struct AIChatView: View {
                     .contentTransition(.symbolEffect(.replace))
                     .symbolEffect(.bounce, value: copiedID == msg.id)
             }
+            if msg.text.hasPrefix("[!]") {
+                Button { model.retryLast() } label: {
+                    Label("重试", systemImage: "arrow.clockwise")
+                }
+                .foregroundStyle(PaperTheme.accent)
+            }
             if store.hasDocument {
                 Button { model.insertIntoDocument(msg.text) } label: {
                     Label("插入文档", systemImage: "text.insert")
                 }
+            }
+            if msg.id == model.messages.last?.id, let original = model.pendingOriginalText, !original.isEmpty,
+               !model.isResponding, !msg.text.hasPrefix("[!]") {
+                Button { model.replacePendingText(with: msg.text) } label: {
+                    Label("替换原文", systemImage: "arrow.left.arrow.right")
+                }
+                .foregroundStyle(PaperTheme.accent)
             }
         }
         .font(.caption)
@@ -214,55 +254,6 @@ struct AIChatView: View {
     }
 
     // MARK: - 输入栏
-
-    private var inputBar: some View {
-        @Bindable var model = model
-        let canSend = !model.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !model.isResponding
-        return VStack(spacing: 0) {
-            Rectangle()
-                .fill(PaperTheme.hairline)
-                .frame(height: 0.5)
-            HStack(alignment: .bottom, spacing: 10) {
-                TextField("给助手发消息", text: $model.input, axis: .vertical)
-                    .font(.body)
-                    .lineLimit(1...4)
-                    .focused($inputFocused)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .background(PaperTheme.card, in: RoundedRectangle(cornerRadius: PaperTheme.Radius.xlarge, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: PaperTheme.Radius.xlarge, style: .continuous)
-                            .strokeBorder(
-                                inputFocused ? PaperTheme.accent.opacity(0.55) : PaperTheme.hairline,
-                                lineWidth: 1
-                            )
-                    }
-                    .animation(PaperTheme.Motion.quick, value: inputFocused)
-                if model.isResponding {
-                    Button(action: model.cancel) {
-                        Image(systemName: "stop.fill")
-                    }
-                    .buttonStyle(PaperCircleButtonStyle())
-                    .accessibilityLabel("停止")
-                } else {
-                    Button(action: model.send) {
-                        Image(systemName: "arrow.up")
-                            .symbolEffect(.bounce, value: model.isResponding)
-                    }
-                    .buttonStyle(PaperCircleButtonStyle())
-                    .disabled(!canSend)
-                    .opacity(canSend ? 1 : 0.35)
-                    .scaleEffect(canSend ? 1 : 0.88)
-                    .animation(PaperTheme.Motion.quick, value: canSend)
-                    .accessibilityLabel("发送")
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-        }
-        // 输入区背景延到面板底边，不留死空间
-        .background(PaperTheme.card.ignoresSafeArea(edges: .bottom))
-    }
 
     // MARK: - 技能快捷指令
 
@@ -326,6 +317,9 @@ struct AIChatView: View {
             Text("问点什么，或让 AI 帮你修改当前文档。")
                 .font(.subheadline)
                 .foregroundStyle(PaperTheme.inkSecondary)
+                .padding(.bottom, 16)
+            // 内置快捷指令
+            BuiltInQuickChips(model: model)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -338,7 +332,103 @@ struct AIChatView: View {
                 sealStamped = true
             }
         }
-        // 空态下点击空白处收回键盘
-        .onTapGesture { inputFocused = false }
+    }
+}
+
+// MARK: - 内置快捷指令
+
+/// AI 空态下的固定快捷指令 chip，不随技能商店开关变化。
+private struct BuiltInQuickChips: View {
+    let model: ChatModel
+
+    private let commands: [(icon: String, text: String)] = [
+        ("sparkles", "优化当前文档"),
+        ("magnifyingglass", "查找问题"),
+        ("pencil.line", "续写文章"),
+        ("text.quote", "总结要点"),
+    ]
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(commands, id: \.text) { cmd in
+                Button {
+                    model.sendQuick(cmd.text)
+                } label: {
+                    Label(cmd.text, systemImage: cmd.icon)
+                        .font(.caption)
+                        .foregroundStyle(PaperTheme.ink)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(PaperTheme.card, in: Capsule())
+                        .overlay {
+                            Capsule().strokeBorder(PaperTheme.hairline, lineWidth: 0.5)
+                        }
+                }
+                .buttonStyle(.pressable)
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+}
+
+// MARK: - 输入栏（独立 struct，isResponding 变化时不触发父视图重算）
+
+/// 聊天输入栏：TextFiled + 发送/停止按钮。
+/// 独立 struct 隔离 model 观察范围，流式输出时只重算输入栏，不影响消息列表。
+private struct ChatInputBar: View {
+    @Environment(ChatModel.self) private var model
+    @FocusState private var inputFocused: Bool
+
+    var body: some View {
+        @Bindable var model = model
+        let canSend = !model.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !model.isResponding
+        return VStack(spacing: 0) {
+            Rectangle()
+                .fill(PaperTheme.hairline)
+                .frame(height: 0.5)
+            HStack(alignment: .bottom, spacing: 10) {
+                TextField("给助手发消息", text: $model.input, axis: .vertical)
+                    .font(.body)
+                    .lineLimit(1...4)
+                    .focused($inputFocused)
+                    .submitLabel(.send)
+                    .onSubmit(model.send)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(PaperTheme.card, in: RoundedRectangle(cornerRadius: PaperTheme.Radius.xlarge, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: PaperTheme.Radius.xlarge, style: .continuous)
+                            .strokeBorder(
+                                inputFocused ? PaperTheme.accent.opacity(0.55) : PaperTheme.hairline,
+                                lineWidth: 1
+                            )
+                    }
+                    .animation(PaperTheme.Motion.quick, value: inputFocused)
+                if model.isResponding {
+                    Button(action: model.cancel) {
+                        Image(systemName: "stop.fill")
+                            .symbolEffect(.pulse)
+                    }
+                    .buttonStyle(PaperCircleButtonStyle())
+                    .accessibilityLabel("停止")
+                } else {
+                    Button(action: model.send) {
+                        Image(systemName: "arrow.up")
+                            .symbolEffect(.bounce, value: model.isResponding)
+                    }
+                    .buttonStyle(PaperCircleButtonStyle())
+                    .disabled(!canSend)
+                    .opacity(canSend ? 1 : 0.35)
+                    .scaleEffect(canSend ? 1 : 0.88)
+                    .animation(PaperTheme.Motion.quick, value: canSend)
+                    .accessibilityLabel("发送")
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        }
+        .background(PaperTheme.card.ignoresSafeArea(.container, edges: .bottom))
+        .sensoryFeedback(.impact(weight: .light), trigger: model.messages.count)
+        .sensoryFeedback(.success, trigger: model.isResponding) { $1 == false }
     }
 }
