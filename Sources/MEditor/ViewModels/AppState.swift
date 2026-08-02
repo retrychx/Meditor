@@ -147,6 +147,11 @@ final class AppState {
         set { aiUI.previewSelectedText = newValue }
     }
 
+    var previewSelectedRect: CGRect {
+        get { aiUI.previewSelectedRect }
+        set { aiUI.previewSelectedRect = newValue }
+    }
+
     @discardableResult
     func replaceInMarkdownSource(original: String, replacement: String) -> Bool {
         guard let tab = selectedTab else { return false }

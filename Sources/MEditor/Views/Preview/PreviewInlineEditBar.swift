@@ -147,19 +147,24 @@ struct PreviewInlineEditBar: View {
                     }
 
                 let fullContent = state.selectedTab?.content ?? selectedText
-                // Replace selected text with AI result in full document
-                let modified: String
-                if let range = fullContent.range(of: selectedText, options: .literal) {
-                    modified = fullContent.replacingCharacters(in: range, with: result)
-                } else {
-                    modified = result
+                // 渲染选区映射回源码范围（剥掉 **、##、- 等语法后匹配，
+                // 命中时向两侧吞掉紧邻的行内标记）。映射失败不乱改文档：
+                // 提示用户从编辑器圈选，而不是拿 AI 结果整篇替换。
+                guard let sourceRange = SourceTextMapper.sourceRange(
+                    ofPlainSelection: selectedText, in: fullContent
+                ) else {
+                    state.showToast("圈选内容无法对应回原文，请改从编辑器中圈选", icon: "exclamationmark.triangle")
+                    onDismiss?()
+                    return
                 }
+                let modified = fullContent.replacingCharacters(in: sourceRange, with: result)
+                let selectedOriginal = String(fullContent[sourceRange])
 
                 state.diffReview.present(
                     original: fullContent,
                     modified: modified,
                     mode: .markdownVsMarkdown,
-                    selectedOriginal: selectedText,
+                    selectedOriginal: selectedOriginal,
                     selectedModified: result,
                     onFinalize: { merged in
                         if let tab = state.selectedTab {
