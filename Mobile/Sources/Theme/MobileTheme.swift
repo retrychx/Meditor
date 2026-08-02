@@ -57,6 +57,24 @@ enum PaperTheme {
     static let accentPressed = Color(light: Palette.Light.accentPressed, dark: Palette.Dark.accentPressed)
     /// 代码块 / 行内代码的浅色底（比纸面略深，保持同色系）。
     static let codeBackground = Color(light: Palette.Light.codeBackground, dark: Palette.Dark.codeBackground)
+    /// 宣纸纤维纹理：Canvas 绘制确定性噪点 + 极淡竖纹渐变，GPU 光栅化缓存。
+    /// 噪点使用固定种子（seed=42），每屏约 600 个随机纤维点，深浅两套 opacity。
+    static var paperBackground: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(light: 0xF7F8F4, dark: 0x161B23),
+                    Color(light: 0xEFF1EC, dark: 0x11151C),
+                ],
+                startPoint: .top, endPoint: .bottom
+            )
+            .ignoresSafeArea()
+
+            PaperNoiseOverlay()
+        }
+    }
+
+    /// 卡片柔和投影（替代描边，hairline 只留给真正的分隔线）；墨夜里加重才能看得见。
     /// 卡片柔和投影（替代描边，hairline 只留给真正的分隔线）；墨夜里加重才能看得见。
     static let cardShadow = Color(uiColor: UIColor { traits in
         traits.userInterfaceStyle == .dark
@@ -207,6 +225,43 @@ extension UIColor {
             blue: CGFloat(hex & 0xFF) / 255,
             alpha: alpha
         )
+    }
+}
+
+// MARK: - 宣纸纤维纹理（确定性噪点）
+
+/// 用 Canvas 在纸面上绘制微小的纤维纹理点，模拟宣纸的天然质感。
+/// 使用固定种子（seed=42），位置和透明度均确定，不随刷新改变。
+/// 简化的确定性伪随机（线性同余），仅用于 PaperNoiseOverlay 的纤维分布。
+private struct LCG {
+    private var state: UInt64
+    init(seed: UInt64 = 42) { state = seed }
+    mutating func next() -> Double {
+        state = state &* 6364136223846793005 &+ 1442695040888963407
+        return Double(state) / Double(UInt64.max)
+    }
+}
+
+private struct PaperNoiseOverlay: View {
+    @Environment(\.colorScheme) private var colorScheme
+    /// 预计算的纤维点：相对坐标(0~1) + 透明度 → 600 点覆盖全屏。
+    private static let fibers: [(x: Double, y: Double, opacity: Double)] = {
+        var rng = LCG()
+        return (0..<600).map { _ in (rng.next(), rng.next(), rng.next() * 0.025 + 0.005) }
+    }()
+
+    var body: some View {
+        Canvas { ctx, size in
+            let tint = colorScheme == .dark ? Color.white : Color.black
+            for f in Self.fibers {
+                let pt = CGPoint(x: f.x * size.width, y: f.y * size.height)
+                ctx.fill(Path(ellipseIn: CGRect(x: pt.x, y: pt.y, width: 0.5, height: 0.5)),
+                         with: .color(tint.opacity(f.opacity)))
+            }
+        }
+        .drawingGroup()
+        .allowsHitTesting(false)
+        .ignoresSafeArea()
     }
 }
 

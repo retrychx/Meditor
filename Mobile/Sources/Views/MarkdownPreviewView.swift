@@ -14,6 +14,10 @@ struct MarkdownPreviewView: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(\.colorScheme) private var colorScheme
     @Environment(ReaderSettings.self) private var reader
+    @Environment(ChatModel.self) private var model
+    @Environment(AIHeroState.self) private var aiHero
+    /// 异步解析的 blocks：首次渲染不阻塞，.task 中解析完成后更新。
+    @State private var blocks: [MarkdownText.Block]? = nil
 
     /// 阅读设置缩放后的正文基准字号（17pt × 系数）。
     private var bodySize: CGFloat { reader.scaled(17) }
@@ -23,19 +27,47 @@ struct MarkdownPreviewView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
-                ForEach(MarkdownText.parse(source)) { block in
-                    blockView(block)
+                if let blocks {
+                    ForEach(blocks) { block in
+                        blockView(block)
                         // 块随滚动依次浮起：进入视口时从轻提到落位，页面有呼吸感
                         .scrollTransition(.animated(PaperTheme.Motion.quick)) { content, phase in
                             content
                                 .opacity(phase.isIdentity ? 1 : 0.35)
                                 .offset(y: phase.isIdentity ? 0 : 14)
                         }
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, PaperTheme.Spacing.page)
             .padding(.vertical, 20)
+            .contextMenu {
+                Button("AI 优化全文", systemImage: "sparkles") {
+                    model.input = "帮我优化这篇文档：\n\n\(source)"
+                    aiHero.isOpen = true
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(100))
+                        model.send()
+                    }
+                }
+                Button("AI 总结要点", systemImage: "text.quote") {
+                    model.input = "用 3-5 个要点总结这篇文档：\n\n\(source)"
+                    aiHero.isOpen = true
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(100))
+                        model.send()
+                    }
+                }
+                Button("AI 续写", systemImage: "pencil.line") {
+                    model.input = "根据上文继续写：\n\n\(source)"
+                    aiHero.isOpen = true
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(100))
+                        model.send()
+                    }
+                }
+            }
             .background {
                 GeometryReader { geo in
                     Color.clear.preference(
@@ -48,9 +80,13 @@ struct MarkdownPreviewView: View {
         .coordinateSpace(name: Self.scrollSpace)
         // 底部悬浮栏不挡内容：滚动内容底部留白
         .contentMargins(.bottom, 84, for: .scrollContent)
-        .onAppear { preloadMermaidIfNeeded() }
+        // 预热 Mermaid + 解析 blocks：推迟 ~50ms 让导航过渡先完成
+        .task(priority: .userInitiated) {
+            preloadMermaidIfNeeded()
+            try? await Task.sleep(for: .milliseconds(50))
+            blocks = MarkdownText.parse(source)
+        }
         .onChange(of: source) { preloadMermaidIfNeeded() }
-        // 外观切换（浅色 / 墨夜）：按新配色重渲染缓存（缓存 key 含外观，不命中旧图）。
         .onChange(of: colorScheme) { preloadMermaidIfNeeded() }
     }
 

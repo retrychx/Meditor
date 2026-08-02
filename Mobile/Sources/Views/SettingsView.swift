@@ -74,7 +74,7 @@ struct SettingsView: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(PaperTheme.paper)
+            .background(PaperTheme.paperBackground)
             .listRowBackground(PaperTheme.card)
             .foregroundStyle(PaperTheme.ink)
             .navigationTitle("设置")
@@ -104,6 +104,9 @@ struct SettingsView: View {
 /// 本地 AI 配置页：provider 预设 / baseURL / apiKey / model，存 UserDefaults。
 private struct AIServiceSettingsView: View {
     @Environment(MobileAISettings.self) private var settings
+    @State private var connectionTesting = false
+    @State private var connectionTestResult: String? = nil
+    @State private var connectionTestOK = false
 
     var body: some View {
         @Bindable var settings = settings
@@ -132,8 +135,41 @@ private struct AIServiceSettingsView: View {
                 SecureField("API Key", text: $settings.apiKey)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                HStack(spacing: 10) {
+                    Button {
+                        Task { await runConnectionTest() }
+                    } label: {
+                        if connectionTesting {
+                            HStack(spacing: 6) {
+                                ProgressView().controlSize(.small)
+                                Text("测试中…")
+                            }
+                        } else {
+                            Text("测试连接")
+                        }
+                    }
+                    .disabled(connectionTesting)
+                    if let result = connectionTestResult {
+                        Text(result)
+                            .font(.footnote)
+                            .foregroundStyle(connectionTestOK ? Color.green : PaperTheme.seal)
+                            .lineLimit(2)
+                    }
+                }
             } header: {
                 header("接口")
+            }
+
+            Section {
+                TextEditor(text: $settings.customSystemPrompt)
+                    .frame(minHeight: 88)
+                    .scrollContentBackground(.hidden)
+            } header: {
+                header("自定义系统提示词")
+            } footer: {
+                Text("追加到每次对话的系统提示词末尾。例如：「回答一律用中文，风格简洁直接」。")
+                    .font(.footnote)
+                    .foregroundStyle(PaperTheme.inkSecondary)
             }
 
             Section {
@@ -172,6 +208,38 @@ private struct AIServiceSettingsView: View {
                 }
             }
         )
+    }
+
+    /// 连接测试：与桌面端同一思路——复用 RestAgentBackend 的请求构造，
+    /// 收紧超时（10s）与负载（单条 "hi"，非流式）。
+    private func runConnectionTest() async {
+        connectionTesting = true
+        connectionTestResult = nil
+        let model = settings.model.isEmpty ? "gpt-4o-mini" : settings.model
+        let isAnthropic = settings.provider == .anthropic
+            || settings.baseURL.lowercased().contains("anthropic")
+        do {
+            let config = AIConfig(
+                kind: isAnthropic ? .anthropic : .openai,
+                baseURL: settings.baseURL.trimmingCharacters(in: .whitespaces),
+                model: model,
+                cliPath: "",
+                cliModel: "",
+                apiKey: settings.apiKey.trimmingCharacters(in: .whitespaces),
+                requestTimeoutSeconds: 10
+            )
+            let backend = RestAgentBackend(config: config, wire: isAnthropic ? .anthropic : .openAI)
+            _ = try await backend.complete(
+                messages: [AgentMessage(role: .user, content: "hi")],
+                tools: []
+            )
+            connectionTestOK = true
+            connectionTestResult = "✓ 连接成功（\(model)）"
+        } catch {
+            connectionTestOK = false
+            connectionTestResult = "✗ 连接失败：\(error.localizedDescription)"
+        }
+        connectionTesting = false
     }
 }
 

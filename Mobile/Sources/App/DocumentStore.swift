@@ -1,77 +1,64 @@
 import Foundation
 import Observation
 
-/// 当前打开文档的状态，以及"用其他应用打开"传入文件的处理。
-///
-/// 外部传入的是 security-scoped URL（只在回调期间可读），因此打开时立即
-/// 读取内容并拷贝一份到 App 沙盒 Documents/Opened/ 下（系统投递用的
-/// Documents/Inbox/ 可能被系统清理，Opened/ 才是持久副本层），让 Agent 的
-/// 工作区工具（限定在 Documents 目录）也能看到该文件。
+/// 当前打开文档的状态 + AI 写入/撤销 + 文件操作（创建/重命名/删除）。
+/// 最近文档列表管理委托给 RecentHistory。
 @MainActor
 @Observable
 final class DocumentStore {
 
-    enum ContentKind: String {
-        case markdown
-        case html
-        case other
-    }
+    // MARK: - 子服务
 
-    /// 最近文档记录：相对路径（稳定标识）+ 展示名 + 最后打开时间 + 置顶标志。
-    struct RecentDocument: Codable, Equatable {
-        var relativePath: String
-        var fileName: String
-        var lastOpened: Date
-        var pinned: Bool
-    }
+    /// 最近文档列表与工作区管理（注入可测试）。
+    let recents: RecentHistory
 
-    /// 文档纯文本内容（编辑经 applyManualEdit 改这里，以便触发自动保存）。
+    // MARK: - 文档内容
+
     private(set) var text: String = ""
-    /// 展示用文件名。
     var fileName: String = ""
-    /// 沙盒内的持久化副本（nil = 尚无打开文档）。
+    /// 当前文档的磁盘 URL（工作区内或沙盒外原地打开的原始位置）。
     private(set) var sandboxURL: URL? = nil
-    /// 最近一次打开失败的错误信息（UI 简单展示）。
+    /// 沙盒外文档（iCloud Drive 等）的 security-scoped bookmark；nil 表示工作区内文档。
+    private(set) var externalBookmark: Data? = nil
     var lastError: String? = nil
-    /// 预览 / 编辑切换（true = 预览）。
     var showPreview: Bool = true
 
     var hasDocument: Bool { sandboxURL != nil }
+    /// 当前文档是否沙盒外原地打开（iCloud Drive / 其他文件 Provider）。
+    var isExternalDocument: Bool { externalBookmark != nil }
 
-    /// 上次打开文档在沙盒 Documents 下的相对路径（重启后恢复）。
+    /// 上次打开文档（重启后恢复）：工作区内存相对路径，沙盒外存 bookmark。
     private static let lastDocKey = "lastDocumentRelativePath"
+    private static let lastDocBookmarkKey = "lastDocumentBookmark"
 
-    /// 最近文档列表（已排序：置顶在前，其余按最后打开时间倒序）。
-    private(set) var recentDocuments: [RecentDocument] = []
-    /// 最近文档持久化 key / 条数上限 / 纳入列表的扩展名。
-    private static let recentsKey = "recentDocuments"
-    private static let maxRecents = 50
-    private static let documentExtensions: Set<String> = ["md", "markdown", "html", "htm"]
+    /// 沙盒外文档持有的 security scope（关闭/切换文档时释放）。
+    private var scopedURL: URL? = nil
 
-    /// 工作区目录提供者：默认返回沙盒 Documents，测试可注入临时目录。
-    private let workspaceProvider: () -> URL
+    var workspace: URL { recents.workspace }
 
-    /// 当前工作区目录。
-    var workspace: URL { workspaceProvider() }
+    // MARK: - Init
 
-    init(workspaceProvider: @escaping () -> URL = { DocumentStore.workspaceURL }) {
-        self.workspaceProvider = workspaceProvider
-        if let data = UserDefaults.standard.data(forKey: Self.recentsKey),
-           let decoded = try? JSONDecoder().decode([RecentDocument].self, from: data) {
-            recentDocuments = decoded
-        }
-        if let rel = UserDefaults.standard.string(forKey: Self.lastDocKey) {
-            let url = workspaceProvider().appendingPathComponent(rel)
+    init(recents: RecentHistory) {
+        self.recents = recents
+        // 优先恢复沙盒外文档（bookmark），失败再退回工作区相对路径。
+        if let bookmark = UserDefaults.standard.data(forKey: Self.lastDocBookmarkKey),
+           restoreExternal(bookmark: bookmark) {
+            // 已通过 bookmark 恢复
+        } else if let rel = UserDefaults.standard.string(forKey: Self.lastDocKey) {
+            let url = workspace.appendingPathComponent(rel)
             if let content = try? String(contentsOf: url, encoding: .utf8) {
                 sandboxURL = url
                 fileName   = url.lastPathComponent
                 text       = content
-                touchRecent(url)
+                recents.touchRecent(url)
             }
         }
-        // 把工作区里现存的文档（含微信转存进来的）补入最近列表。
-        refreshWorkspaceDocuments()
+        recents.refreshWorkspaceDocuments()
     }
+
+    // MARK: - Document kind
+
+    enum ContentKind: String { case markdown, html, other }
 
     var kind: ContentKind {
         switch (sandboxURL?.pathExtension ?? fileName.split(separator: ".").last.map(String.init) ?? "").lowercased() {
@@ -81,105 +68,139 @@ final class DocumentStore {
         }
     }
 
-    // MARK: - Workspace（Agent 工作区 = 沙盒 Documents 目录）
+    // MARK: - 打开文件
 
-    /// 默认工作区：沙盒 Documents 目录（init 的 workspaceProvider 默认值来源）。
-    /// nonisolated：默认值表达式在非隔离上下文中求值；FileManager 调用本身线程安全。
-    nonisolated static var workspaceURL: URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-    }
-
-    /// 持久副本目录：Documents/Opened/。系统"用其他应用打开"投递到 Inbox/，
-    /// 但 Inbox 随时可能被系统清理，因此打开时立即转存到这里。
-    private var openedURL: URL {
-        workspace.appendingPathComponent("Opened", isDirectory: true)
-    }
-
-    // MARK: - Open incoming file
-
-    /// 打开文件大小上限：10 MB。
     private static let maxFileBytes = 10 * 1024 * 1024
 
-    /// 处理 .onOpenURL 传入的文件（微信等 App "用其他应用打开"）。
-    /// 注：Info.plist 已关闭 in-place 打开，系统会先把文件拷进沙盒 Documents/Inbox，
-    /// 从源头规避微信/iCloud 原址读取的权限问题；文件选择器来的 URL 仍是
-    /// security-scoped，下面的 scope 访问必须保留。
+    /// 处理 fileImporter / .onOpenURL 传入的文件。
+    /// 工作区内文件直接打开；沙盒外文件（iCloud Drive 等）原地打开并持久化 bookmark，
+    /// 编辑直接写回原位置，不再复制进沙盒。
     func openIncoming(_ url: URL) {
         let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        // iCloud 占位文件（真机未下载时读取会报"无权限/不存在"）：先触发下载
-        if let values = try? url.resourceValues(forKeys: [.isUbiquitousItemKey]),
-           values.isUbiquitousItem == true {
-            do {
-                try FileManager.default.startDownloadingUbiquitousItem(at: url)
-            } catch {
-                print("[DocumentStore] 触发 iCloud 下载失败：\(error.localizedDescription)")
+        // 沙盒外原地打开时要继续持有 scope，成功后不 stop（由 scopedURL 管理生命周期）。
+        var keepScope = false
+        defer { if scoped && !keepScope { url.stopAccessingSecurityScopedResource() } }
+        startDownloadingIfUbiquitous(url)
+        guard let content = readFileContent(url) else { return }
+
+        if isInsideWorkspace(url) {
+            setCurrentDocument(url: url, content: content, bookmark: nil)
+            return
+        }
+        // 沙盒外：创建 security-scoped bookmark 以便跨启动恢复访问。
+        guard let bookmark = try? url.bookmarkData() else {
+            lastError = "无法保存文件访问权限：\(url.lastPathComponent)"
+            return
+        }
+        setCurrentDocument(url: url, content: content, bookmark: bookmark)
+        if scoped {
+            scopedURL = url
+            keepScope = true
+        }
+    }
+
+    /// 打开一条最近记录（列表点击 / 快捷动作）。沙盒外记录走 bookmark 解析。
+    @discardableResult
+    func openRecent(_ doc: RecentHistory.RecentDocument) -> Bool {
+        guard let bookmark = doc.bookmarkData else {
+            return loadFromSandbox(workspace.appendingPathComponent(doc.relativePath))
+        }
+        return openExternal(bookmark: bookmark, knownRel: doc.relativePath)
+    }
+
+    /// 通过 bookmark 打开沙盒外文档；stale 时重建书签并更新记录。
+    /// knownRel：最近记录中的标识（用于 stale 时回写），无则不回写。
+    private func openExternal(bookmark: Data, knownRel: String? = nil) -> Bool {
+        var stale = false
+        guard let url = try? URL(resolvingBookmarkData: bookmark, bookmarkDataIsStale: &stale) else {
+            if let knownRel { recents.remove(knownRel) }
+            lastError = "文件已被移动或删除，无法恢复访问。"
+            return false
+        }
+        let scoped = url.startAccessingSecurityScopedResource()
+        var keepScope = false
+        defer { if scoped && !keepScope { url.stopAccessingSecurityScopedResource() } }
+        startDownloadingIfUbiquitous(url)
+        guard let content = readFileContent(url) else { return false }
+
+        var effectiveBookmark = bookmark
+        if stale, let renewed = try? url.bookmarkData() {
+            effectiveBookmark = renewed
+            if let knownRel {
+                recents.updateExternalEntry(oldRel: knownRel, url: url, bookmark: renewed)
             }
         }
+        setCurrentDocument(url: url, content: content, bookmark: effectiveBookmark)
+        if scoped {
+            scopedURL = url
+            keepScope = true
+        }
+        return true
+    }
+
+    /// 启动时通过 bookmark 恢复上次打开的沙盒外文档。
+    private func restoreExternal(bookmark: Data) -> Bool {
+        openExternal(bookmark: bookmark)
+    }
+
+    /// iCloud 占位文件（未下载到本地）：先触发下载再读。
+    private func startDownloadingIfUbiquitous(_ url: URL) {
+        if let values = try? url.resourceValues(forKeys: [.isUbiquitousItemKey]),
+           values.isUbiquitousItem == true {
+            try? FileManager.default.startDownloadingUbiquitousItem(at: url)
+        }
+    }
+
+    private func isInsideWorkspace(_ url: URL) -> Bool {
+        let base = workspace.standardizedFileURL.path
+        return url.standardizedFileURL.path.hasPrefix(base + "/")
+    }
+
+    /// 读取文件内容（10MB 上限 + 编码 fallback），失败时设置 lastError 并返回 nil。
+    private func readFileContent(_ url: URL) -> String? {
         do {
             let data = try Data(contentsOf: url)
             guard data.count <= Self.maxFileBytes else {
                 lastError = "文件过大（超过 10 MB），暂不支持打开：\(url.lastPathComponent)"
-                return
+                return nil
             }
-            let content: String
             if let utf8 = String(data: data, encoding: .utf8) {
-                content = utf8
-            } else {
-                // 二进制嗅探：UTF-8 解码失败且前 8KB 含 NUL 字节 → 不是文本，拒绝打开。
-                // isoLatin1 兜底仅用于无 NUL 的旧编码文本（否则它必然成功，把二进制显示成乱码）。
-                if data.prefix(8 * 1024).contains(0) {
-                    lastError = "不支持二进制文件：\(url.lastPathComponent)"
-                    return
-                }
-                guard let legacy = String(data: data, encoding: .isoLatin1) else {
-                    lastError = "无法解码文件：\(url.lastPathComponent)"
-                    return
-                }
-                content = legacy
+                return utf8
             }
-            try FileManager.default.createDirectory(at: openedURL, withIntermediateDirectories: true)
-            // 去重：Opened/ 已有同名且内容一致的文件 → 直接打开现有副本，
-            // 否则才写新副本（同名不同内容才加 -2/-3 后缀），不再开一次多一份。
-            var dest = openedURL.appendingPathComponent(url.lastPathComponent)
-            if let existing = try? String(contentsOf: dest, encoding: .utf8), existing == content {
-                // 内容一致，复用现有副本（mtime 不刷新，避免误当新文件）。
-            } else {
-                dest = uniqueDestination(for: url.lastPathComponent)
-                try content.write(to: dest, atomically: true, encoding: .utf8)
+            if data.prefix(8 * 1024).contains(0) {
+                lastError = "不支持二进制文件：\(url.lastPathComponent)"
+                return nil
             }
-            // 系统投递到 Inbox 的原件：转存/复用成功后清理，杜绝一份文件变两份。
-            let inboxDir = workspace.appendingPathComponent("Inbox", isDirectory: true).standardizedFileURL
-            if url.standardizedFileURL.path.hasPrefix(inboxDir.path + "/") {
-                try? FileManager.default.removeItem(at: url)
+            guard let legacy = String(data: data, encoding: .isoLatin1) else {
+                lastError = "无法解码文件：\(url.lastPathComponent)"
+                return nil
             }
-            autosaveTask?.cancel()
-            sandboxURL = dest
-            fileName = dest.lastPathComponent
-            text     = content
-            lastError = nil
-            remember(dest)
+            return legacy
         } catch {
             lastError = "打开失败：\(error.localizedDescription)"
+            return nil
         }
     }
 
-    /// 在 Opened/ 下为传入文件名生成不冲突的目标 URL：同名已存在则追加
-    /// "-2"、"-3"……递增后缀（如 "name-2.md"），避免互覆。
-    private func uniqueDestination(for fileName: String) -> URL {
-        let ext  = (fileName as NSString).pathExtension
-        let base = (fileName as NSString).deletingPathExtension
-        var candidate = openedURL.appendingPathComponent(fileName)
-        var n = 2
-        while FileManager.default.fileExists(atPath: candidate.path) {
-            let name = ext.isEmpty ? "\(base)-\(n)" : "\(base)-\(n).\(ext)"
-            candidate = openedURL.appendingPathComponent(name)
-            n += 1
-        }
-        return candidate
+    /// 切换当前文档：取消待保存、释放上一个 security scope、写入新状态并记忆。
+    private func setCurrentDocument(url: URL, content: String, bookmark: Data?) {
+        autosaveTask?.cancel()
+        releaseScope()
+        sandboxURL = url
+        fileName = url.lastPathComponent
+        text = content
+        externalBookmark = bookmark
+        lastError = nil
+        remember(url, bookmark: bookmark)
     }
 
-    /// 新建空文档：工作区根目录生成唯一命名的 .md，打开并直接进入编辑态。
+    private func releaseScope() {
+        scopedURL?.stopAccessingSecurityScopedResource()
+        scopedURL = nil
+    }
+
+    // MARK: - 新建 / 加载
+
     func createDocument() {
         var name = "未命名.md"
         var n = 2
@@ -191,9 +212,11 @@ final class DocumentStore {
         do {
             try "".write(to: url, atomically: true, encoding: .utf8)
             autosaveTask?.cancel()
+            releaseScope()
             sandboxURL = url
             fileName   = name
             text       = ""
+            externalBookmark = nil
             showPreview = false
             lastError  = nil
             remember(url)
@@ -202,104 +225,44 @@ final class DocumentStore {
         }
     }
 
-    /// 打开沙盒工作区内的文件（Agent open_file 工具用）。
-    func loadFromSandbox(_ url: URL) -> Bool {        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return false }
+    func loadFromSandbox(_ url: URL) -> Bool {
+        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return false }
         autosaveTask?.cancel()
+        releaseScope()
         sandboxURL = url
         fileName   = url.lastPathComponent
         text       = content
+        externalBookmark = nil
         lastError  = nil
         remember(url)
         return true
     }
 
-    /// 记录相对路径，供下次启动恢复；同时更新最近文档记录。
-    private func remember(_ url: URL) {
-        UserDefaults.standard.set(relativePath(for: url), forKey: Self.lastDocKey)
-        touchRecent(url)
+    private func remember(_ url: URL, bookmark: Data? = nil) {
+        if let bookmark {
+            // 沙盒外文档：恢复入口是 bookmark，不是相对路径。
+            UserDefaults.standard.set(bookmark, forKey: Self.lastDocBookmarkKey)
+            UserDefaults.standard.removeObject(forKey: Self.lastDocKey)
+            recents.touchRecent(url, bookmark: bookmark)
+        } else {
+            UserDefaults.standard.set(relativePath(for: url), forKey: Self.lastDocKey)
+            UserDefaults.standard.removeObject(forKey: Self.lastDocBookmarkKey)
+            recents.touchRecent(url)
+        }
     }
 
-    /// 沙盒 Documents 下的相对路径（不在工作区内则退化为文件名）。
     private func relativePath(for url: URL) -> String {
         let base = workspace.standardizedFileURL.path
         let full = url.standardizedFileURL.path
         return full.hasPrefix(base + "/") ? String(full.dropFirst(base.count + 1)) : url.lastPathComponent
     }
 
-    // MARK: - 最近文档
+    // MARK: - 重命名 / 删除
 
-    /// 新增/更新一条最近记录（已有路径保留置顶标志），重排、裁剪并持久化。
-    private func touchRecent(_ url: URL, date: Date = Date()) {
-        let rel = relativePath(for: url)
-        if let idx = recentDocuments.firstIndex(where: { $0.relativePath == rel }) {
-            recentDocuments[idx].fileName = url.lastPathComponent
-            recentDocuments[idx].lastOpened = date
-        } else {
-            recentDocuments.append(RecentDocument(
-                relativePath: rel, fileName: url.lastPathComponent, lastOpened: date, pinned: false))
-        }
-        sortRecents()
-        trimRecents()
-        persistRecents()
-    }
-
-    /// 扫描工作区（Documents 根 + Opened/）现存的文档文件并入最近列表：
-    /// 未记录的文件以修改时间作为最后打开时间补入（微信等渠道转存进来的也能被看到）；
-    /// 记录里文件已不存在的（仅限这两个扫描范围内）顺手清掉，不留僵尸条目。
-    func refreshWorkspaceDocuments() {
-        var scanned: [String: (name: String, date: Date)] = [:]
-        for dir in [workspace, openedURL] {
-            guard let urls = try? FileManager.default.contentsOfDirectory(
-                at: dir,
-                includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
-                options: [.skipsHiddenFiles]) else { continue }
-            for url in urls {
-                guard Self.documentExtensions.contains(url.pathExtension.lowercased()),
-                      let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey]),
-                      values.isRegularFile == true else { continue }
-                scanned[relativePath(for: url)] = (url.lastPathComponent, values.contentModificationDate ?? .distantPast)
-            }
-        }
-        var changed = false
-        let before = recentDocuments.count
-        recentDocuments.removeAll { rec in
-            let dir = (rec.relativePath as NSString).deletingLastPathComponent
-            let inScannedScope = dir.isEmpty || dir == "." || dir == "Opened"
-            return inScannedScope && scanned[rec.relativePath] == nil
-        }
-        changed = recentDocuments.count != before
-        for (rel, info) in scanned {
-            if let idx = recentDocuments.firstIndex(where: { $0.relativePath == rel }) {
-                if recentDocuments[idx].fileName != info.name {
-                    recentDocuments[idx].fileName = info.name
-                    changed = true
-                }
-            } else {
-                recentDocuments.append(RecentDocument(
-                    relativePath: rel, fileName: info.name, lastOpened: info.date, pinned: false))
-                changed = true
-            }
-        }
-        if changed {
-            sortRecents()
-            trimRecents()
-            persistRecents()
-        }
-    }
-
-    /// 置顶 / 取消置顶。
-    func togglePin(_ rel: String) {
-        guard let idx = recentDocuments.firstIndex(where: { $0.relativePath == rel }) else { return }
-        recentDocuments[idx].pinned.toggle()
-        sortRecents()
-        persistRecents()
-    }
-
-    /// 重命名沙盒内文件（只改文件名，保留扩展名）：目标名冲突时自动追加 "-2" 递增后缀。
-    /// 同步更新最近记录；若改的是当前打开文档，先落盘 pending 编辑，再同步当前状态与恢复路径。
-    /// 返回实际采用的新文件名，失败返回 nil。
     @discardableResult
     func renameDocument(at rel: String, to newBaseName: String) -> String? {
+        // 沙盒外文档（relativePath 为完整路径）不支持在 App 内重命名/移动。
+        guard !rel.hasPrefix("/") else { return nil }
         let trimmed = newBaseName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let oldURL = workspace.appendingPathComponent(rel)
@@ -308,7 +271,6 @@ final class DocumentStore {
         let ext = (rel as NSString).pathExtension
         let dir = (rel as NSString).deletingLastPathComponent
         let dirURL = dir.isEmpty || dir == "." ? workspace : workspace.appendingPathComponent(dir, isDirectory: true)
-        // 原名未变：直接成功返回，不做无意义的移动。
         let desired = ext.isEmpty ? trimmed : "\(trimmed).\(ext)"
         if desired == oldURL.lastPathComponent { return desired }
         var candidate = desired
@@ -320,18 +282,13 @@ final class DocumentStore {
         let newURL = dirURL.appendingPathComponent(candidate)
         let isCurrent = sandboxURL?.standardizedFileURL == oldURL.standardizedFileURL
         if isCurrent {
-            // 挂起的防抖保存捕获的是旧 URL，移动前先落盘并取消，避免旧文件被重建。
             autosaveTask?.cancel()
             try? text.write(to: oldURL, atomically: true, encoding: .utf8)
         }
         guard (try? FileManager.default.moveItem(at: oldURL, to: newURL)) != nil else { return nil }
 
         let newRel = relativePath(for: newURL)
-        if let idx = recentDocuments.firstIndex(where: { $0.relativePath == rel }) {
-            recentDocuments[idx].relativePath = newRel
-            recentDocuments[idx].fileName = candidate
-            persistRecents()
-        }
+        recents.updatePath(old: rel, new: newRel, newName: candidate)
         if isCurrent {
             sandboxURL = newURL
             fileName   = candidate
@@ -340,113 +297,100 @@ final class DocumentStore {
         return candidate
     }
 
-    /// 删除沙盒文件 + 最近记录；若删的是当前打开文档，回到无文档空态。
     func deleteDocument(at rel: String) {
+        // 沙盒外文档（relativePath 为完整路径）不支持在 App 内删除。
+        guard !rel.hasPrefix("/") else { return }
         let url = workspace.appendingPathComponent(rel)
         let wasCurrent = sandboxURL?.standardizedFileURL == url.standardizedFileURL
         try? FileManager.default.removeItem(at: url)
-        recentDocuments.removeAll { $0.relativePath == rel }
-        persistRecents()
+        recents.remove(rel)
         if wasCurrent {
             autosaveTask?.cancel()
+            releaseScope()
             sandboxURL = nil
             fileName   = ""
             text       = ""
+            externalBookmark = nil
             aiSnapshot = nil
             aiFinalText = nil
             UserDefaults.standard.removeObject(forKey: Self.lastDocKey)
         }
     }
 
-    /// 排序：置顶在前，其余按最后打开时间倒序。
-    private func sortRecents() {
-        recentDocuments.sort { a, b in
-            if a.pinned != b.pinned { return a.pinned }
-            return a.lastOpened > b.lastOpened
-        }
-    }
+    // MARK: - AI 写入 / 撤销
 
-    /// 裁剪到上限：优先淘汰最旧的非置顶记录。
-    private func trimRecents() {
-        while recentDocuments.count > Self.maxRecents,
-              let idx = recentDocuments.lastIndex(where: { !$0.pinned }) {
-            recentDocuments.remove(at: idx)
-        }
-    }
-
-    private func persistRecents() {
-        UserDefaults.standard.set(try? JSONEncoder().encode(recentDocuments), forKey: Self.recentsKey)
-    }
-
-    // MARK: - Mutations（Agent 文档写工具用）
-
-    /// AI 改动快照：一次 run 前的文档内容（每次 run 只留第一份）。
     private(set) var aiSnapshot: String? = nil
-    /// AI 最后一次写入后的内容；用户之后再手动编辑，撤销入口自动隐藏（避免覆盖用户输入）。
     private(set) var aiFinalText: String? = nil
-    /// 当前是否可以撤销 AI 改动。
     var canUndoAI: Bool { aiSnapshot != nil && aiFinalText == text }
 
-    /// 一次 AI run 开始：清空上一轮快照。
-    func beginAIRun() {
-        aiSnapshot = nil
-        aiFinalText = nil
-    }
+    func beginAIRun() { aiSnapshot = nil; aiFinalText = nil }
 
-    /// Agent 写工具的入口（write_document / patch_document / insert_at_cursor）：
-    /// 首次写入前留快照，写后记录最终态。
     func noteAIReplace(_ newContent: String) throws {
         if aiSnapshot == nil { aiSnapshot = text }
         try replaceContent(newContent)
         aiFinalText = text
     }
 
-    /// 撤销本轮 AI 改动，恢复到 run 前内容（经 replaceContent 立即写盘）。
-    /// 写盘失败必须让用户知道：设置 lastError（UI 已有展示），并保留快照以便重试。
     func undoAIChanges() {
         guard let snapshot = aiSnapshot else { return }
         do {
             try replaceContent(snapshot)
-            aiSnapshot = nil
-            aiFinalText = nil
+            aiSnapshot = nil; aiFinalText = nil
         } catch {
             print("[DocumentStore] 撤销 AI 改动写盘失败：\(error.localizedDescription)")
             lastError = "撤销失败：\(error.localizedDescription)"
         }
     }
 
-    /// 全量替换内容并写回沙盒副本（AI 写工具走这里，立即落盘）。
+    /// 最近一次自动保存的时间（UI 展示用）。
+    var lastSavedAt: Date = .distantPast
+
     func replaceContent(_ newContent: String) throws {
         guard let url = sandboxURL else { throw AgentContextError.noActiveDocument }
-        try newContent.write(to: url, atomically: true, encoding: .utf8)
-        // 已立即写盘，取消挂起的防抖自动保存，避免与 AI 写冲突 / 重复写。
+        try writeText(newContent, to: url)
         autosaveTask?.cancel()
         text = newContent
     }
 
-    /// 沙盒副本内容变更后同步内存（patchFile 等直接写盘的路径用）。
+    /// 写盘统一入口。沙盒外文档（iCloud Drive 等 ubiquitous 位置）用
+    /// NSFileCoordinator 协调写入，避免与 iCloud 同步守护进程打架；
+    /// 此时 security scope 由 scopedURL 持有，协调块内直接写即可。
+    private func writeText(_ text: String, to url: URL) throws {
+        guard externalBookmark != nil else {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            return
+        }
+        var coordError: NSError?
+        var writeError: Error?
+        NSFileCoordinator(filePresenter: nil).coordinate(
+            writingItemAt: url, options: [], error: &coordError
+        ) { newURL in
+            do {
+                try text.write(to: newURL, atomically: true, encoding: .utf8)
+            } catch {
+                writeError = error
+            }
+        }
+        if let writeError { throw writeError }
+        if let coordError { throw coordError }
+    }
+
     func reloadIfCurrent(_ url: URL) {
         guard url.standardizedFileURL == sandboxURL?.standardizedFileURL,
               let content = try? String(contentsOf: url, encoding: .utf8) else { return }
         text = content
     }
 
-    // MARK: - Autosave（手动编辑防抖写盘）
+    // MARK: - 自动保存
 
-    /// 防抖延迟：停止输入 ~0.8s 后写回沙盒副本。
     private static let autosaveDelayNanos: UInt64 = 800_000_000
-
-    /// 挂起的自动保存任务（新任务取消旧任务实现防抖）。
     private var autosaveTask: Task<Void, Never>?
 
-    /// 手动编辑入口（TextEditor 绑定用）：更新内容并调度防抖自动保存。
-    /// 程序化变更（AI 写工具 / 打开文件 / 撤销）不走这里——它们已立即写盘。
     func applyManualEdit(_ newText: String) {
         text = newText
         scheduleAutosave()
     }
 
-    /// 防抖自动保存：~0.8s 无新编辑后把当前 text 写回沙盒副本。
     private func scheduleAutosave() {
         guard let url = sandboxURL else { return }
         autosaveTask?.cancel()
@@ -454,7 +398,8 @@ final class DocumentStore {
             try? await Task.sleep(nanoseconds: Self.autosaveDelayNanos)
             guard !Task.isCancelled else { return }
             do {
-                try self.text.write(to: url, atomically: true, encoding: .utf8)
+                try self.writeText(self.text, to: url)
+                self.lastSavedAt = Date()
             } catch {
                 print("[DocumentStore] 自动保存失败：\(error.localizedDescription)")
                 self.lastError = "自动保存失败：\(error.localizedDescription)"

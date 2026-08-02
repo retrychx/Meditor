@@ -5,17 +5,35 @@ import UIKit
 /// SwiftUI TextEditor 拿不到光标、不支持 inputAccessoryView，这里换 UIKit 实现：
 /// 纸墨样式（16.5 等宽 / 松烟墨 / 宣纸底 / 行距 6），绑定写入仍走 DocumentStore.applyManualEdit
 /// 的既有通道（防抖自动保存语义不变），并挂一条横滑的 Markdown 键盘工具条。
+/// UITextView 子类：选中文本时 editMenu 增加「AI 优化」（iOS 16+）。
+private class EditorTextView: UITextView {
+    var onAIRefine: ((String) -> Void)?
+
+    override func editMenu(for textRange: UITextRange, suggestedActions: [UIMenuElement]) -> UIMenu {
+        var actions = suggestedActions
+        if let text = text(in: textRange), !text.isEmpty {
+            let aiAction = UIAction(title: "AI 优化", image: UIImage(systemName: "sparkles")) { [weak self] _ in
+                self?.onAIRefine?(text)
+            }
+            actions.insert(aiAction, at: 0)
+        }
+        return UIMenu(children: actions)
+    }
+}
+
 struct MarkdownTextEditor: UIViewRepresentable {
     @Binding var text: String
     /// 阅读设置字号系数：等宽字号跟随缩放。
     var fontScale: CGFloat = 1
+    /// 选中文本后点击「AI 优化」的回调：参数为选中的文字。
+    var onAIRefine: ((String) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(text: $text)
     }
 
     func makeUIView(context: Context) -> UITextView {
-        let textView = UITextView()
+        let textView = EditorTextView()
         textView.delegate = context.coordinator
         textView.backgroundColor = UIColor(PaperTheme.paper)
         // 与原 SwiftUI TextEditor 的 padding 对齐：左右 ~14pt、顶部 ~14pt 留白
@@ -27,6 +45,7 @@ struct MarkdownTextEditor: UIViewRepresentable {
         textView.smartInsertDeleteType = .no
         textView.alwaysBounceVertical = true
 
+        textView.onAIRefine = { [onAIRefine] in onAIRefine?($0) }
         context.coordinator.textView = textView
         context.coordinator.fontScale = fontScale
         context.coordinator.setStyledText(textView, text, selection: NSRange(location: 0, length: 0))

@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import UIKit
 
 /// iOS 在线分享发布器：把当前文档渲染成自包含 HTML 后 POST 到自建 Worker，
 /// 成功把链接放上剪贴板。与 macOS 同一个 ShareLinkService / Keychain / API。
@@ -79,7 +78,7 @@ final class ShareLinkPublisher {
             } ?? rendered
             let url = try await service.publish(baseURL: baseURL, token: token, title: title, html: html)
             lastResultURL = url
-            UIPasteboard.general.string = url
+            Pasteboard.copy(url)
         } catch let e as ShareLinkError {
             lastError = e.errorDescription
         } catch {

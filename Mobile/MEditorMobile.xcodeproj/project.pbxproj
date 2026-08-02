@@ -36,6 +36,7 @@
 		2600000000000000000002F6 /* ../Sources/MEditor/Utils/TextFileDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001F6 /* ../Sources/MEditor/Utils/TextFileDecoder.swift */; };
 		2600000000000000000002F7 /* ../Sources/MEditor/Services/Network/ShareLinkService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001F7 /* ../Sources/MEditor/Services/Network/ShareLinkService.swift */; };
 		2600000000000000000002F8 /* ../Sources/MEditor/Services/Network/ShareImageInliner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001F8 /* ../Sources/MEditor/Services/Network/ShareImageInliner.swift */; };
+		2600000000000000000002F9 /* ../Sources/MEditor/Utils/UbiquitousFileHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001F9 /* ../Sources/MEditor/Utils/UbiquitousFileHelper.swift */; };
 		2600000000000000000003F0 /* ../Sources/MEditor/Resources/Preview/template.html in Resources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000004F0 /* ../Sources/MEditor/Resources/Preview/template.html */; };
 		2600000000000000000003F1 /* ../Sources/MEditor/Resources/Preview/css/themes.css in Resources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000004F1 /* ../Sources/MEditor/Resources/Preview/css/themes.css */; };
 		2600000000000000000003F2 /* ../Sources/MEditor/Resources/Preview/css/base.css in Resources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000004F2 /* ../Sources/MEditor/Resources/Preview/css/base.css */; };
@@ -77,6 +78,7 @@
 		2600000000000000000001F6 /* ../Sources/MEditor/Utils/TextFileDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Utils/TextFileDecoder.swift; sourceTree = "<group>"; };
 		2600000000000000000001F7 /* ../Sources/MEditor/Services/Network/ShareLinkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/Network/ShareLinkService.swift; sourceTree = "<group>"; };
 		2600000000000000000001F8 /* ../Sources/MEditor/Services/Network/ShareImageInliner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/Network/ShareImageInliner.swift; sourceTree = "<group>"; };
+		2600000000000000000001F9 /* ../Sources/MEditor/Utils/UbiquitousFileHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Utils/UbiquitousFileHelper.swift; sourceTree = "<group>"; };
 		2600000000000000000004F0 /* ../Sources/MEditor/Resources/Preview/template.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = ../Sources/MEditor/Resources/Preview/template.html; sourceTree = "<group>"; };
 		2600000000000000000004F1 /* ../Sources/MEditor/Resources/Preview/css/themes.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = ../Sources/MEditor/Resources/Preview/css/themes.css; sourceTree = "<group>"; };
 		2600000000000000000004F2 /* ../Sources/MEditor/Resources/Preview/css/base.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = ../Sources/MEditor/Resources/Preview/css/base.css; sourceTree = "<group>"; };
@@ -155,6 +157,7 @@
 				2600000000000000000001F6 /* ../Sources/MEditor/Utils/TextFileDecoder.swift */,
 				2600000000000000000001F7 /* ../Sources/MEditor/Services/Network/ShareLinkService.swift */,
 				2600000000000000000001F8 /* ../Sources/MEditor/Services/Network/ShareImageInliner.swift */,
+				2600000000000000000001F9 /* ../Sources/MEditor/Utils/UbiquitousFileHelper.swift */,
 				2600000000000000000004F0 /* ../Sources/MEditor/Resources/Preview/template.html */,
 				2600000000000000000004F1 /* ../Sources/MEditor/Resources/Preview/css/themes.css */,
 				2600000000000000000004F2 /* ../Sources/MEditor/Resources/Preview/css/base.css */,
@@ -283,6 +286,7 @@
 				2600000000000000000002F6 /* ../Sources/MEditor/Utils/TextFileDecoder.swift in Sources */,
 				2600000000000000000002F7 /* ../Sources/MEditor/Services/Network/ShareLinkService.swift in Sources */,
 				2600000000000000000002F8 /* ../Sources/MEditor/Services/Network/ShareImageInliner.swift in Sources */,
+				2600000000000000000002F9 /* ../Sources/MEditor/Utils/UbiquitousFileHelper.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -419,7 +423,7 @@
 				GENERATE_INFOPLIST = NO;
 				INFOPLIST_FILE = MEditorMobile/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.meditor.mobile;
 				PRODUCT_NAME = MEditorMobile;
 				SDKROOT = iphoneos;
@@ -441,7 +445,7 @@
 				GENERATE_INFOPLIST = NO;
 				INFOPLIST_FILE = MEditorMobile/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.meditor.mobile;
 				PRODUCT_NAME = MEditorMobile;
 				SDKROOT = iphoneos;

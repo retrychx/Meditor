@@ -1,14 +1,25 @@
 import SwiftUI
-import UIKit
 import UniformTypeIdentifiers
 
 /// 文档视图：编辑（TextEditor）与预览（Markdown 原生渲染 / HTML WebView）切换。
 struct DocumentView: View {
     @Environment(DocumentStore.self) private var store
     @Environment(ReaderSettings.self) private var reader
+    @Environment(ChatModel.self) private var chatModel
+    @Environment(AIHeroState.self) private var aiHero
 
     @State private var showingFilePicker = false
     @State private var showingOpenError = false
+    /// 字数统计文案。
+    private var wordCount: String {
+        let c = store.text.count
+        if c < 1000 { return "\(c) 字" }
+        return "\(c / 1000).\((c / 100) % 10)k 字"
+    }
+    /// 保存状态指示颜色：最近 3s 内保存过 → 绿，否则 → 次级文字色。
+    private var saveIndicatorColor: Color {
+        Date().timeIntervalSince(store.lastSavedAt) < 3 ? .green : PaperTheme.inkSecondary
+    }
     /// 发布在线链接的结果弹窗（成功=链接已复制 / 失败=错误信息）。
     @State private var publishAlert: (message: String, url: String?)? = nil
     /// 预览滚动越顶：导航栏从透明过渡到纸底 + 发丝分隔。
@@ -46,8 +57,8 @@ struct DocumentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(PaperTheme.Motion.standard, value: store.showPreview)
         // 底栏悬浮在内容之上（safearea 透底），不占布局高度
-        .overlay(alignment: .bottom) { actionBar }
-        .background(PaperTheme.paper.ignoresSafeArea())
+        .overlay(alignment: .bottom) { DocActionBar() }
+        .background(PaperTheme.paperBackground)
         .navigationTitle(store.hasDocument ? store.fileName : "MEditor")
         .navigationBarTitleDisplayMode(.inline)
         // 透明 ↔ 纸底的过渡随滚动状态缓动
@@ -60,10 +71,22 @@ struct DocumentView: View {
             // 标题自绘：文档文件名 / 品牌字保留衬线（UI chrome 其余部分是无衬线）。
             // 操作动作全部沉到底部动作条，头部只留标题和 ⋯ 菜单。
             ToolbarItem(placement: .principal) {
-                Text(store.hasDocument ? store.fileName : "MEditor")
-                    .font(.system(.headline, design: .serif, weight: .semibold))
-                    .foregroundStyle(PaperTheme.ink)
-                    .lineLimit(1)
+                VStack(spacing: 1) {
+                    Text(store.hasDocument ? store.fileName : "MEditor")
+                        .font(.system(.headline, design: .serif, weight: .semibold))
+                        .foregroundStyle(PaperTheme.ink)
+                        .lineLimit(1)
+                    if store.hasDocument && !store.showPreview {
+                        HStack(spacing: 4) {
+                            Text(wordCount)
+                                .font(.caption2)
+                                .foregroundStyle(PaperTheme.inkSecondary)
+                            Circle()
+                                .fill(saveIndicatorColor)
+                                .frame(width: 4, height: 4)
+                        }
+                    }
+                }
             }
             if store.hasDocument {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -103,54 +126,7 @@ struct DocumentView: View {
         }
     }
 
-    // MARK: - 底部栏（与一级页面同一语言：双胶囊白底玻璃态）
-
-    /// 胶囊底：与一级页面共用同一玻璃质感（GlassCapsuleBackground）。
-    private var capsuleBackground: some View {
-        GlassCapsuleBackground()
-    }
-
-    private var actionBar: some View {
-        HStack(spacing: 0) {
-            // 编辑/预览胶囊
-            HStack(spacing: 4) {
-                modeButton
-            }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 5)
-            .background(capsuleBackground)
-
-            Spacer()
-
-            // 动作胶囊：墨（AI）/ ＋（新建）
-            HStack(spacing: 8) {
-                BarAIButton(context: "doc")
-                BarPlusButton(context: "doc")
-            }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 5)
-            .background(capsuleBackground)
-        }
-        .padding(.horizontal, 28)
-        .padding(.bottom, 4)
-        // 键盘弹出时动作条保持贴底（被键盘遮住），不被顶上去
-        .ignoresSafeArea(.keyboard, edges: .bottom)
-    }
-
-    /// 编辑/预览切换：预览态铅笔（点去编辑）、编辑态文档高亮（点回预览），morph 过渡。
-    private var modeButton: some View {
-        Button { store.showPreview.toggle() } label: {
-            Image(systemName: store.showPreview ? "pencil" : "doc.richtext")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(store.showPreview ? PaperTheme.inkSecondary : PaperTheme.accent)
-                .contentTransition(.symbolEffect(.replace.downUp))
-                .frame(width: 52)
-                .padding(.vertical, 8)
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.pressable)
-        .accessibilityLabel(store.showPreview ? "编辑" : "预览")
-    }
+    // MARK: - 底部栏
 
     /// 导航栏「⋯」菜单：阅读设置 / 分享 / 复制等文档级操作的归宿。
     private var documentMenu: some View {
@@ -201,7 +177,7 @@ struct DocumentView: View {
                 .disabled(ShareLinkPublisher.shared.isPublishing)
             }
             Button {
-                UIPasteboard.general.string = store.text
+                Pasteboard.copy(store.text)
             } label: {
                 Label("复制全文", systemImage: "doc.on.doc")
             }
@@ -210,6 +186,31 @@ struct DocumentView: View {
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(PaperTheme.inkSecondary)
         }
+    }
+
+    /// 模板按钮：引导用户从空白文档开始。
+    private func templateButton(icon: String, title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .medium))
+                Text(title)
+                    .font(.caption)
+            }
+            .foregroundStyle(PaperTheme.accent)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(PaperTheme.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .shadow(color: PaperTheme.cardShadow, radius: 6, y: 2)
+        }
+        .buttonStyle(.pressable)
+    }
+
+    /// 用模板内容填充新文档并推入编辑态。
+    private func fillTemplate(_ text: String) {
+        store.createDocument()
+        store.applyManualEdit(text)
+        store.showPreview = false
     }
 
     /// 发布当前 Markdown 文档为在线链接；结果经弹窗反馈。
@@ -255,10 +256,22 @@ struct DocumentView: View {
         } else {
             // 手动编辑经 applyManualEdit 进 store：触发防抖自动保存，进程退出不丢内容。
             // UITextView 封装：拿得到光标，挂 Markdown 键盘工具条。
-            MarkdownTextEditor(text: Binding(
-                get: { store.text },
-                set: { store.applyManualEdit($0) }
-            ), fontScale: reader.scaleFactor)
+            MarkdownTextEditor(
+                text: Binding(
+                    get: { store.text },
+                    set: { store.applyManualEdit($0) }
+                ),
+                fontScale: reader.scaleFactor,
+                onAIRefine: { selected in
+                    chatModel.setPendingReplace(original: selected)
+                    chatModel.input = "帮我优化这段文字：\n\n\(selected)"
+                    aiHero.isOpen = true
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(100))
+                        chatModel.send()
+                    }
+                }
+            )
         }
     }
 
@@ -311,6 +324,17 @@ struct DocumentView: View {
             .buttonStyle(.paperPrimary)
             .padding(.top, 26)
 
+            // 快速模板
+            HStack(spacing: 12) {
+                templateButton(icon: "doc.text", title: "写日记") {
+                    fillTemplate("# 日记\n\n**\(Date.now.formatted(date: .long, time: .omitted))**\n\n今天\n\n")
+                }
+                templateButton(icon: "checklist", title: "待办列表") {
+                    fillTemplate("# 待办\n\n- [ ] 任务 1\n- [ ] 任务 2\n- [ ] 任务 3\n")
+                }
+            }
+            .padding(.top, 16)
+
             Spacer()
         }
         .padding(.horizontal, PaperTheme.Spacing.page)
@@ -324,5 +348,47 @@ struct DocumentView: View {
                 sealStamped = true
             }
         }
+    }
+}
+
+// MARK: - 文档底栏（独立 struct，隔离 HeroState/Store 观察范围）
+
+/// 文档页的底部动作栏：编辑/预览切换 + AI/新建。独立 struct 避免父视图状态变化时重建。
+private struct DocActionBar: View {
+    @Environment(DocumentStore.self) private var store
+    @Environment(\.heroNamespace) private var heroNS
+
+    var body: some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 4) {
+                Button { store.showPreview.toggle() } label: {
+                    Image(systemName: store.showPreview ? "pencil" : "doc.richtext")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(store.showPreview ? PaperTheme.inkSecondary : PaperTheme.accent)
+                        .contentTransition(.symbolEffect(.replace.downUp))
+                        .frame(width: 52)
+                        .padding(.vertical, 8)
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.pressable)
+                .accessibilityLabel(store.showPreview ? "编辑" : "预览")
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 5)
+            .background(GlassCapsuleBackground())
+
+            Spacer()
+
+            HStack(spacing: 8) {
+                BarAIButton(context: "doc")
+                BarPlusButton(context: "doc")
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 5)
+            .background(GlassCapsuleBackground())
+        }
+        .padding(.horizontal, 28)
+        .padding(.bottom, 4)
+        .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 }
