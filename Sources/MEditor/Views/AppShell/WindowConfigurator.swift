@@ -23,8 +23,7 @@ struct WindowConfigurator: NSViewRepresentable {
             observation = window.observe(\.toolbar, options: [.new]) { [weak self] w, _ in
                 if w.toolbar != nil { self?.configure(w) }
             }
-            // The system re-lays-out the standard window buttons on resize and
-            // when the window (de)activates, so re-apply our custom positions.
+            // 系统会在 resize / 窗口激活切换时重排标准按钮，需重放我们的位置。
             let nc = NotificationCenter.default
             for name in [NSWindow.didResizeNotification,
                          NSWindow.didBecomeKeyNotification,
@@ -36,7 +35,7 @@ struct WindowConfigurator: NSViewRepresentable {
 
         @objc private func reapply() {
             guard let w = window else { return }
-            DispatchQueue.main.async { self.constrainTitlebarToSidebar(w) }
+            DispatchQueue.main.async { Self.repositionTrafficLights(w) }
         }
 
         private func configure(_ w: NSWindow) {
@@ -49,96 +48,26 @@ struct WindowConfigurator: NSViewRepresentable {
             w.toolbar = nil
 
 
-            // Shrink the titlebar container to sidebar width so the
-            // traffic lights only occupy the left column.
-            // The tab bar area (right of sidebar) becomes fully clickable.
+            // macOS 26 起 titlebar 私有视图结构变化（Liquid Glass），原先的
+            // 容器压缩/装饰隐藏手术会导致红绿灯按钮不渲染，已停用。
+            // 只做轻量的按钮位置微调（setFrameOrigin），不做视图层级手术。
             DispatchQueue.main.async {
-                self.constrainTitlebarToSidebar(w)
+                Self.repositionTrafficLights(w)
                 self.installDoubleClickZoom(w)
             }
         }
 
-        private func constrainTitlebarToSidebar(_ w: NSWindow) {
-            guard let contentView = w.contentView, let themeFrame = contentView.superview else { return }
-            let buttonTypes: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
-            let buttons = buttonTypes.compactMap { w.standardWindowButton($0) }
-            guard let firstButton = buttons.first else { return }
-
-            // 从红绿灯按钮向上找到 titlebar 容器（themeFrame 的直接子视图）。
-            // 不依赖私有类名，macOS 版本间类名会变。
-            var container: NSView = firstButton
-            while let parent = container.superview, parent !== themeFrame {
-                container = parent
-            }
-            guard container.superview === themeFrame else { return }
-
-            // Shrink the titlebar container to *just* the traffic lights so
-            // everything to their right (sidebar, tabs, the show-sidebar
-            // button) stays clickable instead of being captured by the
-            // titlebar drag region.
-            var f = container.frame
-            f.size.width = 80
-            container.frame = f
-            container.autoresizingMask = [.minYMargin]
-            // Allow the traffic-light buttons to be pushed *below* the
-            // default compact-titlebar height without being clipped.
-            container.clipsToBounds = false
-            container.layer?.backgroundColor = nil
-            container.layer?.cornerRadius = 0
-            container.layer?.mask = nil
-
-            // 容器内：只保留按钮所在分支，背景/装饰视图全部隐藏——
-            // 否则 titlebar 的不透明白底（带窗口圆角）会戳进内容区。
-            Self.hideChrome(in: container, keeping: buttons)
-
-            // 容器外：新版 macOS 可能把毛玻璃/圆角装饰做成容器的兄弟节点，
-            // 类名随版本变化（Titlebar*/Backdrop/Glass/Decoration…）。
-            // 只隐藏"标题栏高度"的条带视图，避免误伤全窗口背景。
-            for sibling in themeFrame.subviews
-            where sibling !== container && sibling !== contentView && sibling.frame.height <= 80 {
-                let name = String(describing: type(of: sibling))
-                if name.contains("Titlebar") || name.contains("Backdrop")
-                    || name.contains("Glass") || name.contains("Decoration") {
-                    sibling.isHidden = true
-                }
-            }
-
-            repositionTrafficLights(w)
-        }
-
-        /// 隐藏 view 子树中所有「不包含红绿灯按钮」的分支；
-        /// 按钮所在分支保持可见，但清掉自身的背景绘制。
-        /// 类名无关，对 macOS 各版本的私有视图结构都成立。
-        static func hideChrome(in view: NSView, keeping buttons: [NSView]) {
-            func subtreeContainsButton(_ v: NSView) -> Bool {
-                if buttons.contains(where: { $0 === v }) { return true }
-                return v.subviews.contains(where: subtreeContainsButton)
-            }
-            for sub in view.subviews {
-                if subtreeContainsButton(sub) {
-                    sub.clipsToBounds = false
-                    sub.layer?.backgroundColor = nil
-                    sub.layer?.cornerRadius = 0
-                    sub.layer?.mask = nil
-                    hideChrome(in: sub, keeping: buttons)
-                } else {
-                    sub.isHidden = true
-                }
-            }
-        }
-
-        /// Push the standard traffic-light buttons lower (Craft / Finder feel)
-        /// without adding a tall toolbar — we only move the system buttons, so the
-        /// SwiftUI content layout is untouched and no empty header strip appears.
-        private func repositionTrafficLights(_ w: NSWindow) {
+        /// 把红绿灯按钮从窗口角上往内收一点，让它们完整落在侧边栏卡片里
+        /// （默认位置贴着圆角裁切区，看起来像悬在卡片外）。
+        private static func repositionTrafficLights(_ w: NSWindow) {
             let types: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
             let buttons = types.compactMap { w.standardWindowButton($0) }
             guard buttons.count == 3, let bar = buttons[0].superview else { return }
 
-            // Titlebar view is not flipped: y grows upward, top == bar.bounds.height.
-            let topGap: CGFloat = 16     // distance from window top to button top
-            let leftPad: CGFloat = 19    // distance from window left to first button
-            let spacing: CGFloat = 20    // standard inter-button spacing
+            // Titlebar view 非 flipped：y 向上增长，顶 = bar.bounds.height。
+            let topGap: CGFloat = 15     // 窗口顶到按钮顶的距离
+            let leftPad: CGFloat = 16    // 窗口左缘到第一个按钮的距离
+            let spacing: CGFloat = 20    // 标准按钮间距
 
             for (i, btn) in buttons.enumerated() {
                 let size = btn.frame.size
@@ -152,9 +81,8 @@ struct WindowConfigurator: NSViewRepresentable {
 
         /// Installs a double-click gesture on the tab-bar / chrome area so that
         /// double-clicking the top of the window zooms it (standard macOS behaviour).
-        /// This is needed because the system titlebar is shrunk to 80 px (traffic
-        /// lights only), so the normal title-bar double-click zone doesn't cover the
-        /// full width.
+        /// The system titlebar is transparent, so the normal title-bar
+        /// double-click zone doesn't cover the full width.
         private func installDoubleClickZoom(_ w: NSWindow) {
             guard let contentView = w.contentView else { return }
             // Walk up to the window's root view (superview of contentView).

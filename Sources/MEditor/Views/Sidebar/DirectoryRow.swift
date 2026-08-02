@@ -51,6 +51,12 @@ struct SidebarTreeNode: View {
                 )
                 .help(item.url.path)
                 .padding(.leading, -6)
+                // 点击文件夹行（不只是三角箭头）也切换展开/折叠，
+                // 与 Finder、VS Code 侧边栏行为一致。
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    workspaceUI.setExpanded(item, !isExpanded)
+                }
             }
             .listRowSeparator(.hidden)
             .onAppear {
