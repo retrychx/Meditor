@@ -33,6 +33,10 @@ window.MEditorSlides = (function () {
       var inner = document.createElement('div');
       inner.className = 'slide-content';
       inner.innerHTML = marked.parse(slides[i], { gfm: true, breaks: false });
+      // 首个元素是 h1 的页按封面页排版（大标题 + 强调短条 + 弱化副信息）
+      if (inner.firstElementChild && inner.firstElementChild.tagName === 'H1') {
+        el.classList.add('cover');
+      }
       el.appendChild(inner);
       stage.appendChild(el);
     }
@@ -57,6 +61,10 @@ window.MEditorSlides = (function () {
       nodes[i].classList.toggle('active', i === current);
     }
     indicator.textContent = (current + 1) + ' / ' + slides.length;
+    var progress = document.getElementById('progress');
+    if (progress) {
+      progress.style.width = ((current + 1) / slides.length * 100) + 'vw';
+    }
   }
 
   function next() { show(current + 1); }
