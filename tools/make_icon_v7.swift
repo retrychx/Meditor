@@ -49,11 +49,11 @@ func render(_ px: Int, cursor: NSColor, tinted: Bool = false) -> Data {
 
     let stroke = s * 0.082
     let radius = stroke / 2
-    let lineGap = stroke * 0.72
+    let lineGap = stroke * 1.15
     // 三行文本，左对齐：上行最长、末行最短（真实段落节奏）
     // 注意 Quartz 坐标 y 向上：视觉上的「上方」是大 y
-    let textX = s * 0.265
-    let widths: [CGFloat] = [s * 0.42, s * 0.33, s * 0.20]
+    let textX = s * 0.235
+    let widths: [CGFloat] = [s * 0.50, s * 0.40, s * 0.27]
     let blockH = stroke * 3 + lineGap * 2
     let yTop = (s + blockH) / 2 - stroke / 2   // 首行（最上方）中心 y
 
@@ -104,9 +104,9 @@ func renderMacTile(_ px: Int) -> Data {
 
     let stroke = s * 0.082
     let radius = stroke / 2
-    let lineGap = stroke * 0.72
-    let textX = s * 0.265
-    let widths: [CGFloat] = [s * 0.42, s * 0.33, s * 0.20]
+    let lineGap = stroke * 1.15
+    let textX = s * 0.235
+    let widths: [CGFloat] = [s * 0.50, s * 0.40, s * 0.27]
     let blockH = stroke * 3 + lineGap * 2
     let yTop = (s + blockH) / 2 - stroke / 2
     cg.setFillColor(paper.cgColor)
