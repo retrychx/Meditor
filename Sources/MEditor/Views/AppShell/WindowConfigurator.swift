@@ -37,6 +37,7 @@ struct WindowConfigurator: NSViewRepresentable {
             guard let w = window else { return }
             DispatchQueue.main.async {
                 Self.constrainTitlebarToLights(w)
+                Self.makeTitlebarBackgroundTransparent(w)
                 Self.repositionTrafficLights(w)
             }
         }
@@ -56,8 +57,22 @@ struct WindowConfigurator: NSViewRepresentable {
             // 单纯改容器宽度不影响按钮渲染（已验证）。
             DispatchQueue.main.async {
                 Self.constrainTitlebarToLights(w)
+                Self.makeTitlebarBackgroundTransparent(w)
                 Self.repositionTrafficLights(w)
                 self.installDoubleClickZoom(w)
+            }
+        }
+
+        /// 只隐藏 NSTitlebarBackgroundView：它在 92px 容器里画出一块与侧边栏
+        /// 卡片不同色的小补丁。按钮是它的兄弟视图而非子视图，隐藏背景不影响
+        /// 按钮渲染（与旧版"隐藏一切非按钮分支"的激进手术不同）。
+        private static func makeTitlebarBackgroundTransparent(_ w: NSWindow) {
+            guard let close = w.standardWindowButton(.closeButton),
+                  let titlebarView = close.superview else { return }
+            for sub in titlebarView.subviews {
+                if String(describing: type(of: sub)).contains("TitlebarBackground") {
+                    sub.isHidden = true
+                }
             }
         }
 
