@@ -35,7 +35,10 @@ struct WindowConfigurator: NSViewRepresentable {
 
         @objc private func reapply() {
             guard let w = window else { return }
-            DispatchQueue.main.async { Self.repositionTrafficLights(w) }
+            DispatchQueue.main.async {
+                Self.constrainTitlebarToLights(w)
+                Self.repositionTrafficLights(w)
+            }
         }
 
         private func configure(_ w: NSWindow) {
@@ -48,13 +51,36 @@ struct WindowConfigurator: NSViewRepresentable {
             w.toolbar = nil
 
 
-            // macOS 26 起 titlebar 私有视图结构变化（Liquid Glass），原先的
-            // 容器压缩/装饰隐藏手术会导致红绿灯按钮不渲染，已停用。
-            // 只做轻量的按钮位置微调（setFrameOrigin），不做视图层级手术。
+            // 只做两件轻量事：压缩 titlebar 容器宽度 + 微调按钮位置。
+            // macOS 26 上「隐藏装饰视图」的旧手术会让按钮不渲染，绝不做；
+            // 单纯改容器宽度不影响按钮渲染（已验证）。
             DispatchQueue.main.async {
+                Self.constrainTitlebarToLights(w)
                 Self.repositionTrafficLights(w)
                 self.installDoubleClickZoom(w)
             }
+        }
+
+        /// 把 titlebar 容器宽度压到只覆盖红绿灯：
+        /// NSTitlebarBackgroundView 跟随容器全宽，压宽后不再在 tab 条上罩一层
+        /// 磨砂横条；同时右侧区域不再被 titlebar 拖动区吃掉点击。
+        /// 不做任何 isHidden/背景清除——那是 macOS 26 上按钮消失的根因。
+        private static func constrainTitlebarToLights(_ w: NSWindow) {
+            guard let contentView = w.contentView, let themeFrame = contentView.superview,
+                  let close = w.standardWindowButton(.closeButton) else { return }
+            // 从按钮向上找到 themeFrame 的直接子容器（不依赖私有类名）
+            var container: NSView = close
+            while let parent = container.superview, parent !== themeFrame {
+                container = parent
+            }
+            guard container.superview === themeFrame else { return }
+
+            let lightsWidth: CGFloat = 92
+            var f = container.frame
+            guard f.width > lightsWidth else { return }
+            f.size.width = lightsWidth
+            container.frame = f
+            container.autoresizingMask = [.minYMargin]
         }
 
         /// 把红绿灯按钮从窗口角上往内收一点，让它们完整落在侧边栏卡片里
