@@ -54,9 +54,6 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
                     // edges. This detached / hovering look is the "floating" feel
                     // of the Finder & Craft sidebars.
                     sidebar()
-                        // Inner top inset so the first row clears the traffic
-                        // lights, which now sit *inside* the card.
-                        .padding(.top, 40)
                         .scrollContentBackground(.hidden)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(
@@ -101,10 +98,6 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
                         .padding(.trailing, 5)
                         .padding(.top, 6)
                         .padding(.bottom, 10)
-                        // Reach up under the transparent titlebar so the system
-                        // traffic lights land *inside* the card (Craft uses the
-                        // standard lights too — it just extends the material up).
-                        .ignoresSafeArea(.container, edges: .top)
                 }
                 .frame(width: workspaceUI.clampedSidebarWidth)
                 .frame(maxHeight: .infinity)
@@ -124,7 +117,8 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
 
             VStack(spacing: 0) {
                 if workspaceUI.isFocusMode {
-                    Color.clear.frame(height: 38)
+                    // 专注模式：内容从系统 toolbar 下方开始，无需预留固定高度
+                    Color.clear.frame(height: 0)
                 } else if workspaceUI.activeMainView != .document {
                     // Calendar / Todos 有各自的头部栏 — 跳过全局 TopToolbar（含文件 tab 栏）
                     Color.clear.frame(height: 0)
@@ -255,7 +249,8 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
                 }
             }
         }
-        .ignoresSafeArea(.container, edges: .top)
+        // 内容从系统 toolbar 下方开始（不忽略顶部 safe area）——
+        // 否则 TopToolbar 的 tab 栏会被原生 toolbar 磨砂带盖住。
         .background(theme.windowBackground)
         .background(keyboardShortcutHost)
         .environment(\.sidebarToggleNS, sidebarNS)
@@ -294,26 +289,13 @@ private struct TopToolbar: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            if !workspaceUI.showsSidebarInLayout {
-                // Reserve room for the traffic lights, then a show-sidebar button
-                // at the very top-left (Craft-style), to the left of the tabs.
-                Color.clear.frame(width: 84, height: 1)
-                ChromeButton(
-                    systemName: "sidebar.left",
-                    help: L("tooltip.showSidebar")
-                ) {
-                    withAnimation(DS.Motion.panel) { workspaceUI.showsSidebar = true }
-                }
-                .heroMatch("sidebarToggle", in: sidebarNS)
-                .padding(.trailing, 2)
-            }
-
-            // Tab bar
+            // Tab bar（侧边栏切换已进系统 toolbar，红绿灯不再落内容区）
             tabZone
                 .frame(maxWidth: .infinity)
         }
         .frame(height: 44)
-        .background(.bar, ignoresSafeAreaEdges: .top)  // macOS 原生 toolbar material：聚焦时鲜艳，失焦时变灰
+        // 普通背景：系统 toolbar 是唯一的顶部磨砂带，避免双条
+        .background(theme.windowBackground)
         .background(NonDraggableView())
         .overlay(alignment: .bottom) {
             theme.separator.opacity(theme.isDark ? 0.3 : 0.12).frame(height: 1)

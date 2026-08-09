@@ -21,6 +21,41 @@ struct ContentView: View {
         .tint(AIAccentStyle.current(settings).fill(state.themeStore.current))
         .environment(workspaceUI)
         .background(WindowConfigurator())
+        // 路线 A：真实 unified toolbar——红绿灯交给系统摆进磨砂带左端；
+        // 常用窗口级操作收进 toolbar（此前散在各处或只在 QuickOpen）。
+        .toolbar {
+            ToolbarItemGroup(placement: .navigation) {
+                Button {
+                    workspaceUI.toggleSidebar()
+                } label: {
+                    Image(systemName: "sidebar.left")
+                }
+                .help("显示/隐藏侧边栏")
+
+                Button {
+                    state.showingTemplatePicker = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .help(L("menu.newFile"))
+                .disabled(state.rootURL == nil)
+            }
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button {
+                    workspaceUI.toggleEditor()
+                } label: {
+                    Image(systemName: "pencil")
+                }
+                .help("显示/隐藏编辑器")
+
+                Button {
+                    workspaceUI.togglePreview()
+                } label: {
+                    Image(systemName: "eye")
+                }
+                .help("显示/隐藏预览")
+            }
+        }
         .overlayPreferenceValue(SettingsAnchorKey.self) { anchor in
             GeometryReader { proxy in
                 if state.showingSettings {
