@@ -33,7 +33,9 @@ struct PreviewPanel: View {
                     }
                 )
                 .frame(width: tocWidth)
-                .background(state.themeStore.current.chromeBackground.opacity(state.themeStore.current.isDark ? 0.7 : 0.82))
+                // 与预览同底色：detail 列左上角系统圆角处不会再显出一块
+                // 对比强烈的灰色（用户误以为 tab 圆角的那个色块）
+                .background(state.themeStore.current.editorBackground)
 
                 state.themeStore.current.separator
                     .opacity(state.themeStore.current.isDark ? 0.32 : 0.22)
