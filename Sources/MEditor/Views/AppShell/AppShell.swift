@@ -5,9 +5,6 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
     @Environment(AppState.self) private var state
     @Bindable var workspaceUI: WorkspaceUIState
 
-    /// Shared namespace so the focus toggle can "fly" (hero / matchedGeometry)
-    /// between the toolbar and its floating position over the document.
-    @Namespace private var focusNS
     /// Shared namespace so the sidebar toggle flies between the sidebar card
     /// (expanded) and the top-left toolbar (collapsed).
     @Namespace private var sidebarNS
@@ -47,16 +44,7 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
                 )
         } detail: {
             VStack(spacing: 0) {
-                if workspaceUI.isFocusMode {
-                    // 专注模式：内容从系统 toolbar 下方开始，无需预留固定高度
-                    Color.clear.frame(height: 0)
-                } else if workspaceUI.activeMainView != .document {
-                    // Calendar / Todos 有各自的头部栏 — 跳过全局 TopToolbar（含文件 tab 栏）
-                    Color.clear.frame(height: 0)
-                } else {
-                    TopToolbar(workspaceUI: workspaceUI, focusNS: focusNS)
-                }
-
+                // 文件 tab 栏已进系统 toolbar（principal 位），这里直接是内容区
                 HStack(spacing: 0) {
                     ZStack {
                         theme.windowBackground
@@ -210,43 +198,5 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
         .frame(width: 0, height: 0)
         .opacity(0)
         .accessibilityHidden(true)
-    }
-}
-
-@MainActor
-private struct TopToolbar: View {
-    @Environment(AppState.self) private var state
-    @Environment(\.sidebarToggleNS) private var sidebarNS
-    @Bindable var workspaceUI: WorkspaceUIState
-    let focusNS: Namespace.ID
-
-    private var theme: PreviewTheme { state.themeStore.current }
-
-    var body: some View {
-        HStack(spacing: 0) {
-            // Tab bar（侧栏切换在系统 toolbar 里，红绿灯由系统摆进通顶的
-            // 侧边栏材质区——这里不需要再给它们留位）
-            tabZone
-                .frame(maxWidth: .infinity)
-        }
-        .frame(height: 44)
-        // 普通背景：系统 toolbar 是唯一的顶部横带，避免双条
-        .background(theme.windowBackground)
-        .background(NonDraggableView())
-        .overlay(alignment: .bottom) {
-            theme.separator.opacity(theme.isDark ? 0.3 : 0.12).frame(height: 1)
-        }
-    }
-
-    @ViewBuilder
-    private var tabZone: some View {
-        if !state.openTabs.isEmpty {
-            EditorTabBar()
-                .padding(.leading, 0)
-                .padding(.trailing, 4)
-                .clipped()
-        } else {
-            Color.clear
-        }
     }
 }

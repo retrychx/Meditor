@@ -1,10 +1,9 @@
 import SwiftUI
 import AppKit
 
-/// 窗口配置（路线 A）：titleVisibility 隐藏 + 透明标题栏 + fullSizeContentView，
-/// 真实 toolbar 由 ContentView 的 `.toolbar { }` 提供——红绿灯交给系统摆进
-/// toolbar 磨砂带左端。不再对 titlebar 私有视图做任何手术（容器压缩/隐藏背景/
-/// 手挪按钮），macOS 升级不再塌。
+/// 窗口配置：只做 titleVisibility 隐藏 + 双击放大手势。
+/// 布局是 Apple 原生方案（NavigationSplitView + hiddenTitleBar + 系统 toolbar），
+/// 不对 titlebar 私有视图做任何手术，macOS 升级不再塌。
 struct WindowConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let v = NSView()
@@ -17,6 +16,7 @@ struct WindowConfigurator: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     class Coordinator: NSObject {
+        private var observation: NSKeyValueObservation?
         private weak var window: NSWindow?
 
         /// makeNSView 时窗口可能尚未挂链（不同启动路径时序不同）——
@@ -35,13 +35,15 @@ struct WindowConfigurator: NSViewRepresentable {
         func attach(to window: NSWindow) {
             self.window = window
             configure(window)
+            // SwiftUI 安装/更新 toolbar 时会把 titleVisibility 重置回 visible，
+            // 「MEditor」标题因此又冒出来——监听 toolbar 变化并重放隐藏。
+            observation = window.observe(\.toolbar, options: [.new]) { w, _ in
+                if w.toolbar != nil { w.titleVisibility = .hidden }
+            }
         }
 
         private func configure(_ w: NSWindow) {
             w.titleVisibility = .hidden
-            // 路线 A：不插 fullSizeContentView（它让内容叠进 toolbar 区），
-            // toolbar 用系统默认材质（不透明）——Finder 式磨砂带在上、内容在下。
-            w.titlebarAppearsTransparent = false
             DispatchQueue.main.async {
                 self.installDoubleClickZoom(w)
             }

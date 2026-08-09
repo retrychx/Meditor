@@ -329,52 +329,9 @@ struct FileSidebar: View {
 // MARK: - Space Switcher
 
 @MainActor
-private struct SidebarTitlebarRow: View {
-    @Bindable var workspaceUI: WorkspaceUIState
-    @Environment(AppState.self) private var state
-    @State private var isHovered = false
-
-    var body: some View {
-        let theme = state.themeStore.current
-        HStack(spacing: 0) {
-            // macOS traffic lights occupy this area. We keep it empty so the
-            // real window controls visually belong to the sidebar, like Craft.
-            Color.clear.frame(width: 78)
-
-            Spacer()
-
-            Button {
-                withAnimation(DS.Motion.springFast) {
-                    workspaceUI.showsSidebar = false
-                }
-            } label: {
-                Image(systemName: "sidebar.left")
-                    .symbolRenderingMode(.hierarchical)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(theme.craftSecondary.opacity(isHovered ? 0.9 : 0.58))
-                    .frame(width: 28, height: 28)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(isHovered ? theme.craftHover : Color.clear)
-                    )
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut("b", modifiers: [.command, .option])
-            .help(L("tooltip.hideSidebar"))
-            .onHover { isHovered = $0 }
-        }
-        .frame(height: 36)
-        .padding(.trailing, 8)
-    }
-}
-
-@MainActor
 private struct SpaceSwitcherRow: View {
     @Environment(AppState.self) private var state
-    @Environment(WorkspaceUIState.self) private var workspaceUI
-    @Environment(\.sidebarToggleNS) private var sidebarNS
     @State private var isHovered = false
-    @State private var isCollapseHovered = false
 
     var body: some View {
         let theme = state.themeStore.current
@@ -396,26 +353,6 @@ private struct SpaceSwitcherRow: View {
                 .truncationMode(.middle)
 
             Spacer()
-
-            // Collapse button — lives inside the sidebar card while expanded.
-            Button {
-                withAnimation(DS.Motion.panel) { workspaceUI.showsSidebar = false }
-            } label: {
-                Image(systemName: "sidebar.left")
-                    .symbolRenderingMode(.hierarchical)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(theme.craftSecondary.opacity(isCollapseHovered ? 0.95 : 0.55))
-                    .frame(width: 24, height: 24)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(isCollapseHovered ? theme.craftHover : Color.clear)
-                    )
-            }
-            .buttonStyle(.plain)
-            .onHover { isCollapseHovered = $0 }
-            .help(L("tooltip.hideSidebar"))
-            .heroMatch("sidebarToggle", in: sidebarNS)
-            .animation(DS.Motion.micro, value: isCollapseHovered)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)

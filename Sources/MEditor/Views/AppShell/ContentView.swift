@@ -21,8 +21,14 @@ struct ContentView: View {
         .tint(AIAccentStyle.current(settings).fill(state.themeStore.current))
         .environment(workspaceUI)
         .background(WindowConfigurator())
-        // 不放任何自定义 toolbar 按钮——只保留 NavigationSplitView 自带的
-        // 侧栏开关（detail 列左缘），窗口级操作走菜单/快捷键。
+        // tab 栏进系统 toolbar（principal 位，替代窗口标题）——顶部只有一条横带：
+        // 左端系统侧栏开关，其余宽度给文件 tab。
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                EditorTabBar()
+                    .environment(state)
+            }
+        }
         .overlayPreferenceValue(SettingsAnchorKey.self) { anchor in
             GeometryReader { proxy in
                 if state.showingSettings {
