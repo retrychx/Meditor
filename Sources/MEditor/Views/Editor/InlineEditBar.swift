@@ -287,8 +287,8 @@ struct InlineEditBar: View {
             let modified = spliced(finalText)
             state.diffReview.commitStreamWithModified(modified) { merged in
                 if let tab = state.selectedTab {
-                    tab.content = merged
-                    tab.contentRevision &+= 1
+                    // 走 updateTabContent：同步预览 + 标 isModified（否则防抖保存会漏掉）
+                    state.updateTabContent(tab.id, content: merged)
                     state.scheduleDebounceSave()
                 }
             }

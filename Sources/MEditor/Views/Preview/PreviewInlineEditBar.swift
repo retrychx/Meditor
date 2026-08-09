@@ -210,8 +210,9 @@ private enum PreviewInlineEditFlow {
             let modified = fullContent.replacingCharacters(in: sourceRange, with: finalText)
             state.diffReview.commitStreamWithModified(modified) { merged in
                 if let tab = state.selectedTab {
-                    tab.content = merged
-                    tab.contentRevision &+= 1   // 通知编辑器刷新视图
+                    // 走 updateTabContent：同步预览 + 标 isModified（否则防抖保存会漏掉），
+                    // 预览重渲染后 flashPreviewChange 的脉冲才能落到新 DOM 上。
+                    state.updateTabContent(tab.id, content: merged)
                     state.scheduleDebounceSave()
                 }
                 state.flashPreviewChange(sourceRange: sourceRange, in: merged)
