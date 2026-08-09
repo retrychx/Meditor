@@ -25,9 +25,6 @@ struct MEditorApp: App {
                     // Restore previous session (root folder + open tabs + selection).
                     // No-op on first launch or if every bookmark has gone stale.
                     appState.restoreSession()
-                    #if DEBUG
-                    DebugDemoInlineFlow.runIfRequested(state: appState)
-                    #endif
                 }
                 .onOpenURL { url in
                     handleOpenURL(url)
@@ -46,6 +43,7 @@ struct MEditorApp: App {
                 .environment(appState)
                 .environment(AppSettings.shared)
         }
+        .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button(L("menu.openFolder")) {

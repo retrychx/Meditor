@@ -21,17 +21,11 @@ struct ContentView: View {
         .tint(AIAccentStyle.current(settings).fill(state.themeStore.current))
         .environment(workspaceUI)
         .background(WindowConfigurator())
-        // 路线 A：真实 unified toolbar——红绿灯交给系统摆进磨砂带左端；
-        // 常用窗口级操作收进 toolbar（此前散在各处或只在 QuickOpen）。
+        // 系统 unified toolbar（备忘录式）：红绿灯由系统摆进通顶侧边栏材质区；
+        // 常用窗口级操作收进 toolbar。
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
-                Button {
-                    workspaceUI.toggleSidebar()
-                } label: {
-                    Image(systemName: "sidebar.left")
-                }
-                .help("显示/隐藏侧边栏")
-
+                // 侧栏开关用 NavigationSplitView 自带的（在 detail 列左缘），这里只放新建。
                 Button {
                     state.showingTemplatePicker = true
                 } label: {

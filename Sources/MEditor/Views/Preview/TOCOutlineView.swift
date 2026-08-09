@@ -50,17 +50,8 @@ struct TOCOutlineView: View {
                 }
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(theme.editorBackground.opacity(theme.isDark ? 0.3 : 0.58))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(theme.separator.opacity(theme.isDark ? 0.18 : 0.12), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 10)
+        // 平面化（Apple 备忘录式）：TOC 是预览左缘的一个普通栏，
+        // 背景和右侧分隔线由 PreviewPanel 提供，不再自成悬浮卡片。
     }
 }
 

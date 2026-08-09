@@ -3,7 +3,6 @@ import SwiftUI
 @MainActor
 struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
     @Environment(AppState.self) private var state
-    @Environment(\.controlActiveState) private var controlActiveState
     @Bindable var workspaceUI: WorkspaceUIState
 
     /// Shared namespace so the focus toggle can "fly" (hero / matchedGeometry)
@@ -38,83 +37,15 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
 
     var body: some View {
         let theme = state.themeStore.current
-        HStack(spacing: 0) {
-            if workspaceUI.showsSidebarInLayout {
-                ZStack {
-                    // Canvas behind the floating sidebar card — matches the editor
-                    // window background so the gutter around the card reads as part
-                    // of the window, not as a transparent hole to the desktop.
-                    // SidebarVibrancyView blends behind the window at the compositor
-                    // level and doesn't need this layer to be transparent.
-                    theme.windowBackground
-                        .ignoresSafeArea()
-
-                    // Floating sidebar card — rounded corners, translucent
-                    // material fill and a soft drop shadow, inset from the window
-                    // edges. This detached / hovering look is the "floating" feel
-                    // of the Finder & Craft sidebars.
-                    sidebar()
-                        .scrollContentBackground(.hidden)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(
-                            // 原生 NSVisualEffectView sidebar material：
-                            // 聚焦时带强调色光泽，失焦时自动去饱和，和 Finder/Craft 一致。
-                            ZStack {
-                                SidebarVibrancyView()
-                                // 浅色主题叠一层半透明白，避免桌面深色透进来；
-                                // 窗口激活时略薄让 vibrancy 强调色透出来，失焦时加厚变灰。
-                                if !theme.isDark {
-                                    Color.white.opacity(controlActiveState == .key ? 0.60 : 0.78)
-                                        .animation(.easeInOut(duration: 0.2), value: controlActiveState)
-                                }
-                            }
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        // Hairline border with a top-lit highlight → a subtle
-                        // glowing rim that makes the card read as "floating".
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .strokeBorder(
-                                    LinearGradient(
-                                        colors: theme.isDark
-                                            ? [Color.white.opacity(0.22),
-                                               Color.white.opacity(0.05)]
-                                            : [Color.white.opacity(1.0),
-                                               Color.white.opacity(0.40)],
-                                        startPoint: .top, endPoint: .bottom
-                                    ),
-                                    lineWidth: 1
-                                )
-                                .blendMode(.plusLighter)
-                        )
-                        .shadow(color: .black.opacity(theme.isDark ? 0.55 : 0.22),
-                                radius: 18, x: 0, y: 6)
-                        .shadow(color: .black.opacity(theme.isDark ? 0.25 : 0.08),
-                                radius: 4, x: 0, y: 1)
-                        .shadow(color: Color.white.opacity(theme.isDark ? 0.06 : 0.25),
-                                radius: 6, x: 0, y: 0)
-                        .padding(.leading, 9)
-                        .padding(.trailing, 5)
-                        .padding(.top, 6)
-                        .padding(.bottom, 10)
-                }
-                .frame(width: workspaceUI.clampedSidebarWidth)
-                .frame(maxHeight: .infinity)
-                .background(NonDraggableView())
-                .transition(.move(edge: .leading).combined(with: .opacity))
-
-                DraggableDivider(
-                    width: Binding(
-                        get: { workspaceUI.clampedSidebarWidth },
-                        set: { workspaceUI.setSidebarWidth($0) }
-                    ),
-                    minValue: 220,
-                    maxValue: 320
+        // Apple 方案（备忘录/Finder 同款）：NavigationSplitView —— 侧边栏通顶、
+        // 红绿灯落在侧边栏材质里、分隔线与拖拽宽度全交系统，
+        // 不再对 titlebar 做任何私有视图手术。
+        NavigationSplitView(columnVisibility: columnVisibility) {
+            sidebar()
+                .navigationSplitViewColumnWidth(
+                    min: 220, ideal: workspaceUI.clampedSidebarWidth, max: 320
                 )
-                .transition(.opacity)
-            }
-
+        } detail: {
             VStack(spacing: 0) {
                 if workspaceUI.isFocusMode {
                     // 专注模式：内容从系统 toolbar 下方开始，无需预留固定高度
@@ -233,9 +164,6 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // Opaque canvas lives ONLY on the editor/right side so the sidebar
-            // column stays transparent and the `.behindWindow` sidebar material
-            // can sample the desktop — that's what gives the floating vibrancy.
             .background(theme.windowBackground)
             .onChange(of: workspaceUI.isFocusMode) { _, focused in
                 if focused {
@@ -249,11 +177,18 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
                 }
             }
         }
-        // 内容从系统 toolbar 下方开始（不忽略顶部 safe area）——
-        // 否则 TopToolbar 的 tab 栏会被原生 toolbar 磨砂带盖住。
         .background(theme.windowBackground)
         .background(keyboardShortcutHost)
         .environment(\.sidebarToggleNS, sidebarNS)
+    }
+
+    /// 侧边栏显隐 → NavigationSplitView 列可见性（专注模式强制 detailOnly，
+    /// 退出后自动恢复 showsSidebar 的持久值）。
+    private var columnVisibility: Binding<NavigationSplitViewVisibility> {
+        Binding(
+            get: { workspaceUI.showsSidebarInLayout ? .all : .detailOnly },
+            set: { workspaceUI.showsSidebar = $0 != .detailOnly }
+        )
     }
 
     private var keyboardShortcutHost: some View {
@@ -289,12 +224,13 @@ private struct TopToolbar: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Tab bar（侧边栏切换已进系统 toolbar，红绿灯不再落内容区）
+            // Tab bar（侧栏切换在系统 toolbar 里，红绿灯由系统摆进通顶的
+            // 侧边栏材质区——这里不需要再给它们留位）
             tabZone
                 .frame(maxWidth: .infinity)
         }
         .frame(height: 44)
-        // 普通背景：系统 toolbar 是唯一的顶部磨砂带，避免双条
+        // 普通背景：系统 toolbar 是唯一的顶部横带，避免双条
         .background(theme.windowBackground)
         .background(NonDraggableView())
         .overlay(alignment: .bottom) {
