@@ -21,35 +21,8 @@ struct ContentView: View {
         .tint(AIAccentStyle.current(settings).fill(state.themeStore.current))
         .environment(workspaceUI)
         .background(WindowConfigurator())
-        // 系统 unified toolbar（备忘录式）：红绿灯由系统摆进通顶侧边栏材质区；
-        // 常用窗口级操作收进 toolbar。
-        .toolbar {
-            ToolbarItemGroup(placement: .navigation) {
-                // 侧栏开关用 NavigationSplitView 自带的（在 detail 列左缘），这里只放新建。
-                Button {
-                    state.showingTemplatePicker = true
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .help(L("menu.newFile"))
-                .disabled(state.rootURL == nil)
-            }
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button {
-                    workspaceUI.toggleEditor()
-                } label: {
-                    Image(systemName: "pencil")
-                }
-                .help("显示/隐藏编辑器")
-
-                Button {
-                    workspaceUI.togglePreview()
-                } label: {
-                    Image(systemName: "eye")
-                }
-                .help("显示/隐藏预览")
-            }
-        }
+        // 不放任何自定义 toolbar 按钮——只保留 NavigationSplitView 自带的
+        // 侧栏开关（detail 列左缘），窗口级操作走菜单/快捷键。
         .overlayPreferenceValue(SettingsAnchorKey.self) { anchor in
             GeometryReader { proxy in
                 if state.showingSettings {
