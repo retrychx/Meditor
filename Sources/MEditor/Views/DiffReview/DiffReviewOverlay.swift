@@ -134,10 +134,20 @@ struct DiffReviewOverlay: View {
 
     // MARK: - Paragraph data
 
+    /// 流式阶段的原文段落在开始流式时算一次即可（原文不变）。
+    /// 每帧重算会把长文档的 split 打进每帧布局里。
+    private static var cachedOriginalParagraphs: (content: String, entries: [DiffWebView.ParaEntry])?
+
     /// Original paragraphs shown during streaming (no diff markers).
     private var originalParagraphsUnchanged: [DiffWebView.ParaEntry] {
-        ParagraphDiffer.splitParagraphs(state.diffReview.originalContent)
+        let content = state.diffReview.originalContent
+        if let cached = Self.cachedOriginalParagraphs, cached.content == content {
+            return cached.entries
+        }
+        let entries = ParagraphDiffer.splitParagraphs(content)
             .map { DiffWebView.ParaEntry(text: $0, diffId: "", status: "unchanged") }
+        Self.cachedOriginalParagraphs = (content, entries)
+        return entries
     }
 
     private var leftParagraphsForReview: [DiffWebView.ParaEntry] {
@@ -174,6 +184,21 @@ struct DiffReviewOverlay: View {
 private struct DiffModeBar: View {
     @Environment(AppState.self) private var state
 
+    /// refineInput 的双向绑定（DiffReviewState 是 @Observable）。
+    private var refineInputBinding: Binding<String> {
+        Binding(
+            get: { state.diffReview.refineInput },
+            set: { state.diffReview.refineInput = $0 }
+        )
+    }
+
+    private func submitRefine() {
+        let text = state.diffReview.refineInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        state.diffReview.refineInput = ""
+        state.diffReview.onRefine?(text)
+    }
+
     var body: some View {
         HStack(spacing: 10) {
             // Status icon + label
@@ -196,6 +221,35 @@ private struct DiffModeBar: View {
             Spacer()
 
             if !state.diffReview.isStreaming {
+                // 连续微调：对刚生成的结果继续说「再短一点」式指令迭代
+                if state.diffReview.mode == .markdownVsMarkdown, state.diffReview.onRefine != nil {
+                    HStack(spacing: 6) {
+                        Image(systemName: "wand.and.stars")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color.appAccent)
+                        TextField("继续调整，如：再短一点", text: refineInputBinding)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 12))
+                            .frame(width: 170)
+                            .onSubmit(submitRefine)
+                        Button(action: submitRefine) {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(.system(size: 16))
+                                .foregroundStyle(state.diffReview.refineInput.isEmpty
+                                                 ? Color.secondary.opacity(0.4)
+                                                 : Color.appAccent)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(state.diffReview.refineInput.isEmpty)
+                        .help("按此指令对 AI 结果再改一轮")
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(Color.primary.opacity(0.06), in: Capsule())
+
+                    Divider().frame(height: 18)
+                }
+
                 // Pending count badge
                 if state.diffReview.pendingCount > 0 {
                     Text("\(state.diffReview.pendingCount) 处待处理")
@@ -278,13 +332,24 @@ private struct DiffModeBar: View {
 /// Shown in the right pane while AI is generating.
 private struct StreamingTextView: View {
     let text: String
-    @State private var scrollProxy: ScrollViewProxy? = nil
+    /// 用户上翻后不再强制拽回底部（类 iOS 贴底语义）
+    @State private var pinnedToBottom = true
+
+    /// 流式展示只看结尾：大文档的全文流（拼接后的整篇）如果整个塞进
+    /// SwiftUI Text，每次 chunk 都全量 CoreText 排版，排版风暴会把
+    /// MainActor 饿死（CPU 99%、流式"卡住"的实测根因）。
+    /// 截尾到最近 ~6K 字符，足够观察生成过程。
+    private var displayText: String {
+        let limit = 6000
+        if text.count <= limit { return text }
+        return "…\n" + String(text.suffix(limit))
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(text.isEmpty ? " " : text)
+                    Text(displayText.isEmpty ? " " : displayText)
                         .font(.system(size: 14))
                         .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -295,13 +360,15 @@ private struct StreamingTextView: View {
                     Color.clear
                         .frame(height: 1)
                         .id("streamBottom")
+                        .onAppear { pinnedToBottom = true }
+                        .onDisappear { pinnedToBottom = false }
                 }
             }
-            .onAppear { scrollProxy = proxy }
+            // 不用动画：流式高频更新时，每个 chunk 重启滚动动画会把
+            // SwiftUI UpdateCycle 打满（主线程布局风暴，其他 MainActor 任务饿死）
             .onChange(of: text) { _, _ in
-                withAnimation(.easeOut(duration: 0.1)) {
-                    proxy.scrollTo("streamBottom", anchor: .bottom)
-                }
+                guard pinnedToBottom else { return }
+                proxy.scrollTo("streamBottom", anchor: .bottom)
             }
         }
     }

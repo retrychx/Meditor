@@ -61,7 +61,11 @@ enum InlineEditAction: String, CaseIterable, Identifiable {
         }
         var msg = "\(prefix)\n\n\(text)"
         if let doc = document, !doc.isEmpty, doc != text {
-            msg += "\n\n---\n以下是完整文档上下文（仅供参考，只输出处理后的选中部分）：\n\n\(doc)"
+            // 8K 门控（与聊天面板一致），大文档不整篇内联
+            let capped = doc.count > 8000
+                ? String(doc.prefix(8000)) + "\n…（文档过长已截断）"
+                : doc
+            msg += "\n\n---\n以下是完整文档上下文（仅供参考，只输出处理后的选中部分）：\n\n\(capped)"
         }
         return msg
     }

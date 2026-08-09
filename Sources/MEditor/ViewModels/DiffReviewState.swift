@@ -23,6 +23,8 @@ final class DiffReviewState {
     var streamingAction = ""
     /// Held so `dismiss()` can cancel an in-flight stream.
     var activeStreamTask: Task<Void, Never>? = nil
+    /// 当前正在运行的 AgentRunner（流式/微调）——dismiss 时取消。
+    var activeRunner: AgentRunner? = nil
 
     // MARK: Content
 
@@ -30,6 +32,15 @@ final class DiffReviewState {
     var modifiedContent: String = ""
     var diffs: [ParagraphDiff] = []
     var mode: DiffReviewMode = .markdownVsMarkdown
+
+    // MARK: 连续微调（refine）
+
+    /// 「继续调整」输入框文本（DiffModeBar 绑定）。
+    var refineInput: String = ""
+    /// 最近一次 AI 生成的选区替换文本——微调时作为新的输入文本。
+    var lastGeneratedText: String = ""
+    /// 由发起方（inline edit）注入的微调执行闭包；nil = 不显示微调入口。
+    var onRefine: ((String) -> Void)?
 
     // MARK: Derived
 
@@ -55,6 +66,8 @@ final class DiffReviewState {
         diffs           = []
         isStreaming     = true
         onFinalize      = nil
+        onRefine        = nil      // 连续微调入口由发起方在调用后重新注入
+        lastGeneratedText = ""
         isPresented     = true
     }
 
@@ -96,6 +109,8 @@ final class DiffReviewState {
         self.isStreaming      = false
         self.streamedContent  = ""
         self.streamingAction  = ""
+        self.onRefine         = nil
+        self.lastGeneratedText = ""
         guard mode == .markdownVsMarkdown else { self.diffs = []; self.isPresented = true; return }
 
         if let selOrig = selectedOriginal, let selMod = selectedModified {
@@ -196,6 +211,8 @@ final class DiffReviewState {
     func dismiss() {
         activeStreamTask?.cancel()
         activeStreamTask = nil
+        activeRunner?.cancel()
+        activeRunner = nil
         isPresented      = false
         isLoading        = false
         isStreaming      = false
@@ -206,6 +223,9 @@ final class DiffReviewState {
         originalContent  = ""
         modifiedContent  = ""
         onFinalize       = nil
+        onRefine         = nil
+        lastGeneratedText = ""
+        refineInput      = ""
     }
 
     // MARK: Private

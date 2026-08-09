@@ -10,45 +10,18 @@ struct PreviewInlineEditBar: View {
     let selectedText: String
     var onDismiss: (() -> Void)? = nil
 
-    @State private var isLoading      = false
-    @State private var loadingAction:  InlineEditAction? = nil
-    @State private var streamTask:     Task<Void, Never>? = nil
-
-    private let agent = InlineEditAgent()
-
     var body: some View {
         HStack(spacing: 2) {
-            if isLoading {
-                HStack(spacing: 6) {
-                    ProgressView().scaleEffect(0.7)
-                    Text("AI \(loadingAction?.rawValue ?? "")中…")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                    Button {
-                        streamTask?.cancel()
-                        isLoading     = false
-                        loadingAction = nil
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                            .font(.system(size: 13))
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-            } else {
-                // 内容感知：按选中内容类型只显示最相关的 3-4 个操作（与编辑器内联栏一致）
-                ForEach(contextualActions) { action in
-                    actionButton(action)
-                }
-
-                // 问 AI 入口（预览栏此前缺失）
-                Divider()
-                    .frame(height: 14)
-                    .padding(.horizontal, 4)
-                askAIButton
+            // 内容感知：按选中内容类型只显示最相关的 3-4 个操作（与编辑器内联栏一致）
+            ForEach(contextualActions) { action in
+                actionButton(action)
             }
+
+            // 问 AI 入口（预览栏此前缺失）
+            Divider()
+                .frame(height: 14)
+                .padding(.horizontal, 4)
+            askAIButton
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
@@ -56,7 +29,6 @@ struct PreviewInlineEditBar: View {
         .overlay(Capsule().strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
         .padding(.bottom, 12)
-        .onDisappear { streamTask?.cancel() }
     }
 
     // MARK: - 内容感知动作列表
@@ -122,60 +94,135 @@ struct PreviewInlineEditBar: View {
     // MARK: - Action
 
     private func triggerAction(_ action: InlineEditAction) {
-        isLoading     = true
-        loadingAction = action
-        var result    = ""
+        guard !selectedText.isEmpty else { return }
+        guard state.pluginManager.isBuiltinEnabled(BuiltinSkills.ID.inlineEditor) else {
+            state.showToast(L("ai.error.notConfigured"), icon: "exclamationmark.triangle")
+            return
+        }
+        let fullContent = state.selectedTab?.content ?? selectedText
+        // 渲染选区映射回源码范围（剥掉 **、##、- 等语法后匹配，
+        // 命中时向两侧吞掉紧邻的行内标记）。映射失败不乱改文档：
+        // 提示用户从编辑器圈选，而不是拿 AI 结果整篇替换。
+        guard let sourceRange = SourceTextMapper.sourceRange(
+            ofPlainSelection: selectedText, in: fullContent
+        ) else {
+            state.showToast("圈选内容无法对应回原文，请改从编辑器中圈选", icon: "exclamationmark.triangle")
+            onDismiss?()
+            return
+        }
 
-        streamTask = agent.process(
-            text: selectedText,
-            action: action,
-            settings: settings,
-            pluginManager: state.pluginManager,
-            onChunk: { chunk in
-                result += chunk
-            },
-            onComplete: { [self] _, error in
-                isLoading     = false
-                loadingAction = nil
-                streamTask    = nil
+        // 流式落笔：立即打开 diff 视图，AI 边生成边流入右栏
+        state.diffReview.beginStreaming(original: fullContent, actionLabel: action.rawValue)
 
-                guard error == nil, !result.isEmpty else {
-                        if let err = error {
-                            state.showToast(err.localizedDescription, icon: "exclamationmark.triangle")
-                        }
-                        return
-                    }
+        // 连续微调入口：对最近一次生成结果按自由指令迭代（"再短一点"…）
+        state.diffReview.onRefine = { [weak state] instruction in
+            guard let state else { return }
+            Self.runRefinement(state: state, settings: settings, instruction: instruction,
+                               fullContent: fullContent, sourceRange: sourceRange)
+        }
 
-                let fullContent = state.selectedTab?.content ?? selectedText
-                // 渲染选区映射回源码范围（剥掉 **、##、- 等语法后匹配，
-                // 命中时向两侧吞掉紧邻的行内标记）。映射失败不乱改文档：
-                // 提示用户从编辑器圈选，而不是拿 AI 结果整篇替换。
-                guard let sourceRange = SourceTextMapper.sourceRange(
-                    ofPlainSelection: selectedText, in: fullContent
-                ) else {
-                    state.showToast("圈选内容无法对应回原文，请改从编辑器中圈选", icon: "exclamationmark.triangle")
-                    onDismiss?()
-                    return
-                }
-                let modified = fullContent.replacingCharacters(in: sourceRange, with: result)
-                let selectedOriginal = String(fullContent[sourceRange])
+        // 系统 prompt = 内置 inlineEditor skill + 用户插件附加（与编辑器链路一致）
+        var systemPrompt = BuiltinSkills.inlineEditor.content
+        let extra = state.pluginManager.userSkillsPrompt()
+        if !extra.isEmpty { systemPrompt += "\n\n---\n\n# 附加技能\n\n" + extra }
+        let userMsg = action.userInstruction(for: selectedText, document: fullContent)
 
-                state.diffReview.present(
-                    original: fullContent,
-                    modified: modified,
-                    mode: .markdownVsMarkdown,
-                    selectedOriginal: selectedOriginal,
-                    selectedModified: result,
-                    onFinalize: { merged in
-                        if let tab = state.selectedTab {
-                            tab.content = merged
-                            tab.contentRevision &+= 1   // 通知编辑器刷新视图
-                            state.scheduleDebounceSave()
-                        }
-                    }
-                )
-                onDismiss?()
+        PreviewInlineEditFlow.runEdit(
+            state: state, settings: settings,
+            systemPrompt: systemPrompt, userMessage: userMsg,
+            fullContent: fullContent, sourceRange: sourceRange, useTools: true
+        )
+        onDismiss?()
+    }
+
+    /// 连续微调：以上一次生成结果为输入，按自由指令再跑一轮，流式更新 diff。
+    private static func runRefinement(
+        state: AppState,
+        settings: AppSettings,
+        instruction: String,
+        fullContent: String,
+        sourceRange: Range<String.Index>
+    ) {
+        let trimmed = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        let previous = state.diffReview.lastGeneratedText
+        guard !trimmed.isEmpty, !previous.isEmpty else { return }
+
+        state.diffReview.beginStreaming(original: fullContent, actionLabel: "调整")
+        // beginStreaming 会清空微调入口，重新注入以便继续迭代
+        state.diffReview.onRefine = { [weak state] next in
+            guard let state else { return }
+            Self.runRefinement(state: state, settings: settings, instruction: next,
+                               fullContent: fullContent, sourceRange: sourceRange)
+        }
+
+        let systemPrompt = """
+        你是文本优化助手。严格按照用户的修改指令改写给定文本，只输出改写后的文本本身，\
+        不要输出解释、前言或引号。保持原文的 Markdown 格式约定。
+        """
+        let userMsg = "待修改文本：\n\n\(previous)\n\n修改指令：\(trimmed)"
+
+        PreviewInlineEditFlow.runEdit(
+            state: state, settings: settings,
+            systemPrompt: systemPrompt, userMessage: userMsg,
+            fullContent: fullContent, sourceRange: sourceRange, useTools: false
+        )
+    }
+}
+
+
+// MARK: - 流式执行器（首轮与微调共用）
+
+/// 预览圈选 → AI 编辑的执行管线：AgentRunner 流式输出实时写入 diff 右栏
+/// （流式落笔），完成后进入段落审阅；接受后写回文档并闪示改动位置（改哪亮哪）。
+@MainActor
+private enum PreviewInlineEditFlow {
+    static func runEdit(
+        state: AppState,
+        settings: AppSettings,
+        systemPrompt: String,
+        userMessage: String,
+        fullContent: String,
+        sourceRange: Range<String.Index>,
+        useTools: Bool
+    ) {
+        let r = AgentRunner()
+        state.diffReview.activeRunner = r
+
+        r.onChunk = { [weak state] fullText in
+            guard let state, !fullText.isEmpty else { return }
+            state.diffReview.streamedContent = fullContent.replacingCharacters(in: sourceRange, with: fullText)
+        }
+        r.onComplete = { [weak state, weak r] in
+            guard let state else { return }
+            state.diffReview.activeRunner = nil
+            if let err = r?.error {
+                state.diffReview.dismiss()
+                state.showToast(err, icon: "exclamationmark.triangle")
+                return
             }
+            let finalText = r?.finalText ?? ""
+            guard !finalText.isEmpty else {
+                state.diffReview.dismiss()
+                state.showToast("AI 未返回内容", icon: "exclamationmark.triangle")
+                return
+            }
+            state.diffReview.lastGeneratedText = finalText
+            let modified = fullContent.replacingCharacters(in: sourceRange, with: finalText)
+            state.diffReview.commitStreamWithModified(modified) { merged in
+                if let tab = state.selectedTab {
+                    tab.content = merged
+                    tab.contentRevision &+= 1   // 通知编辑器刷新视图
+                    state.scheduleDebounceSave()
+                }
+                state.flashPreviewChange(sourceRange: sourceRange, in: merged)
+            }
+        }
+        r.run(
+            systemPrompt: systemPrompt,
+            userMessage: userMessage,
+            tools: useTools ? BuiltinAgentTools.all : [],
+            config: AIConfig.current(settings, scene: .inline),
+            context: AgentContext.make(appState: state)
         )
     }
 }

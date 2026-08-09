@@ -195,7 +195,13 @@ struct InlineEditBar: View {
         // 将 Skill command 声明的 shell 白名单注入上下文，使 RunCommandTool 能够执行白名单检查
         context.setAllowedCommandPatterns(command.allowedCommands.isEmpty ? nil : command.allowedCommands)
 
-        let userMsg = "Selected text:\n\n\(selectedText)\n\nFull document:\n\n\(state.selectedTab?.content ?? "")"
+        // 全文上下文 8K 门控（与聊天面板 systemContext 的 8000 字符策略一致），
+        // 大文档不再整篇内联进 prompt（成本审计 8.2 #2）
+        let fullDoc = state.selectedTab?.content ?? ""
+        let docContext = fullDoc.count > 8000
+            ? String(fullDoc.prefix(8000)) + "\n…（文档过长已截断，可用 read_document 的 start_line/end_line 按需读取）"
+            : fullDoc
+        let userMsg = "Selected text:\n\n\(selectedText)\n\nFull document:\n\n\(docContext)"
 
         agentRunner = AgentRunner()
         showAgentPanel = true
