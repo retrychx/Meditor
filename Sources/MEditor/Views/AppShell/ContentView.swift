@@ -5,6 +5,14 @@ struct ContentView: View {
     @Environment(AppState.self) private var state
     @State private var workspaceUI = WorkspaceUIState()
     @State private var settings = AppSettings.shared
+    /// 窗口内容区实测宽度（GeometryReader 回传），用于动态计算 tab 条宽度。
+    @State private var windowContentWidth: CGFloat = 1280
+
+    /// toolbar 里 tab 条的宽度：窗口宽 - 侧栏（可见时） - 系统开关/标题间距/右边距。
+    private var tabsStripWidth: CGFloat {
+        let sidebar: CGFloat = workspaceUI.showsSidebarInLayout ? workspaceUI.clampedSidebarWidth : 0
+        return max(240, windowContentWidth - sidebar - 150)
+    }
 
     var body: some View {
         Group {
@@ -23,16 +31,24 @@ struct ContentView: View {
         .background(WindowConfigurator())
         // tab 栏进系统 toolbar——顶部只有一条横带：左端系统侧栏开关，接着是文件 tab。
         // 注意：toolbar 按视图理想宽度排布，ScrollView 会把所有 tab 的宽度加起来
-        // 要求——超宽会被整体塞进 ">>" 溢出菜单，所以必须给它一个宽度上限。
+        // 要求——超宽会被整体塞进 ">>" 溢出菜单；但定死宽度又会在右侧留一大块空。
+        // 所以宽度跟随窗口实测：窗口宽 - 侧栏宽 - 开关与边距。
         .toolbar {
             // automatic（跟随系统侧栏开关之后左对齐）而不是 principal（居中），
             // 否则 tab 条悬浮在横带中央、左右都是空当，看起来很奇怪。
             ToolbarItem(placement: .automatic) {
                 EditorTabBar()
-                    .frame(maxWidth: 640)
+                    .frame(width: tabsStripWidth)
                     .environment(state)
             }
         }
+        .background(
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { windowContentWidth = proxy.size.width }
+                    .onChange(of: proxy.size.width) { _, w in windowContentWidth = w }
+            }
+        )
         .overlayPreferenceValue(SettingsAnchorKey.self) { anchor in
             GeometryReader { proxy in
                 if state.showingSettings {

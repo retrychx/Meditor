@@ -13,11 +13,14 @@ struct EditorTabBar: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 2) {
-                ForEach(state.openTabs) { tab in
+                ForEach(Array(state.openTabs.enumerated()), id: \.element.id) { idx, tab in
+                    let isSelected = tab.id == state.selectedTabID
+                    let prevSelected = idx > 0 && state.openTabs[idx - 1].id == state.selectedTabID
                     TabItem(
                         tab: tab,
-                        isSelected: tab.id == state.selectedTabID,
+                        isSelected: isSelected,
                         isDark: theme.isDark,
+                        showLeadingSeparator: idx > 0 && !isSelected && !prevSelected,
                         onSelect: { state.selectTab(tab.id) },
                         onClose: { state.closeTab(tab.id) }
                     )
@@ -64,45 +67,57 @@ private struct TabItem: View {
     let tab: EditorTab
     let isSelected: Bool
     let isDark: Bool
+    /// 未选中 tab 之间的细分隔线（Safari 式）；选中 pill 两侧不画。
+    let showLeadingSeparator: Bool
     let onSelect: () -> Void
     let onClose: () -> Void
 
     @State private var isHovered = false
 
     var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 5) {
-                // File icon
-                Image(systemName: FileTypeConfiguration.shared.icon(for: tab.url.pathExtension))
-                    .symbolRenderingMode(.hierarchical)
-                    .font(.system(size: 11))
-                    .foregroundStyle(
-                        isSelected ? AnyShapeStyle(Color.appAccent) : AnyShapeStyle(Color.secondary.opacity(0.5))
-                    )
-
-                // File name
-                Text(tab.name)
-                    .font(.system(size: 12, weight: isSelected ? .medium : .regular))
-                    .foregroundStyle(
-                        isSelected ? AnyShapeStyle(Color.primary) : AnyShapeStyle(Color.secondary.opacity(0.7))
-                    )
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .layoutPriority(1)
-
-                // Dot or close button
-                closeOrDot
-                    .frame(width: 14, height: 14)
+        HStack(spacing: 0) {
+            if showLeadingSeparator {
+                Rectangle()
+                    .fill(Color.primary.opacity(isDark ? 0.16 : 0.12))
+                    .frame(width: 1, height: 14)
+                    .padding(.horizontal, 3)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
-            // 宽一点的 pill：选中态不再窄巴巴地包住截断标题
-            .frame(minWidth: 104, maxWidth: 240, maxHeight: .infinity)
-            .background(tabBackground)
+            Button(action: onSelect) {
+                HStack(spacing: 5) {
+                    // File icon
+                    Image(systemName: FileTypeConfiguration.shared.icon(for: tab.url.pathExtension))
+                        .symbolRenderingMode(.hierarchical)
+                        .font(.system(size: 11))
+                        .foregroundStyle(
+                            isSelected ? AnyShapeStyle(Color.appAccent) : AnyShapeStyle(Color.secondary.opacity(0.5))
+                        )
+
+                    // File name
+                    Text(tab.name)
+                        .font(.system(size: 12, weight: isSelected ? .medium : .regular))
+                        .foregroundStyle(
+                            isSelected
+                                ? AnyShapeStyle(Color.primary)
+                                : AnyShapeStyle(Color.secondary.opacity(isHovered ? 0.95 : 0.7))
+                        )
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .layoutPriority(1)
+
+                    // Dot or close button
+                    closeOrDot
+                        .frame(width: 14, height: 14)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
+                // 宽一点的 pill：选中态不再窄巴巴地包住截断标题
+                .frame(minWidth: 104, maxWidth: 240, maxHeight: .infinity)
+                .background(tabBackground)
+            }
+            .buttonStyle(.plain)
+            .onHover { isHovered = $0 }
+            .help(tab.url.path)
         }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
-        .help(tab.url.path)
     }
 
     @ViewBuilder
@@ -115,13 +130,9 @@ private struct TabItem: View {
                 .shadow(color: .black.opacity(isDark ? 0.2 : 0.06), radius: 1, x: 0, y: 0)
                 .padding(.horizontal, 2)
                 .padding(.vertical, 4)
-        } else if isHovered {
-            // 悬浮态：比之前更明显
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(isDark ? 0.14 : 0.10))
-                .padding(.horizontal, 2)
-                .padding(.vertical, 4)
         }
+        // 未选中：不要圆角 pill（hover 圆角时有时无、和选中态形状重复），
+        // 用 TabItem 行内的细分隔线区隔，hover 只加深文字。
     }
 
     @ViewBuilder
