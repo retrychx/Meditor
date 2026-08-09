@@ -1,5 +1,23 @@
 import Foundation
 
+// MARK: - CommandApprovalStore（跨 context 共享的命令审批缓存）
+
+/// safe 命令的"批准一次不再弹框"缓存。此前放在 AgentContext 实例上，
+/// 但 macOS 每轮消息都新建 context（AIChatCoordinator.make）→ 每条消息重弹；
+/// iOS 端 context 活整个会话、缓存真有效。提成引用类型后两端一致：
+/// 整个 App 会话内同一命令只确认一次。
+final class CommandApprovalStore: @unchecked Sendable {
+    private var keys: Set<String> = []
+    private let lock = NSLock()
+    func contains(_ key: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return keys.contains(key)
+    }
+    func insert(_ key: String) {
+        lock.lock(); keys.insert(key); lock.unlock()
+    }
+}
+
 // MARK: - AgentContext（薄协调层）
 
 // PatchNotFoundError / AgentContextError 已上移至 AgentFileRepository.swift（iOS 共享编译）。
@@ -14,17 +32,22 @@ final class AgentContext: AgentContextProtocol {
 
     let files: any AgentFileRepository
     let doc:   any AgentDocumentAdapter
+    /// 命令审批缓存（可注入共享实例；默认独立）。
+    let approvals: CommandApprovalStore
 
-    init(files: any AgentFileRepository, doc: any AgentDocumentAdapter) {
+    init(files: any AgentFileRepository, doc: any AgentDocumentAdapter,
+         approvals: CommandApprovalStore = CommandApprovalStore()) {
         self.files = files
         self.doc   = doc
+        self.approvals = approvals
     }
 
     /// 工厂方法：从 AppState 创建标准 AgentContext（App 侧调用）
+    /// 审批缓存共享 AppState 的会话级实例，safe 命令批准一次全 session 有效。
     static func make(appState: AppState) -> AgentContext {
         let repo    = DefaultAgentFileRepository { [weak appState] in appState?.rootURL }
         let adapter = AppStateDocumentAdapter(appState: appState, fileRepo: repo)
-        return AgentContext(files: repo, doc: adapter)
+        return AgentContext(files: repo, doc: adapter, approvals: appState.commandApprovals)
     }
 
     // MARK: - Current document → doc
@@ -142,10 +165,8 @@ final class AgentContext: AgentContextProtocol {
 
     // MARK: - Command Sandbox
 
-    /// Per-Agent-session 的已批准命令 key 集合。
-    /// 注意：warn 级命令不写入此集合（每次都弹确认）。
-    private var _approvedCommandKeys: Set<String> = []
-
+    /// 已批准命令 key 的共享缓存（App 会话级，见 CommandApprovalStore）。
+    /// 注意：warn 级命令不写入（每次都弹确认）。
     func confirmCommandExecution(_ command: String, cwd: String?) async -> Bool {
         await doc.confirmCommandExecution(command, cwd: cwd)
     }
@@ -155,11 +176,11 @@ final class AgentContext: AgentContextProtocol {
     }
 
     func isCommandApproved(_ key: String) -> Bool {
-        _approvedCommandKeys.contains(key)
+        approvals.contains(key)
     }
 
     func markCommandApproved(_ key: String) {
-        _approvedCommandKeys.insert(key)
+        approvals.insert(key)
     }
 
     /// 当前执行中的 Skill command 所声明的 shell 命令白名单（前缀匹配）。

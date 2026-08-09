@@ -41,6 +41,10 @@ final class AppState {
     let pluginManager: PluginManager
     let presentationManager: PresentationManager
 
+    /// Agent 命令审批缓存（App 会话级）：safe 命令批准一次，整个会话内
+    /// 不再逐轮弹框——缓存从 per-context（每轮消息新建即失效）提升到共享实例。
+    let commandApprovals = CommandApprovalStore()
+
     /// AI assistant conversation store (multi-session, persisted).
     /// Lazy so disk I/O is deferred until the AI panel is first opened.
     @ObservationIgnored

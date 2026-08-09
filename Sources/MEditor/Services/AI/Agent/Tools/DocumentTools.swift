@@ -8,18 +8,30 @@ import Foundation
 // MARK: - Read Document
 
 struct ReadDocumentTool: AgentTool {
+    /// 与磁盘读取路径（AgentFileRepository）一致的截断上限。
+    /// 激活 tab 此前走 tab.content 全文返回——大文档一次读穿，且结果永久留在
+    /// agentHistory 里逐轮重发（成本审计 8.1）。改为：默认截断 + 行区间读取。
+    private static let maxChars = 64 * 1024
+
     let spec = AgentToolSpec(
         name: "read_document",
-        description: "Read the full content of a document. Without 'filename', reads the currently open document. With 'filename', reads that specific file from the workspace (no need to open it first).",
+        description: "Read the content of a document. Without 'filename', reads the currently open document. With 'filename', reads that specific file from the workspace (no need to open it first). Long documents are truncated to 64K characters — use 'start_line'/'end_line' to read a specific range instead of re-reading the whole document.",
         parameters: ToolParameterSchema(
             properties: [
-                "filename": ToolPropertySchema(type: "string", description: "Optional. Filename, workspace-relative path, or absolute path. Omit to read the currently active document.")
+                "filename":   ToolPropertySchema(type: "string",  description: "Optional. Filename, workspace-relative path, or absolute path. Omit to read the currently active document."),
+                "start_line": ToolPropertySchema(type: "integer", description: "Optional. 1-based line to start reading from. Use with end_line to read a specific range."),
+                "end_line":   ToolPropertySchema(type: "integer", description: "Optional. 1-based inclusive line to stop at. Use with start_line to read a specific range.")
             ],
             required: []
         )
     )
 
     func execute(arguments: [String: AnySendableValue], context: any AgentContextProtocol) async throws -> String {
+        let startLine = arguments["start_line"]?.intValue
+        let endLine = arguments["end_line"]?.intValue
+
+        let name: String
+        let content: String
         if let filename = arguments["filename"]?.stringValue, !filename.isEmpty {
             let resolved = await context.resolveFile(filename)
             guard case .found(let url) = resolved else {
@@ -28,12 +40,42 @@ struct ReadDocumentTool: AgentTool {
                 }
                 return "未找到文件：\(filename)"
             }
-            let content = try await context.readFile(at: url)
-            return "# Document: \(url.lastPathComponent)\n\n\(content)"
+            name = url.lastPathComponent
+            // 行区间读取用完整内容（不走 readFile 的 64KB 截断，避免区间落在截断点外）
+            content = (startLine != nil || endLine != nil)
+                ? (try await context.fileContentFull(at: url))
+                : (try await context.readFile(at: url))
+        } else {
+            guard let current = await context.currentDocument else { throw AgentError.noDocument }
+            name = await context.currentDocumentName ?? "untitled"
+            content = current
         }
-        guard let content = await context.currentDocument else { throw AgentError.noDocument }
-        let name = await context.currentDocumentName ?? "untitled"
-        return "# Document: \(name)\n\n\(content)"
+
+        if startLine != nil || endLine != nil {
+            return Self.rangeSlice(content, name: name, start: startLine, end: endLine)
+        }
+        return Self.truncated(content, name: name)
+    }
+
+    /// 行区间切片（1-based、闭区间），附带总行数提示。
+    static func rangeSlice(_ content: String, name: String, start: Int?, end: Int?) -> String {
+        let lines = content.components(separatedBy: "\n")
+        let from = max(1, start ?? 1)
+        let to = min(lines.count, end ?? lines.count)
+        guard from <= to else {
+            return "[!] 行区间无效：L\(from)–L\(to)（全文共 \(lines.count) 行）"
+        }
+        let body = lines[(from - 1)...(to - 1)].joined(separator: "\n")
+        return "# Document: \(name)（第 \(from)–\(to) 行，共 \(lines.count) 行）\n\n\(body)"
+    }
+
+    /// 超限时截断并给出区间读取指引（比静默截断更可操作）。
+    static func truncated(_ content: String, name: String) -> String {
+        guard content.count > maxChars else {
+            return "# Document: \(name)\n\n\(content)"
+        }
+        return "# Document: \(name)（已截断至前 \(maxChars) 字符，可用 start_line/end_line 按行区间继续读取）\n\n"
+            + content.prefix(maxChars)
     }
 }
 

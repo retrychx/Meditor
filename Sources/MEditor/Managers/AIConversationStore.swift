@@ -137,14 +137,32 @@ final class AIConversation {
 
     // MARK: Context estimation
 
-    /// Rough token estimate for the current conversation (chars ÷ 4).
+    /// Rough token estimate for the current conversation.
     /// 除 UI 消息文本外，还纳入 agentHistory（工具调用/结果的原始内容，单条可达 64KB）——
     /// 这才是真正发给模型的 agentMessages 的主要体积来源，否则触发时机会严重滞后于真实占用。
     /// Used to surface a context-limit warning before the API rejects the request.
     var estimatedTokenCount: Int {
-        let messagesTokens = messages.reduce(0) { $0 + $1.text.count / 4 }
-        let historyTokens  = agentHistory.reduce(0) { $0 + $1.content.count / 4 }
-        return messagesTokens + historyTokens
+        messages.reduce(0) { $0 + Self.estimateTokens($1.text) }
+            + agentHistory.reduce(0) { $0 + Self.estimateTokens($1.content) }
+    }
+
+    /// 混合语言 token 估算：CJK/全角按 ~1.5 字符/token，拉丁/数字/符号按 ~4。
+    /// （原为全部 ÷4——中文实测约 1–1.5 字符/token，中文会话的滑动截断几乎永不触发。）
+    nonisolated static func estimateTokens(_ text: String) -> Int {
+        var cjk = 0, other = 0
+        for scalar in text.unicodeScalars {
+            let v = scalar.value
+            if (0x4E00...0x9FFF).contains(v)      // CJK 统一表意文字
+                || (0x3400...0x4DBF).contains(v)  // 扩展 A
+                || (0x3000...0x303F).contains(v)  // CJK 标点
+                || (0xFF00...0xFFEF).contains(v)  // 全角字符
+                || (0x20000...0x2A6DF).contains(v) { // 扩展 B
+                cjk += 1
+            } else {
+                other += 1
+            }
+        }
+        return cjk * 2 / 3 + other / 4
     }
 
     /// True when estimated tokens exceed 80 % of a 128 K context window.
