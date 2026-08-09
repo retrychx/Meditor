@@ -35,10 +35,17 @@ struct WindowConfigurator: NSViewRepresentable {
         func attach(to window: NSWindow) {
             self.window = window
             configure(window)
-            // SwiftUI 安装/更新 toolbar 时会把 titleVisibility 重置回 visible，
-            // 「MEditor」标题因此又冒出来——监听 toolbar 变化并重放隐藏。
+            // SwiftUI 安装/更新 toolbar（包括后续增删 toolbar item）时会把
+            // titleVisibility 重置回 visible，「MEditor」标题因此反复冒出来。
+            // didUpdate 每次窗口事件后触发——幂等重放隐藏，成本可忽略。
             observation = window.observe(\.toolbar, options: [.new]) { w, _ in
                 if w.toolbar != nil { w.titleVisibility = .hidden }
+            }
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.didUpdateNotification, object: window, queue: .main
+            ) { w in
+                guard let win = w.object as? NSWindow, win.titleVisibility != .hidden else { return }
+                win.titleVisibility = .hidden
             }
         }
 

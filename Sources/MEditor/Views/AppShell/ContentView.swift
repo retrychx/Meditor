@@ -21,11 +21,15 @@ struct ContentView: View {
         .tint(AIAccentStyle.current(settings).fill(state.themeStore.current))
         .environment(workspaceUI)
         .background(WindowConfigurator())
-        // tab 栏进系统 toolbar（principal 位，替代窗口标题）——顶部只有一条横带：
-        // 左端系统侧栏开关，其余宽度给文件 tab。
+        // tab 栏进系统 toolbar——顶部只有一条横带：左端系统侧栏开关，接着是文件 tab。
+        // 注意：toolbar 按视图理想宽度排布，ScrollView 会把所有 tab 的宽度加起来
+        // 要求——超宽会被整体塞进 ">>" 溢出菜单，所以必须给它一个宽度上限。
         .toolbar {
-            ToolbarItem(placement: .principal) {
+            // automatic（跟随系统侧栏开关之后左对齐）而不是 principal（居中），
+            // 否则 tab 条悬浮在横带中央、左右都是空当，看起来很奇怪。
+            ToolbarItem(placement: .automatic) {
                 EditorTabBar()
+                    .frame(maxWidth: 640)
                     .environment(state)
             }
         }

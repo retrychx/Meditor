@@ -50,8 +50,11 @@ struct EditorTabBar: View {
                 }
             }
             .padding(.horizontal, 6)
+            .frame(maxHeight: .infinity)   // pill 在 toolbar 行内纵向撑满
             .animation(.easeInOut(duration: 0.18), value: state.openTabs.map(\.id))
         }
+        // toolbar 对无限高度测量会塌掉——给定内容高度，pill 才能在其中拉高
+        .frame(height: 44)
     }
 }
 
@@ -91,9 +94,10 @@ private struct TabItem: View {
                 closeOrDot
                     .frame(width: 14, height: 14)
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 12)
             .padding(.vertical, 5)
-            .frame(minWidth: 72, maxWidth: 180, maxHeight: .infinity)
+            // 宽一点的 pill：选中态不再窄巴巴地包住截断标题
+            .frame(minWidth: 104, maxWidth: 240, maxHeight: .infinity)
             .background(tabBackground)
         }
         .buttonStyle(.plain)
