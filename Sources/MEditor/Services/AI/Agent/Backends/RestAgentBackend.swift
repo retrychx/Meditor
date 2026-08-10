@@ -89,9 +89,9 @@ struct RestAgentBackend: AgentBackend {
                 return try await block()
             } catch AIError.server(let code, _) where (code == 429 || code == 503) && attempt < maxAttempts {
                 lastError = AIError.server(code, "retrying (attempt \(attempt))")
-                // try? 会吞掉 CancellationError，退避期间任务被取消仍会再发一次请求
+                // 退避期间任务被取消：Task.sleep 会抛 CancellationError 并向上传播
+                // （不用 try?，否则会吞掉取消信号，退避结束后仍会再发一次请求）。
                 try await Task.sleep(nanoseconds: delayNs)
-                guard !Task.isCancelled else { throw CancellationError() }
                 delayNs *= 2
             } catch {
                 throw error

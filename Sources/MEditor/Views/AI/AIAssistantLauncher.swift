@@ -130,7 +130,13 @@ struct AIAssistantHeroOverlay: View {
     let originRect: CGRect
     let containerSize: CGSize
 
-    @State private var shown = false
+    /// 读写 state.aiUI.overlayShown（而非私有 @State）——EditorTabBar 的
+    /// tab 条暗化需要跟这个真实动画状态完全同步，必须共享同一个值和同一处
+    /// withAnimation 调用，否则两边动画时序错位。
+    private var shown: Bool {
+        get { state.aiUI.overlayShown }
+        nonmutating set { state.aiUI.overlayShown = newValue }
+    }
 
     private var panelWidth: CGFloat { min(420, max(320, containerSize.width - 32)) }
     private var panelHeight: CGFloat { min(620, max(380, containerSize.height - 88)) }

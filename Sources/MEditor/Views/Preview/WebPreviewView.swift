@@ -23,6 +23,7 @@ struct WebPreviewView: NSViewRepresentable {
     var onAddTodo: ((String) -> Void)? = nil
 
     static let selectionHandlerName = "selectionHandler"
+    static let escapeHandlerName = "escapeHandler"
 
     func makeCoordinator() -> Coordinator {
         Coordinator(findController: findController, onSelectionChange: onSelectionChange, onAddTodo: onAddTodo)
@@ -33,6 +34,7 @@ struct WebPreviewView: NSViewRepresentable {
         let userContent = WKUserContentController()
         userContent.add(context.coordinator, name: "copyHandler")
         userContent.add(context.coordinator, name: Self.selectionHandlerName)
+        userContent.add(context.coordinator, name: Self.escapeHandlerName)
         config.userContentController = userContent
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
@@ -66,6 +68,7 @@ struct WebPreviewView: NSViewRepresentable {
         webView.uiDelegate = nil
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "copyHandler")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: WebPreviewView.selectionHandlerName)
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: WebPreviewView.escapeHandlerName)
         coordinator.findController?.register(webView: nil, for: .html)
         coordinator.webView = nil
     }
@@ -138,6 +141,8 @@ extension WebPreviewView.Coordinator {
             DispatchQueue.main.async {
                 self.onSelectionChange?(text, rect)
             }
+        case "escapeHandler":
+            NotificationCenter.default.post(name: .previewWebViewDidPressEscape, object: nil)
         default:
             break
         }
@@ -213,6 +218,26 @@ extension WebPreviewView.Coordinator {
         })();
         """
         webView.evaluateJavaScript(selectionJS, completionHandler: nil)
+
+        // ESC 退出专注模式：WKWebView 把键盘事件转发给独立的 WebContent 进程处理，
+        // AppKit 侧的 keyDown 覆写/本地事件监视器都拦不到——只能在页面自身注册
+        // JS 监听器，再通过 message handler 桥接回 Swift 层。
+        let escapeJS = """
+        (function() {
+            if (document.querySelector('[data-meditor-esc]')) return;
+            var marker = document.createElement('meta');
+            marker.setAttribute('data-meditor-esc', '1');
+            document.head.appendChild(marker);
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape' || e.keyCode === 27) {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.escapeHandler) {
+                        window.webkit.messageHandlers.escapeHandler.postMessage({});
+                    }
+                }
+            });
+        })();
+        """
+        webView.evaluateJavaScript(escapeJS, completionHandler: nil)
     }
 }
 

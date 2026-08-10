@@ -19,6 +19,12 @@ final class AIUIState {
     var editorInsertNonce: Int = 0
     /// Controls whether the AI assistant panel is visible.
     var showingAssistant: Bool = false
+    /// AIAssistantHeroOverlay 遮罩/面板展开的真实动画状态（与 showingAssistant
+    /// 不同：后者立即置位驱动 overlay 的挂载/卸载，这个值延迟 16ms 后才
+    /// spring 变化，用来播放开合动画）。其他需要跟遮罩暗化视觉同步的地方
+    /// （如 EditorTabBar 的 tab 条背景）应该读这个值，而不是 showingAssistant，
+    /// 否则两处动画时序错位，会出现肉眼可见的延迟。
+    var overlayShown: Bool = false
 
     /// Saved NSRange from the moment InlineEdit was triggered (before focus loss).
     var pendingReplaceRange: NSRange? = nil

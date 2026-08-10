@@ -22,7 +22,13 @@ struct SettingsHeroOverlay: View {
     /// Size of the container the overlay fills.
     let containerSize: CGSize
 
-    @State private var shown = false
+    /// 读写 state.settingsOverlayShown（而非私有 @State）——EditorTabBar 的
+    /// tab 条暗化需要跟这个真实动画状态完全同步，必须共享同一个值和同一处
+    /// withAnimation 调用，否则两边动画时序错位。
+    private var shown: Bool {
+        get { state.settingsOverlayShown }
+        nonmutating set { state.settingsOverlayShown = newValue }
+    }
 
     private var anchorPoint: UnitPoint {
         guard containerSize.width > 0, containerSize.height > 0 else { return .center }

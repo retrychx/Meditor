@@ -167,6 +167,14 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
         }
         .background(theme.windowBackground)
         .background(keyboardShortcutHost)
+        // ESC 监视器：ZStack 显式叠加、独立 1×1 隐形 frame（不依赖 .background()
+        // 对隐式尺寸的继承——曾经挂在 ContentView 顶层 Group.background 和这里的
+        // .background 上均从未触发 makeNSView，实测证实是隐式尺寸解析问题）。
+        .overlay(alignment: .topLeading) {
+            FocusEscapeMonitor(workspaceUI: workspaceUI, state: state)
+                .frame(width: 1, height: 1)
+                .allowsHitTesting(false)
+        }
         .environment(\.sidebarToggleNS, sidebarNS)
     }
 
@@ -205,9 +213,14 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
 
 // MARK: - Focus mode ESC monitor
 
-/// ESC 退出专注模式。隐藏 Button 的 keyboardShortcut 和 onExitCommand 在编辑器
-/// （NSTextView）或 WKWebView 持有焦点时都收不到 ESC——本地事件监视器挂在
-/// App 事件分发层，不依赖焦点链，窗口是 key 就能收到。
+/// ESC 退出专注模式。两条独立路径叠加，覆盖焦点落在编辑器（NSTextView）或
+/// 预览（WKWebView）时的所有情况：
+///  1. `NSEvent.addLocalMonitorForEvents` —— 覆盖编辑器 NSTextView 持有焦点的
+///     场景，理论上不依赖焦点链。
+///  2. `.previewWebViewDidPressEscape` 通知 —— WKWebView 把键盘事件转发给独立
+///     WebContent 进程处理，会绕开 (1) 的本地事件监视器（文件写入验证：monitor
+///     装载成功但焦点在预览里时按任意键都不触发 handler）。`EscapeAwareWebView`
+///     子类在 `keyDown` 里拦截 ESC 后广播这个通知，这里统一接收退出。
 /// 弹层（diff 审阅/快捷打开/设置等）自己有 ESC 处理，此时放行不消费。
 struct FocusEscapeMonitor: NSViewRepresentable {
     let workspaceUI: WorkspaceUIState
@@ -230,6 +243,7 @@ struct FocusEscapeMonitor: NSViewRepresentable {
     @MainActor
     final class Coordinator {
         private var monitor: Any?
+        private var notificationObserver: NSObjectProtocol?
 
         func install(workspaceUI: WorkspaceUIState, state: AppState) {
             remove()
@@ -237,16 +251,17 @@ struct FocusEscapeMonitor: NSViewRepresentable {
                 // 本地监视器在主线程事件分发中同步触发，且必须同步返回（消费/放行）
                 MainActor.assumeIsolated {
                     guard event.keyCode == 53 else { return event } // 非 ESC 直接放行
-                    guard workspaceUI.isFocusMode,
-                          !state.showingDiffReview,
-                          !state.showingQuickOpen,
-                          !state.showingSettings,
-                          !state.showingBeautifySheet,
-                          !state.showingTemplatePicker,
-                          !state.showingCloseConfirmation
-                    else { return event }
+                    guard Self.shouldExitFocus(workspaceUI: workspaceUI, state: state) else { return event }
                     withAnimation(DS.Motion.fast) { workspaceUI.isFocusMode = false }
                     return nil
+                }
+            }
+            notificationObserver = NotificationCenter.default.addObserver(
+                forName: .previewWebViewDidPressEscape, object: nil, queue: .main
+            ) { _ in
+                MainActor.assumeIsolated {
+                    guard Self.shouldExitFocus(workspaceUI: workspaceUI, state: state) else { return }
+                    withAnimation(DS.Motion.fast) { workspaceUI.isFocusMode = false }
                 }
             }
         }
@@ -254,6 +269,18 @@ struct FocusEscapeMonitor: NSViewRepresentable {
         func remove() {
             if let m = monitor { NSEvent.removeMonitor(m) }
             monitor = nil
+            if let o = notificationObserver { NotificationCenter.default.removeObserver(o) }
+            notificationObserver = nil
+        }
+
+        private static func shouldExitFocus(workspaceUI: WorkspaceUIState, state: AppState) -> Bool {
+            workspaceUI.isFocusMode
+                && !state.showingDiffReview
+                && !state.showingQuickOpen
+                && !state.showingSettings
+                && !state.showingBeautifySheet
+                && !state.showingTemplatePicker
+                && !state.showingCloseConfirmation
         }
     }
 }

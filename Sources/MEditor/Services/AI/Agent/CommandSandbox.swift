@@ -97,6 +97,10 @@ public enum CommandSandbox {
         .init(pattern: ":(){ :|:& };",        label: "blocked", description: "Fork 炸弹"),
         .init(pattern: "mkfs",                kind: .commandToken, label: "blocked", description: "磁盘格式化"),
         .init(pattern: "dd if=",              label: "blocked", description: "磁盘低级写入"),
+        // "> /dev/" 原本要求 > 和路径之间有空格；shell 里 `>/dev/disk0`（无空格）
+        // 是合法语法，之前的写法会被这种省略空格的形式绕过——改成不依赖空格的
+        // 子串匹配，两种写法都能拦住。
+        .init(pattern: ">/dev/",              label: "blocked", description: "写入设备文件"),
         .init(pattern: "> /dev/",             label: "blocked", description: "写入设备文件"),
         .init(pattern: "sudo",                kind: .commandToken, label: "blocked", description: "sudo 提权"),
         .init(pattern: "su -",                label: "blocked", description: "切换 root"),
@@ -156,8 +160,13 @@ public enum CommandSandbox {
     /// 匹配优先级：blocked > warn > safe。
     /// 返回的 `.warn`/`.blocked` 中已包含用户可读的 reason 文字。
     public static func assess(_ command: String) -> CommandRisk {
-        let lower = command.lowercased().trimmingCharacters(in: .whitespaces)
-        guard !lower.isEmpty else { return .safe }
+        let trimmed = command.lowercased().trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return .safe }
+        // 空白规范化（连续空格/tab 压缩成单个空格）：`.substring` 规则里带空格的
+        // 固定短语（如 "rm -rf /"、"git reset --hard"）本来假定用户/模型只用单个
+        // 空格分隔参数，但 shell 允许任意数量空白（`rm  -rf  /`、用 tab 代替空格），
+        // 之前逐字匹配会被这类写法绕过——这里统一规范化后再匹配，一次性覆盖。
+        let lower = normalizeWhitespace(trimmed)
 
         for rule in blockedRules where matches(rule, in: lower) {
             return .blocked(reason: "🚫 安全限制：\(rule.description)，该命令已被自动拒绝。\n命令：\(truncated(command))")
@@ -168,6 +177,11 @@ public enum CommandSandbox {
         }
 
         return .safe
+    }
+
+    /// 把命令中的连续空白（空格/tab/换行）压缩成单个空格，供风险规则匹配前统一处理。
+    private static func normalizeWhitespace(_ s: String) -> String {
+        s.replacingOccurrences(of: "[ \\t\\n]+", with: " ", options: .regularExpression)
     }
 
     /// 按规则的匹配方式判定是否命中。
@@ -181,16 +195,20 @@ public enum CommandSandbox {
     }
 
     /// 判断 `token` 是否作为「命令名」出现在 `command` 中：
-    /// 前面是字符串起始或 shell 命令分隔符（空白/`;`/`|`/`&`/`(`/引号），
+    /// 前面是字符串起始、shell 命令分隔符（空白/`;`/`|`/`&`/`(`/引号）或路径分隔符 `/`，
     /// 后面是字符串结束或非字母数字字符（空白/`;`/`|`/`&`/参数 `-`/路径 `/`/引号 等）。
     /// 用于避免 "npm run sync" 命中 "nc"、"git commit -m 'sync data'" 命中 "nc"、
     /// "concat files" 命中 "nc" 这类把命令名当子串到处匹配的误杀；
     /// 同时覆盖 `"curl"`、`'ssh'` 这类引号包裹的命令名。
+    /// 起始边界必须包含 `/`：否则 `/usr/bin/curl ...`、`/opt/homebrew/bin/wget ...`
+    /// 这类用绝对/相对路径调用二进制的写法会完全绕过 blocked 规则——之前的边界集
+    /// 只在结束侧含 `/`（覆盖 "curl/wget" 这种子串误判防护），起始侧遗漏了对称的
+    /// "路径分隔符后紧跟命令名" 场景，被视为真实存在的绕过路径而不是误判。
     /// 注意：字符串匹配只是纵深防御的一层（可被 shell 语法进一步绕过），
     /// 真正的安全边界是 warn/blocked 之外命令的用户确认流程。
     private static func containsCommandToken(_ token: String, in command: String) -> Bool {
         guard let regex = try? NSRegularExpression(
-            pattern: "(?:^|[\\s;|&(\"'])" + NSRegularExpression.escapedPattern(for: token) + "(?:$|[\\s;|&)/.\"'])"
+            pattern: "(?:^|[\\s;|&(\"'/])" + NSRegularExpression.escapedPattern(for: token) + "(?:$|[\\s;|&)/.\"'])"
         ) else { return command.contains(token) }
         let range = NSRange(command.startIndex..., in: command)
         return regex.firstMatch(in: command, range: range) != nil

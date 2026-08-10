@@ -454,4 +454,15 @@
     },
     disconnectCodeHighlightObserver: disconnectCodeHighlightObserver
   };
+
+  // ESC 退出专注模式：WKWebView 把键盘事件转发给独立的 WebContent 进程处理，
+  // AppKit 侧的 keyDown 覆写/本地事件监视器都拦不到——只能在页面自身注册
+  // 监听器，再通过 message handler 桥接回 Swift 层。
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' || e.keyCode === 27) {
+      if (global.webkit && global.webkit.messageHandlers && global.webkit.messageHandlers.escapeHandler) {
+        global.webkit.messageHandlers.escapeHandler.postMessage({});
+      }
+    }
+  });
 })(window);

@@ -36,9 +36,6 @@ struct ContentView: View {
         .tint(AIAccentStyle.current(settings).fill(state.themeStore.current))
         .environment(workspaceUI)
         .background(WindowConfigurator())
-        // ESC 监视器挂在 ContentView 根（常驻）——之前挂在 AppShell 内，
-        // 工作区未打开（欢迎页/会话恢复中）时不存在，根因修复
-        .background(FocusEscapeMonitor(workspaceUI: workspaceUI, state: state))
         // tab 栏进系统 toolbar——顶部只有一条横带：左端系统侧栏开关，接着是文件 tab。
         // 注意：SwiftUI 的 toolbar item 定死在理想宽度，不会弹性伸缩——
         // ScrollView 默认理想宽 = 所有 tab 宽度之和，超宽会被整体塞进 ">>" 溢出菜单；
@@ -54,6 +51,7 @@ struct ContentView: View {
                         .frame(width: tabsStripWidth)
                         .environment(state)
                 }
+                .hideSharedGlassBackgroundIfAvailable()
             }
         }
         .background(
@@ -293,6 +291,30 @@ private extension View {
         #if compiler(>=6.0)
         if #available(macOS 15.0, *) {
             self.toolbarVisibility(hidden ? .hidden : .visible, for: .windowToolbar)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
+}
+
+private extension ToolbarContent {
+    /// macOS 26 Liquid Glass：同一逻辑分组内的 toolbar item（这里是侧栏开关
+    /// 和文件 tab 条）会被自动分到同一个共享玻璃背景容器里——即便 tab 条
+    /// 自己的内容完全铺满了分配到的宽度，容器边缘仍会露出一块系统默认的圆角
+    /// 玻璃背景（尤其是窗口刚打开、还没有任何交互触发系统重绘的那一帧）。
+    /// `ToolbarItemGlassDisabler`（EditorTabBar.swift）通过 NSToolbarItem.
+    /// isBordered 硬拆，但那条路径依赖异步时序，多次尝试都还是能看到首帧
+    /// 露边——这里改用官方声明式 API，在 SwiftUI 渲染阶段就正确处理，没有
+    /// NSViewRepresentable 那种「等下一次系统重绘生效」的竞争问题。
+    /// compiler 守卫：API 在 macOS 26 SDK（Xcode 26 / Swift 6.2）才存在。
+    @ToolbarContentBuilder
+    func hideSharedGlassBackgroundIfAvailable() -> some ToolbarContent {
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *) {
+            self.sharedBackgroundVisibility(.hidden)
         } else {
             self
         }

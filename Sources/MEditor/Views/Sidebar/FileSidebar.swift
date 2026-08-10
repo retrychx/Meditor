@@ -12,7 +12,7 @@ enum FileAction: Hashable {
     case revealInFinder(FileItem)
 }
 
-// MARK: - FileSidebar (Craft-style)
+// MARK: - FileSidebar (Apple 原生 Sidebar 风格 —— 备忘录/Finder 同款)
 
 @MainActor
 struct FileSidebar: View {
@@ -56,7 +56,7 @@ struct FileSidebar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // ── Space Switcher (Craft top row) ──
+            // ── 标题行（原生样式） ──
             SpaceSwitcherRow()
 
             // ── Search bar ──
@@ -134,11 +134,8 @@ struct FileSidebar: View {
                             .onTapGesture { state.openFile(FileItem(url: url, isDirectory: false)) }
                     }
                 } header: {
-                    CraftSectionHeader(title: "用户文档")
+                    Text("用户文档")
                 }
-                .listRowInsets(.init(top: 1, leading: 12, bottom: 1, trailing: 12))
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
             }
 
             // App document section
@@ -149,11 +146,8 @@ struct FileSidebar: View {
                             .onTapGesture { state.openFile(FileItem(url: url, isDirectory: false)) }
                     }
                 } header: {
-                    CraftSectionHeader(title: "App 文档")
+                    Text("App 文档")
                 }
-                .listRowInsets(.init(top: 1, leading: 12, bottom: 1, trailing: 12))
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
             }
 
             // 散文件 section（不属于任何 Workspace 的独立文件）
@@ -180,11 +174,8 @@ struct FileSidebar: View {
                         }
                     }
                 } header: {
-                    CraftSectionHeader(title: "散文件")
+                    Text("散文件")
                 }
-                .listRowInsets(.init(top: 1, leading: 12, bottom: 1, trailing: 12))
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
             }
 
             // Workspace folders section
@@ -199,15 +190,11 @@ struct FileSidebar: View {
                         )
                     }
                 } header: {
-                    CraftSectionHeader(title: L("sidebar.folders"))
+                    Text(L("sidebar.folders"))
                 }
-                .listRowInsets(.init(top: 1, leading: 12, bottom: 1, trailing: 12))
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
             }
         }
         .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
         .scrollIndicators(.hidden)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { refreshDocFiles() }
@@ -256,11 +243,9 @@ struct FileSidebar: View {
                     .help(item.url.path)
                     .contentShape(Rectangle())
                     .onTapGesture { state.openFile(item) }
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
             }
             .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
+            .scrollIndicators(.hidden)
         }
     }
 
@@ -326,133 +311,58 @@ struct FileSidebar: View {
     }
 }
 
-// MARK: - Space Switcher
+// MARK: - Space Switcher (原生标题行 —— 备忘录/Finder 同款，无卡片背景)
 
 @MainActor
 private struct SpaceSwitcherRow: View {
     @Environment(AppState.self) private var state
-    @State private var isHovered = false
 
     var body: some View {
-        let theme = state.themeStore.current
-        HStack(spacing: 9) {
-            // Workspace icon badge
-            ZStack {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.orange.opacity(0.18))
-                    .frame(width: 26, height: 26)
-                Image(systemName: "folder.fill")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color(nsColor: .systemOrange))
-            }
-
-            Text(state.rootURL?.lastPathComponent ?? "MEditor")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(theme.craftPrimary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-
-            Spacer()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isHovered ? Color.primary.opacity(0.05) : Color.clear)
-                .padding(.horizontal, 4)
-        )
-        .contentShape(Rectangle())
-        .onHover { isHovered = $0 }
-        .animation(DS.Motion.micro, value: isHovered)
+        Text(state.rootURL?.lastPathComponent ?? "MEditor")
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
     }
 }
 
-// MARK: - Search Bar
+// MARK: - Search Bar (系统原生搜索框风格)
 
 @MainActor
 private struct SidebarSearchBar: View {
     @Binding var text: String
-    @Environment(AppState.self) private var state
 
     var body: some View {
-        let theme = state.themeStore.current
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(theme.craftSecondary)
-                .font(.system(size: 11))
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
             TextField(L("common.search"), text: $text)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12.5))
-                .foregroundStyle(theme.craftPrimary)
+                .font(.system(size: 13))
             if !text.isEmpty {
-                Button { withAnimation(DS.Motion.micro) { text = "" } } label: {
+                Button { text = "" } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(theme.craftSecondary)
                         .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .transition(.scale.combined(with: .opacity))
             }
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(theme.craftHover)
-        )
-    }
-}
-
-// MARK: - Top Nav Entry (All Docs / Recent / Favorites)
-
-@MainActor
-private struct TopNavEntry: View {
-    let icon: String
-    let label: String
-    var isSelected = false
-    @Environment(AppState.self) private var state
-    @State private var isHovered = false
-
-    var body: some View {
-        let theme = state.themeStore.current
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .symbolRenderingMode(.hierarchical)
-                .font(.system(size: 14))
-                .foregroundStyle(isSelected ? theme.craftPrimary : theme.craftSecondary)
-                .frame(width: 20, alignment: .center)
-            Text(label)
-                .font(.system(size: 14))
-                .foregroundStyle(isSelected ? theme.craftPrimary : theme.craftPrimary.opacity(0.72))
-            Spacer()
-        }
         .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.vertical, 7)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isSelected ? Color.primary.opacity(0.10) : isHovered ? Color.primary.opacity(0.05) : Color.clear)
-                .padding(.horizontal, 4)
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color(nsColor: .textBackgroundColor).opacity(0.5))
         )
-        .contentShape(Rectangle())
-        .onHover { isHovered = $0 }
-        .animation(DS.Motion.micro, value: isHovered)
-    }
-}
-
-private struct CraftSectionHeader: View {
-    let title: String
-
-    var body: some View {
-        Text(title)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.secondary)
-            .kerning(0.2)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, 6)
-            .padding(.top, 5)
-            .padding(.bottom, 1)
+        .overlay(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+        )
     }
 }
 
@@ -546,7 +456,6 @@ private struct DocFileRow: View {
     let url: URL
     let isSelected: Bool
     @State private var isHovered = false
-    @Environment(AppState.self) private var state
 
     private var icon: String {
         switch url.pathExtension.lowercased() {
@@ -556,30 +465,35 @@ private struct DocFileRow: View {
     }
 
     var body: some View {
-        let theme = state.themeStore.current
         HStack(spacing: 7) {
             Image(systemName: icon)
                 .font(.system(size: 12))
-                .foregroundStyle(isSelected ? theme.craftPrimary : theme.craftSecondary)
+                .foregroundStyle(isSelected ? Color.primary : Color.secondary)
                 .frame(width: 16, alignment: .center)
             Text(url.lastPathComponent)
                 .font(.system(size: 13))
-                .foregroundStyle(isSelected ? theme.craftPrimary : theme.craftPrimary.opacity(0.82))
                 .lineLimit(1)
             Spacer()
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
+        .frame(minHeight: 30)
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(isSelected
-                      ? Color.primary.opacity(0.10)
-                      : isHovered ? Color.primary.opacity(0.05) : Color.clear)
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(
+                    isSelected
+                        // 与 FileRow 保持一致：跟随应用内强调色设置，不用纯系统级颜色
+                        ? AnyShapeStyle(Color.appAccent.opacity(0.16))
+                        : isHovered
+                            ? AnyShapeStyle(Color(nsColor: .unemphasizedSelectedContentBackgroundColor))
+                            : AnyShapeStyle(Color.clear)
+                )
                 .padding(.horizontal, 4)
+                .animation(.easeOut(duration: 0.09), value: isSelected)
+                .animation(.easeOut(duration: 0.07), value: isHovered)
         )
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
-        .animation(DS.Motion.micro, value: isHovered)
     }
 }
 

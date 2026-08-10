@@ -64,6 +64,30 @@ struct EditorTabBar: View {
         .disableScrollEdgeEffectsIfAvailable()
         // macOS 26 的 NSToolbar 还会给每个 item 套 Liquid Glass 胶囊——拆掉
         .background(ToolbarItemGlassDisabler())
+        // item 尺寸大于内容尺寸时，即便拆了胶囊描边，NSToolbarItem 自身默认的
+        // 浅色圆角容器背景仍会在未被内容覆盖的尾部露出一块——垫一层与 toolbar
+        // 同色的实底盖住它（比 .scrollContentBackground(.hidden) 更彻底）。
+        // AI 助手/设置弹窗打开时，内容区会叠一层黑色调光遮罩，但那层遮罩挂在
+        // ContentView 内容区、不会盖到 NSToolbar 原生层——这层不透明实底如果
+        // 不跟着变暗，tab 条会「浮」在变暗的下方内容之上，视觉脱节。这里跟着
+        // state.aiUI.overlayShown / state.settingsOverlayShown 叠一层同样强度
+        // 的暗化——这两个值分别和各自的真实遮罩共享同一处 withAnimation
+        // (spring(0.42, 0.80)) 调用，不是自己另开一套动画/延迟去模拟，
+        // 保证暗化像素级同步。两个遮罩不透明度不同（AI 0.30 / 设置 0.28），
+        // 分别匹配，不用同一个数值。
+        .background(
+            GeometryReader { proxy in
+                theme.windowBackground
+                    .overlay(Color.black.opacity(dimmedOpacity))
+                    .frame(width: max(proxy.size.width, 0), height: max(proxy.size.height, 0))
+            }
+        )
+    }
+
+    private var dimmedOpacity: Double {
+        if state.aiUI.overlayShown { return 0.30 }
+        if state.settingsOverlayShown { return 0.28 }
+        return 0
     }
 }
 

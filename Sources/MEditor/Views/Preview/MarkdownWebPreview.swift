@@ -87,6 +87,7 @@ private struct MarkdownWebView: NSViewRepresentable {
     static let tocHandlerName = "tocHandler"
     static let perfHandlerName = "perfHandler"
     static let selectionHandlerName = "selectionHandler"
+    static let escapeHandlerName = "escapeHandler"
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
@@ -109,6 +110,7 @@ private struct MarkdownWebView: NSViewRepresentable {
             uc.add(context.coordinator, name: Self.tocHandlerName)
             uc.add(context.coordinator, name: Self.perfHandlerName)
             uc.add(context.coordinator, name: Self.selectionHandlerName)
+            uc.add(context.coordinator, name: Self.escapeHandlerName)
             pooled.navigationDelegate = context.coordinator
             pooled.uiDelegate = context.coordinator
             context.coordinator.webView = pooled
@@ -140,6 +142,7 @@ private struct MarkdownWebView: NSViewRepresentable {
         userContent.add(context.coordinator, name: Self.tocHandlerName)
         userContent.add(context.coordinator, name: Self.perfHandlerName)
         userContent.add(context.coordinator, name: Self.selectionHandlerName)
+        userContent.add(context.coordinator, name: Self.escapeHandlerName)
         config.userContentController = userContent
 
         let webView = WKWebView(frame: .zero, configuration: config)
@@ -220,6 +223,7 @@ private struct MarkdownWebView: NSViewRepresentable {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: tocHandlerName)
         webView.configuration.userContentController.removeScriptMessageHandler(forName: perfHandlerName)
         webView.configuration.userContentController.removeScriptMessageHandler(forName: selectionHandlerName)
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: escapeHandlerName)
         if coordinator.exporter?.webView === webView {
             coordinator.exporter?.webView = nil
         }
@@ -613,6 +617,8 @@ extension MarkdownWebView.Coordinator: WKScriptMessageHandler {
             handlePerfMessage(message)
         case MarkdownWebView.selectionHandlerName:
             handleSelectionMessage(message)
+        case MarkdownWebView.escapeHandlerName:
+            NotificationCenter.default.post(name: .previewWebViewDidPressEscape, object: nil)
         default:
             break
         }
