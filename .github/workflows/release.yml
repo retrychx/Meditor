@@ -85,11 +85,11 @@ jobs:
         env:
           UPDATE_TOKEN: ${{ secrets.UPDATE_TOKEN }}
         run: |
-          curl -sf -X POST "$UPDATE_BASE/api/update/pkg" \
+          curl -sfS --retry 3 -w "\npkg upload: %{http_code}\n" -X POST "$UPDATE_BASE/api/update/pkg" \
             -H "Authorization: Bearer $UPDATE_TOKEN" \
             -H "Content-Type: application/zip" \
             --data-binary "@MEditor-${{ github.ref_name }}.zip"
-          curl -sf -X POST "$UPDATE_BASE/api/update/appcast" \
+          curl -sfS --retry 3 -w "\nappcast upload: %{http_code}\n" -X POST "$UPDATE_BASE/api/update/appcast" \
             -H "Authorization: Bearer $UPDATE_TOKEN" \
             -H "Content-Type: application/xml" \
             --data-binary "@/tmp/appcast.xml"

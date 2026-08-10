@@ -108,7 +108,7 @@ async function handleUpdatePublish(request, env, kind) {
 
   if (kind === "appcast") {
     const xml = await request.text();
-    if (!xml.includes("<rss") || !xml.includes("appcast")) {
+    if (!xml.includes("<rss") || !xml.includes("sparkle:version")) {
       return json({ error: "invalid appcast" }, 400);
     }
     await env.UPDATES.put("appcast.xml", xml);
