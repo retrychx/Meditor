@@ -14,6 +14,10 @@ jobs:
     name: Build & Release
     runs-on: macos-14
 
+    env:
+      # Sparkle 更新分发（workers.dev）：worker 端点见 worker/index.js
+      UPDATE_BASE: https://meditor-app.863129776.workers.dev
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,8 +30,78 @@ jobs:
 
       - name: Bundle .app
         run: |
+          # 版本号取 git tag（去 v 前缀）；build 号用 run_number（单调整型）——
+          # Sparkle 按 CFBundleVersion 比新旧，整型才能盖过 1.1 时代的老包
+          export MEDITOR_VERSION="${GITHUB_REF_NAME#v}"
+          export MEDITOR_BUILD_NUMBER="$GITHUB_RUN_NUMBER"
           bash scripts/bundle.sh release
           ditto -c -k --keepParent .build/release/MEditor.app MEditor-${{ github.ref_name }}.zip
+
+      - name: Sign update package
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          # 自研签名脚本（scripts/sign_update.swift，CryptoKit 标准 Ed25519）——
+          # 不依赖 Sparkle 工具包下载，密钥格式与本地生成端天然一致
+          SIG=$(printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | tr -d '[:space:]')
+          swift scripts/sign_update.swift "$SIG" "MEditor-${{ github.ref_name }}.zip" | tee /tmp/sign_output.txt
+
+      - name: Build appcast.xml
+        run: |
+          python3 - <<'PYEOF'
+          import os, re, subprocess, datetime
+          sig = re.search(r'sparkle:edSignature="([^"]*)"', open('/tmp/sign_output.txt').read()).group(1)
+          tag = os.environ['GITHUB_REF_NAME']
+          version = tag.lstrip('v')
+          build = os.environ['GITHUB_RUN_NUMBER']
+          base = os.environ['UPDATE_BASE']
+          length = os.path.getsize(f'MEditor-{tag}.zip')
+          pubdate = datetime.datetime.now(datetime.timezone.utc).strftime('%a, %d %b %Y %H:%M:%S +0000')
+          xml = f'''<?xml version="1.0" encoding="utf-8"?>
+          <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+            <channel>
+              <title>MEditor Updates</title>
+              <item>
+                <title>{tag}</title>
+                <sparkle:shortVersionString>{version}</sparkle:shortVersionString>
+                <sparkle:version>{build}</sparkle:version>
+                <pubDate>{pubdate}</pubDate>
+                <enclosure url="{base}/update/pkg"
+                           sparkle:shortVersionString="{version}"
+                           sparkle:version="{build}"
+                           length="{length}"
+                           type="application/octet-stream"
+                           sparkle:edSignature="{sig}"/>
+              </item>
+            </channel>
+          </rss>
+          '''
+          import xml.dom.minidom
+          xml.dom.minidom.parseString(xml)  # 合法性检查
+          open('/tmp/appcast.xml', 'w').write(xml)
+          PYEOF
+
+      - name: Publish update to workers.dev
+        env:
+          UPDATE_TOKEN: ${{ secrets.UPDATE_TOKEN }}
+        run: |
+          curl -sf -X POST "$UPDATE_BASE/api/update/pkg" \
+            -H "Authorization: Bearer $UPDATE_TOKEN" \
+            -H "Content-Type: application/zip" \
+            --data-binary "@MEditor-${{ github.ref_name }}.zip"
+          curl -sf -X POST "$UPDATE_BASE/api/update/appcast" \
+            -H "Authorization: Bearer $UPDATE_TOKEN" \
+            -H "Content-Type: application/xml" \
+            --data-binary "@/tmp/appcast.xml"
+
+      - name: Verify published update
+        run: |
+          # 从 CI 网络回放客户端视角：appcast 可取、指向当前 tag、安装包字节数一致
+          curl -sf "$UPDATE_BASE/update/appcast.xml" -o /tmp/published-appcast.xml
+          grep -q "${GITHUB_REF_NAME}" /tmp/published-appcast.xml
+          LOCAL_LEN=$(stat -f%z "MEditor-${{ github.ref_name }}.zip")
+          REMOTE_LEN=$(curl -sf "$UPDATE_BASE/update/pkg" -o /tmp/published-pkg.zip && stat -f%z /tmp/published-pkg.zip)
+          test "$LOCAL_LEN" = "$REMOTE_LEN" && echo "update feed verified ($REMOTE_LEN bytes)"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

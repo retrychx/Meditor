@@ -24,3 +24,4 @@ xcuserdata/
 # wrangler 本地缓存
 .wrangler/
 .dev.vars
+Vendor/

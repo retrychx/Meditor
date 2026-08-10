@@ -77,6 +77,27 @@ extension SettingsView {
                         }
                     }
                 }
+
+                settingsGroup(title: L("settings.section.about")) {
+                    settingsRow(label: "MEditor", subtitle: L("settings.version")) {
+                        Text(UpdateController.shared.appVersion)
+                            .font(DS.Font.mono(12))
+                            .foregroundStyle(.secondary)
+                    }
+                    rowDivider
+                    settingsRow(label: L("settings.autoCheckUpdates"), subtitle: L("settings.desc.autoCheckUpdates")) {
+                        Toggle("", isOn: Binding(
+                            get: { UpdateController.shared.automaticallyChecksForUpdates },
+                            set: { UpdateController.shared.automaticallyChecksForUpdates = $0 }
+                        )).labelsHidden()
+                    }
+                    rowDivider
+                    settingsRow(label: L("settings.checkUpdates")) {
+                        Button(L("settings.checkUpdates")) {
+                            UpdateController.shared.checkForUpdates()
+                        }
+                    }
+                }
             }
             .padding(DS.Space.lg)
         }

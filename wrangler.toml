@@ -10,3 +10,8 @@ directory = "./website"
 [[kv_namespaces]]
 binding = "SHARES"
 id = "5347b6339e844206963de1732708d375"
+
+# 应用更新包与 appcast（GET /update/*，发布走 POST /api/update/* + Bearer UPDATE_TOKEN）
+[[kv_namespaces]]
+binding = "UPDATES"
+id = "3f5d703eda614a0aaaf17f7998000364"
