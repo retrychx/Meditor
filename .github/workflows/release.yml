@@ -50,6 +50,7 @@ jobs:
         run: |
           python3 - <<'PYEOF'
           import os, re, subprocess, datetime
+          from xml.dom import minidom
           sig = re.search(r'sparkle:edSignature="([^"]*)"', open('/tmp/sign_output.txt').read()).group(1)
           tag = os.environ['GITHUB_REF_NAME']
           version = tag.lstrip('v')
@@ -76,8 +77,7 @@ jobs:
             </channel>
           </rss>
           '''
-          import xml.dom.minidom
-          xml.dom.minidom.parseString(xml)  # 合法性检查
+          minidom.parseString(xml)  # 合法性检查
           open('/tmp/appcast.xml', 'w').write(xml)
           PYEOF
 
