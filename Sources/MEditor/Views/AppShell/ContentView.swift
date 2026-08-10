@@ -8,10 +8,15 @@ struct ContentView: View {
     /// 窗口内容区实测宽度（GeometryReader 回传），用于动态计算 tab 条宽度。
     @State private var windowContentWidth: CGFloat = 1280
 
-    /// toolbar 里 tab 条的宽度：窗口宽 - 侧栏（可见时） - 系统开关/标题间距/右边距。
+    /// toolbar 里 tab 条的宽度。NavigationSplitView 的 toolbar 按列分段：
+    /// tab 条只能占 detail 列那段。可用宽度 = 窗口宽 - 侧栏（可见时） - 边距。
+    /// 注意：估宽 item 会被整体塞进 ">>" 溢出菜单，fudge 宁大勿小——
+    /// 多留的尾部空白与 toolbar 同色、看不出来；溢出则整个 tab 条消失。
     private var tabsStripWidth: CGFloat {
-        let sidebar: CGFloat = workspaceUI.showsSidebarInLayout ? workspaceUI.clampedSidebarWidth : 0
-        return max(240, windowContentWidth - sidebar - 150)
+        let chrome: CGFloat = workspaceUI.showsSidebarInLayout
+            ? workspaceUI.clampedSidebarWidth + 40   // 侧栏列 + detail 段边距
+            : 180                                     // 红绿灯 + 系统开关 + 边距
+        return max(240, windowContentWidth - chrome)
     }
 
     var body: some View {
@@ -23,23 +28,32 @@ struct ContentView: View {
             }
         }
         .preferredColorScheme(state.themeStore.current.isDark ? .dark : .light)
+        // 专注模式：整条 toolbar（含 tab 条）隐藏，只留文档
+        .focusToolbarVisibility(workspaceUI.isFocusMode)
         // Global accent — the AI-assistant accent style is applied app-wide so
         // every control (create buttons, pickers, toggles, selection highlights)
         // honors the user's choice (system blue vs shadcn mono).
         .tint(AIAccentStyle.current(settings).fill(state.themeStore.current))
         .environment(workspaceUI)
         .background(WindowConfigurator())
+        // ESC 监视器挂在 ContentView 根（常驻）——之前挂在 AppShell 内，
+        // 工作区未打开（欢迎页/会话恢复中）时不存在，根因修复
+        .background(FocusEscapeMonitor(workspaceUI: workspaceUI, state: state))
         // tab 栏进系统 toolbar——顶部只有一条横带：左端系统侧栏开关，接着是文件 tab。
-        // 注意：toolbar 按视图理想宽度排布，ScrollView 会把所有 tab 的宽度加起来
-        // 要求——超宽会被整体塞进 ">>" 溢出菜单；但定死宽度又会在右侧留一大块空。
-        // 所以宽度跟随窗口实测：窗口宽 - 侧栏宽 - 开关与边距。
+        // 注意：SwiftUI 的 toolbar item 定死在理想宽度，不会弹性伸缩——
+        // ScrollView 默认理想宽 = 所有 tab 宽度之和，超宽会被整体塞进 ">>" 溢出菜单；
+        // 定死宽度又会在右侧留空。所以宽度跟随窗口实测：窗口宽 - 左侧系统件与边距。
         .toolbar {
-            // automatic（跟随系统侧栏开关之后左对齐）而不是 principal（居中），
-            // 否则 tab 条悬浮在横带中央、左右都是空当，看起来很奇怪。
-            ToolbarItem(placement: .automatic) {
-                EditorTabBar()
-                    .frame(width: tabsStripWidth)
-                    .environment(state)
+            // 没有打开的文件时整个 item 移除——空壳固定宽度会在 toolbar 上
+            // 留下一条可见的空白胶囊（欢迎页尤其明显）。
+            if !state.openTabs.isEmpty {
+                // automatic（跟随系统侧栏开关之后左对齐）而不是 principal（居中），
+                // 否则 tab 条悬浮在横带中央、左右都是空当，看起来很奇怪。
+                ToolbarItem(placement: .automatic) {
+                    EditorTabBar()
+                        .frame(width: tabsStripWidth)
+                        .environment(state)
+                }
             }
         }
         .background(
@@ -267,5 +281,17 @@ struct ContentView: View {
             }
         }
         return true
+    }
+}
+
+private extension View {
+    /// 专注模式时隐藏整条 window toolbar；macOS 15 以下没有该 API，直接透传。
+    @ViewBuilder
+    func focusToolbarVisibility(_ hidden: Bool) -> some View {
+        if #available(macOS 15.0, *) {
+            self.toolbarVisibility(hidden ? .hidden : .visible, for: .windowToolbar)
+        } else {
+            self
+        }
     }
 }

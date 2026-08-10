@@ -50,6 +50,9 @@ struct TOCOutlineView: View {
                 }
             }
         }
+        // macOS 26：ScrollView 默认把内容延伸进上方横带（透明 toolbar 时
+        // 表现为 outline 文字穿透到 tab 条/红绿灯区域）——顶部硬裁剪
+        .topScrollEdgeHardClipIfAvailable()
         // 平面化（Apple 备忘录式）：TOC 是预览左缘的一个普通栏，
         // 背景和右侧分隔线由 PreviewPanel 提供，不再自成悬浮卡片。
     }
@@ -216,5 +219,17 @@ private struct TOCRow: View {
 private extension Comparable {
     func clamped(to range: ClosedRange<Self>) -> Self {
         min(max(self, range.lowerBound), range.upperBound)
+    }
+}
+
+private extension View {
+    /// 关掉 macOS 26 ScrollView 顶部边缘的延伸/渐隐效果；低版本直接透传。
+    @ViewBuilder
+    func topScrollEdgeHardClipIfAvailable() -> some View {
+        if #available(macOS 26.0, *) {
+            self.scrollEdgeEffectStyle(.none, for: .top)
+        } else {
+            self
+        }
     }
 }

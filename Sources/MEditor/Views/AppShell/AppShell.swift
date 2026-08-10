@@ -175,7 +175,9 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
     private var columnVisibility: Binding<NavigationSplitViewVisibility> {
         Binding(
             get: { workspaceUI.showsSidebarInLayout ? .all : .detailOnly },
-            set: { workspaceUI.showsSidebar = $0 != .detailOnly }
+            // 专注模式下 getter 被强制成 detailOnly，split view 布局同步时会把
+            // 这个「被迫值」回写——不回写就误存成用户偏好，下次启动侧栏默认关。
+            set: { if !workspaceUI.isFocusMode { workspaceUI.showsSidebar = $0 != .detailOnly } }
         )
     }
 
@@ -198,5 +200,60 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
         .frame(width: 0, height: 0)
         .opacity(0)
         .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Focus mode ESC monitor
+
+/// ESC 退出专注模式。隐藏 Button 的 keyboardShortcut 和 onExitCommand 在编辑器
+/// （NSTextView）或 WKWebView 持有焦点时都收不到 ESC——本地事件监视器挂在
+/// App 事件分发层，不依赖焦点链，窗口是 key 就能收到。
+/// 弹层（diff 审阅/快捷打开/设置等）自己有 ESC 处理，此时放行不消费。
+struct FocusEscapeMonitor: NSViewRepresentable {
+    let workspaceUI: WorkspaceUIState
+    let state: AppState
+
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView()
+        context.coordinator.install(workspaceUI: workspaceUI, state: state)
+        return v
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.remove()
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    @MainActor
+    final class Coordinator {
+        private var monitor: Any?
+
+        func install(workspaceUI: WorkspaceUIState, state: AppState) {
+            remove()
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                // 本地监视器在主线程事件分发中同步触发，且必须同步返回（消费/放行）
+                MainActor.assumeIsolated {
+                    guard event.keyCode == 53 else { return event } // 非 ESC 直接放行
+                    guard workspaceUI.isFocusMode,
+                          !state.showingDiffReview,
+                          !state.showingQuickOpen,
+                          !state.showingSettings,
+                          !state.showingBeautifySheet,
+                          !state.showingTemplatePicker,
+                          !state.showingCloseConfirmation
+                    else { return event }
+                    withAnimation(DS.Motion.fast) { workspaceUI.isFocusMode = false }
+                    return nil
+                }
+            }
+        }
+
+        func remove() {
+            if let m = monitor { NSEvent.removeMonitor(m) }
+            monitor = nil
+        }
     }
 }

@@ -58,6 +58,12 @@ struct EditorTabBar: View {
         }
         // toolbar 对无限高度测量会塌掉——给定内容高度，pill 才能在其中拉高
         .frame(height: 44)
+        // macOS 26 会给 toolbar 里的 ScrollView 自动加圆角底板——关掉
+        .scrollContentBackground(.hidden)
+        // 滚动到边缘时系统会叠一层玻璃/渐隐圆晕（前缘那团圆角就是这么来的）——关掉
+        .disableScrollEdgeEffectsIfAvailable()
+        // macOS 26 的 NSToolbar 还会给每个 item 套 Liquid Glass 胶囊——拆掉
+        .background(ToolbarItemGlassDisabler())
     }
 }
 
@@ -180,4 +186,73 @@ struct TabDropDelegate: DropDelegate {
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+}
+
+// MARK: - Toolbar item glass disabler
+
+/// macOS 26：NSToolbar 自动给每个 item 背后垫 Liquid Glass 材质
+/// （tab 条两端看到的圆角胶囊边）。官方移除方式是 NSToolbarItem.isBordered = false，
+/// SwiftUI 未暴露——从标记视图向上找到所属 item 关掉。
+/// 参考 WWDC25 "Build an AppKit app with the new design"。
+private struct ToolbarItemGlassDisabler: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView()
+        DispatchQueue.main.async { context.coordinator.arm(containing: v) }
+        return v
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        // toolbar 会重建 item（窗口状态变化时）——每次 SwiftUI 更新时幂等重放
+        DispatchQueue.main.async { context.coordinator.arm(containing: nsView) }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    /// 找到所属 NSToolbarItem 并关 isBordered；同时订阅窗口更新——
+    /// toolbar 隐藏/显示（如进出专注模式）会重建 item 并把 isBordered 重置回 true，
+    /// didUpdate 每次窗口事件后触发，幂等重放、成本可忽略。
+    @MainActor
+    final class Coordinator: NSObject {
+        private weak var markerView: NSView?
+        private var observedWindow: NSWindow?
+
+        func arm(containing view: NSView) {
+            markerView = view
+            disarm()
+            guard let window = view.window, observedWindow !== window else { return }
+            observedWindow = window
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.didUpdateNotification, object: window, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.disarm() }
+            }
+        }
+
+        /// 只处理包含标记视图的那个 item——不动系统侧栏开关等其它 item 的玻璃。
+        func disarm() {
+            guard let view = markerView, let toolbar = view.window?.toolbar else { return }
+            for item in toolbar.items {
+                guard let itemView = item.view, view.isDescendant(of: itemView) else { continue }
+                if #available(macOS 26.0, *), item.isBordered {
+                    item.isBordered = false
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Scroll edge effects
+
+private extension View {
+    /// 关掉 macOS 26 滚动边缘的玻璃/渐隐圆晕；低版本系统本来就没有，直接透传。
+    @ViewBuilder
+    func disableScrollEdgeEffectsIfAvailable() -> some View {
+        if #available(macOS 26.0, *) {
+            self
+                .scrollEdgeEffectStyle(.none, for: .leading)
+                .scrollEdgeEffectStyle(.none, for: .trailing)
+        } else {
+            self
+        }
+    }
 }

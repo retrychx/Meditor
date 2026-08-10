@@ -105,6 +105,22 @@ final class TabManager {
         }
 
         let lang = FileTypeConfiguration.shared.editorLanguage(for: item.fileExtension) ?? .markdown
+
+        // 小文件同步读、带内容建 tab：避免「空白骨架 → 内容」的两段式渲染
+        // （异步跳转至少隔一两个 runloop，肉眼可见闪一下）。大文件仍走异步，
+        // 不阻塞主线程。
+        let syncThreshold: Int64 = 512 * 1024
+        let fileSize = (fileService.attributes(at: item.url)?[.size] as? Int64) ?? .max
+        if fileSize <= syncThreshold, let content = try? fileService.readFile(at: item.url) {
+            let tab = EditorTab(url: item.url, content: content, language: lang)
+            openTabs.insert(tab, at: 0)
+            selectedTabID = tab.id
+            onRecordModDate?(tab.url)
+            onSyncPreview?(tab)
+            PerformanceTracer.end("OpenFile", log: PerformanceTracer.fileOps, id: sid)
+            return
+        }
+
         let tab = EditorTab(url: item.url, content: "", language: lang, awaitingInitialContent: true)
         openTabs.insert(tab, at: 0)
         selectedTabID = tab.id

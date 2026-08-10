@@ -208,6 +208,9 @@ final class AppStateTests: XCTestCase {
         let delayedState = AppState(fileService: delayedService, fileWatcher: mockWatcher)
         let url = URL(fileURLWithPath: "/tmp/delayed.md")
         delayedService.setFile(url, content: "# Loaded")
+        // 报一个介于同步阈值(512KB)与大文件阈值(1MB)之间的尺寸，强制走异步路径——
+        // 小文件现在是同步读盘（避免空白骨架闪烁），异步行为要用「大文件」来验
+        delayedService.mockAttributes[url] = [.size: Int64(768 * 1024)]
 
         delayedState.openFile(FileItem(url: url, isDirectory: false))
 
@@ -565,6 +568,8 @@ final class AppStateTests: XCTestCase {
         let delayedState = AppState(fileService: delayedService, fileWatcher: delayedWatcher)
         let url = URL(fileURLWithPath: "/tmp/delayed.md")
         delayedService.setFile(url, content: "# Disk")
+        // 同上：强制异步路径，否则小文件同步读完就没有「异步回填」可测了
+        delayedService.mockAttributes[url] = [.size: Int64(768 * 1024)]
 
         delayedState.openFile(FileItem(url: url, isDirectory: false))
         guard let tabID = delayedState.selectedTabID else {

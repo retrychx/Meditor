@@ -17,6 +17,7 @@ struct WindowConfigurator: NSViewRepresentable {
 
     class Coordinator: NSObject {
         private var observation: NSKeyValueObservation?
+        private var titleObservation: NSKeyValueObservation?
         private weak var window: NSWindow?
 
         /// makeNSView 时窗口可能尚未挂链（不同启动路径时序不同）——
@@ -40,6 +41,12 @@ struct WindowConfigurator: NSViewRepresentable {
             // didUpdate 每次窗口事件后触发——幂等重放隐藏，成本可忽略。
             observation = window.observe(\.toolbar, options: [.new]) { w, _ in
                 if w.toolbar != nil { w.titleVisibility = .hidden }
+            }
+            // 直接盯 titleVisibility 本身：SwiftUI 重置它的瞬间就同步改回 hidden，
+            // 窗口来不及渲染出标题——didUpdate 重放是事后补救，会先闪一帧
+            // （增删 toolbar item 时「MEditor」标题闪现就是这么来的）。
+            titleObservation = window.observe(\.titleVisibility, options: [.new]) { w, _ in
+                if w.titleVisibility != .hidden { w.titleVisibility = .hidden }
             }
             NotificationCenter.default.addObserver(
                 forName: NSWindow.didUpdateNotification, object: window, queue: .main
