@@ -267,8 +267,8 @@ final class AppStateTests: XCTestCase {
         state.closeTab(tab.id)
         state.confirmCloseTab(save: true)
 
-        // Should have saved (written via mock)
-        XCTAssertEqual(mockService.fileContent(at: tab.url), "modified")
+        // saveTab 是 Task.detached 异步落盘——直接断言会和写入竞争（CI 慢机上 flake 过两次）
+        waitForCondition { self.mockService.fileContent(at: tab.url) == "modified" }
         XCTAssertTrue(state.openTabs.isEmpty)
         XCTAssertFalse(state.showingCloseConfirmation)
     }
