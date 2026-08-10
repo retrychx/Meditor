@@ -8,8 +8,10 @@ on:
 
 jobs:
   build:
-    name: Build & Test (macOS 15)
-    runs-on: macos-15
+    # macos-26 = Xcode 26：与 release 包同 SDK，compiler(>=6.2) 分支（Liquid Glass
+    # 相关 API）在 PR CI 里就能编到，而不是等到打 tag 才暴露问题
+    name: Build & Test (macOS 26)
+    runs-on: macos-26
 
     steps:
       - name: Checkout

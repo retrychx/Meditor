@@ -12,7 +12,9 @@ permissions:
 jobs:
   release:
     name: Build & Release
-    runs-on: macos-14
+    # macos-26：发布包必须用 macOS 26 SDK 链接，否则在 Tahoe 上是旧式灰侧栏，
+    # 没有 Liquid Glass（外观按构建时 SDK 决定，与用户系统无关）
+    runs-on: macos-26
 
     env:
       # Sparkle 更新分发（workers.dev）：worker 端点见 worker/index.js
