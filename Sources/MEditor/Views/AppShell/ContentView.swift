@@ -285,13 +285,19 @@ struct ContentView: View {
 }
 
 private extension View {
-    /// 专注模式时隐藏整条 window toolbar；macOS 15 以下没有该 API，直接透传。
+    /// 专注模式时隐藏整条 window toolbar；低版本系统没有该 API，直接透传。
+    /// compiler 守卫：API 在 macOS 15 SDK（Xcode 16 / Swift 6.0）才存在，
+    /// release workflow 的 macos-14（Xcode 15.4）编译期找不到符号。
     @ViewBuilder
     func focusToolbarVisibility(_ hidden: Bool) -> some View {
+        #if compiler(>=6.0)
         if #available(macOS 15.0, *) {
             self.toolbarVisibility(hidden ? .hidden : .visible, for: .windowToolbar)
         } else {
             self
         }
+        #else
+        self
+        #endif
     }
 }

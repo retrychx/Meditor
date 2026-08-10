@@ -223,13 +223,18 @@ private struct ToolbarItemGlassDisabler: NSViewRepresentable {
             observedWindow = window
             NotificationCenter.default.addObserver(
                 forName: NSWindow.didUpdateNotification, object: window, queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor in self?.disarm() }
+            ) { _ in
+                // block 在 .main 队列执行，直接assume；强捕获 self 避免 @Sendable
+                // 闭包里 weak var 捕获在严格并发检查（CI Xcode 16）下报错
+                MainActor.assumeIsolated { self.disarm() }
             }
         }
 
         /// 只处理包含标记视图的那个 item——不动系统侧栏开关等其它 item 的玻璃。
         func disarm() {
+            // isBordered 是 macOS 26 SDK（Xcode 26 / Swift 6.2）才有的 API——
+            // CI 的 Xcode 16 编译期找不到符号，用 compiler 守卫整段摘掉
+            #if compiler(>=6.2)
             guard let view = markerView, let toolbar = view.window?.toolbar else { return }
             for item in toolbar.items {
                 guard let itemView = item.view, view.isDescendant(of: itemView) else { continue }
@@ -237,6 +242,7 @@ private struct ToolbarItemGlassDisabler: NSViewRepresentable {
                     item.isBordered = false
                 }
             }
+            #endif
         }
     }
 }
@@ -245,8 +251,11 @@ private struct ToolbarItemGlassDisabler: NSViewRepresentable {
 
 private extension View {
     /// 关掉 macOS 26 滚动边缘的玻璃/渐隐圆晕；低版本系统本来就没有，直接透传。
+    /// #if compiler 守卫：API 只在 macOS 26 SDK（Xcode 26 / Swift 6.2）里存在，
+    /// CI 的 Xcode 16（macOS 15 SDK）编译期就找不到符号，#available 救不了。
     @ViewBuilder
     func disableScrollEdgeEffectsIfAvailable() -> some View {
+        #if compiler(>=6.2)
         if #available(macOS 26.0, *) {
             self
                 .scrollEdgeEffectStyle(.none, for: .leading)
@@ -254,5 +263,8 @@ private extension View {
         } else {
             self
         }
+        #else
+        self
+        #endif
     }
 }

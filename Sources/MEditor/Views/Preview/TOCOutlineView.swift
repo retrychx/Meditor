@@ -224,12 +224,17 @@ private extension Comparable {
 
 private extension View {
     /// 关掉 macOS 26 ScrollView 顶部边缘的延伸/渐隐效果；低版本直接透传。
+    /// #if compiler 守卫同 EditorTabBar——API 只在 macOS 26 SDK 里存在。
     @ViewBuilder
     func topScrollEdgeHardClipIfAvailable() -> some View {
+        #if compiler(>=6.2)
         if #available(macOS 26.0, *) {
             self.scrollEdgeEffectStyle(.none, for: .top)
         } else {
             self
         }
+        #else
+        self
+        #endif
     }
 }
