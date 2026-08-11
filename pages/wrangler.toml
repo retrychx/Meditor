@@ -1,0 +1,18 @@
+# Pages 部署配置（https://meditorapp.pages.dev）——官网的好看域名。
+# 与 Workers 版（根目录 wrangler.toml，meditor-app.863129776.workers.dev）跑同一份代码
+# （../worker/index.js，部署时拷成 ../website/_worker.js）、绑同一对 KV——
+# /update/* 与 /d/:id 两个站点都能用，发版/分享不用区分写哪个。
+# Pages 不认 --config 指定的配置文件，所以单独放这个目录，部署时 cd 进来跑。
+name = "meditorapp"
+compatibility_date = "2026-07-19"
+pages_build_output_dir = "../website"
+
+# 分享文档存储（GET /d/:id）
+[[kv_namespaces]]
+binding = "SHARES"
+id = "5347b6339e844206963de1732708d375"
+
+# 应用更新包与 appcast（GET /update/*，发布走 POST /api/update/* + Bearer UPDATE_TOKEN）
+[[kv_namespaces]]
+binding = "UPDATES"
+id = "3f5d703eda614a0aaaf17f7998000364"
