@@ -88,21 +88,34 @@ if [ -n "$RESOURCE_DIR" ]; then
   cp -R "$RESOURCE_DIR/" "$APP_BUNDLE/Contents/Resources/"
 fi
 
-# Embed Sparkle.framework（自动更新）：SPM 只负责链接，不嵌包——
-# 优先取 Vendor/（本机逃生舱），否则取 SwiftPM 工件目录。
+# Embed Sparkle.framework（自动更新）：SPM 只负责链接，不嵌包。
+# 首选构建产物目录（.build/<triple>/<config>/Sparkle.framework）——Vendor 和
+# 远程 binaryTarget 两种模式 SPM 都会把框架拷到可执行文件旁边，路径最稳定；
+# Vendor/ 与 .build/artifacts 只作兜底（artifacts 的解包层级随 SPM 版本变，
+# v0.6.6/0.6.7 的 CI 包就是因为 artifacts 路径没匹配上、只告警不报错，
+# 打出缺框架的包，启动即崩）。
 SPARKLE_FW=""
-if [ -d "$PROJECT_DIR/Vendor/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework" ]; then
+for ARCH in "${ARCHES[@]}"; do
+  CAND="$PROJECT_DIR/.build/${ARCH}-apple-macosx/$CONFIG/Sparkle.framework"
+  if [ -d "$CAND" ]; then
+    SPARKLE_FW="$CAND"
+    break
+  fi
+done
+if [ -z "$SPARKLE_FW" ] && [ -d "$PROJECT_DIR/Vendor/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework" ]; then
   SPARKLE_FW="$PROJECT_DIR/Vendor/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
-else
-  SPARKLE_FW="$(find "$PROJECT_DIR/.build/artifacts" -maxdepth 4 -type d \
-    -path "*Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework" 2>/dev/null | head -1)"
 fi
-if [ -n "$SPARKLE_FW" ]; then
-  mkdir -p "$APP_BUNDLE/Contents/Frameworks"
-  cp -R "$SPARKLE_FW" "$APP_BUNDLE/Contents/Frameworks/"
-else
-  echo "warning: 未找到 Sparkle.framework（Vendor/ 或 .build/artifacts）——自动更新不可用" >&2
+if [ -z "$SPARKLE_FW" ]; then
+  SPARKLE_FW="$(find "$PROJECT_DIR/.build/artifacts" -type d -name "Sparkle.framework" \
+    -path "*macos*" 2>/dev/null | head -1)"
 fi
+# 二进制无条件链接 Sparkle，缺框架的包必然启动即崩——直接失败，不许出货
+if [ -z "$SPARKLE_FW" ]; then
+  echo "error: 未找到 Sparkle.framework（构建产物 / Vendor / .build/artifacts 都没有）" >&2
+  exit 1
+fi
+mkdir -p "$APP_BUNDLE/Contents/Frameworks"
+cp -R "$SPARKLE_FW" "$APP_BUNDLE/Contents/Frameworks/"
 
 # Validate Info.plist
 plutil -lint "$APP_BUNDLE/Contents/Info.plist" > /dev/null
