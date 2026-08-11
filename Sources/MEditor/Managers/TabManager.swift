@@ -77,6 +77,14 @@ final class TabManager {
 
     var selectedTab: EditorTab? { openTabs.first { $0.id == selectedTabID } }
 
+    /// 同一文件的不同 URL 写法（`/tmp` vs `/private/tmp`、尾斜杠、
+    /// 百分号编码等）视为同一个 tab，避免 GURL/拖拽等外部入口开出重复 tab。
+    static func urlsReferToSameFile(_ a: URL, _ b: URL) -> Bool {
+        if a == b { return true }
+        return a.standardizedFileURL.resolvingSymlinksInPath().path
+            == b.standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
     // MARK: - Open
 
     func openFile(_ item: FileItem) {
@@ -96,7 +104,7 @@ final class TabManager {
         if needsDirectAccess { onBeginAccessing?(item.url) }
         onSetSelectedFileID?(item.id)
 
-        if let existing = openTabs.first(where: { $0.url == item.url }) {
+        if let existing = openTabs.first(where: { Self.urlsReferToSameFile($0.url, item.url) }) {
             if needsDirectAccess { onEndAccessing?(item.url) }
             selectedTabID = existing.id
             onSyncPreview?(existing)

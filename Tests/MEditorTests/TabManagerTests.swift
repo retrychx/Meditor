@@ -61,6 +61,24 @@ final class TabManagerTests: XCTestCase {
         XCTAssertEqual(tabManager.selectedTabID, firstTabID)
     }
 
+    func testOpenFileUncheckedSymlinkVariantURLDoesNotDuplicate() {
+        let item = makeFile("a2.md")
+        tabManager.openFileUnchecked(item)
+        XCTAssertEqual(tabManager.openTabs.count, 1)
+        let firstTabID = tabManager.openTabs[0].id
+
+        // tempDir 在 /var/folders 下（/var → /private/var）：
+        // 同一文件的符号链接变体 URL 不应开出第二个 tab
+        let resolvedURL = item.url.resolvingSymlinksInPath()
+        guard resolvedURL != item.url else { return }
+        let variant = FileItem(url: resolvedURL, isDirectory: false)
+        mockService.mockAttributes[resolvedURL] = [.size: 100]
+
+        tabManager.openFileUnchecked(variant)
+        XCTAssertEqual(tabManager.openTabs.count, 1)
+        XCTAssertEqual(tabManager.selectedTabID, firstTabID)
+    }
+
     // MARK: - closeTab
 
     func testCloseTabModifiedShowsConfirmation() {
