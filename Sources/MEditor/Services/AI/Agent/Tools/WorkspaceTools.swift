@@ -56,7 +56,9 @@ struct ReadFileTool: AgentTool {
             return "未找到文件：\(filename)"
         }
         let content = try await context.readFile(at: url)
-        return "# \(filename)\n\n\(content)"
+        // 提示注入轻净化（与 @mention 同一防护级别）：命中行降级 + 边界声明
+        let (safeContent, flagged) = PromptInjectionSanitizer.sanitize(content)
+        return PromptInjectionSanitizer.guardrailNote(flagged: flagged) + "# \(filename)\n\n\(safeContent)"
     }
 }
 

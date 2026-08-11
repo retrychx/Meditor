@@ -159,6 +159,62 @@ final class AgentRunnerStabilityTests: XCTestCase {
                       "URLError.timedOut 应映射为超时文案，实际：\(runner.error ?? "nil")")
     }
 
+    // MARK: - B11 cancel 后旧 run 与新 run 的竞态：旧收尾不得覆盖新 run 状态
+    //
+    // 场景：旧 run 卡在不可取消点（工具确认 continuation）→ cancel() 同步放行
+    // isRunning → 新 run 立即启动并完成 → 旧 run 被放行走到收尾。
+    // 断言：旧收尾因 generation 不匹配静默放弃（不覆盖 finalText/isRunning/error、
+    // 不再次触发 onComplete）。覆盖的是收尾守卫 + 循环顶代际检查整条路径。
+
+    func test_staleRunCleanup_doesNotOverwriteNewRun() async {
+        let stuck = StuckTool(name: "stuck_tool")
+        // 旧 run 的 backend：第一轮发起会卡住的工具调用
+        let oldBackend = ScriptedBackend(script: [
+            .respond(AgentCompletionResponse(
+                text: "",
+                toolCalls: [AgentToolCall(id: "tc1", name: "stuck_tool", argumentsJSON: "{}")],
+                finishReason: "tool_calls"
+            )),
+        ])
+        // 新 run 的 backend：直接给出最终答案
+        let newBackend = ScriptedBackend(script: [
+            .respond(AgentCompletionResponse(text: "新 run 答案", toolCalls: [], finishReason: "stop")),
+        ])
+        let queue = BackendQueue([oldBackend, newBackend])
+        let runner = AgentRunner(maxSteps: 5, backendFactory: { _ in queue.next() })
+
+        // 1) 启动旧 run，等它卡进工具
+        runner.run(messages: [AgentMessage(role: .user, content: "old")],
+                   tools: [stuck], config: cfg, context: ctx)
+        let startDeadline = Date().addingTimeInterval(2)
+        while !stuck.didStart && Date() < startDeadline {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(stuck.didStart, "旧 run 应已进入卡住的工具")
+
+        // 2) cancel：同步放行 isRunning（旧 _run 仍卡在 continuation 上）
+        runner.cancel()
+        XCTAssertFalse(runner.isRunning)
+
+        // 3) 新 run 立即启动（旧 _run 还没退出），等待其完成
+        var completeCount = 0
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            runner.onComplete = { completeCount += 1; cont.resume() }
+            runner.run(messages: [AgentMessage(role: .user, content: "new")],
+                       tools: [], config: cfg, context: ctx)
+        }
+        XCTAssertEqual(runner.finalText, "新 run 答案")
+
+        // 4) 放行旧 run：其 _run 走到收尾，必须因代际不匹配静默放弃
+        stuck.release()
+        try? await Task.sleep(for: .milliseconds(300))
+
+        XCTAssertEqual(runner.finalText, "新 run 答案", "旧 run 收尾不得覆盖新 run 的 finalText")
+        XCTAssertFalse(runner.isRunning, "旧 run 收尾不得重置 isRunning")
+        XCTAssertNil(runner.error, "旧 run 收尾不得写入 error")
+        XCTAssertEqual(completeCount, 1, "旧 run 收尾不得再次触发 onComplete")
+    }
+
     // MARK: - Helpers
 
     private func runAndWait(_ runner: AgentRunner, tools: [any AgentTool] = []) async {
@@ -241,5 +297,51 @@ private final class SelfCancellingTool: AgentTool, @unchecked Sendable {
     func execute(arguments: [String: AnySendableValue], context: any AgentContextProtocol) async throws -> String {
         await body()
         return "cancel issued"
+    }
+}
+
+/// 卡在不可取消点的工具：execute 挂起在 continuation 上，直到 release() 手动放行
+/// （模拟命令确认对话框——continuation 不响应 Task 取消）。
+private final class StuckTool: AgentTool, @unchecked Sendable {
+    let spec: AgentToolSpec
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<String, Never>?
+    private(set) var didStart = false
+
+    init(name: String) {
+        self.spec = AgentToolSpec(name: name, description: "Stuck tool: \(name)")
+    }
+
+    func execute(arguments: [String: AnySendableValue], context: any AgentContextProtocol) async throws -> String {
+        lock.lock(); didStart = true; lock.unlock()
+        return await withCheckedContinuation { cont in
+            lock.lock()
+            continuation = cont
+            lock.unlock()
+        }
+    }
+
+    func release() {
+        lock.lock()
+        let cont = continuation
+        continuation = nil
+        lock.unlock()
+        cont?.resume(returning: "stuck tool released")
+    }
+}
+
+/// 按序派发 backend 的队列（backendFactory 是 @Sendable 闭包，用锁盒避免捕获可变 var）。
+private final class BackendQueue: @unchecked Sendable {
+    private let backends: [ScriptedBackend]
+    private var index = 0
+    private let lock = NSLock()
+
+    init(_ backends: [ScriptedBackend]) { self.backends = backends }
+
+    func next() -> ScriptedBackend {
+        lock.lock(); defer { lock.unlock() }
+        let backend = backends[min(index, backends.count - 1)]
+        index += 1
+        return backend
     }
 }

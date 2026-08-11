@@ -96,32 +96,31 @@ final class AIChatCoordinator {
         let runner = AgentRunner(maxSteps: settings.aiAgentMaxSteps)
         convo.agentRunner = runner
 
-        // 流式 chunk 回调 → 更新占位 bubble
+        // 捕获发起会话：run 进行中用户可能切换 / 新建会话（cancelStreaming 停掉 runner，
+        // 但 onChunk / onComplete 仍会触发），回调必须写回该会话而非当时的活跃会话
+        let sessionID = convo.activeID
+
+        // 流式 chunk 回调 → 更新占位 bubble（按发起会话写回）
         runner.onChunk = { [weak convo] chunk in
             guard let convo else { return }
-            if let idx = convo.messages.firstIndex(where: { $0.id == replyID }) {
-                convo.messages[idx].text = chunk
-            }
+            convo.updateMessageText(chunk, messageID: replyID, sessionID: sessionID)
         }
 
-        // 完成回调
+        // 完成回调（全部写入按 sessionID 定向到发起会话）
         runner.onComplete = { [weak convo, weak runner] in
             guard let convo else { return }
             let finalText = runner?.finalText ?? ""
             let errText   = runner?.error
 
             if let err = errText, !err.isEmpty {
-                if let idx = convo.messages.firstIndex(where: { $0.id == replyID }) {
-                    convo.messages[idx].text = "错误：\(err)"
-                }
+                convo.updateMessageText("错误：\(err)", messageID: replyID, sessionID: sessionID)
             } else if !finalText.isEmpty {
-                if let idx = convo.messages.firstIndex(where: { $0.id == replyID }) {
-                    convo.messages[idx].text = finalText
-                    // 输出达到 max_tokens 上限被截断时，在答案下方追加一行提示
-                    if runner?.state.wasTruncated == true {
-                        convo.messages[idx].text += "\n\n⚠️ 输出达到长度上限，内容可能被截断。"
-                    }
+                var text = finalText
+                // 输出达到 max_tokens 上限被截断时，在答案下方追加一行提示
+                if runner?.state.wasTruncated == true {
+                    text += "\n\n⚠️ 输出达到长度上限，内容可能被截断。"
                 }
+                convo.updateMessageText(text, messageID: replyID, sessionID: sessionID)
             } else {
                 // Agent 做了工具调用但没有最终文本
                 let errorSteps = runner?.steps.filter(\.isError) ?? []
@@ -135,25 +134,27 @@ final class AIChatCoordinator {
                         return nil
                     }
                     let summary = "⚠️ 部分操作未能完成：\n" + lines.joined(separator: "\n")
-                    if let idx = convo.messages.firstIndex(where: { $0.id == replyID }) {
-                        convo.messages[idx].text = summary
-                    }
+                    convo.updateMessageText(summary, messageID: replyID, sessionID: sessionID)
                 } else {
                     // 工具全部成功，结果已体现在文档里，删掉空占位
-                    convo.messages.removeAll { $0.id == replyID }
+                    convo.removeMessage(replyID, sessionID: sessionID)
                 }
             }
 
-            // 保存完整的 agent 消息历史（含工具调用），下次对话时直接使用
+            // 保存完整的 agent 消息历史（含工具调用），下次对话时直接使用——写回发起会话
             if let fm = runner?.finalMessages, !fm.isEmpty {
-                convo.agentHistory = fm
+                convo.setAgentHistory(fm, sessionID: sessionID)
             }
 
-            // 保存本次运行状态快照（历史步骤持久化，Runner 置 nil 后仍可展示）
-            convo.lastRunState = runner?.state
+            // 保存本次运行状态快照（per-session：步骤面板跟随发起会话，不挂到别的会话上）
+            convo.setLastRunState(runner?.state, sessionID: sessionID)
 
-            convo.isResponding = false
-            convo.agentRunner  = nil
+            // 仅当全局 runner 仍是本次运行时才复位：切换会话后用户可能已发起新 run，
+            // 旧 run 迟到的收尾不得清掉新 run 的进行状态
+            if let runner, convo.agentRunner === runner {
+                convo.isResponding = false
+                convo.agentRunner  = nil
+            }
             convo.persist()
         }
 

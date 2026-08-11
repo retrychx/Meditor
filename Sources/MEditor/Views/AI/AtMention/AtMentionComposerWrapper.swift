@@ -9,7 +9,9 @@ struct AtMentionComposerWrapper<Picker: View>: View {
 
     @Binding var plainText: String
     @Binding var mentionTokens: [AtMentionToken]
-    var isFocused: Bool
+    // 必须是真正的 Binding（而非值拷贝）：内部 Coordinator 在
+    // textDidBegin/EndEditing 写回焦点状态，父层用它驱动焦点光环等 UI
+    @Binding var isFocused: Bool
     @Binding var showMentionPicker: Bool
     @Binding var mentionQuery: String
     var onSubmit: () -> Void
@@ -30,7 +32,7 @@ struct AtMentionComposerWrapper<Picker: View>: View {
             AtMentionComposerView(
                 plainText: $plainText,
                 mentionTokens: $mentionTokens,
-                isFocused: .constant(isFocused),
+                isFocused: $isFocused,
                 onSubmit: onSubmit,
                 theme: theme,
                 fontSize: 13.5

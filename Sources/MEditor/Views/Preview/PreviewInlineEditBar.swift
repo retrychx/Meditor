@@ -187,14 +187,22 @@ private enum PreviewInlineEditFlow {
     ) {
         let r = AgentRunner()
         state.diffReview.activeRunner = r
+        // 捕获 generation token：dismiss / 新一轮流式后在途回调写入被丢弃
+        let streamGen = state.diffReview.streamGeneration
 
         r.onChunk = { [weak state] fullText in
             guard let state, !fullText.isEmpty else { return }
-            state.diffReview.streamedContent = fullContent.replacingCharacters(in: sourceRange, with: fullText)
+            state.diffReview.writeStreamedContent(
+                fullContent.replacingCharacters(in: sourceRange, with: fullText),
+                generation: streamGen
+            )
         }
         r.onComplete = { [weak state, weak r] in
             guard let state else { return }
-            state.diffReview.activeRunner = nil
+            // 只在自己的 runner 仍注册时释放引用（避免清掉后一轮运行的注册）
+            if let runner = r, state.diffReview.activeRunner === runner {
+                state.diffReview.activeRunner = nil
+            }
             if let err = r?.error {
                 state.diffReview.dismiss()
                 state.showToast(err, icon: "exclamationmark.triangle")
@@ -206,9 +214,9 @@ private enum PreviewInlineEditFlow {
                 state.showToast("AI 未返回内容", icon: "exclamationmark.triangle")
                 return
             }
-            state.diffReview.lastGeneratedText = finalText
             let modified = fullContent.replacingCharacters(in: sourceRange, with: finalText)
-            state.diffReview.commitStreamWithModified(modified) { merged in
+            // token 失效（dismiss / 新一轮流式）时 commit 被丢弃，lastGeneratedText 也不写回
+            let committed = state.diffReview.commitStreamWithModified(modified, generation: streamGen) { merged in
                 if let tab = state.selectedTab {
                     // 走 updateTabContent：同步预览 + 标 isModified（否则防抖保存会漏掉），
                     // 预览重渲染后 flashPreviewChange 的脉冲才能落到新 DOM 上。
@@ -216,6 +224,9 @@ private enum PreviewInlineEditFlow {
                     state.scheduleDebounceSave()
                 }
                 state.flashPreviewChange(sourceRange: sourceRange, in: merged)
+            }
+            if committed {
+                state.diffReview.lastGeneratedText = finalText
             }
         }
         r.run(

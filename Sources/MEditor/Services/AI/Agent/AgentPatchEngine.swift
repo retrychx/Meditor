@@ -15,6 +15,12 @@ enum PatchEngine {
         replace: String,
         all: Bool
     ) -> (updated: String, count: Int) {
+        // 空 find 防御：不同 Foundation 版本对空 needle 的替换语义不一
+        //（可能退化为在每个字符间隙插入 replace，直接腐蚀全文），一律按
+        //「未匹配」处理（count == 0），由上层返回清晰错误让模型重试。
+        // 注意只拦空串——全空白 find 是合法替换（如替换缩进），不拦。
+        guard !find.isEmpty else { return (original, 0) }
+
         let candidates: [(String, String)] = [
             (original, find),
             (

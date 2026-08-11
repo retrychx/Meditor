@@ -240,6 +240,8 @@ struct InlineEditBar: View {
 
         // 进入 diff 流式模式
         state.diffReview.beginStreaming(original: fullContent, actionLabel: action.rawValue)
+        // 捕获 generation token：dismiss / 新一轮流式后在途回调写入被丢弃
+        let streamGen = state.diffReview.streamGeneration
 
         // 用 AgentRunner 执行（可访问 read_document / search_document 等工具）
         let config  = AIConfig.current(settings, scene: .inline)   // 内联编辑专用模型
@@ -255,19 +257,25 @@ struct InlineEditBar: View {
                                               document: state.selectedTab?.content)
 
         agentRunner = AgentRunner()
+        // 注册到 diffReview（与预览流一致）：dismiss（取消按钮 / 关闭 diff 视图）才能
+        // 取消到这次运行；且 bar 销毁后 runner 由 diffReview 强持有，run 不会在途中被释放
+        state.diffReview.activeRunner = agentRunner
 
         // 监听流式 streaming chunks → diff preview
         agentRunner.onChunk = { [weak state] chunk in
             guard let state else { return }
-            // 流式中间结果 — 拼接到 diff 预览
-            let current = state.diffReview.streamedContent ?? fullContent
-            // 仅当 chunk 是最终文本时替换（AgentRunner 目前一次性输出）
-            state.diffReview.streamedContent = spliced(chunk)
+            // 仅当 chunk 是最终文本时替换（AgentRunner 目前一次性输出）；
+            // generation 校验：dismiss 后迟到的 chunk 不得写回
+            state.diffReview.writeStreamedContent(spliced(chunk), generation: streamGen)
         }
 
         agentRunner.onComplete = { [weak state, weak agentRunner] in
             guard let state else { return }
             let runner = agentRunner
+            // 只在自己的 runner 仍注册时释放引用（避免清掉后一轮运行的注册）
+            if let runner, state.diffReview.activeRunner === runner {
+                state.diffReview.activeRunner = nil
+            }
             isLoading    = false
             loadingLabel = ""
 
@@ -285,7 +293,7 @@ struct InlineEditBar: View {
             }
 
             let modified = spliced(finalText)
-            state.diffReview.commitStreamWithModified(modified) { merged in
+            state.diffReview.commitStreamWithModified(modified, generation: streamGen) { merged in
                 if let tab = state.selectedTab {
                     // 走 updateTabContent：同步预览 + 标 isModified（否则防抖保存会漏掉）
                     state.updateTabContent(tab.id, content: merged)

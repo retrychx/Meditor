@@ -26,6 +26,12 @@ final class DiffReviewState {
     /// 当前正在运行的 AgentRunner（流式/微调）——dismiss 时取消。
     var activeRunner: AgentRunner? = nil
 
+    /// 回调失效防护（generation token）：beginStreaming / dismiss 各递增一次。
+    /// 发起方启动 run 后捕获该值，迟到的 onChunk/onComplete 必须经
+    /// writeStreamedContent / commitStreamWithModified(_:generation:onFinalize:) 写入，
+    /// dismiss（或新一轮流式）之后在途回调不得再把 diffs / streamedContent 写回。
+    private(set) var streamGeneration = 0
+
     // MARK: Content
 
     var originalContent: String = ""
@@ -59,6 +65,7 @@ final class DiffReviewState {
     /// Activate diff mode immediately and start streaming phase.
     /// Call `appendStreamChunk(_:)` for each chunk, then `commitStream(onFinalize:)` when done.
     func beginStreaming(original: String, actionLabel: String) {
+        streamGeneration += 1
         originalContent = original
         streamedContent = ""
         streamingAction = actionLabel
@@ -73,6 +80,13 @@ final class DiffReviewState {
 
     func appendStreamChunk(_ chunk: String) {
         streamedContent += chunk
+    }
+
+    /// 带 generation 校验的流式写入：token 失效（dismiss / 新一轮 beginStreaming）时
+    /// 丢弃迟到的 chunk，不写回 streamedContent。
+    func writeStreamedContent(_ content: String, generation: Int) {
+        guard generation == streamGeneration, isStreaming else { return }
+        streamedContent = content
     }
 
     /// Switch from streaming phase to paragraph-diff review phase.
@@ -90,6 +104,15 @@ final class DiffReviewState {
         modifiedContent = modified
         self.onFinalize = onFinalize
         diffs = ParagraphDiffer.diff(original: originalContent, modified: modified)
+    }
+
+    /// 带 generation 校验的 commit：dismiss 后迟到的 onComplete 不得复活 diffs，
+    /// 也不得触发 onFinalize 写回文档。返回是否真正提交（false = token 已失效，写入被丢弃）。
+    @discardableResult
+    func commitStreamWithModified(_ modified: String, generation: Int, onFinalize: @escaping (String) -> Void) -> Bool {
+        guard generation == streamGeneration, isStreaming else { return false }
+        commitStreamWithModified(modified, onFinalize: onFinalize)
+        return true
     }
 
     // MARK: Present
@@ -209,6 +232,7 @@ final class DiffReviewState {
     // MARK: Dismiss
 
     func dismiss() {
+        streamGeneration += 1   // 使在途回调的 token 立即失效（迟到的 onChunk/onComplete 被丢弃）
         activeStreamTask?.cancel()
         activeStreamTask = nil
         activeRunner?.cancel()

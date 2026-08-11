@@ -112,6 +112,23 @@ final class AgentPatchEngineTests: XCTestCase {
         XCTAssertEqual(all.count, 0)
     }
 
+    func testApply_emptyFind_realisticMarkdown_untouched() {
+        // 钉死引擎入口的显式 guard：真实多行文档 + all=true（腐蚀风险最高的组合）
+        let doc = "# 标题\n\n第一段。\n\n- item a\n- item b\n"
+        for all in [false, true] {
+            let (updated, count) = PatchEngine.apply(to: doc, find: "", replace: "INJECTED", all: all)
+            XCTAssertEqual(updated, doc, "空 find 不得修改任何内容（all=\(all)）")
+            XCTAssertEqual(count, 0, "空 find 必须按失败返回（all=\(all)）")
+        }
+    }
+
+    func testApply_whitespaceOnlyFind_stillAllowed() {
+        // 决策记录：只拦空串。全空白 find 是合法替换（如把两个空格换成 tab），不得误伤
+        let (updated, count) = PatchEngine.apply(to: "a  b", find: "  ", replace: "\t", all: false)
+        XCTAssertEqual(updated, "a\tb")
+        XCTAssertEqual(count, 1)
+    }
+
     func testApply_atDocumentStart() {
         let (updated, count) = PatchEngine.apply(
             to: "# Heading\nbody", find: "# Heading", replace: "# New Title", all: false)

@@ -34,7 +34,8 @@ extension AIAssistantPanel {
             AtMentionComposerWrapper(
                 plainText: Binding(get: { convo.input }, set: { convo.input = $0 }),
                 mentionTokens: $mentionTokens,
-                isFocused: inputFocused,
+                // FocusState.Binding 不能隐式转 Binding<Bool>，包一层显式桥接
+                isFocused: Binding(get: { inputFocused }, set: { inputFocused = $0 }),
                 showMentionPicker: $showMentionPicker,
                 mentionQuery: $mentionQuery,
                 onSubmit: send,

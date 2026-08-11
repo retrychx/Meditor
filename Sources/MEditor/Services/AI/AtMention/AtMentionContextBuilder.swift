@@ -187,29 +187,9 @@ enum AtMentionContextBuilder {
 
     // MARK: - 提示注入轻净化
 
-    /// 已知的直接注入指令模式（大小写不敏感）。只收"命令模型做事"的句式，
-    /// 不收 "system prompt" 这类可能正当出现在文档里的词。
-    private static let injectionPatterns = [
-        "ignore previous instructions",
-        "ignore all previous instructions",
-        "disregard all previous",
-        "disregard previous instructions",
-        "忽略以上所有", "忽略上述所有", "忽略之前的指令", "忽略先前的指令",
-        "忽略所有先前", "无视以上", "无视上述",
-    ]
-
-    /// 命中注入模式的行降级为引用文本（前缀 ◦），返回 (净化后内容, 是否命中)。
+    /// 实现已抽到 PromptInjectionSanitizer（AgentFileRepository.swift，与 read_file /
+    /// read_document 工具结果共用同一防护级别）。保留本入口以兼容现有调用与测试。
     static func sanitizeMentionContent(_ content: String) -> (String, Bool) {
-        var flagged = false
-        let lines = content.components(separatedBy: "\n").map { line -> String in
-            let lower = line.lowercased()
-            let hit = injectionPatterns.contains { lower.contains($0) }
-            if hit {
-                flagged = true
-                return "◦ " + line
-            }
-            return line
-        }
-        return (lines.joined(separator: "\n"), flagged)
+        PromptInjectionSanitizer.sanitize(content)
     }
 }

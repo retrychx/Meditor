@@ -44,8 +44,16 @@ final class AIConversation {
     @ObservationIgnored var streamTask: Task<Void, Never>?
     /// Agent runner for tool-calling mode (助手面板接入 AgentRunner 时使用).
     @ObservationIgnored var agentRunner: AgentRunner?
-    /// 上次 Agent 运行的状态快照（Runner 完成后保留历史步骤展示用）。
-    var lastRunState: AgentRunState? = nil
+    /// 各会话最近一次 Agent 运行的状态快照（Runner 完成后保留历史步骤展示用）。
+    /// per-session 存储：切到历史会话只显示该会话自己的步骤面板；在途 run 收尾
+    /// 按会话 id 写回（setLastRunState(_:sessionID:)），不污染当前活跃会话。
+    /// 仅内存快照，不落盘（AgentRunState 非 Codable，AISession 持久化结构不变）。
+    private var lastRunStates: [UUID: AgentRunState] = [:]
+    /// 当前活跃会话的运行快照（读写代理到 lastRunStates[activeID]，UI 消费方无需改动）。
+    var lastRunState: AgentRunState? {
+        get { lastRunStates[activeID] }
+        set { lastRunStates[activeID] = newValue }
+    }
     /// Debounced disk-persist work item.
     @ObservationIgnored private var persistWork: DispatchWorkItem?
 
@@ -133,6 +141,38 @@ final class AIConversation {
             guard sessions.indices.contains(activeIndex) else { return }
             sessions[activeIndex].agentHistory = newValue
         }
+    }
+
+    // MARK: 指定会话的写入
+    //
+    // 在途 run 的回调（onChunk / onComplete）必须按发起时的会话 id 写回：
+    // run 进行中用户可能已切换 / 新建会话，若走 messages / agentHistory 代理
+    // （读写活跃会话）会把旧 run 的结果写进新会话。会话已被删除时静默丢弃。
+
+    /// 更新指定会话中某条消息的文本（流式 chunk / 完成回填）。
+    func updateMessageText(_ text: String, messageID: UUID, sessionID: UUID) {
+        guard let si = sessions.firstIndex(where: { $0.id == sessionID }),
+              let mi = sessions[si].messages.firstIndex(where: { $0.id == messageID }) else { return }
+        sessions[si].messages[mi].text = text
+        sessions[si].updatedAt = .now
+    }
+
+    /// 删除指定会话中的消息（无文本回复时清理空占位）。
+    func removeMessage(_ messageID: UUID, sessionID: UUID) {
+        guard let si = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        sessions[si].messages.removeAll { $0.id == messageID }
+    }
+
+    /// 写入指定会话的 agentHistory（含工具调用上下文）。
+    func setAgentHistory(_ history: [AgentMessage], sessionID: UUID) {
+        guard let si = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        sessions[si].agentHistory = history
+    }
+
+    /// 写入指定会话的运行快照（步骤面板历史）。
+    func setLastRunState(_ runState: AgentRunState?, sessionID: UUID) {
+        guard sessions.contains(where: { $0.id == sessionID }) else { return }
+        lastRunStates[sessionID] = runState
     }
 
     // MARK: Context estimation
@@ -264,6 +304,7 @@ final class AIConversation {
     func delete(_ id: UUID) {
         if id == activeID { cancelStreaming() }
         sessions.removeAll { $0.id == id }
+        lastRunStates[id] = nil
         if sessions.isEmpty {
             let fresh = AISession()
             sessions = [fresh]

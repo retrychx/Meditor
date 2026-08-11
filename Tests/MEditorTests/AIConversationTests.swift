@@ -120,4 +120,73 @@ final class AIConversationTests: XCTestCase {
         conv.activate(other.id)
         XCTAssertEqual(conv.activeID, other.id)
     }
+
+    // MARK: - 在途 run 收尾不污染新会话
+
+    func testLateRunCompletionWritesToOriginatingSession() {
+        let conv = AIConversation()
+        let oldID = conv.activeID
+        let reply = AIChatMessage(role: .assistant, text: "")
+        conv.messages = [AIChatMessage(role: .user, text: "旧问题"), reply]
+
+        // 模拟 run 进行中：运行快照挂在旧会话上
+        let oldRunState = AgentRunState()
+        conv.lastRunState = oldRunState
+
+        // run 进行中新建会话（cancelStreaming 后旧 run 的 onComplete 仍会迟到触发）
+        conv.newSession()
+        let newID = conv.activeID
+        XCTAssertNotEqual(oldID, newID)
+        XCTAssertNil(conv.lastRunState, "lastRunState per-session：新会话不应继承旧 run 的步骤面板")
+
+        // 旧 run 迟到的收尾：按会话 id 写回发起会话
+        conv.updateMessageText("旧回答", messageID: reply.id, sessionID: oldID)
+        conv.setAgentHistory([AgentMessage(role: .assistant, content: "旧回答")], sessionID: oldID)
+        conv.setLastRunState(oldRunState, sessionID: oldID)
+
+        // 新会话未被污染
+        XCTAssertTrue(conv.messages.isEmpty)
+        XCTAssertTrue(conv.agentHistory.isEmpty)
+        XCTAssertNil(conv.lastRunState)
+
+        // 切回旧会话：数据已正确落回（消息 / agentHistory / 步骤面板）
+        conv.activate(oldID)
+        XCTAssertEqual(conv.messages.last?.text, "旧回答")
+        XCTAssertEqual(conv.agentHistory.first?.content, "旧回答")
+        XCTAssertTrue(conv.lastRunState === oldRunState)
+    }
+
+    func testLateWritesToDeletedSessionAreDropped() {
+        let conv = AIConversation()
+        let oldID = conv.activeID
+        conv.messages = [AIChatMessage(role: .user, text: "x")]
+        conv.newSession()
+        conv.delete(oldID)
+
+        // 会话已删除：迟到写入静默丢弃，不崩溃、不写活跃会话
+        conv.updateMessageText("late", messageID: UUID(), sessionID: oldID)
+        conv.setAgentHistory([AgentMessage(role: .assistant, content: "late")], sessionID: oldID)
+        conv.setLastRunState(AgentRunState(), sessionID: oldID)
+
+        XCTAssertTrue(conv.agentHistory.isEmpty)
+        XCTAssertNil(conv.lastRunState)
+    }
+
+    func testLastRunStateIsPerSession() {
+        let conv = AIConversation()
+        let firstID = conv.activeID
+        conv.messages = [AIChatMessage(role: .user, text: "x")]
+        let runState = AgentRunState()
+        conv.lastRunState = runState
+
+        conv.newSession()
+        XCTAssertNil(conv.lastRunState, "新会话不应看到旧会话的步骤面板")
+
+        // 通过活跃会话代理写入，跟随当前会话
+        let newRunState = AgentRunState()
+        conv.lastRunState = newRunState
+
+        conv.activate(firstID)
+        XCTAssertTrue(conv.lastRunState === runState, "切回旧会话应恢复它自己的步骤面板")
+    }
 }

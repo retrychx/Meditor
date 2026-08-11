@@ -51,10 +51,18 @@ struct ReadDocumentTool: AgentTool {
             content = current
         }
 
+        // 提示注入轻净化（与 @mention 同一防护级别）：读回内容原文进历史，命中
+        // 注入模式的行降级为引用文本；结果头部加边界声明。只净化读回内容，
+        // 不影响 write/patch 路径。净化只给行加前缀、不增减行，行区间行号不受影响。
+        let (safeContent, flagged) = PromptInjectionSanitizer.sanitize(content)
+
+        let result: String
         if startLine != nil || endLine != nil {
-            return Self.rangeSlice(content, name: name, start: startLine, end: endLine)
+            result = Self.rangeSlice(safeContent, name: name, start: startLine, end: endLine)
+        } else {
+            result = Self.truncated(safeContent, name: name)
         }
-        return Self.truncated(content, name: name)
+        return PromptInjectionSanitizer.guardrailNote(flagged: flagged) + result
     }
 
     /// 行区间切片（1-based、闭区间），附带总行数提示。
@@ -144,6 +152,12 @@ struct PatchDocumentTool: AgentTool {
         guard let find    = arguments["find"]?.stringValue,
               let replace = arguments["replace"]?.stringValue
         else { throw AgentError.executionError("缺少 find 或 replace 参数") }
+
+        // 空 find 提前拦截：空 needle 会退化为插入式替换腐蚀文档（PatchEngine 层
+        // 同样拦了一道）。返回工具错误让模型先 read_document 复制原文后重试。
+        guard !find.isEmpty else {
+            return "[!] patch 失败：find 参数为空。请先用 read_document 读取文档，把要替换的原文完整复制到 find 后重试。"
+        }
 
         let replaceAll = arguments["replace_all"]?.boolValue ?? false
 

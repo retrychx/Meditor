@@ -59,6 +59,12 @@ final class AgentRunner {
     private let backendFactory: @Sendable (AIConfig) -> any AgentBackend
     private var runTask: Task<Void, Never>? = nil
 
+    /// 运行代际计数：cancel() 会同步放行 isRunning，但旧 _run 可能仍卡在不可取消点
+    /// （如工具确认 continuation），此时新 run() 能通过 guard 启动，两个 _run 共享
+    /// state/回调。每次 runMessages 递增 generation，旧 _run 发现代际不匹配时静默
+    /// 放弃收尾，避免覆盖新 run 的 finalMessages/isRunning 或触发旧 onComplete。
+    private var runGeneration = 0
+
     /// 总执行超时（秒），0 = 不限。默认 5 分钟。
     var timeoutSeconds: TimeInterval = 300
 
@@ -108,6 +114,9 @@ final class AgentRunner {
     ) {
         guard !isRunning else { return }
 
+        runGeneration += 1
+        let generation = runGeneration
+
         steps              = []
         finalText          = ""
         error              = nil
@@ -118,13 +127,13 @@ final class AgentRunner {
         runTask = Task { [weak self] in
             guard let self else { return }
             guard self.timeoutSeconds > 0 else {
-                await self._run(messages: messages, tools: tools, config: config, context: context)
+                await self._run(messages: messages, tools: tools, config: config, context: context, generation: generation)
                 return
             }
             // 两个 Task 赛跑：_run 和超时计时器，任一完成则 cancel 另一个
             await withTaskGroup(of: Bool.self) { group in
                 group.addTask {
-                    await self._run(messages: messages, tools: tools, config: config, context: context)
+                    await self._run(messages: messages, tools: tools, config: config, context: context, generation: generation)
                     return false   // 正常完成
                 }
                 group.addTask {
@@ -135,7 +144,10 @@ final class AgentRunner {
                     }
                     return true   // 超时
                 }
-                if let timedOut = await group.next(), timedOut, self.isRunning {
+                // 代际校验：旧 run 的超时计时器晚到时，state 可能已被新 run 接管，
+                // 不得把新 run 误判为超时
+                if let timedOut = await group.next(), timedOut, self.isRunning,
+                   self.runGeneration == generation {
                     self.error     = "操作超时（\(Int(self.timeoutSeconds))s），请重试或简化任务"
                     self.isRunning = false
                     self.runTask   = nil
@@ -168,7 +180,8 @@ final class AgentRunner {
         messages initialMessages: [AgentMessage],
         tools: [any AgentTool],
         config: AIConfig,
-        context: any AgentContextProtocol
+        context: any AgentContextProtocol,
+        generation: Int
     ) async {
         let backend = backendFactory(config)  // nonisolated factory, safe to call from task
         var messages = initialMessages
@@ -180,6 +193,9 @@ final class AgentRunner {
         while stepCount < maxSteps {
             stepCount += 1
             guard !Task.isCancelled else { break }
+            // 代际已易主（cancel 后新 run 启动）：直接走向收尾，收尾会静默放弃，
+            // 避免旧 run 继续往共享 state 追加 step 或再发后端请求
+            guard generation == runGeneration else { break }
 
             do {
                 streamAccumulated = ""   // 每个 step 重置，reply 只显示当前轮累积文本
@@ -308,6 +324,12 @@ final class AgentRunner {
                 break
             }
         }
+
+        // 代际校验（cancel/新 run 竞态修复）：本 _run 若曾在 cancel 后卡在不可取消点
+        //（如工具确认 continuation），期间新 run 已启动并接管 state。旧 run 的收尾
+        // 必须静默放弃——不写 finalMessages、不重置 isRunning/runTask、不触发旧
+        // onComplete，否则会覆盖新 run 的运行状态。
+        guard generation == runGeneration else { return }
 
         // 仅当循环耗尽且既无最终答案也无更具体错误时才报步数超限：
         // 最终答案恰好在第 maxSteps 轮拿到时不应误报错误

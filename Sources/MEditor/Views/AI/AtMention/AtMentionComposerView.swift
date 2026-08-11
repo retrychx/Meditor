@@ -270,9 +270,28 @@ struct AtMentionComposerView: NSViewRepresentable {
         }
 
         func textDidChange(_ notification: Notification) {
+            // IME 组字期间不做 token 重建：marked text 尚未上屏，此时扫描
+            // textStorage 做破坏性重建有误判风险（与回车/Esc 的组字防护同理）
+            if !textView.hasMarkedText() {
+                rebuildMentionTokens()
+            }
             syncPlainText()
             detectMentionTrigger()
             notifyChange()
+        }
+
+        /// 根据 textStorage 现存的 mention chip 重建 token 列表（顺序与文本中一致）。
+        /// 用户删除 chip 后 token 必须同步移除，否则 send() 仍会注入已删除引用的文件内容。
+        private func rebuildMentionTokens() {
+            guard let storage = textView.textStorage else { return }
+            var tokens: [AtMentionToken] = []
+            storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) { value, _, _ in
+                if let attachment = value as? MentionAttachment {
+                    tokens.append(attachment.token)
+                }
+            }
+            // token 实例与 attachment 内的一一对应，未增删时数组相等，避免不必要的 Binding 写入
+            if tokens != mentionTokens { mentionTokens = tokens }
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
