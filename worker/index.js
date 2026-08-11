@@ -157,6 +157,8 @@ export default {
       return new Response(pkg, {
         headers: {
           "Content-Type": "application/zip",
+          // 官网下载按钮也指向这里——给个像样的文件名（Sparkle 会忽略这个头）
+          "Content-Disposition": 'attachment; filename="MEditor.zip"',
           "Cache-Control": "public, max-age=300",
         },
       });

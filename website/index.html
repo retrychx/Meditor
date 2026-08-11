@@ -598,7 +598,6 @@
     <li><a href="#features">Features</a></li>
     <li><a href="#ai">AI Agent</a></li>
     <li><a href="#editor">Editor</a></li>
-    <li><a href="https://github.com/retrychx/Meditor">GitHub</a></li>
   </ul>
   <a href="#download" class="nav-cta">Download Free →</a>
 </nav>
@@ -628,9 +627,8 @@
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1v9M8 10l-3-3M8 10l3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 13h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
       Download for macOS
     </a>
-    <a href="https://github.com/retrychx/Meditor" class="btn-ghost">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-      View on GitHub
+    <a href="#features" class="btn-ghost">
+      Explore features ↓
     </a>
   </div>
 
@@ -649,7 +647,7 @@
       <div class="stat-label">Syntax languages</div>
     </div>
     <div class="stat-item">
-      <div class="stat-num">5.5MB</div>
+      <div class="stat-num" id="stat-size">9MB</div>
       <div class="stat-label">Download size</div>
     </div>
     <div class="stat-item">
@@ -785,13 +783,12 @@
 <!-- ───── CTA BANNER ───────────────────────────────────── -->
 <div class="cta-banner reveal" id="download">
   <h2>Start writing smarter today.</h2>
-  <p>MEditor is free and open-source. No subscription, no Electron, no cloud — just your words and a capable AI Agent.</p>
+  <p>MEditor is free. No subscription, no Electron, no cloud — just your words and a capable AI Agent.</p>
   <div class="hero-actions" style="margin-bottom:0">
-    <a href="https://github.com/retrychx/Meditor/releases/latest" class="btn-primary">
+    <a href="/update/pkg" class="btn-primary">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1v9M8 10l-3-3M8 10l3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 13h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-      Download for macOS 14+ · v0.3.0
+      Download for macOS 14+<span class="dl-version"> · v0.6.7</span>
     </a>
-    <a href="https://github.com/retrychx/Meditor" class="btn-ghost">View Source →</a>
   </div>
 </div>
 
@@ -799,10 +796,10 @@
 <footer>
   <span>© 2026 MEditor. MIT License.</span>
   <div class="footer-links">
-    <a href="https://github.com/retrychx/Meditor">GitHub</a>
-    <a href="https://github.com/retrychx/Meditor/releases">Releases</a>
-    <a href="https://github.com/retrychx/Meditor#readme">Docs</a>
-    <a href="https://github.com/retrychx/Meditor/issues">Issues</a>
+    <a href="#features">Features</a>
+    <a href="#ai">AI Agent</a>
+    <a href="#editor">Editor</a>
+    <a href="#download">Download</a>
   </div>
 </footer>
 
@@ -830,6 +827,21 @@
       nav.style.background = 'rgba(244,245,242,0.72)';
     }
   }, { passive: true });
+
+  // 从同源的更新 feed 取最新版本号/包大小，发版后官网自动跟着变；
+  // 拉取失败就保留 HTML 里的静态兜底值。
+  fetch('/update/appcast.xml', { cache: 'no-store' })
+    .then(r => (r.ok ? r.text() : Promise.reject()))
+    .then(xml => {
+      const v = xml.match(/sparkle:shortVersionString>\s*([^<]+?)\s*</)?.[1];
+      const len = xml.match(/length="(\d+)"/)?.[1];
+      if (v) document.querySelectorAll('.dl-version').forEach(el => { el.textContent = ' · v' + v; });
+      if (len) {
+        const el = document.getElementById('stat-size');
+        if (el) el.textContent = (Number(len) / 1e6).toFixed(1) + 'MB';
+      }
+    })
+    .catch(() => {});
 </script>
 </body>
 </html>
