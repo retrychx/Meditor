@@ -183,6 +183,13 @@ struct AIAssistantHeroOverlay: View {
             try? await Task.sleep(nanoseconds: 16_000_000)
             withAnimation(.spring(response: 0.42, dampingFraction: 0.80)) { shown = true }
         }
+        // Esc 归属链路（唯一顺序，改动时三处注释保持同步）：
+        // 1. IME 组字中          → 归输入法（取消组字）
+        // 2. mention picker 显示中 → 只关 picker（MentionTextView.keyDown 拦截）
+        // 3. 其余                → 归本面板关闭：焦点在输入框时由 MentionTextView 经
+        //    onEscapeWithoutPicker 回调到 AIAssistantPanel.onClose（与本 modifier 同一个
+        //    dismiss 闭包）；焦点不在输入框时由这里的 onExitCommand 处理。
+        // 专注模式的 Esc（FocusEscapeMonitor / AppShell 隐藏快捷键）在面板打开时主动放行。
         .onExitCommand { dismiss() }
     }
 

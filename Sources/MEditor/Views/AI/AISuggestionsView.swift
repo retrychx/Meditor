@@ -127,7 +127,7 @@ extension AIAssistantPanel {
             HStack(spacing: 6) {
                 mentionTagChip("@current", color: AIBrand.blue)
                 mentionTagChip("@workspace", color: Color(hex: "10B981"))
-                mentionTagChip("@文件名", color: AIBrand.violet)
+                mentionTagChip(L("ai.mention.tagFileExample"), color: AIBrand.violet)
             }
         }
         .padding(12)

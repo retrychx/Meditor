@@ -120,7 +120,7 @@ struct AIAssistantPanel: View {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 11))
-                    Text("Context nearly full — start a new chat to avoid truncation.")
+                    Text(L("ai.contextNearlyFull"))
                         .font(.system(size: 11))
                 }
                 .foregroundStyle(Color(hex: "92400E"))
@@ -193,6 +193,9 @@ struct AIAssistantPanel: View {
         if convo.messages.last?.role == .assistant {
             convo.messages.removeLast()
         }
+        // 清掉当前会话上一轮的运行快照：否则新 run 完成前，旧步骤面板会一直残留在
+        // transcript 里（lastRunState 是 per-session 计算属性，写 nil 即清当前会话）。
+        convo.lastRunState = nil
         coordinator.runCompletion()
     }
 }

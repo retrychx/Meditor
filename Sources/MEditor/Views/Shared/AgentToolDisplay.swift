@@ -22,52 +22,53 @@ enum AgentToolAccent: String, Sendable {
 enum AgentToolDisplay {
 
     /// 将工具名 + 参数转成人类可读的操作摘要
+    /// 文案走全局 L() 查表（macOS / iOS 两个 target 都编译 Localization.swift，可直接调用）
     static func info(name: String, args: String) -> AgentToolDisplayInfo {
         switch name {
         case "create_file":
             let file = argValue("filename", from: args) ?? ""
-            return .init("doc.badge.plus", file.isEmpty ? "创建文件" : "创建文件 · \(URL(fileURLWithPath: file).lastPathComponent)", .blue)
+            return .init("doc.badge.plus", file.isEmpty ? L("ai.tool.createFile") : L("ai.tool.createFileNamed", URL(fileURLWithPath: file).lastPathComponent), .blue)
         case "write_file":
             let file = argValue("filename", from: args) ?? ""
             let body = argValue("content", from: args) ?? ""
-            let size = body.isEmpty ? "" : " (\(body.count) 字)"
-            return .init("square.and.pencil", file.isEmpty ? "写入文件\(size)" : "写入 \(URL(fileURLWithPath: file).lastPathComponent)\(size)", .indigo)
+            let size = body.isEmpty ? "" : L("ai.tool.sizeSuffix", body.count)
+            return .init("square.and.pencil", file.isEmpty ? L("ai.tool.writeFile", size) : L("ai.tool.writeFileNamed", URL(fileURLWithPath: file).lastPathComponent, size), .indigo)
         case "create_directory":
             let path = argValue("path", from: args) ?? ""
-            return .init("folder.badge.plus", path.isEmpty ? "创建目录" : "创建目录 · \(path)", .purple)
+            return .init("folder.badge.plus", path.isEmpty ? L("ai.tool.createDir") : L("ai.tool.createDirNamed", path), .purple)
         case "write_document":
             let body = argValue("content", from: args) ?? ""
-            let size = body.isEmpty ? "" : " (\(body.count) 字)"
-            return .init("pencil.and.list.clipboard", "更新当前文档\(size)", .orange)
+            let size = body.isEmpty ? "" : L("ai.tool.sizeSuffix", body.count)
+            return .init("pencil.and.list.clipboard", L("ai.tool.updateDocument", size), .orange)
         case "patch_document":
             let find = argValue("find", from: args) ?? ""
-            let preview = find.isEmpty ? "" : " · 「\(String(find.prefix(20)))\(find.count > 20 ? "…" : "")」"
-            return .init("scissors", "精准修改文档\(preview)", .orange)
+            let preview = find.isEmpty ? "" : L("ai.tool.patchPreview", String(find.prefix(20)) + (find.count > 20 ? "…" : ""))
+            return .init("scissors", L("ai.tool.patchDocument", preview), .orange)
         case "read_document":
-            return .init("doc.text.magnifyingglass", "读取当前文档", .gray)
+            return .init("doc.text.magnifyingglass", L("ai.tool.readDocument"), .gray)
         case "read_file":
             let file = argValue("filename", from: args) ?? ""
-            return .init("doc.text.magnifyingglass", file.isEmpty ? "读取文件" : "读取 · \(file)", .gray)
+            return .init("doc.text.magnifyingglass", file.isEmpty ? L("ai.tool.readFile") : L("ai.tool.readFileNamed", file), .gray)
         case "open_file":
             let file = argValue("filename", from: args) ?? ""
-            return .init("arrow.up.right.square", file.isEmpty ? "打开文件" : "打开 · \(file)", .cyan)
+            return .init("arrow.up.right.square", file.isEmpty ? L("ai.tool.openFile") : L("ai.tool.openFileNamed", file), .cyan)
         case "insert_at_cursor":
             let body = argValue("text", from: args) ?? ""
-            let size = body.isEmpty ? "" : " (\(body.count) 字)"
-            return .init("text.insert", "插入内容\(size)", .teal)
+            let size = body.isEmpty ? "" : L("ai.tool.sizeSuffix", body.count)
+            return .init("text.insert", L("ai.tool.insertAtCursor", size), .teal)
         case "list_files":
-            return .init("list.bullet", "列出工作区文件", .gray)
+            return .init("list.bullet", L("ai.tool.listFiles"), .gray)
         case "search_workspace":
             let q = argValue("query", from: args) ?? ""
-            return .init("magnifyingglass", q.isEmpty ? "搜索工作区" : "搜索「\(q)」", .gray)
+            return .init("magnifyingglass", q.isEmpty ? L("ai.tool.searchWorkspace") : L("ai.tool.searchWorkspaceQuery", q), .gray)
         case "search_document":
             let q = argValue("query", from: args) ?? ""
-            return .init("magnifyingglass", q.isEmpty ? "搜索文档" : "文档内搜索「\(q)」", .gray)
+            return .init("magnifyingglass", q.isEmpty ? L("ai.tool.searchDocument") : L("ai.tool.searchDocumentQuery", q), .gray)
         case "run_command":
             let cmd = argValue("command", from: args) ?? ""
-            if cmd.isEmpty { return .init("terminal", "执行命令", .orange) }
+            if cmd.isEmpty { return .init("terminal", L("ai.tool.runCommand"), .orange) }
             let short = cmd.count > 36 ? String(cmd.prefix(36)) + "…" : cmd
-            return .init("terminal", "执行命令 · \(short)", .orange)
+            return .init("terminal", L("ai.tool.runCommandNamed", short), .orange)
         default:
             return .init("gearshape.fill", name, .orange)
         }

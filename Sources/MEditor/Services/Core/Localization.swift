@@ -134,6 +134,77 @@ extension LocalizationManager {
         "ai.mention.cardBody": ("Type @ in the input box to reference files, directories, or the full workspace. The AI will read their content before responding.",
                                 "在输入框中输入 @ 可引用文件、目录或整个工作区，AI 会先读取内容再回复。"),
 
+        // @mention picker
+        "ai.mention.pickerTitle": ("Reference file or directory", "引用文件或目录"),
+        "ai.mention.pickerSearch": ("Search \"%@\"", "搜索「%@」"),
+        "ai.mention.pickerHint": ("↑↓ navigate  ↵ select  Esc close", "↑↓ 导航  ↵ 确认  Esc 关闭"),
+        "ai.mention.noMatches": ("No matching files", "没有匹配的文件"),
+        "ai.mention.builtin": ("Built-in", "内建"),
+        "ai.mention.tagFileExample": ("@file", "@文件名"),
+
+        // AI 面板：引用选段卡片 / 上下文警告
+        "ai.quotedSelection": ("Quoted selection", "引用选段"),
+        "ai.removeQuote": ("Remove quote", "移除引用"),
+        "ai.contextNearlyFull": ("Context nearly full — start a new chat to avoid truncation.",
+                                 "上下文即将占满，建议开启新对话以避免截断。"),
+
+        // 待确认执行命令确认条
+        "ai.command.pendingTitle": ("Command awaiting confirmation", "待确认执行命令"),
+        "ai.command.cwd": ("Directory: %@", "目录：%@"),
+        "ai.command.reject": ("Reject", "拒绝"),
+        "ai.command.rememberHint": ("Won't ask again for this session", "确认后本次会话不再询问"),
+
+        // Agent 执行面板
+        "ai.agent.title": ("Agent Run", "Agent 执行"),
+        "ai.agent.collapseSteps": ("Collapse earlier steps", "折叠早期步骤"),
+        "ai.agent.collapsedSteps": ("▸ %d earlier steps collapsed", "▸ 已折叠 %d 个早期步骤"),
+        "ai.agent.reply": ("Reply", "回复"),
+        "ai.agent.collapse": ("Collapse", "收起"),
+        "ai.agent.expand": ("Expand", "展开"),
+        "ai.agent.done": ("Agent finished", "Agent 已完成"),
+        "ai.agent.doneButton": ("Done", "完成"),
+
+        // Agent 工具调用摘要（macOS / iOS 共享 AgentToolDisplay）
+        "ai.tool.createFile": ("Create file", "创建文件"),
+        "ai.tool.createFileNamed": ("Create file · %@", "创建文件 · %@"),
+        "ai.tool.writeFile": ("Write file%@", "写入文件%@"),
+        "ai.tool.writeFileNamed": ("Write %@%@", "写入 %@%@"),
+        "ai.tool.sizeSuffix": (" (%d chars)", " (%d 字)"),
+        "ai.tool.createDir": ("Create directory", "创建目录"),
+        "ai.tool.createDirNamed": ("Create directory · %@", "创建目录 · %@"),
+        "ai.tool.updateDocument": ("Update current document%@", "更新当前文档%@"),
+        "ai.tool.patchDocument": ("Patch document%@", "精准修改文档%@"),
+        "ai.tool.patchPreview": (" · \"%@\"", " · 「%@」"),
+        "ai.tool.readDocument": ("Read current document", "读取当前文档"),
+        "ai.tool.readFile": ("Read file", "读取文件"),
+        "ai.tool.readFileNamed": ("Read · %@", "读取 · %@"),
+        "ai.tool.openFile": ("Open file", "打开文件"),
+        "ai.tool.openFileNamed": ("Open · %@", "打开 · %@"),
+        "ai.tool.insertAtCursor": ("Insert content%@", "插入内容%@"),
+        "ai.tool.listFiles": ("List workspace files", "列出工作区文件"),
+        "ai.tool.searchWorkspace": ("Search workspace", "搜索工作区"),
+        "ai.tool.searchWorkspaceQuery": ("Search \"%@\"", "搜索「%@」"),
+        "ai.tool.searchDocument": ("Search document", "搜索文档"),
+        "ai.tool.searchDocumentQuery": ("Search in document \"%@\"", "文档内搜索「%@」"),
+        "ai.tool.runCommand": ("Run command", "执行命令"),
+        "ai.tool.runCommandNamed": ("Run · %@", "执行命令 · %@"),
+
+        // 行内编辑（编辑器 / 预览两个 bar）
+        "ai.inline.working": ("AI: %@…", "AI %@中…"),
+        "ai.inline.rewrite": ("Rewrite", "改写"),
+        "ai.inline.expand": ("Expand", "扩写"),
+        "ai.inline.condense": ("Condense", "精简"),
+        "ai.inline.explain": ("Explain", "解释"),
+        "ai.inline.addComments": ("Add comments", "加注释"),
+        "ai.inline.expandSection": ("Expand section", "扩写章节"),
+        "ai.inline.organizeList": ("Organize", "整理"),
+        "ai.inline.adjust": ("Adjust", "调整"),
+        "ai.inline.emptyResponse": ("AI returned no content", "AI 未返回内容"),
+        "ai.inline.mapFailed": ("Couldn't map the selection back to the source text — please select it in the editor instead.",
+                                "圈选内容无法对应回原文，请改从编辑器中圈选"),
+        "ai.inline.targetLost": ("The document changed while the AI was working — the target passage couldn't be located, so the result wasn't applied.",
+                                 "文档在 AI 处理期间已被修改，目标段落无法定位，本次结果未写回"),
+
         // InlineEditBar 问 AI 按钒
         "ai.askAI": ("Ask AI", "问 AI"),
         "ai.askAIHint": ("Open AI assistant with this selection pre-loaded", "将选中文本带入 AI 助手对话"),

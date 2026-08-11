@@ -30,6 +30,10 @@ struct AtMentionComposerView: NSViewRepresentable {
 
     /// Called when user presses Return (without Shift) → trigger send
     var onSubmit: () -> Void
+    /// picker 未显示时按下 Esc 的回调（语义同 hero overlay 的 onExitCommand：关闭 AI 面板）。
+    /// NSTextView 默认会把 Esc 转成 cancelOperation: 并吞掉，SwiftUI 的 onExitCommand 收不到，
+    /// 必须在这里显式上报。为 nil 时保持系统默认行为（不拦截）。
+    var onEscapeWithoutPicker: (() -> Void)? = nil
     /// Theme so colors match the rest of the panel
     var theme: PreviewTheme
     /// Font size matching editor settings
@@ -42,6 +46,7 @@ struct AtMentionComposerView: NSViewRepresentable {
                     mentionTokens: $mentionTokens,
                     isFocused: $isFocused,
                     onSubmit: onSubmit,
+                    onEscapeWithoutPicker: onEscapeWithoutPicker,
                     theme: theme,
                     fontSize: fontSize)
     }
@@ -78,6 +83,8 @@ struct AtMentionComposerView: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.applyTheme(theme, fontSize: fontSize)
+        // 父视图每次 body 求值都会重建闭包，这里同步最新值，避免 Coordinator 持有过期闭包
+        context.coordinator.onEscapeWithoutPicker = onEscapeWithoutPicker
         let tv = context.coordinator.textView
         // 外部（send 后）清空 plainText → 同步清空 textView
         if plainText.isEmpty && !tv.string.isEmpty {
@@ -102,6 +109,8 @@ struct AtMentionComposerView: NSViewRepresentable {
         @Binding var mentionTokens: [AtMentionToken]
         @Binding var isFocused: Bool
         var onSubmit: () -> Void
+        /// picker 未显示时按下 Esc 的回调（见 AtMentionComposerView.onEscapeWithoutPicker）
+        var onEscapeWithoutPicker: (() -> Void)?
         var theme: PreviewTheme
         var fontSize: CGFloat
 
@@ -120,12 +129,14 @@ struct AtMentionComposerView: NSViewRepresentable {
              mentionTokens: Binding<[AtMentionToken]>,
              isFocused: Binding<Bool>,
              onSubmit: @escaping () -> Void,
+             onEscapeWithoutPicker: (() -> Void)? = nil,
              theme: PreviewTheme,
              fontSize: CGFloat) {
             _plainText    = plainText
             _mentionTokens = mentionTokens
             _isFocused    = isFocused
             self.onSubmit = onSubmit
+            self.onEscapeWithoutPicker = onEscapeWithoutPicker
             self.theme    = theme
             self.fontSize = fontSize
             textView = MentionTextView()
@@ -394,7 +405,7 @@ private extension UInt16 {
 // MARK: - MentionTextView (NSTextView subclass)
 
 /// Thin NSTextView subclass:
-/// - Intercepts Return (submit) and Escape (cancel mention)
+/// - Intercepts Return (submit) and Escape (cancel mention / close AI panel)
 /// - Delegates all mention logic to Coordinator
 @MainActor
 final class MentionTextView: NSTextView {
@@ -422,13 +433,22 @@ final class MentionTextView: NSTextView {
                 return
             }
         case 53: // Escape
-            // 同理：组字期间 Esc 优先给输入法取消组字，而不是关 mention picker。
+            // Esc 归属顺序（唯一链路，详见 AIAssistantLauncher 的 onExitCommand 注释）：
+            // 1. IME 组字中 → 归输入法（取消组字），走 super 不拦截
+            // 2. mention picker 显示中 → 只关 picker
+            // 3. 其余 → 归 AI 面板（关闭面板），显式回调上报，不走 super——
+            //    NSTextView 会把 Esc 转成 cancelOperation: 吞掉，SwiftUI 的 onExitCommand 收不到
             if isPickerVisible, !hasMarkedText() {
+                // 同理：组字期间 Esc 优先给输入法取消组字，而不是关 mention picker。
                 NotificationCenter.default.post(
                     name: .atMentionKeyEvent,
                     object: AtMentionKeyEvent.dismiss
                 )
                 mentionCoordinator?.cancelMention()
+                return
+            }
+            if !hasMarkedText(), let onEscape = mentionCoordinator?.onEscapeWithoutPicker {
+                onEscape()
                 return
             }
         case 125: // ↓ — handled by moveDown override
@@ -596,11 +616,11 @@ struct AtMentionPickerView: View {
                 Image(systemName: "at")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(theme.craftSecondary)
-                Text(query.isEmpty ? "引用文件或目录" : "搜索「\(query)」")
+                Text(query.isEmpty ? L("ai.mention.pickerTitle") : L("ai.mention.pickerSearch", query))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(theme.craftSecondary)
                 Spacer()
-                Text("↑↓ 导航  ↵ 确认  Esc 关闭")
+                Text(L("ai.mention.pickerHint"))
                     .font(.system(size: 10))
                     .foregroundStyle(theme.craftSecondary.opacity(0.6))
             }
@@ -615,7 +635,7 @@ struct AtMentionPickerView: View {
                 HStack {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 11))
-                    Text("没有匹配的文件")
+                    Text(L("ai.mention.noMatches"))
                         .font(.system(size: 12))
                 }
                 .foregroundStyle(theme.craftSecondary)
@@ -732,7 +752,7 @@ private struct AtMentionCandidateRow: View {
             Spacer(minLength: 4)
 
             if candidate.isBuiltin {
-                Text("内建")
+                Text(L("ai.mention.builtin"))
                     .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(theme.craftSecondary)
                     .padding(.horizontal, 4)

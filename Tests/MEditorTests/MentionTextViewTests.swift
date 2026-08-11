@@ -122,4 +122,65 @@ final class MentionTextViewTests: XCTestCase {
         coordinator.textDidChange(Notification(name: NSText.didChangeNotification))
         XCTAssertEqual(box.tokens, [tokenB], "删除首个 chip 后应保留剩余 token 的文本顺序")
     }
+
+    // MARK: - Esc 归属
+
+    private func escKeyEvent() -> NSEvent {
+        NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "\u{1B}",
+            charactersIgnoringModifiers: "\u{1B}",
+            isARepeat: false,
+            keyCode: 53
+        )!
+    }
+
+    /// picker 未显示时 Esc 应触发关闭回调（关闭 AI 面板）。
+    /// 回归：NSTextView 默认把 Esc 转成 cancelOperation: 吞掉，SwiftUI 的 onExitCommand
+    /// 收不到，hero 面板关不掉——必须由 MentionTextView 显式回调上报。
+    func testEscapeWithoutPickerTriggersCloseCallback() {
+        var escaped = 0
+        let (coordinator, textView) = makeComposer(onSubmit: {})
+        coordinator.onEscapeWithoutPicker = { escaped += 1 }
+        textView.keyDown(with: escKeyEvent())
+        XCTAssertEqual(escaped, 1, "picker 未显示时 Esc 应触发面板关闭回调")
+    }
+
+    /// picker 显示中 Esc 只关 picker，不触发关闭回调（一次按键一层语义）；
+    /// picker 关闭后再按 Esc 才归面板关闭。
+    func testEscapeWithPickerVisibleOnlyDismissesPicker() {
+        var escaped = 0
+        let (coordinator, textView) = makeComposer(onSubmit: {})
+        coordinator.onEscapeWithoutPicker = { escaped += 1 }
+
+        // 模拟输入 @ 触发 mention picker（textDidChange → detectMentionTrigger）
+        textView.string = "@"
+        textView.setSelectedRange(NSRange(location: 1, length: 0))
+        coordinator.textDidChange(Notification(name: NSText.didChangeNotification))
+        XCTAssertNotNil(coordinator.activeQuery, "输入 @ 后 picker 应处于显示状态")
+
+        textView.keyDown(with: escKeyEvent())
+        XCTAssertNil(coordinator.activeQuery, "picker 显示中 Esc 应关闭 picker")
+        XCTAssertEqual(escaped, 0, "picker 显示中 Esc 不应触发面板关闭回调")
+
+        textView.keyDown(with: escKeyEvent())
+        XCTAssertEqual(escaped, 1, "picker 关闭后再按 Esc 应触发面板关闭回调")
+    }
+
+    /// 组字期间 Esc 归输入法取消组字，不触发关闭回调（与回车的组字防护同理）
+    func testEscapeWithMarkedTextDoesNotTriggerCloseCallback() {
+        var escaped = 0
+        let (coordinator, textView) = makeComposer(onSubmit: {})
+        coordinator.onEscapeWithoutPicker = { escaped += 1 }
+        textView.setMarkedText("nihao", selectedRange: NSRange(location: 5, length: 0),
+                               replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertTrue(textView.hasMarkedText())
+        textView.keyDown(with: escKeyEvent())
+        XCTAssertEqual(escaped, 0, "组字期间 Esc 不应触发关闭回调（应交给输入法）")
+    }
 }

@@ -174,7 +174,8 @@ struct AgentStepView: View {
     ) -> some View {
         let done   = step.isDone
         let label  = AgentToolDisplay.info(name: name, args: args)
-        let accent: Color = done ? (isError ? .red : accentColor(label.accent)) : accentColor(label.accent)
+        // 仅「已完成且失败」用红色；其余（进行中 / 成功）都用工具自身的 accent 色。
+        let accent: Color = (done && isError) ? .red : accentColor(label.accent)
 
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
@@ -281,7 +282,7 @@ struct AgentResultPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             // Header
             HStack {
-                Label("Agent 执行", systemImage: "sparkles")
+                Label(L("ai.agent.title"), systemImage: "sparkles")
                     .font(.system(size: 13, weight: .semibold))
                 Spacer()
                 if runner.isRunning {
@@ -331,7 +332,7 @@ struct AgentResultPanel: View {
                                 HStack(spacing: 6) {
                                     Image(systemName: stepsExpanded ? "chevron.down" : "chevron.right")
                                         .font(.system(size: 10))
-                                    Text(stepsExpanded ? "折叠早期步骤" : "▸ 已折叠 \(hiddenCount) 个早期步骤")
+                                    Text(stepsExpanded ? L("ai.agent.collapseSteps") : L("ai.agent.collapsedSteps", hiddenCount))
                                         .font(.system(size: 11.5))
                                     Spacer(minLength: 0)
                                 }
@@ -390,7 +391,7 @@ struct AgentResultPanel: View {
                         Image(systemName: "text.bubble")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
-                        Text("回复")
+                        Text(L("ai.agent.reply"))
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
                         Spacer()
@@ -418,7 +419,7 @@ struct AgentResultPanel: View {
                         Button {
                             withAnimation(DS.Motion.spring) { finalTextExpanded.toggle() }
                         } label: {
-                            Text(finalTextExpanded ? "收起" : "展开")
+                            Text(finalTextExpanded ? L("ai.agent.collapse") : L("ai.agent.expand"))
                                 .font(.system(size: 11))
                                 .foregroundStyle(Color.appAccent)
                         }
@@ -431,10 +432,10 @@ struct AgentResultPanel: View {
                 Divider()
                 HStack {
                     Spacer()
-                    Text("Agent 已完成")
+                    Text(L("ai.agent.done"))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
-                    Button("完成") { onDismiss() }
+                    Button(L("ai.agent.doneButton")) { onDismiss() }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                         .tint(Color.appAccent)

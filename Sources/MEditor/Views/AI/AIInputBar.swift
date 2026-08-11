@@ -39,6 +39,9 @@ extension AIAssistantPanel {
                 showMentionPicker: $showMentionPicker,
                 mentionQuery: $mentionQuery,
                 onSubmit: send,
+                // Esc 归属：picker 未显示时 Esc 归面板关闭（与 hero overlay 的 onExitCommand 同一语义）。
+                // NSTextView 会吞掉 Esc（cancelOperation:），必须由 composer 显式回调上来。
+                onEscapeWithoutPicker: onClose,
                 theme: theme,
                 pickerContent: { mentionPickerPopoverContent }
             )
@@ -153,7 +156,7 @@ extension AIAssistantPanel {
                 HStack(spacing: 4) {
                     Image(systemName: "text.quote")
                         .font(.system(size: 9, weight: .semibold))
-                    Text("引用选段")
+                    Text(L("ai.quotedSelection"))
                         .font(.system(size: 10, weight: .semibold))
                 }
                 .foregroundStyle(theme.craftSecondary)
@@ -172,7 +175,7 @@ extension AIAssistantPanel {
                     .foregroundStyle(theme.craftSecondary.opacity(0.6))
             }
             .buttonStyle(.plain)
-            .help("移除引用")
+            .help(L("ai.removeQuote"))
         }
         .padding(.leading, 11)
         .padding(.trailing, 10)

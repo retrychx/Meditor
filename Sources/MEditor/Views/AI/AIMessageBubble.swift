@@ -20,13 +20,28 @@ extension AIAssistantPanel {
             } else {
                 AIAssistantOrb(size: 20, glow: true).padding(.top, 1)
                 VStack(alignment: .leading, spacing: 6) {
-                    MarkdownText(
-                        markdown: message.text,
-                        textColor: theme.craftPrimary,
-                        secondaryColor: theme.craftSecondary,
-                        codeBackground: theme.isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.045),
-                        accent: Color.appAccent
-                    )
+                    // 正在流式增长的 reply（最后一条 assistant 消息）
+                    let isStreamingReply = convo.isResponding && message.id == convo.messages.last?.id
+                    Group {
+                        if isStreamingReply {
+                            // 流式进行中降级为纯文本渲染：整条 Markdown 随每个 chunk
+                            // （约 50ms 一次）重解析，回复越长成本越高；纯文本近乎零成本。
+                            // 完成后 isResponding 复位，自动切回 MarkdownText 渲染。
+                            Text(message.text)
+                                .font(.system(size: 13))
+                                .foregroundStyle(theme.craftPrimary)
+                                .lineSpacing(4)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        } else {
+                            MarkdownText(
+                                markdown: message.text,
+                                textColor: theme.craftPrimary,
+                                secondaryColor: theme.craftSecondary,
+                                codeBackground: theme.isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.045),
+                                accent: Color.appAccent
+                            )
+                        }
+                    }
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 13)
@@ -41,7 +56,7 @@ extension AIAssistantPanel {
                     )
                     .shadow(color: .black.opacity(theme.isDark ? 0.18 : 0.04), radius: 5, x: 0, y: 1)
 
-                    if !convo.isResponding || message.id != convo.messages.last?.id {
+                    if !isStreamingReply {
                         HStack(spacing: 12) {
                             AIMessageAction(icon: "doc.on.doc", title: L("ai.copy"), theme: theme) {
                                 Pasteboard.copy(message.text)

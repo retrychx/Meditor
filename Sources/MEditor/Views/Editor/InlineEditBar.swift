@@ -29,7 +29,7 @@ struct InlineEditBar: View {
             if isLoading {
                 HStack(spacing: 6) {
                     ProgressView().scaleEffect(0.7)
-                    Text("AI \(loadingLabel)中…")
+                    Text(L("ai.inline.working", loadingLabel))
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                     Button {
@@ -147,7 +147,7 @@ struct InlineEditBar: View {
             HStack(spacing: 4) {
                 Image(systemName: action.icon)
                     .font(.system(size: 10, weight: .medium))
-                Text(action.rawValue)
+                Text(action.displayName)
                     .font(.system(size: 12, weight: .medium))
             }
             .foregroundStyle(.primary)
@@ -156,7 +156,7 @@ struct InlineEditBar: View {
             .background(Color.primary.opacity(0.05), in: Capsule())
         }
         .buttonStyle(.plain)
-        .help(action.rawValue)
+        .help(action.displayName)
     }
 
     // MARK: - Trigger
@@ -223,7 +223,7 @@ struct InlineEditBar: View {
         }
 
         isLoading    = true
-        loadingLabel = action.rawValue
+        loadingLabel = action.displayName
 
         // 保留选区位置
         let savedRange  = state.editorSelectedRange
@@ -239,7 +239,14 @@ struct InlineEditBar: View {
         }
 
         // 进入 diff 流式模式
-        state.diffReview.beginStreaming(original: fullContent, actionLabel: action.rawValue)
+        state.diffReview.beginStreaming(original: fullContent, actionLabel: action.displayName)
+        // 快照过期防护：AI 运行期间用户可能继续编辑——写回时以当前文档为起点
+        // 重定位合并；目标段落已被改动则拒绝覆盖并提示，由用户放弃本次结果
+        state.diffReview.currentContentProvider = { [weak state] in state?.selectedTab?.content }
+        state.diffReview.onRebaseConflict = { [weak state] in
+            state?.showToast(L("ai.inline.targetLost"),
+                             icon: "exclamationmark.triangle")
+        }
         // 捕获 generation token：dismiss / 新一轮流式后在途回调写入被丢弃
         let streamGen = state.diffReview.streamGeneration
 
@@ -288,7 +295,7 @@ struct InlineEditBar: View {
             let finalText = runner?.finalText ?? ""
             guard !finalText.isEmpty else {
                 state.diffReview.dismiss()
-                state.showToast("AI 未返回内容", icon: "exclamationmark.triangle")
+                state.showToast(L("ai.inline.emptyResponse"), icon: "exclamationmark.triangle")
                 return
             }
 

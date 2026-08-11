@@ -18,6 +18,21 @@ enum InlineEditAction: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// 面向用户的展示名。rawValue 保持中文作为稳定 id（CaseIterable / 持久化兼容），
+    /// UI 一律用 displayName，随语言切换。
+    var displayName: String {
+        switch self {
+        case .rewrite:       return L("ai.inline.rewrite")
+        case .expand:        return L("ai.inline.expand")
+        case .condense:      return L("ai.inline.condense")
+        case .translate:     return L("ai.suggest.translate")
+        case .explainCode:   return L("ai.inline.explain")
+        case .addComments:   return L("ai.inline.addComments")
+        case .expandSection: return L("ai.inline.expandSection")
+        case .organizeList:  return L("ai.inline.organizeList")
+        }
+    }
+
     var icon: String {
         switch self {
         case .rewrite:       return "pencil.and.outline"

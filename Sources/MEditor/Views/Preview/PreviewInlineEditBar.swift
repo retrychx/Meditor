@@ -58,7 +58,7 @@ struct PreviewInlineEditBar: View {
             HStack(spacing: 4) {
                 Image(systemName: action.icon)
                     .font(.system(size: 10, weight: .medium))
-                Text(action.rawValue)
+                Text(action.displayName)
                     .font(.system(size: 12, weight: .medium))
             }
             .foregroundStyle(.primary)
@@ -67,7 +67,7 @@ struct PreviewInlineEditBar: View {
             .background(Color.primary.opacity(0.05), in: Capsule())
         }
         .buttonStyle(.plain)
-        .help(action.rawValue)
+        .help(action.displayName)
     }
 
     /// 把选中文本带入 AI 面板，开启对话。
@@ -106,13 +106,13 @@ struct PreviewInlineEditBar: View {
         guard let sourceRange = SourceTextMapper.sourceRange(
             ofPlainSelection: selectedText, in: fullContent
         ) else {
-            state.showToast("圈选内容无法对应回原文，请改从编辑器中圈选", icon: "exclamationmark.triangle")
+            state.showToast(L("ai.inline.mapFailed"), icon: "exclamationmark.triangle")
             onDismiss?()
             return
         }
 
         // 流式落笔：立即打开 diff 视图，AI 边生成边流入右栏
-        state.diffReview.beginStreaming(original: fullContent, actionLabel: action.rawValue)
+        state.diffReview.beginStreaming(original: fullContent, actionLabel: action.displayName)
 
         // 连续微调入口：对最近一次生成结果按自由指令迭代（"再短一点"…）
         state.diffReview.onRefine = { [weak state] instruction in
@@ -147,7 +147,7 @@ struct PreviewInlineEditBar: View {
         let previous = state.diffReview.lastGeneratedText
         guard !trimmed.isEmpty, !previous.isEmpty else { return }
 
-        state.diffReview.beginStreaming(original: fullContent, actionLabel: "调整")
+        state.diffReview.beginStreaming(original: fullContent, actionLabel: L("ai.inline.adjust"))
         // beginStreaming 会清空微调入口，重新注入以便继续迭代
         state.diffReview.onRefine = { [weak state] next in
             guard let state else { return }
@@ -187,6 +187,13 @@ private enum PreviewInlineEditFlow {
     ) {
         let r = AgentRunner()
         state.diffReview.activeRunner = r
+        // 快照过期防护：AI 运行期间用户可能继续编辑——写回时以当前文档为起点
+        // 重定位合并；目标段落已被改动则拒绝覆盖并提示，由用户放弃本次结果
+        state.diffReview.currentContentProvider = { [weak state] in state?.selectedTab?.content }
+        state.diffReview.onRebaseConflict = { [weak state] in
+            state?.showToast(L("ai.inline.targetLost"),
+                             icon: "exclamationmark.triangle")
+        }
         // 捕获 generation token：dismiss / 新一轮流式后在途回调写入被丢弃
         let streamGen = state.diffReview.streamGeneration
 
@@ -211,7 +218,7 @@ private enum PreviewInlineEditFlow {
             let finalText = r?.finalText ?? ""
             guard !finalText.isEmpty else {
                 state.diffReview.dismiss()
-                state.showToast("AI 未返回内容", icon: "exclamationmark.triangle")
+                state.showToast(L("ai.inline.emptyResponse"), icon: "exclamationmark.triangle")
                 return
             }
             let modified = fullContent.replacingCharacters(in: sourceRange, with: finalText)
@@ -223,7 +230,12 @@ private enum PreviewInlineEditFlow {
                     state.updateTabContent(tab.id, content: merged)
                     state.scheduleDebounceSave()
                 }
-                state.flashPreviewChange(sourceRange: sourceRange, in: merged)
+                // sourceRange 基于触发时的快照字符串；重定位合并后 merged 已是另一个
+                // 字符串，过期索引用上去是越界风险。改为在 merged 中按 AI 生成文本
+                // 重新定位闪示锚点，找不到则放弃本次闪示。
+                if let flashRange = merged.range(of: finalText, options: .literal) {
+                    state.flashPreviewChange(sourceRange: flashRange, in: merged)
+                }
             }
             if committed {
                 state.diffReview.lastGeneratedText = finalText

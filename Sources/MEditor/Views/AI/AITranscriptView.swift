@@ -116,11 +116,15 @@ extension AIAssistantPanel {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.06, execute: work)
             }
             .onChange(of: convo.agentRunner?.steps.count) { _, _ in
-                // 新增 step 时无条件滚动（不检查 atBottom）：
-                // 因为 onPreferenceChange 会在 onChange 之前触发，将 atBottom 设为
-                // false（底部锚点已超出视口），导致 if atBottom 检查失效。
-                // 使用 async 让布局先 settle，再执行滚动。
-                DispatchQueue.main.async { scrollToEnd(proxy) }
+                // 新 step 到达：只有用户本来就贴底时才跟随滚动；上翻阅读时不打断，
+                // 回到底部后 atBottom 恢复 true，自动恢复跟随。
+                // 必须同步捕获 atBottom——新 step 布局完成后底部锚点被顶出视口，
+                // preference 会把 atBottom 置 false，等 async 里再读就永远读不到
+                // "插入前"的贴底状态。async 只为等布局 settle 后再滚动。
+                let follow = atBottom
+                DispatchQueue.main.async {
+                    if follow { scrollToEnd(proxy) }
+                }
             }
             .onChange(of: convo.pendingCommand?.id) { _, newID in
                 // 待确认命令出现时滚到底，避免长命令把"执行/拒绝"按钮推到视口外

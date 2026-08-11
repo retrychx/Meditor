@@ -95,6 +95,46 @@ final class AIConversationTests: XCTestCase {
         XCTAssertTrue(conv.isApproachingContextLimit)
     }
 
+    // MARK: - Token estimation 指纹缓存
+
+    func testEstimatedTokenCountCacheConsistentAcrossEvaluations() {
+        let conv = AIConversation()
+        conv.messages = [AIChatMessage(role: .user, text: "你好，世界 hello")]
+        // 指纹未变时连续求值必须一致（走缓存路径）
+        let first  = conv.estimatedTokenCount
+        let second = conv.estimatedTokenCount
+        let third  = conv.estimatedTokenCount
+        XCTAssertEqual(first, second)
+        XCTAssertEqual(second, third)
+    }
+
+    func testEstimatedTokenCountCacheInvalidatesOnTextGrowth() {
+        let conv = AIConversation()
+        conv.messages = [AIChatMessage(role: .assistant, text: "short")]
+        let before = conv.estimatedTokenCount
+        // 流式 append 改变最后一条消息长度 → 指纹变化 → 缓存失效重算
+        conv.appendToLastMessage(String(repeating: "x", count: 400))
+        let after = conv.estimatedTokenCount
+        XCTAssertGreaterThan(after, before)
+        XCTAssertEqual(after, before + 100)   // 400 拉丁字符 ÷ 4
+    }
+
+    func testEstimatedTokenCountCacheInvalidatesOnNewMessage() {
+        let conv = AIConversation()
+        conv.messages = [AIChatMessage(role: .user, text: "hi")]
+        let before = conv.estimatedTokenCount
+        conv.messages.append(AIChatMessage(role: .assistant, text: String(repeating: "y", count: 40)))
+        XCTAssertEqual(conv.estimatedTokenCount, before + 10)
+    }
+
+    func testIsApproachingContextLimitCacheConsistent() {
+        let conv = AIConversation()
+        conv.messages = [AIChatMessage(role: .user, text: "hi")]
+        XCTAssertEqual(conv.isApproachingContextLimit, conv.isApproachingContextLimit)
+        conv.messages = [AIChatMessage(role: .user, text: String(repeating: "a", count: 102_401 * 4))]
+        XCTAssertTrue(conv.isApproachingContextLimit)
+    }
+
     // MARK: - Session lifecycle
 
     func testDeleteLastSessionCreatesNew() {

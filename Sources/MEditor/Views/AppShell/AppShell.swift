@@ -199,7 +199,9 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
             .keyboardShortcut("b", modifiers: [.command, .option])
 
             Button("") {
-                if workspaceUI.isFocusMode {
+                // AI 面板打开时 Esc 归面板关闭（与 FocusEscapeMonitor 的门控一致），
+                // 避免一次 Esc 同时关面板又退专注模式
+                if workspaceUI.isFocusMode && !state.showingAIAssistant {
                     withAnimation(DS.Motion.fast) { workspaceUI.isFocusMode = false }
                 }
             }
@@ -281,6 +283,9 @@ struct FocusEscapeMonitor: NSViewRepresentable {
                 && !state.showingBeautifySheet
                 && !state.showingTemplatePicker
                 && !state.showingCloseConfirmation
+                // AI 面板打开时 Esc 归面板（先关面板，再按一次才退出专注模式），
+                // 否则本地监视器抢在 keyDown 前消费事件，面板的 Esc 关闭永远收不到
+                && !state.showingAIAssistant
         }
     }
 }

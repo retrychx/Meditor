@@ -177,13 +177,44 @@ final class AIConversation {
 
     // MARK: Context estimation
 
+    /// estimatedTokenCount 的指纹缓存（@ObservationIgnored：纯派生数据的备忘，
+    /// 不是状态——消息本体变化已通过 messages/agentHistory 的正常观察驱动 UI 刷新，
+    /// 若让缓存属性参与观察反而会引入多余的无效化甚至循环）。
+    ///
+    /// 失效策略：指纹由「消息条数 + 各条文本长度 + agentHistory 条数/长度」混合而成，
+    /// 计算是 O(条数) 的整数操作；指纹一致直接命中缓存，变化才做 O(全文) 的逐字符估算。
+    /// 已知取舍：长度指纹不区分内容（等长但 CJK 占比不同的文本会碰撞），命中的旧值只影响
+    /// 80% 阈值附近的启发式提示横幅，不影响截断正确性（truncateIfOverLimit 同样走该估值，
+    /// 碰撞窗口内最多晚一次求值触发，量级可忽略）。
+    @ObservationIgnored private var tokenCountFingerprint: Int?
+    @ObservationIgnored private var cachedTokenCount: Int = 0
+
+    /// 廉价失效指纹：只混合条数与文本长度，不读字符内容（流式期间每条 chunk 改变
+    /// 最后一条消息的长度，指纹随之变化，缓存正确失效）。
+    private func tokenCountFingerprinter() -> Int {
+        var hasher = Hasher()
+        hasher.combine(messages.count)
+        for m in messages { hasher.combine(m.text.count) }
+        hasher.combine(agentHistory.count)
+        for m in agentHistory { hasher.combine(m.content.count) }
+        return hasher.finalize()
+    }
+
     /// Rough token estimate for the current conversation.
     /// 除 UI 消息文本外，还纳入 agentHistory（工具调用/结果的原始内容，单条可达 64KB）——
     /// 这才是真正发给模型的 agentMessages 的主要体积来源，否则触发时机会严重滞后于真实占用。
     /// Used to surface a context-limit warning before the API rejects the request.
+    ///
+    /// 结果按指纹缓存：面板 header 的 isApproachingContextLimit 每次 body 求值都会读它，
+    /// 流式期间约每 50ms 一次——没有缓存时每次都对全部消息逐字符扫描。
     var estimatedTokenCount: Int {
-        messages.reduce(0) { $0 + Self.estimateTokens($1.text) }
+        let fingerprint = tokenCountFingerprinter()
+        if fingerprint == tokenCountFingerprint { return cachedTokenCount }
+        let value = messages.reduce(0) { $0 + Self.estimateTokens($1.text) }
             + agentHistory.reduce(0) { $0 + Self.estimateTokens($1.content) }
+        tokenCountFingerprint = fingerprint
+        cachedTokenCount = value
+        return value
     }
 
     /// 混合语言 token 估算：CJK/全角按 ~1.5 字符/token，拉丁/数字/符号按 ~4。

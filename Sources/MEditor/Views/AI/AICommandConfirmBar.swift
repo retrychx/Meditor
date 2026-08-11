@@ -11,7 +11,7 @@ extension AIAssistantPanel {
                 Image(systemName: "terminal")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.orange)
-                Text("待确认执行命令")
+                Text(L("ai.command.pendingTitle"))
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(theme.craftPrimary)
             }
@@ -23,20 +23,20 @@ extension AIAssistantPanel {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(theme.editorBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
             if let cwd = pending.cwd {
-                Text("目录：\(cwd)")
+                Text(L("ai.command.cwd", cwd))
                     .font(.system(size: 10.5, design: .monospaced))
                     .foregroundStyle(theme.craftSecondary)
                     .lineLimit(1)
             }
             HStack(spacing: 8) {
                 Spacer()
-                Button("拒绝") { pending.reject() }
+                Button(L("ai.command.reject")) { pending.reject() }
                     .buttonStyle(.bordered)
-                Button("执行") { pending.approve() }
+                Button(L("ai.execute")) { pending.approve() }
                     .buttonStyle(.borderedProminent)
                     .tint(Color.appAccent)
             }
-            Text("确认后本次会话不再询问")
+            Text(L("ai.command.rememberHint"))
                 .font(.system(size: 10))
                 .foregroundStyle(theme.craftSecondary)
         }

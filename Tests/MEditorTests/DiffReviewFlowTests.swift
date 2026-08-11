@@ -88,4 +88,100 @@ final class DiffReviewFlowTests: XCTestCase {
         XCTAssertTrue(dr.diffs.isEmpty)
         XCTAssertTrue(dr.isStreaming, "新一轮流式不应被旧回调打断")
     }
+
+    // MARK: - 快照过期防护（写回时重定位合并）
+
+    /// 触发后用户在无关区域编辑 → 接受 → 用户编辑保留且 AI 修改生效
+    func test_acceptAll_afterUnrelatedUserEdit_rebasesOntoCurrentDocument() {
+        let dr = DiffReviewState()
+        let snapshot = "开头\n\n目标段落\n\n结尾"
+        let modified = "开头\n\nAI 改写后的段落\n\n结尾"
+
+        var currentDoc = snapshot   // 模拟文档：provider 每次读最新值
+        var conflict = false
+        var finalized: String? = nil
+
+        dr.beginStreaming(original: snapshot, actionLabel: "改写")
+        dr.currentContentProvider = { currentDoc }
+        dr.onRebaseConflict = { conflict = true }
+        dr.commitStreamWithModified(modified) { finalized = $0 }
+        XCTAssertEqual(dr.pendingCount, 1)
+
+        // AI 运行期间，用户在目标区域之前插入一段（无关编辑，索引发生偏移）
+        currentDoc = "开头\n\n用户手写的补充\n\n目标段落\n\n结尾"
+
+        dr.acceptAll()
+        XCTAssertFalse(conflict, "无关区域编辑不应触发冲突")
+        XCTAssertEqual(finalized, "开头\n\n用户手写的补充\n\nAI 改写后的段落\n\n结尾",
+                       "合并应基于当前文档：用户编辑保留 + AI 替换生效")
+        XCTAssertFalse(dr.isPresented)
+    }
+
+    /// 触发后用户改了目标区域 → 接受被拒绝、绝不覆盖，审阅界面保留
+    func test_acceptAll_afterTargetAreaEdited_refusesAndDoesNotOverwrite() {
+        let dr = DiffReviewState()
+        let snapshot = "开头\n\n目标段落\n\n结尾"
+
+        var currentDoc = snapshot
+        var conflict = false
+        var finalized: String? = nil
+
+        dr.beginStreaming(original: snapshot, actionLabel: "改写")
+        dr.currentContentProvider = { currentDoc }
+        dr.onRebaseConflict = { conflict = true }
+        dr.commitStreamWithModified("开头\n\nAI 改写\n\n结尾") { finalized = $0 }
+
+        // AI 运行期间，用户改动了目标区域本身
+        currentDoc = "开头\n\n用户改过的目标段落\n\n结尾"
+
+        dr.acceptAll()
+        XCTAssertTrue(conflict, "目标区域被改动必须触发冲突回调")
+        XCTAssertNil(finalized, "校验失败绝不写回")
+        XCTAssertTrue(dr.isPresented, "保留审阅界面，由用户放弃本次结果")
+
+        // 用户放弃：dismiss 后状态清空
+        dr.dismiss()
+        XCTAssertFalse(dr.isPresented)
+        XCTAssertTrue(dr.diffs.isEmpty)
+    }
+
+    /// 文档未被改动 + 注入 provider：走精确索引合并，行为与无 provider 一致
+    func test_acceptAll_withProvider_unchangedDocument_mergesNormally() {
+        let dr = DiffReviewState()
+        let snapshot = "a\n\nb\n\nc"
+        let modified = "a\n\nB\n\nc"
+
+        var finalized: String? = nil
+        dr.beginStreaming(original: snapshot, actionLabel: "改写")
+        dr.currentContentProvider = { snapshot }
+        dr.onRebaseConflict = { XCTFail("文档未改动不应触发冲突") }
+        dr.commitStreamWithModified(modified) { finalized = $0 }
+
+        dr.acceptAll()
+        XCTAssertEqual(finalized, modified)
+    }
+
+    /// AI 把目标段落扩成多段（替换 + 纯新增），且用户在无关区域编辑过：
+    /// 新增段落锚定到替换结果之后，整体落到当前文档的正确位置
+    func test_acceptAll_additionRebasedAfterUserEdit() {
+        let dr = DiffReviewState()
+        let snapshot = "A\n\nB\n\nC"
+        let modified = "A\n\nB1\n\nB2\n\nC"   // B → B1 替换 + B2 纯新增
+
+        var currentDoc = snapshot
+        var conflict = false
+        var finalized: String? = nil
+
+        dr.beginStreaming(original: snapshot, actionLabel: "扩写")
+        dr.currentContentProvider = { currentDoc }
+        dr.onRebaseConflict = { conflict = true }
+        dr.commitStreamWithModified(modified) { finalized = $0 }
+
+        // 用户在目标之前插入一段
+        currentDoc = "A\n\n用户插入\n\nB\n\nC"
+
+        dr.acceptAll()
+        XCTAssertFalse(conflict)
+        XCTAssertEqual(finalized, "A\n\n用户插入\n\nB1\n\nB2\n\nC")
+    }
 }
