@@ -139,15 +139,31 @@ struct RestAgentBackend: AgentBackend {
         var toolByIndex: [Int: ToolCallAcc] = [:]
         var finishReason = "stop"
         var malformedCount = 0   // 解析失败的 data 行计数，流结束后统一记录
+        /// 流式 usage（需请求时带 stream_options.include_usage）：末帧 choices 为空、仅携带累计用量
+        var usage: AgentUsage? = nil
 
         for try await line in bytes.lines {
             guard line.hasPrefix("data:") else { continue }
             let payload = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
             if payload == "[DONE]" { break }
             guard let data = payload.data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let choices = obj["choices"] as? [[String: Any]],
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else {
+                malformedCount += 1
+                continue
+            }
+
+            // 先取 usage：include_usage 的末帧没有 choices，不能落入下方畸形行计数
+            if let usageObj = obj["usage"] as? [String: Any] {
+                usage = AgentUsage(
+                    promptTokens:     usageObj["prompt_tokens"]     as? Int ?? 0,
+                    completionTokens: usageObj["completion_tokens"] as? Int ?? 0
+                )
+            }
+
+            guard let choices = obj["choices"] as? [[String: Any]],
                   let choice = choices.first else {
+                if usage != nil { continue }   // 正常 usage 末帧
                 malformedCount += 1
                 continue
             }
@@ -188,7 +204,7 @@ struct RestAgentBackend: AgentBackend {
         if malformedCount > 0 {
             Self.logger.debug("OpenAI SSE: skipped \(malformedCount) malformed data line(s)")
         }
-        return AgentCompletionResponse(text: accText, toolCalls: toolCalls, finishReason: finishReason)
+        return AgentCompletionResponse(text: accText, toolCalls: toolCalls, finishReason: finishReason, usage: usage)
     }
 
     private func streamAnthropic(
@@ -214,6 +230,10 @@ struct RestAgentBackend: AgentBackend {
         var toolByIndex: [Int: ToolUseAcc] = [:]
         var stopReason = "end_turn"
         var malformedCount = 0   // 解析失败的 data 行计数，流结束后统一记录
+        /// 流式 usage：message_start 带 input_tokens（及初始 output_tokens），
+        /// 各 message_delta 带累计 output_tokens（直接覆盖，不累加）
+        var inputTokens: Int? = nil
+        var outputTokens: Int? = nil
 
         for try await line in bytes.lines {
             // Anthropic SSE: ignore event lines, only parse data lines
@@ -227,6 +247,14 @@ struct RestAgentBackend: AgentBackend {
             }
 
             switch type {
+            case "message_start":
+                // 首帧携带 usage.input_tokens（prompt 用量）
+                if let message = obj["message"] as? [String: Any],
+                   let usageObj = message["usage"] as? [String: Any] {
+                    inputTokens  = usageObj["input_tokens"]  as? Int ?? inputTokens
+                    outputTokens = usageObj["output_tokens"] as? Int ?? outputTokens
+                }
+
             case "content_block_start":
                 guard let index = obj["index"] as? Int,
                       let block = obj["content_block"] as? [String: Any],
@@ -254,6 +282,11 @@ struct RestAgentBackend: AgentBackend {
                    let sr = delta["stop_reason"] as? String {
                     stopReason = sr
                 }
+                // message_delta.usage.output_tokens 是累计值，逐帧覆盖即可
+                if let usageObj = obj["usage"] as? [String: Any],
+                   let out = usageObj["output_tokens"] as? Int {
+                    outputTokens = out
+                }
 
             case "error":
                 // 流中途的 error 事件（如 overloaded_error）不能当畸形行静默跳过：
@@ -277,7 +310,11 @@ struct RestAgentBackend: AgentBackend {
             Self.logger.debug("Anthropic SSE: skipped \(malformedCount) malformed data line(s)")
         }
         let finishReason = stopReason == "tool_use" ? "tool_calls" : "stop"
-        return AgentCompletionResponse(text: accText, toolCalls: toolCalls, finishReason: finishReason)
+        // 两个方向任一帧出现过 usage 才构造；完全没收到时保持 nil（UI 降级不显示）
+        let usage: AgentUsage? = (inputTokens != nil || outputTokens != nil)
+            ? AgentUsage(promptTokens: inputTokens ?? 0, completionTokens: outputTokens ?? 0)
+            : nil
+        return AgentCompletionResponse(text: accText, toolCalls: toolCalls, finishReason: finishReason, usage: usage)
     }
 
     // MARK: - Request Building
@@ -313,6 +350,11 @@ struct RestAgentBackend: AgentBackend {
         if !tools.isEmpty {
             payload["tools"]        = tools.map { $0.spec.openAIDict }
             payload["tool_choice"]  = "auto"
+        }
+        if stream {
+            // 让服务端在流末帧回传 usage（OpenAI 及主流兼容服务均支持；
+            // 不支持的实现会忽略该字段，解析侧对缺失 usage 已做降级）
+            payload["stream_options"] = ["include_usage": true]
         }
         req.httpBody = try JSONSerialization.data(withJSONObject: payload)
         return req
@@ -477,7 +519,12 @@ struct RestAgentBackend: AgentBackend {
                 return AgentToolCall(id: id, name: name, argumentsJSON: args)
             }
 
-        return AgentCompletionResponse(text: text, toolCalls: toolCalls, finishReason: finishReason)
+        let usageObj = json["usage"] as? [String: Any]
+        let usage = usageObj.map {
+            AgentUsage(promptTokens: $0["prompt_tokens"] as? Int ?? 0,
+                       completionTokens: $0["completion_tokens"] as? Int ?? 0)
+        }
+        return AgentCompletionResponse(text: text, toolCalls: toolCalls, finishReason: finishReason, usage: usage)
     }
 
     // ── Anthropic response ────────────────────────────────────────────────────
@@ -510,6 +557,11 @@ struct RestAgentBackend: AgentBackend {
         }
 
         let finishReason = stopReason == "tool_use" ? "tool_calls" : "stop"
-        return AgentCompletionResponse(text: text, toolCalls: toolCalls, finishReason: finishReason)
+        let usageObj = json["usage"] as? [String: Any]
+        let usage = usageObj.map {
+            AgentUsage(promptTokens: $0["input_tokens"] as? Int ?? 0,
+                       completionTokens: $0["output_tokens"] as? Int ?? 0)
+        }
+        return AgentCompletionResponse(text: text, toolCalls: toolCalls, finishReason: finishReason, usage: usage)
     }
 }

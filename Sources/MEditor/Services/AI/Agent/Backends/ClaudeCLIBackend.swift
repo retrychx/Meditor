@@ -198,6 +198,7 @@ Rules: arguments MUST be valid JSON • wait for result before continuing • ne
                                      : removeToolCallTags(from: accumulated)
         let finishReason = toolCalls.isEmpty ? "stop" : "tool_calls"
 
+        // usage 保持 nil：claude 子进程的非交互输出不回传 token 用量，Runner/UI 按缺失降级
         return AgentCompletionResponse(text: text, toolCalls: toolCalls, finishReason: finishReason)
     }
 

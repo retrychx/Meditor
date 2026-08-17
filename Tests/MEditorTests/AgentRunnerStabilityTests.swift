@@ -56,12 +56,14 @@ final class AgentRunnerStabilityTests: XCTestCase {
 
     func test_cancelledDuringToolExecution_toolResultsReconciled() async {
         let backend = ScriptedBackend(script: [
-            // 第一轮：一次返回两个 tool call；第一个工具在执行时 cancel 整个 runner
+            // 第一轮：一次返回两个 tool call；第一个工具在执行时 cancel 整个 runner。
+            // 注意：tc2 用写工具（write_document）——只读工具在新并行策略下会先执行，
+            // 「取消后不再执行后续工具」的语义只约束串行组（写工具/短路分支）。
             .respond(AgentCompletionResponse(
                 text: "",
                 toolCalls: [
                     AgentToolCall(id: "tc1", name: "cancel_tool", argumentsJSON: "{}"),
-                    AgentToolCall(id: "tc2", name: "read_document", argumentsJSON: "{}"),
+                    AgentToolCall(id: "tc2", name: "write_document", argumentsJSON: "{}"),
                 ],
                 finishReason: "tool_calls"
             )),
@@ -71,7 +73,7 @@ final class AgentRunnerStabilityTests: XCTestCase {
         let cancelTool = SelfCancellingTool(name: "cancel_tool") { [weak runner] in
             runner?.cancel()
         }
-        let spy = RunnerSpyTool(name: "read_document", result: "doc")
+        let spy = RunnerSpyTool(name: "write_document", result: "doc")
 
         await runAndWait(runner, tools: [cancelTool, spy])
 

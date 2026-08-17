@@ -162,6 +162,7 @@ extension AIAssistantPanel {
                     .transition(.opacity)
             }
             .animation(DS.Motion.spring, value: runner.steps.count)
+            usageFooter(runner.state)
         }
         .padding(.horizontal, 11)
         .padding(.vertical, 9)
@@ -183,6 +184,7 @@ extension AIAssistantPanel {
                     AgentStepView(step: step, compact: true)
                         .environment(state)
                 }
+                usageFooter(runState)
             }
             .padding(.horizontal, 11)
             .padding(.vertical, 9)
@@ -192,6 +194,25 @@ extension AIAssistantPanel {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(theme.separator.opacity(0.25), lineWidth: 0.5)
             )
+        }
+    }
+
+    /// 步骤面板尾部的用量脚注：「↑prompt ↓completion tokens · 总耗时」。
+    /// 后端未返回 usage（如 ClaudeCLI）时整体不显示，优雅降级。
+    @ViewBuilder
+    private func usageFooter(_ runState: AgentRunState) -> some View {
+        if let usage = runState.usage {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.up.arrow.down")
+                    .font(.system(size: 8, weight: .medium))
+                Text("↑\(usage.promptTokens.formatted()) ↓\(usage.completionTokens.formatted()) tokens")
+                if let duration = runState.runDurationSeconds {
+                    Text("· \(String(format: "%.1f", duration))s")
+                }
+            }
+            .font(.system(size: 10, design: .monospaced))
+            .foregroundStyle(.tertiary)
+            .padding(.top, 2)
         }
     }
 

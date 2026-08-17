@@ -212,6 +212,65 @@ final class RestAgentBackendTests: XCTestCase {
         XCTAssertTrue(response.toolCalls.isEmpty)
     }
 
+    // MARK: usage 解析 — OpenAI / Anthropic 非流式
+
+    func test_completeOpenAI_parsesUsage() async throws {
+        let mock = MockURLSession()
+        let json: [String: Any] = [
+            "choices": [[
+                "message": ["content": "hi", "role": "assistant"],
+                "finish_reason": "stop"
+            ]],
+            "usage": ["prompt_tokens": 123, "completion_tokens": 45, "total_tokens": 168]
+        ]
+        mock.stubbedData = try JSONSerialization.data(withJSONObject: json)
+
+        let backend = RestAgentBackend(config: makeConfig(), wire: .openAI, session: mock)
+        let response = try await backend.complete(messages: [
+            AgentMessage(role: .user, content: "Hi")
+        ], tools: [])
+
+        XCTAssertEqual(response.usage, AgentUsage(promptTokens: 123, completionTokens: 45))
+    }
+
+    /// 响应无 usage 字段：usage 为 nil（UI 降级不显示），解析不崩
+    func test_completeOpenAI_noUsage_usageNil() async throws {
+        let mock = MockURLSession()
+        let json: [String: Any] = [
+            "choices": [[
+                "message": ["content": "hi", "role": "assistant"],
+                "finish_reason": "stop"
+            ]]
+        ]
+        mock.stubbedData = try JSONSerialization.data(withJSONObject: json)
+
+        let backend = RestAgentBackend(config: makeConfig(), wire: .openAI, session: mock)
+        let response = try await backend.complete(messages: [
+            AgentMessage(role: .user, content: "Hi")
+        ], tools: [])
+
+        XCTAssertNil(response.usage)
+        XCTAssertEqual(response.text, "hi")
+    }
+
+    func test_completeAnthropic_parsesUsage() async throws {
+        let mock = MockURLSession()
+        let json: [String: Any] = [
+            "content": [["type": "text", "text": "Bonjour!"]],
+            "stop_reason": "end_turn",
+            "usage": ["input_tokens": 200, "output_tokens": 60]
+        ]
+        mock.stubbedData = try JSONSerialization.data(withJSONObject: json)
+
+        let config = makeConfig(kind: .anthropic, baseURL: "https://api.anthropic.com/v1", apiKey: "ant-key", model: "claude-3-5-sonnet-20241022")
+        let backend = RestAgentBackend(config: config, wire: .anthropic, session: mock)
+        let response = try await backend.complete(messages: [
+            AgentMessage(role: .user, content: "Hello")
+        ], tools: [])
+
+        XCTAssertEqual(response.usage, AgentUsage(promptTokens: 200, completionTokens: 60))
+    }
+
     // MARK: Anthropic complete() — tool_use 响应
 
     func test_completeAnthropic_parsesToolUseResponse() async throws {

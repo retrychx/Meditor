@@ -35,6 +35,9 @@ struct AgentCompletionResponse: Sendable {
     var text: String
     var toolCalls: [AgentToolCall]
     var finishReason: String  // "stop" | "tool_calls" | "length"
+    /// 本次响应的 token 用量。ClaudeCLI 子进程不返回 usage，保持 nil（默认），
+    /// Runner 累计时跳过，UI 降级不显示。
+    var usage: AgentUsage? = nil
 }
 
 // MARK: - Agent AI Message (extended with tool roles)

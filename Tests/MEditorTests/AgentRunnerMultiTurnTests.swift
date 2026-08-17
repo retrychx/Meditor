@@ -260,6 +260,130 @@ final class AgentRunnerMultiTurnTests: XCTestCase {
         XCTAssertEqual(runner.steps.filter(\.isDone).count, 3)
     }
 
+    // MARK: - 只读工具并行执行
+
+    /// 一轮返回 3 个只读调用：全部执行、结果按 response.toolCalls 原顺序回灌、确实并行
+    func test_parallelReadOnlyCalls_allExecute_resultsFedBackInOriginalOrder() async {
+        let log = ToolExecutionLog()
+        let tools: [any AgentTool] = [
+            RecordingTool(name: "list_files",       delay: 0.3, log: log),
+            RecordingTool(name: "read_file",        delay: 0.3, log: log),
+            RecordingTool(name: "search_workspace", delay: 0.3, log: log),
+        ]
+        let runner = makeRunner(maxSteps: 5, responses: [
+            .multiToolCalls(calls: [
+                (id: "tc1", name: "list_files",       args: "{}"),
+                (id: "tc2", name: "read_file",        args: "{\"filename\":\"a.md\"}"),
+                (id: "tc3", name: "search_workspace", args: "{\"query\":\"x\"}"),
+            ]),
+            .text("done")
+        ])
+
+        await runAndWait(runner, tools: tools)
+
+        XCTAssertEqual(runner.finalText, "done")
+        XCTAssertEqual(runner.steps.filter(\.isDone).count, 3, "三个只读调用都应完成")
+        // 回灌顺序必须与 response.toolCalls 原顺序一致（配对合法性）
+        let toolMessages = runner.finalMessages.filter { $0.role == .tool }
+        XCTAssertEqual(toolMessages.map(\.toolCallID), ["tc1", "tc2", "tc3"])
+        // 确实并行：三个 300ms 调用串行需 ≥900ms，并行时执行窗口应重叠
+        XCTAssertTrue(log.overlapped("list_files", "read_file"), "只读调用应并行执行")
+        XCTAssertTrue(log.overlapped("read_file", "search_workspace"), "只读调用应并行执行")
+    }
+
+    /// 读写混合（响应顺序：写在前）：读先并行跑完，写再串行执行；回灌仍按原顺序
+    func test_readWriteMixed_readsRunBeforeWrites_feedbackInOriginalOrder() async {
+        let log = ToolExecutionLog()
+        let tools: [any AgentTool] = [
+            RecordingTool(name: "write_document", log: log),
+            RecordingTool(name: "read_document",  log: log),
+            RecordingTool(name: "read_file",      log: log),
+        ]
+        let runner = makeRunner(maxSteps: 5, responses: [
+            .multiToolCalls(calls: [
+                (id: "w1", name: "write_document", args: "{\"content\":\"x\"}"),
+                (id: "r1", name: "read_document",  args: "{}"),
+                (id: "r2", name: "read_file",      args: "{\"filename\":\"a.md\"}"),
+            ]),
+            .text("done")
+        ])
+
+        await runAndWait(runner, tools: tools)
+
+        // 执行顺序：只读（保持原相对顺序）先于写
+        XCTAssertEqual(log.startOrder, ["read_document", "read_file", "write_document"])
+        // 回灌顺序：按 response.toolCalls 原顺序
+        let toolMessages = runner.finalMessages.filter { $0.role == .tool }
+        XCTAssertEqual(toolMessages.map(\.toolCallID), ["w1", "r1", "r2"])
+        XCTAssertEqual(runner.finalText, "done")
+    }
+
+    /// 并行只读批执行期间取消：已启动的工具正常收尾，tool_calls 配对由 reconcile 兜底
+    func test_cancelDuringParallelRead_finishesCleanly_resultsReconciled() async {
+        let log = ToolExecutionLog()
+        let tools: [any AgentTool] = [
+            RecordingTool(name: "list_files", delay: 5.0, log: log),
+            RecordingTool(name: "read_file",  delay: 5.0, log: log),
+        ]
+        let runner = makeRunner(maxSteps: 5, responses: [
+            .multiToolCalls(calls: [
+                (id: "tc1", name: "list_files", args: "{}"),
+                (id: "tc2", name: "read_file",  args: "{\"filename\":\"a.md\"}"),
+            ]),
+            .text("不应到达")
+        ])
+
+        var completed = false
+        runner.onComplete = { completed = true }
+        runner.run(messages: [AgentMessage(role: .user, content: "test")],
+                   tools: tools, config: cfg, context: ctx)
+        try? await Task.sleep(for: .milliseconds(150))
+        runner.cancel()
+
+        let deadline = Date().addingTimeInterval(3)
+        while !completed && Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+
+        XCTAssertTrue(completed, "取消后 run 应收尾并触发 onComplete")
+        XCTAssertFalse(runner.isRunning)
+        XCTAssertNotNil(runner.error)
+        // 每个 assistant toolCall 都有对应 tool result（执行结果或 reconcile 合成）
+        let calls = runner.finalMessages.flatMap { $0.toolCalls ?? [] }
+        let answered = Set(runner.finalMessages.compactMap { $0.role == .tool ? $0.toolCallID : nil })
+        XCTAssertEqual(calls.count, 2)
+        XCTAssertTrue(calls.allSatisfy { answered.contains($0.id) }, "tool_calls 与 tool result 应严格配对")
+        // 取消传播给了已启动的并行工具（5s 睡眠被立即打断，收尾远早于 5s）
+        XCTAssertTrue(Date() < deadline, "取消应及时打断并行工具")
+    }
+
+    // MARK: - token 用量累计
+
+    /// 各 step 响应的 usage 累计到 state.usage；run 结束写入总耗时
+    func test_usage_accumulatesAcrossSteps() async {
+        let spy = SpyTool(name: "read_document", result: "content")
+        let runner = makeRunner(maxSteps: 5, responses: [
+            .toolCallWithUsage(id: "tc1", name: "read_document", args: "{}",
+                               usage: AgentUsage(promptTokens: 100, completionTokens: 10)),
+            .textWithUsage("done", AgentUsage(promptTokens: 50, completionTokens: 20))
+        ])
+
+        await runAndWait(runner, tools: [spy])
+
+        XCTAssertEqual(runner.state.usage, AgentUsage(promptTokens: 150, completionTokens: 30))
+        XCTAssertNotNil(runner.state.runDurationSeconds, "run 收尾应写入总耗时")
+    }
+
+    /// 后端不返回 usage：state.usage 保持 nil（UI 降级不显示），run 正常完成
+    func test_noUsage_stateUsageNil_runUnaffected() async {
+        let runner = makeRunner(maxSteps: 5, responses: [.text("plain")])
+        await runAndWait(runner)
+
+        XCTAssertEqual(runner.finalText, "plain")
+        XCTAssertNil(runner.state.usage)
+        XCTAssertNil(runner.error)
+    }
+
     // MARK: - Helpers
 
     private func makeRunner(maxSteps: Int, responses: [MockResponse]) -> AgentRunner {
@@ -288,6 +412,11 @@ private enum MockResponse {
     case text(String)
     case toolCall(id: String, name: String, args: String)
     case toolCallRaw(id: String, name: String, args: String)  // same as toolCall for now
+    /// 单轮响应内携带多个 tool call（验证并行只读执行与回灌顺序）
+    case multiToolCalls(calls: [(id: String, name: String, args: String)])
+    /// 带 token 用量的响应（验证 usage 累计）
+    case toolCallWithUsage(id: String, name: String, args: String, usage: AgentUsage)
+    case textWithUsage(String, AgentUsage)
 
     var asCompletion: AgentCompletionResponse {
         switch self {
@@ -299,6 +428,21 @@ private enum MockResponse {
                 toolCalls: [AgentToolCall(id: id, name: name, argumentsJSON: args)],
                 finishReason: "tool_calls"
             )
+        case .multiToolCalls(let calls):
+            return AgentCompletionResponse(
+                text: "",
+                toolCalls: calls.map { AgentToolCall(id: $0.id, name: $0.name, argumentsJSON: $0.args) },
+                finishReason: "tool_calls"
+            )
+        case .toolCallWithUsage(let id, let name, let args, let usage):
+            return AgentCompletionResponse(
+                text: "",
+                toolCalls: [AgentToolCall(id: id, name: name, argumentsJSON: args)],
+                finishReason: "tool_calls",
+                usage: usage
+            )
+        case .textWithUsage(let t, let usage):
+            return AgentCompletionResponse(text: t, toolCalls: [], finishReason: "stop", usage: usage)
         }
     }
 }
@@ -440,5 +584,47 @@ private struct FailingTool: AgentTool, Sendable {
 
     func execute(arguments: [String: AnySendableValue], context: any AgentContextProtocol) async throws -> String {
         throw error
+    }
+}
+
+/// 线程安全的工具执行时间线（验证并行度与读写执行顺序）。
+private final class ToolExecutionLog: @unchecked Sendable {
+    /// 工具进入 execute 的顺序
+    private(set) var startOrder: [String] = []
+    private(set) var starts: [String: Date] = [:]
+    private(set) var ends: [String: Date] = [:]
+    private let lock = NSLock()
+
+    func recordStart(_ name: String) {
+        lock.lock(); startOrder.append(name); starts[name] = Date(); lock.unlock()
+    }
+    func recordEnd(_ name: String) {
+        lock.lock(); ends[name] = Date(); lock.unlock()
+    }
+    /// 两个工具的执行时间窗口是否重叠（重叠 = 确实并行执行过）
+    func overlapped(_ a: String, _ b: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard let sa = starts[a], let ea = ends[a], let sb = starts[b], let eb = ends[b] else { return false }
+        return sa < eb && sb < ea
+    }
+}
+
+/// 记录执行时间线、可带延迟的工具（验证只读并行与读写顺序）。
+private final class RecordingTool: AgentTool, @unchecked Sendable {
+    let spec: AgentToolSpec
+    private let delay: TimeInterval
+    private let log: ToolExecutionLog
+
+    init(name: String, delay: TimeInterval = 0, log: ToolExecutionLog) {
+        self.spec  = AgentToolSpec(name: name, description: "Recording tool: \(name)")
+        self.delay = delay
+        self.log   = log
+    }
+
+    func execute(arguments: [String: AnySendableValue], context: any AgentContextProtocol) async throws -> String {
+        log.recordStart(spec.name)
+        defer { log.recordEnd(spec.name) }
+        if delay > 0 { try await Task.sleep(for: .seconds(delay)) }
+        return "ok-\(spec.name)"
     }
 }

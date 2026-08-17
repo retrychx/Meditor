@@ -96,6 +96,69 @@ final class AgentSSEStabilityTests: XCTestCase {
         XCTAssertTrue(response.toolCalls.isEmpty)
     }
 
+    // MARK: - 流式 usage：OpenAI 末帧 / Anthropic message_start + message_delta
+
+    /// OpenAI include_usage 末帧（choices 为空、仅携带 usage）→ 解析出用量，且不计为畸形行
+    func test_streamOpenAI_usageFrame_parsed() async throws {
+        let mock = MockURLSession()
+        mock.stubbedData = sseData([
+            #"data: {"choices":[{"delta":{"content":"hi"},"finish_reason":null}]}"#,
+            #"data: {"choices":[{"delta":{},"finish_reason":"stop"}]}"#,
+            #"data: {"choices":[],"usage":{"prompt_tokens":12,"completion_tokens":3,"total_tokens":15}}"#,
+            "data: [DONE]",
+        ])
+
+        let response = try await makeOpenAIBackend(mock).completeStreaming(
+            messages: [AgentMessage(role: .user, content: "hi")],
+            tools: [],
+            onTextChunk: { _ in }
+        )
+
+        XCTAssertEqual(response.text, "hi")
+        XCTAssertEqual(response.usage, AgentUsage(promptTokens: 12, completionTokens: 3))
+    }
+
+    /// 流中无 usage 帧：usage 为 nil（降级），文本解析不受影响
+    func test_streamOpenAI_noUsageFrame_usageNil() async throws {
+        let mock = MockURLSession()
+        mock.stubbedData = sseData([
+            #"data: {"choices":[{"delta":{"content":"hi"},"finish_reason":null}]}"#,
+            #"data: {"choices":[{"delta":{},"finish_reason":"stop"}]}"#,
+            "data: [DONE]",
+        ])
+
+        let response = try await makeOpenAIBackend(mock).completeStreaming(
+            messages: [AgentMessage(role: .user, content: "hi")],
+            tools: [],
+            onTextChunk: { _ in }
+        )
+
+        XCTAssertNil(response.usage)
+        XCTAssertEqual(response.text, "hi")
+    }
+
+    /// Anthropic：message_start 带 input_tokens，message_delta 带累计 output_tokens（覆盖而非累加）
+    func test_streamAnthropic_usageFromMessageStartAndDelta() async throws {
+        let mock = MockURLSession()
+        mock.stubbedData = sseData([
+            #"data: {"type":"message_start","message":{"usage":{"input_tokens":25,"output_tokens":1}}}"#,
+            #"data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#,
+            #"data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}"#,
+            #"data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":7}}"#,
+            #"data: {"type":"message_stop"}"#,
+        ])
+
+        let backend = RestAgentBackend(config: makeAnthropicConfig(), wire: .anthropic, session: mock)
+        let response = try await backend.completeStreaming(
+            messages: [AgentMessage(role: .user, content: "hi")],
+            tools: [],
+            onTextChunk: { _ in }
+        )
+
+        XCTAssertEqual(response.text, "ok")
+        XCTAssertEqual(response.usage, AgentUsage(promptTokens: 25, completionTokens: 7))
+    }
+
     // MARK: - A2 tool_call 分块缺 id 或缺 name → 最终 toolCalls 不含它
 
     func test_streamOpenAI_toolCallMissingIDOrName_dropped() async throws {
