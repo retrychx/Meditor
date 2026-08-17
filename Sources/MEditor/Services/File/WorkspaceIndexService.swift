@@ -20,7 +20,8 @@ struct WorkspaceSearchMatch: Sendable, Equatable {
 ///
 /// 数据结构取舍：不建倒排索引，而是把每个文件的「原文行 + 小写行」整表驻留内存，
 /// 查询时逐行子串扫描。理由：
-///   - Markdown 工作区千级文件总量在 ~10MB 量级，一次全表扫描 <50ms，足够输入即搜；
+///   - Markdown 工作区千级文件总量在 ~10MB 量级，逐行扫描实测百毫秒级（见下），
+///     配合 UI 200ms 防抖与 actor 后台执行，输入即搜体验达标；
 ///   - CJK 文本没有空白分词，倒排索引对短语查询会退化成回表扫描，复杂度不值；
 ///   - 子串语义与 grep fallback 完全一致，索引/非索引路径的 Agent 结果可对齐。
 /// 代价：内存约为文本总量 2 倍（原文 + 小写缓存），靠 512KB 单文件上限兜底。
@@ -36,8 +37,10 @@ actor WorkspaceIndexService {
     private struct IndexedFile {
         var relativePath: String
         var modificationDate: Date?
-        var lines: [String]         // 原文行（供结果预览）
+        var lines: [String]         // 原文行（结果预览）
         var loweredLines: [String]  // 逐行小写缓存（大小写不敏感搜索免重复分配）
+        // 取舍记录：曾试过「小写全文一次 range(of:) 扫描 + 行号二分」，实测 debug/release
+        // 均比逐行 contains 慢 3 倍以上（String 全文 range(of:) 常数项很大），已回退。
     }
 
     private var root: URL?

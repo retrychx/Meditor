@@ -130,13 +130,30 @@ struct ClaudeCLIBackend: AgentBackend {
         return result.isEmpty ? tools : result   // 空结果时回退全量
     }
 
-    // MARK: - complete
+    // MARK: - complete / completeStreaming
 
     func complete(
         messages: [AgentMessage],
         tools: [any AgentTool]
     ) async throws -> AgentCompletionResponse {
-        var systemPrompt = messages.first(where: { $0.role == .system })?.content ?? ""
+        try await runOnce(messages: messages, tools: tools, onTextChunk: nil)
+    }
+
+    /// 流式版本：claude CLI 走 stream-json 增量输出（见 AIService.claudeCLIStream），
+    /// 文本 chunk 边到达边上抛，不再等整段回复生成完。
+    func completeStreaming(
+        messages: [AgentMessage],
+        tools: [any AgentTool],
+        onTextChunk: @escaping @Sendable (String) -> Void
+    ) async throws -> AgentCompletionResponse {
+        try await runOnce(messages: messages, tools: tools, onTextChunk: onTextChunk)
+    }
+
+    private func runOnce(
+        messages: [AgentMessage],
+        tools: [any AgentTool],
+        onTextChunk: (@Sendable (String) -> Void)?
+    ) async throws -> AgentCompletionResponse {        var systemPrompt = messages.first(where: { $0.role == .system })?.content ?? ""
 
         if !tools.isEmpty {
             let intent   = inferIntent(from: messages)
@@ -187,8 +204,17 @@ Rules: arguments MUST be valid JSON • wait for result before continuing • ne
         ]
 
         var accumulated = ""
+        // 流式上抛前过滤 <tool_call> 协议块：UI 只看自然语言，不看 XML
+        var filter = ToolCallStreamFilter()
         for try await chunk in AIClient(config: config).stream(cliMessages) {
             accumulated += chunk
+            guard let onTextChunk else { continue }
+            let visible = filter.process(chunk)
+            if !visible.isEmpty { onTextChunk(visible) }
+        }
+        if let onTextChunk {
+            let tail = filter.flush()
+            if !tail.isEmpty { onTextChunk(tail) }
         }
 
         let toolCalls = parseToolCalls(from: accumulated)
@@ -271,4 +297,68 @@ Rules: arguments MUST be valid JSON • wait for result before continuing • ne
         ).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+}
+
+// MARK: - 流式 XML 过滤器
+
+/// 增量过滤 `<tool_call>…</tool_call>` 协议块：流式上抛给 UI 的文本不应露出 XML。
+/// chunk 可能正好切在标签中间（如 "<tool" + "_call>"），用 pending 尾暂存未判定的
+/// 疑似标签前缀，下一 chunk 到达后再定夺。internal（非 private）以便单测直接验证。
+struct ToolCallStreamFilter {
+    private static let openTag  = "<tool_call>"
+    private static let closeTag = "</tool_call>"
+
+    /// 当前是否处于工具调用块内（块内文本全部吞掉）
+    private var inToolCall = false
+    /// 可能是标签前缀的暂存文本（跨 chunk 标签检测）
+    private var pending = ""
+
+    /// 处理一个 chunk，返回可以立刻上抛给 UI 的可见文本。
+    mutating func process(_ chunk: String) -> String {
+        var buf = pending + chunk
+        pending = ""
+        var out = ""
+        while !buf.isEmpty {
+            if inToolCall {
+                if let range = buf.range(of: Self.closeTag) {
+                    buf = String(buf[range.upperBound...])
+                    inToolCall = false
+                } else {
+                    // 整块吞掉，只保留可能是 closeTag 前缀的尾部
+                    pending = Self.tagPrefixSuffix(of: buf, tag: Self.closeTag)
+                    buf = ""
+                }
+            } else {
+                if let range = buf.range(of: Self.openTag) {
+                    out += buf[..<range.lowerBound]
+                    buf = String(buf[range.upperBound...])
+                    inToolCall = true
+                } else {
+                    // 尾部可能是 openTag 被切断的前缀，暂存等下一 chunk
+                    let tail = Self.tagPrefixSuffix(of: buf, tag: Self.openTag)
+                    out += buf.dropLast(tail.count)
+                    pending = tail
+                    buf = ""
+                }
+            }
+        }
+        return out
+    }
+
+    /// 流结束冲刷：pending 若不在工具调用块内则原样放出（不是标签，只是普通文本尾）。
+    mutating func flush() -> String {
+        defer { pending = "" }
+        return inToolCall ? "" : pending
+    }
+
+    /// s 的最长后缀，同时是 tag 的前缀（跨 chunk 标签检测用）。
+    private static func tagPrefixSuffix(of s: String, tag: String) -> String {
+        let maxLen = min(s.count, tag.count - 1)
+        guard maxLen > 0 else { return "" }
+        for len in stride(from: maxLen, through: 1, by: -1) {
+            let suffix = s.suffix(len)
+            if tag.hasPrefix(suffix) { return String(suffix) }
+        }
+        return ""
+    }
 }

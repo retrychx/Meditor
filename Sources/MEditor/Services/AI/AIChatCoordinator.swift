@@ -24,7 +24,10 @@ final class AIChatCoordinator {
         convo.isResponding = true
 
         let config  = AIConfig.current(settings, scene: .agent)
-        let context = AgentContext.make(appState: state)
+        // run 级文件快照（一键回滚）：随 run 创建，经 context 写路径填充，
+        // run 结束且有写入时挂到 runState 供步骤面板提供回滚入口
+        let checkpoint = AgentRunCheckpoint()
+        let context = AgentContext.make(appState: state, checkpoint: checkpoint)
         let tools   = BuiltinAgentTools.all
 
         // @mention 所需的主线程上下文快照（不能在 Task.detached 里访问 MainActor 属性）
@@ -48,7 +51,8 @@ final class AIChatCoordinator {
             var sysContent = baseSys
             if !mentionCtx.isEmpty { sysContent += mentionCtx }
             await MainActor.run {
-                launchAgentRunner(sysContent: sysContent, config: config, context: context, tools: tools)
+                launchAgentRunner(sysContent: sysContent, config: config, context: context,
+                                  tools: tools, checkpoint: checkpoint)
             }
         }
     }
@@ -57,7 +61,8 @@ final class AIChatCoordinator {
         sysContent: String,
         config: AIConfig,
         context: AgentContext,
-        tools: [any AgentTool]
+        tools: [any AgentTool],
+        checkpoint: AgentRunCheckpoint
     ) {
         // 对话过长时自动截断，保留最近 10 轮对话。agentHistory 同步从最老一端滑动裁剪
         // （保持 tool_calls / tool result 配对完整），而非整体清空。
@@ -168,6 +173,10 @@ final class AIChatCoordinator {
             }
 
             // 保存本次运行状态快照（per-session：步骤面板跟随发起会话，不挂到别的会话上）
+            // run 级文件快照一并挂入（仅当确有写入）：步骤面板据此提供「撤销本次运行的全部修改」
+            if checkpoint.hasWrites {
+                runner?.state.checkpoint = checkpoint
+            }
             convo.setLastRunState(runner?.state, sessionID: sessionID)
 
             // 仅当全局 runner 仍是本次运行时才复位：切换会话后用户可能已发起新 run，

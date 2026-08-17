@@ -272,7 +272,7 @@ final class WorkspaceIndexServiceTests: XCTestCase {
         let missStart = CFAbsoluteTimeGetCurrent()
         _ = await index.search(query: "绝对不存在的词xyzzy")
         let missMs = (CFAbsoluteTimeGetCurrent() - missStart) * 1000
-        print("[Perf] 搜索：命中 \(String(format: "%.1f", hitMs))ms / 未命中 \(String(format: "%.1f", missMs))ms（debug 构建）")
+        print("[Perf] 搜索：命中 \(String(format: "%.1f", hitMs))ms / 未命中 \(String(format: "%.1f", missMs))ms")
 
         XCTAssertEqual(hits.count, 1)
         // 目标：建立 <1s 级、搜索 <50ms 级（release）。debug 测试放宽 10 倍兜底，防回归失控。

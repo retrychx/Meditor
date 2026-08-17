@@ -21,13 +21,20 @@ struct SettingsView: View {
     @State var connectionTestResult: String? = nil
     @State var connectionTestOK: Bool = false
     @State var connectionTesting: Bool = false
-    
+
         /// When true, the view is presented as an in-app hero overlay (not a window),
         /// so it must not mutate any NSWindow chrome.
         var embedded: Bool = false
 
     /// Dismiss handler for the embedded hero presentation (renders a close button).
     var onClose: (() -> Void)? = nil
+
+    /// initialTab：外部深链指定首显 tab（如首启引导跳 AI tab），默认 general。
+    init(initialTab: SettingsTab = .general, embedded: Bool = false, onClose: (() -> Void)? = nil) {
+        self.embedded = embedded
+        self.onClose = onClose
+        _selectedTab = State(initialValue: initialTab)
+    }
 
     // MARK: - Brand palette (shared with the welcome hero card)
     private static let tagline      = "A minimal Markdown editor for macOS"

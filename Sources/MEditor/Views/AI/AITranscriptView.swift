@@ -185,6 +185,7 @@ extension AIAssistantPanel {
                         .environment(state)
                 }
                 usageFooter(runState)
+                rollbackFooter(runState)
             }
             .padding(.horizontal, 11)
             .padding(.vertical, 9)
@@ -194,6 +195,44 @@ extension AIAssistantPanel {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(theme.separator.opacity(0.25), lineWidth: 0.5)
             )
+        }
+    }
+
+    /// 步骤面板尾部的回滚入口：本次 run 写过文件时提供「撤销本次运行的全部修改」。
+    /// 回滚后变为已回滚态（展示结果摘要，含被跳过文件的点名提示）。
+    /// 只挂在完成态面板（agentStepsPanelFromState）：run 进行中不提供回滚。
+    @ViewBuilder
+    private func rollbackFooter(_ runState: AgentRunState) -> some View {
+        if let checkpoint = runState.checkpoint {
+            if let summary = checkpoint.rollbackSummary {
+                // 已回滚态
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.uturn.backward.circle.fill")
+                        .font(.system(size: 10, weight: .medium))
+                    Text(summary)
+                }
+                .font(.system(size: 10.5))
+                .foregroundStyle(theme.craftSecondary)
+                .padding(.top, 2)
+            } else {
+                Button(action: { state.rollbackAgentRun(checkpoint) }) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.uturn.backward")
+                            .font(.system(size: 10.5, weight: .semibold))
+                        Text(L("ai.rollback.undoRun")
+                             + String(format: L("ai.rollback.fileCountSuffix"), checkpoint.rollbackableCount))
+                            .font(.system(size: 11.5, weight: .medium))
+                    }
+                    .foregroundStyle(theme.craftSecondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .overlay(
+                        Capsule().strokeBorder(theme.separator.opacity(0.6), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
+            }
         }
     }
 

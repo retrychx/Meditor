@@ -37,8 +37,8 @@
 
 ### Phase 3：Agent 修改一键回滚（P0 收尾，~1 周）
 写确认已上线，补回滚闭环：
-- [ ] run 级 checkpoint：agent run 首次写文件前自动快照（工作区 git 仓库用 git stash 式；非 git 目录用文件副本）
-- [ ] 步骤面板/会话尾部提供"撤销本次运行全部修改"
+- [x] run 级 checkpoint：agent run 首次写文件前自动快照（内存快照，AgentRunCheckpoint；1MB 上限，超限跳过并提示）
+- [x] 步骤面板/会话尾部提供"撤销本次运行全部修改"（含用户后续编辑检测，跳过并点名提示）
 - [ ] 与写确认 UI 联动（确认条上可查看 diff）
 
 ### Phase 4：macOS 系统集成（P1，~2 周）

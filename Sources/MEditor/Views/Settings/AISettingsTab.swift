@@ -48,6 +48,31 @@ extension SettingsView {
                                 ]
                             )
                         }
+                        rowDivider
+                        settingsStackedRow(label: "连接测试", subtitle: "真实发送一条消息，验证 CLI 与登录态可用") {
+                            HStack(spacing: 10) {
+                                Button {
+                                    Task { await runCLITest() }
+                                } label: {
+                                    if connectionTesting {
+                                        HStack(spacing: 6) {
+                                            ProgressView().controlSize(.small)
+                                            Text("测试中…")
+                                        }
+                                    } else {
+                                        Text("测试连接")
+                                    }
+                                }
+                                .disabled(connectionTesting || settings.aiCLIPath.isEmpty)
+                                if let result = connectionTestResult {
+                                    Text(result)
+                                        .font(.system(size: 11.5))
+                                        .foregroundStyle(connectionTestOK ? Color.green : Color.red)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
+                            }
+                        }
                     }
                 } else if settings.aiProvider == AIProviderKind.openai.rawValue {
                     settingsGroup(title: L("ai.section.remote")) {

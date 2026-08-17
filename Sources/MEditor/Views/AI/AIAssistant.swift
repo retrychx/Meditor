@@ -23,6 +23,11 @@ struct AIAssistantPanel: View {
     @AppStorage("ai.hasSeenMentionHint") var hasSeenMentionHint = false
     /// 首次打开时显示 @mention 能力卡片。
     @State var showMentionTip = false
+    /// 首启引导：用户在引导里点过「暂时跳过 / 开始对话」后不再打扰
+    @AppStorage("ai.onboardingDismissed") private var onboardingDismissed = false
+    /// 本次面板会话内通过引导完成了配置：钉住引导展示「就绪 + 演示入口」阶段，
+    /// 否则 isConfigured 变 true 后引导立刻消失，演示入口来不及点
+    @State private var onboardingPinned = false
 
     var theme: PreviewTheme { state.themeStore.current }
     var accent: AIAccentStyle { AIAccentStyle.current(settings) }
@@ -139,13 +144,58 @@ struct AIAssistantPanel: View {
 
     // MARK: Body
 
+    /// Agent 场景是否已配置可用（引导显隐的唯一判据之一）
+    private var aiConfigured: Bool {
+        AIConfig.current(settings, scene: .agent).isConfigured
+    }
+
+    /// 空会话时是否展示首启引导
+    private var showOnboarding: Bool {
+        guard convo.messages.isEmpty else { return false }
+        if onboardingPinned { return true }
+        return AIOnboardingLogic.shouldShow(isConfigured: aiConfigured, dismissed: onboardingDismissed)
+    }
+
     @ViewBuilder
     private var content: some View {
-        if convo.messages.isEmpty {
+        if showOnboarding {
+            onboardingView
+        } else if convo.messages.isEmpty {
             suggestionsView
         } else {
             transcriptView
         }
+    }
+
+    private var onboardingView: some View {
+        AIOnboardingView(
+            theme: theme,
+            isConfigured: aiConfigured,
+            isCLIProvider: settings.aiProvider == AIProviderKind.claudeCLI.rawValue,
+            cliTest: { [settings] in
+                await AIClient.testClaudeCLI(cliPath: settings.aiCLIPath, cliModel: settings.aiCLIModel)
+            },
+            onUseClaudeCLI: { path in
+                settings.aiProvider = AIProviderKind.claudeCLI.rawValue
+                settings.aiCLIPath = path
+                onboardingPinned = true   // 切到「就绪 + 演示入口」阶段
+            },
+            onOpenSettings: {
+                // 从引导跳去配置：回来后停在「就绪 + 演示入口」阶段，
+                // 否则配置完成引导直接消失，演示入口来不及展示
+                onboardingPinned = true
+                state.settingsRequestedTab = .ai
+                state.showingSettings = true
+            },
+            onRunDemo: {
+                let flow = state.agentDemoFlow
+                Task { await flow.run(appState: state, settings: settings) }
+            },
+            onDismiss: {
+                onboardingDismissed = true
+                onboardingPinned = false
+            }
+        )
     }
 
     // MARK: Logic

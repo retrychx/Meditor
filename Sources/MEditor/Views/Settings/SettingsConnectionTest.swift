@@ -48,6 +48,22 @@ extension SettingsView {
         return model
     }
 
+    /// Claude CLI 连接测试：真实发一条 "hi"（30s 超时），错误文案复用 AIError 分类。
+    /// 与首启引导里的就绪校验共用 AIClient.testClaudeCLI。
+    @MainActor
+    func runCLITest() async {
+        connectionTesting = true
+        connectionTestResult = nil
+        if let error = await AIClient.testClaudeCLI(cliPath: settings.aiCLIPath, cliModel: settings.aiCLIModel) {
+            connectionTestOK = false
+            connectionTestResult = "✗ 连接失败：\(error)"
+        } else {
+            connectionTestOK = true
+            connectionTestResult = "✓ 连接成功（CLI 可用）"
+        }
+        connectionTesting = false
+    }
+
     func refreshModels() {
         aiLoadingModels = true
         let base = settings.aiBaseURL

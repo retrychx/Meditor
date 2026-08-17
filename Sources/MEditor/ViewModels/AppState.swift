@@ -229,6 +229,9 @@ final class AppState {
         didSet { if showingGlobalSearch { showingQuickOpen = false } }
     }
     var showingSettings = false
+    /// 请求设置页打开时定位到的 tab（首启引导的「配置 AI 服务」深链到 AI tab）；
+    /// 一次性消费，SettingsHeroOverlay 展示后清零。
+    var settingsRequestedTab: SettingsView.SettingsTab? = nil
     /// SettingsHeroOverlay 遮罩/面板展开的真实动画状态（与 showingSettings 不同：
     /// 后者立即置位驱动 overlay 的挂载/卸载，这个值才是 spring 动画实际驱动的
     /// 那个开合状态）。EditorTabBar 的 tab 条暗化需要跟这个值同步，不能读
@@ -255,6 +258,9 @@ final class AppState {
     // MARK: - 工作区内容索引（全局搜索 UI 与 Agent search_workspace 共用）
 
     let workspaceIndex = WorkspaceIndexService()
+
+    /// 首启引导的一键演示流程（临时目录写示例文档 + 自动发 Agent 指令）
+    let agentDemoFlow = AgentDemoFlow()
     /// 首次全量构建完成标记（@Observable 可追踪），搜索 UI 用它显示「索引构建中…」。
     private(set) var workspaceIndexReady = false
 

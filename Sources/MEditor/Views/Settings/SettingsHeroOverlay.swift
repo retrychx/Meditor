@@ -47,7 +47,8 @@ struct SettingsHeroOverlay: View {
                 .contentShape(Rectangle())
                 .onTapGesture { dismiss() }
 
-            SettingsView(embedded: true, onClose: { dismiss() })
+            SettingsView(initialTab: state.settingsRequestedTab ?? .general,
+                         embedded: true, onClose: { dismiss() })
                 .clipShape(RoundedRectangle(cornerRadius: DS.Radius.xl, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: DS.Radius.xl, style: .continuous)
@@ -58,6 +59,7 @@ struct SettingsHeroOverlay: View {
                 .opacity(shown ? 1 : 0)
         }
         .onAppear {
+            state.settingsRequestedTab = nil   // 深链一次性消费
             withAnimation(.spring(response: 0.42, dampingFraction: 0.80)) { shown = true }
         }
         .onExitCommand { dismiss() }

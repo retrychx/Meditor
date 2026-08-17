@@ -39,4 +39,8 @@ final class AgentRunState {
     var usage: AgentUsage? = nil
     /// 本轮总耗时（run 收尾时写入；进行中为 nil）
     var runDurationSeconds: TimeInterval? = nil
+    /// 本次 run 的文件快照（一键回滚用）。run 结束且确有写入时由发起方
+    /// （AIChatCoordinator）挂入；仅内存、不落盘——快照随本状态一起丢弃，
+    /// 重启后不可回滚（取舍见 AgentRunCheckpoint 头注释）。
+    var checkpoint: AgentRunCheckpoint? = nil
 }

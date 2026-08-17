@@ -34,23 +34,29 @@ final class AgentContext: AgentContextProtocol {
     let doc:   any AgentDocumentAdapter
     /// 命令审批缓存（可注入共享实例；默认独立）。
     let approvals: CommandApprovalStore
+    /// run 级文件快照（一键回滚用）。由 run 发起方按 run 创建注入；
+    /// nil = 不记录（测试 / 非 run 场景）。
+    let checkpoint: AgentRunCheckpoint?
 
     init(files: any AgentFileRepository, doc: any AgentDocumentAdapter,
-         approvals: CommandApprovalStore = CommandApprovalStore()) {
+         approvals: CommandApprovalStore = CommandApprovalStore(),
+         checkpoint: AgentRunCheckpoint? = nil) {
         self.files = files
         self.doc   = doc
         self.approvals = approvals
+        self.checkpoint = checkpoint
     }
 
     /// 工厂方法：从 AppState 创建标准 AgentContext（App 侧调用）
     /// 审批缓存共享 AppState 的会话级实例，safe 命令批准一次全 session 有效。
-    static func make(appState: AppState) -> AgentContext {
+    static func make(appState: AppState, checkpoint: AgentRunCheckpoint? = nil) -> AgentContext {
         let repo    = DefaultAgentFileRepository(
             { [weak appState] in appState?.rootURL },
             indexProvider: { [weak appState] in appState?.workspaceIndex }
         )
         let adapter = AppStateDocumentAdapter(appState: appState, fileRepo: repo)
-        return AgentContext(files: repo, doc: adapter, approvals: appState.commandApprovals)
+        return AgentContext(files: repo, doc: adapter, approvals: appState.commandApprovals,
+                            checkpoint: checkpoint)
     }
 
     // MARK: - Current document → doc
@@ -59,11 +65,28 @@ final class AgentContext: AgentContextProtocol {
     var currentDocumentName: String? { doc.currentDocumentName }
     var workspaceURL: URL?           { doc.workspaceURL }
 
-    func writeDocument(_ content: String) throws         { try doc.writeDocument(content) }
+    /// 当前文档全量重写（= 当前 tab 内容替换）。快照记 tab 写前原文
+    /// （tab 内存内容是用户视角的最新内容，含未保存编辑）。
+    func writeDocument(_ content: String) throws {
+        let tabURL = doc.currentTabURL
+        if let tabURL, let pre = doc.currentDocument {
+            checkpoint?.captureBeforeWrite(url: tabURL, knownContent: pre)
+        }
+        try doc.writeDocument(content)
+        if let tabURL { checkpoint?.markWritten(url: tabURL, content: content) }
+    }
     func insertIntoDocument(_ text: String)               { doc.insertIntoDocument(text) }
 
     func patchDocument(find: String, replace: String, all: Bool) throws -> Int {
-        try doc.patchDocument(find: find, replace: replace, all: all)
+        let tabURL = doc.currentTabURL
+        if let tabURL, let pre = doc.currentDocument {
+            checkpoint?.captureBeforeWrite(url: tabURL, knownContent: pre)
+        }
+        let count = try doc.patchDocument(find: find, replace: replace, all: all)
+        if let tabURL, let post = doc.currentDocument {
+            checkpoint?.markWritten(url: tabURL, content: post)
+        }
+        return count
     }
 
     // MARK: - File IO → files
@@ -117,21 +140,36 @@ final class AgentContext: AgentContextProtocol {
     }
 
     func createFile(name: String, content: String) throws -> URL {
-        try validateWriteTarget(files.resolveURL(name))
+        let target = files.resolveURL(name)
+        try validateWriteTarget(target)
+        // 快照：文件尚不存在时记「新建」（已存在则下方 createFile 会抛错，不产生写入）
+        if !FileManager.default.fileExists(atPath: target.standardizedFileURL.path) {
+            checkpoint?.captureCreatedFile(url: target)
+        }
         let url = try files.createFile(name: name, content: content)
+        checkpoint?.markWritten(url: url, content: content)
         doc.notifyFileCreated(url)
         return url
     }
 
     func writeFile(name: String, content: String) throws -> URL {
-        try validateWriteTarget(files.resolveURL(name))
+        let target = files.resolveURL(name)
+        try validateWriteTarget(target)
         let isNew = !FileManager.default.fileExists(atPath: files.resolveURL(name).path)
+        // 快照：新建记「不存在」；覆盖记写前原文（tab 内存内容优先，否则读盘）
+        if isNew {
+            checkpoint?.captureCreatedFile(url: target)
+        } else {
+            checkpoint?.captureBeforeWrite(url: target, tabContent: doc.contentForTab(at: target))
+        }
         let url   = try files.writeFile(name: name, content: content)
+        checkpoint?.markWritten(url: url, content: content)
         doc.notifyFileWritten(url, content: content, isNew: isNew)
         return url
     }
 
     func createDirectory(name: String) throws -> URL {
+        // 不记快照：空目录不含用户内容，回滚语义只覆盖文件内容（与写确认不拦目录创建同级取舍）
         try validateWriteTarget(files.resolveURL(name))
         let url = try files.createDirectory(name: name)
         doc.notifyDirectoryCreated(url)
@@ -161,7 +199,10 @@ final class AgentContext: AgentContextProtocol {
                 nearbyContext: PatchEngine.nearbyContext(in: original, around: find)
             )
         }
+        // 快照：patch 已确认能生效再记录（original 即写前原文，tab 优先读出的完整内容）
+        checkpoint?.captureBeforeWrite(url: url, knownContent: original)
         try files.writeDisk(updated, to: url)
+        checkpoint?.markWritten(url: url, content: updated)
         doc.notifyFileWritten(url, content: updated, isNew: false)
         return cnt
     }

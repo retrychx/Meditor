@@ -29,6 +29,7 @@
 		260000000000000000000215 /* ../Sources/MEditor/Templates/BuiltinTemplates.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000115 /* ../Sources/MEditor/Templates/BuiltinTemplates.swift */; };
 		260000000000000000000216 /* ../Sources/MEditor/Services/AI/Agent/AgentHistoryBudget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000116 /* ../Sources/MEditor/Services/AI/Agent/AgentHistoryBudget.swift */; };
 		260000000000000000000217 /* ../Sources/MEditor/Services/File/WorkspaceIndexService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000117 /* ../Sources/MEditor/Services/File/WorkspaceIndexService.swift */; };
+		260000000000000000000218 /* ../Sources/MEditor/Services/AI/Agent/AgentRunCheckpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000118 /* ../Sources/MEditor/Services/AI/Agent/AgentRunCheckpoint.swift */; };
 		2600000000000000000002F0 /* ../Sources/MEditor/Resources/Preview/mermaid.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001F0 /* ../Sources/MEditor/Resources/Preview/mermaid.min.js */; };
 		2600000000000000000002F1 /* ../Sources/MEditor/Views/Shared/MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001F1 /* ../Sources/MEditor/Views/Shared/MarkdownText.swift */; };
 		2600000000000000000002F2 /* ../Sources/MEditor/Services/Storage/Pasteboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001F2 /* ../Sources/MEditor/Services/Storage/Pasteboard.swift */; };
@@ -73,6 +74,7 @@
 		260000000000000000000115 /* ../Sources/MEditor/Templates/BuiltinTemplates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Templates/BuiltinTemplates.swift; sourceTree = "<group>"; };
 		260000000000000000000116 /* ../Sources/MEditor/Services/AI/Agent/AgentHistoryBudget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/AI/Agent/AgentHistoryBudget.swift; sourceTree = "<group>"; };
 		260000000000000000000117 /* ../Sources/MEditor/Services/File/WorkspaceIndexService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/File/WorkspaceIndexService.swift; sourceTree = "<group>"; };
+		260000000000000000000118 /* ../Sources/MEditor/Services/AI/Agent/AgentRunCheckpoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/AI/Agent/AgentRunCheckpoint.swift; sourceTree = "<group>"; };
 		2600000000000000000001F0 /* ../Sources/MEditor/Resources/Preview/mermaid.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ../Sources/MEditor/Resources/Preview/mermaid.min.js; sourceTree = "<group>"; };
 		2600000000000000000001F1 /* ../Sources/MEditor/Views/Shared/MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Views/Shared/MarkdownText.swift; sourceTree = "<group>"; };
 		2600000000000000000001F2 /* ../Sources/MEditor/Services/Storage/Pasteboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/Storage/Pasteboard.swift; sourceTree = "<group>"; };
@@ -154,6 +156,7 @@
 				260000000000000000000114 /* ../Sources/MEditor/Services/Storage/TemplateStore.swift */,
 				260000000000000000000115 /* ../Sources/MEditor/Templates/BuiltinTemplates.swift */,
 				260000000000000000000117 /* ../Sources/MEditor/Services/File/WorkspaceIndexService.swift */,
+				260000000000000000000118 /* ../Sources/MEditor/Services/AI/Agent/AgentRunCheckpoint.swift */,
 				2600000000000000000001F0 /* ../Sources/MEditor/Resources/Preview/mermaid.min.js */,
 				2600000000000000000001F1 /* ../Sources/MEditor/Views/Shared/MarkdownText.swift */,
 				2600000000000000000001F2 /* ../Sources/MEditor/Services/Storage/Pasteboard.swift */,
@@ -286,6 +289,7 @@
 				260000000000000000000214 /* ../Sources/MEditor/Services/Storage/TemplateStore.swift in Sources */,
 				260000000000000000000215 /* ../Sources/MEditor/Templates/BuiltinTemplates.swift in Sources */,
 				260000000000000000000217 /* ../Sources/MEditor/Services/File/WorkspaceIndexService.swift in Sources */,
+				260000000000000000000218 /* ../Sources/MEditor/Services/AI/Agent/AgentRunCheckpoint.swift in Sources */,
 				2600000000000000000002F1 /* ../Sources/MEditor/Views/Shared/MarkdownText.swift in Sources */,
 				2600000000000000000002F2 /* ../Sources/MEditor/Services/Storage/Pasteboard.swift in Sources */,
 				2600000000000000000002F3 /* ../Sources/MEditor/Services/Storage/Keychain.swift in Sources */,

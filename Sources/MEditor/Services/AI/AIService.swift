@@ -180,6 +180,74 @@ enum AIAPIKeyStore {
     static var hasKey: Bool { load() != nil }
 }
 
+// MARK: - Claude stream-json 行解析器
+
+/// claude CLI `-p --output-format stream-json --verbose` 的逐行（JSONL）解析器。
+///
+/// 事件类型（本机 claude 2.1.233 实测）：
+///  - `stream_event`（需 `--include-partial-messages`）：真增量，
+///    `event.delta.type == "text_delta"` 时 `delta.text` 是一小段新文本
+///  - `assistant`：每条 assistant 消息的累积快照（content 里 text block 为全量），
+///    无 partial 时也有此事件，取「与已 yield 文本的差分」即可幂等去重
+///  - `result`：终态事件；`subtype == "success"` 时 `result` 是最终全文（差分收尾），
+///    否则 `result` 是错误描述，记入 `resultError` 由调用方抛错
+///
+/// 纯值类型、无 IO，供单测直接构造 JSONL 行验证增量回调。
+struct ClaudeStreamJSONParser: Sendable {
+    /// 已上抛的累积文本（assistant/result 快照为全量，统一按前缀差分去重）
+    private(set) var yielded = ""
+    /// 终态错误描述（result 事件 subtype != "success" / is_error == true 时填充）
+    private(set) var resultError: String? = nil
+
+    /// 喂入一行 stream-json，返回需要上抛的文本增量（无新增返回 nil）。
+    mutating func ingest(line: String) -> String? {
+        guard let data = line.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let type = obj["type"] as? String else { return nil }
+
+        switch type {
+        case "stream_event":
+            guard let event = obj["event"] as? [String: Any],
+                  event["type"] as? String == "content_block_delta",
+                  let delta = event["delta"] as? [String: Any],
+                  delta["type"] as? String == "text_delta",
+                  let text = delta["text"] as? String, !text.isEmpty else { return nil }
+            yielded += text
+            return text
+
+        case "assistant":
+            guard let message = obj["message"] as? [String: Any],
+                  let content = message["content"] as? [[String: Any]] else { return nil }
+            let full = content.compactMap { block -> String? in
+                guard block["type"] as? String == "text" else { return nil }
+                return block["text"] as? String
+            }.joined()
+            return emitSuffix(of: full)
+
+        case "result":
+            let isError = (obj["is_error"] as? Bool) ?? false
+            let subtype = obj["subtype"] as? String ?? ""
+            guard !isError, subtype == "success" else {
+                resultError = (obj["result"] as? String) ?? "Claude CLI 执行失败"
+                return nil
+            }
+            guard let text = obj["result"] as? String else { return nil }
+            return emitSuffix(of: text)
+
+        default:
+            return nil   // system/init、user 回显等事件与文本流无关
+        }
+    }
+
+    /// 快照差分：快照不是已 yield 内容的前缀延伸时（不应发生）保守不补，避免重复文本。
+    private mutating func emitSuffix(of full: String) -> String? {
+        guard full.count > yielded.count, full.hasPrefix(yielded) else { return nil }
+        let suffix = String(full.dropFirst(yielded.count))
+        yielded = full
+        return suffix
+    }
+}
+
 // MARK: - Client
 
 /// Stateless streaming client. `stream(_:)` yields response text chunks as they
@@ -323,7 +391,10 @@ struct AIClient {
                     // `-p` = print mode (non-interactive). The prompt is fed via
                     // stdin (not argv) so content starting with "-"/"---" isn't
                     // mis-parsed as a CLI option.
-                    var args = ["-p"]
+                    // stream-json + --verbose + --include-partial-messages：边生成边
+                    // 输出 JSONL 事件（text_delta 增量 / assistant 快照 / result 终态），
+                    // agent 与聊天路径的 UI 都能增量渲染，不再干等整段回复。
+                    var args = ["-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages"]
                     // 设置页的 CLI 模型选择（aiCLIModel）；空则用 CLI 默认模型
                     if !config.cliModel.isEmpty { args += ["--model", config.cliModel] }
                     process.arguments = args
@@ -368,18 +439,27 @@ struct AIClient {
                     }
                     try? inPipe.fileHandleForWriting.close()
 
-                    // `claude -p` writes the complete reply then exits — block until
-                    // EOF. `availableData` is non-blocking and exits early if the
-                    // subprocess hasn't flushed yet, so we use readDataToEndOfFile().
-                    // The termination closure calls process.terminate() which closes
-                    // the pipe and unblocks this call when the Task is cancelled.
-                    // stdout / stderr 必须并发读取：顺序读会在子进程向 stderr 写满
-                    // 管道缓冲（64KB）时死锁——进程阻塞在 stderr 写，stdout 永远等不到 EOF。
-                    async let outRead = outPipe.fileHandleForReading.readDataToEndOfFile()
+                    // stdout 增量行读：stream-json 每行一个事件，解析出文本增量即上抛。
+                    // stderr 并发整读：顺序读会在子进程向 stderr 写满管道缓冲（64KB）
+                    // 时死锁——进程阻塞在 stderr 写，stdout 永远等不到 EOF。
+                    // 进程退出/被 terminate 后管道关闭，bytes.lines 序列自然结束。
                     async let errRead = errPipe.fileHandleForReading.readDataToEndOfFile()
+                    let parseTask = Task.detached { () -> ClaudeStreamJSONParser in
+                        var parser = ClaudeStreamJSONParser()
+                        do {
+                            for try await line in outPipe.fileHandleForReading.bytes.lines {
+                                if let chunk = parser.ingest(line: line) {
+                                    continuation.yield(chunk)
+                                }
+                            }
+                        } catch {
+                            // 读取中断（如 terminate 关闭管道）：成败由下方退出状态判断
+                        }
+                        return parser
+                    }
 
                     // 请求级超时哨兵：超时后 terminate（SIGTERM 关闭管道，解除
-                    // waitUntilExit / readDataToEndOfFile 的阻塞）。主流程结束后
+                    // waitUntilExit / bytes.lines 的阻塞）。主流程结束后
                     // cancel 哨兵，正常退出不触发超时。
                     let watchdog = Task.detached {
                         try? await Task.sleep(for: .seconds(config.cliTimeoutSeconds))
@@ -391,7 +471,7 @@ struct AIClient {
                     }
                     process.waitUntilExit()
                     watchdog.cancel()
-                    let outData = await outRead
+                    let parser = await parseTask.value
                     let errData = await errRead
 
                     if Task.isCancelled { continuation.finish(); return }
@@ -404,8 +484,9 @@ struct AIClient {
                         let msg = String(data: errData, encoding: .utf8) ?? "exit \(process.terminationStatus)"
                         throw AIError.cliFailed(msg.trimmingCharacters(in: .whitespacesAndNewlines))
                     }
-                    if let output = String(data: outData, encoding: .utf8), !output.isEmpty {
-                        continuation.yield(output)
+                    // 退出码为 0 但 result 事件标记失败（如 API 鉴权错误走 JSONL 回传）
+                    if let cliError = parser.resultError {
+                        throw AIError.cliFailed(cliError)
                     }
                     continuation.finish()
                 } catch let e as AIError {
@@ -491,6 +572,32 @@ extension AIClient {
 // MARK: - Discovery helpers
 
 extension AIClient {
+
+#if os(macOS)
+    /// Claude CLI 连接自检：真实发送一条 "hi"（30s 超时，走 stream-json 路径）。
+    /// 成功返回 nil；失败返回错误文案（复用 AIError 分类描述）。
+    /// 设置页「连接测试」与首启引导的就绪校验共用此入口。
+    static func testClaudeCLI(cliPath: String, cliModel: String) async -> String? {
+        let config = AIConfig(
+            kind: .claudeCLI,
+            baseURL: "",
+            model: "",
+            cliPath: cliPath,
+            cliModel: cliModel,
+            apiKey: "",
+            requestTimeoutSeconds: 30,
+            cliTimeoutSeconds: 30
+        )
+        do {
+            for try await _ in AIClient(config: config).stream([AIMessage(role: .user, content: "hi")]) {}
+            return nil
+        } catch let e as AIError {
+            return e.errorDescription ?? e.localizedDescription
+        } catch {
+            return error.localizedDescription
+        }
+    }
+#endif
 
     /// Fetches available model IDs from an OpenAI-compatible `/models` endpoint.
     /// Returns an empty array on any failure (caller falls back to manual entry).

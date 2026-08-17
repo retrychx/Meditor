@@ -160,6 +160,15 @@ extension LocalizationManager {
         "ai.write.allowAll": ("Allow all for this run", "本次运行全部允许"),
         "ai.write.allowAllHint": ("\"Allow all\" only applies to the current run", "「全部允许」仅对本次运行有效"),
 
+        // Agent run 一键回滚（步骤面板尾部入口）
+        "ai.rollback.undoRun": ("Undo all changes from this run", "撤销本次运行的全部修改"),
+        "ai.rollback.fileCountSuffix": (" (%d files)", "（%d 个文件）"),
+        "ai.rollback.summaryDone": ("Rolled back %d file(s)", "已回滚 %d 个文件"),
+        "ai.rollback.summarySkipped": ("; skipped: %@", "；跳过：%@"),
+        "ai.rollback.skipEdited": ("edited after the run", "运行后又有改动"),
+        "ai.rollback.skipMissing": ("already deleted", "已不存在"),
+        "ai.rollback.skipWriteFailed": ("restore write failed", "恢复写盘失败"),
+
         // Agent 执行面板
         "ai.agent.title": ("Agent Run", "Agent 执行"),
         "ai.agent.collapseSteps": ("Collapse earlier steps", "折叠早期步骤"),
