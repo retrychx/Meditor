@@ -154,6 +154,12 @@ extension LocalizationManager {
         "ai.command.reject": ("Reject", "拒绝"),
         "ai.command.rememberHint": ("Won't ask again for this session", "确认后本次会话不再询问"),
 
+        // 待确认文件写入确认条（与命令确认条同一范式）
+        "ai.write.pendingTitle": ("File write awaiting confirmation", "待确认文件写入"),
+        "ai.write.allow": ("Allow", "允许"),
+        "ai.write.allowAll": ("Allow all for this run", "本次运行全部允许"),
+        "ai.write.allowAllHint": ("\"Allow all\" only applies to the current run", "「全部允许」仅对本次运行有效"),
+
         // Agent 执行面板
         "ai.agent.title": ("Agent Run", "Agent 执行"),
         "ai.agent.collapseSteps": ("Collapse earlier steps", "折叠早期步骤"),

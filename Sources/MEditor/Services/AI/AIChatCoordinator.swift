@@ -61,11 +61,9 @@ final class AIChatCoordinator {
     ) {
         // 对话过长时自动截断，保留最近 10 轮对话。agentHistory 同步从最老一端滑动裁剪
         // （保持 tool_calls / tool result 配对完整），而非整体清空。
-        if convo.truncateIfOverLimit(keepRecentPairs: 10) {
-            // 截断发生：插入一条系统提示（不影响正常流程）
-            let notice = AIChatMessage(role: .assistant, text: "⚠️ 对话历史过长，已自动保留最近 10 轮对话。")
-            convo.messages.insert(notice, at: max(0, convo.messages.count - 1))
-        }
+        // 注意：提示条不在这里插入——必须先构建 agentMessages（依赖「最后一条是 user」
+        // 的配对判断），提示条在占位 bubble 之前追加（见下方 didTruncate 分支）。
+        let didTruncate = convo.truncateIfOverLimit(keepRecentPairs: 10)
 
         // 构建 AgentMessage 列表：优先使用已保存的 agentHistory（保留工具调用上下文）
         var agentMessages: [AgentMessage]
@@ -87,6 +85,13 @@ final class AIChatCoordinator {
             }
         }
 
+        // 截断提示追加在最新用户消息之后（占位 bubble 之前）——时序上提示是对最新
+        // 提问的说明；且不能插到用户消息之前，那会顶掉上面「最后一条是 user」的配对判断
+        if didTruncate {
+            let notice = AIChatMessage(role: .assistant, text: "⚠️ 对话历史过长，已自动保留最近 10 轮对话。")
+            convo.messages.append(notice)
+        }
+
         // 在消息列表末尾加一个空 assistant 占位，用于流式显示
         let replyMessage = AIChatMessage(role: .assistant, text: "")
         let replyID      = replyMessage.id
@@ -99,6 +104,22 @@ final class AIChatCoordinator {
         // 捕获发起会话：run 进行中用户可能切换 / 新建会话（cancelStreaming 停掉 runner，
         // 但 onChunk / onComplete 仍会触发），回调必须写回该会话而非当时的活跃会话
         let sessionID = convo.activeID
+
+        // 上下文预算淘汰提示（每次 run 最多一次）：与超长截断提示同通道——transcript 里
+        // 插一条 subtle 消息，不静默淘汰。按发起会话写回（插在流式占位 bubble 之前）。
+        runner.onContextEviction = { [weak convo] result in
+            guard let convo else { return }
+            var parts: [String] = []
+            if result.evictedToolResults > 0 {
+                parts.append("\(result.evictedToolResults) 条早期工具读取内容已省略（如仍需可用工具重新读取）")
+            }
+            if result.droppedMessages > 0 {
+                parts.append("最早的部分对话已裁剪")
+            }
+            guard !parts.isEmpty else { return }
+            let notice = AIChatMessage(role: .assistant, text: "ℹ️ 上下文超出预算：" + parts.joined(separator: "；") + "。")
+            convo.insertTranscriptNotice(notice, sessionID: sessionID)
+        }
 
         // 流式 chunk 回调 → 更新占位 bubble（按发起会话写回）
         runner.onChunk = { [weak convo] chunk in
@@ -127,7 +148,7 @@ final class AIChatCoordinator {
                 if !errorSteps.isEmpty {
                     // 有失败的工具步骤 → 生成错误摘要，不要静默消失
                     let lines = errorSteps.compactMap { step -> String? in
-                        if case .toolCallDone(_, let name, _, let result, true) = step {
+                        if case .toolCallDone(_, let name, _, let result, true, _) = step {
                             let short = result.prefix(120)
                             return "• \(name)：\(short)"
                         }
@@ -212,7 +233,9 @@ Rules:
             ctx += "\n\n---\n\n# 用户自定义技能\n\n" + userSkills
         }
         // 用户在设置里填的自定义系统提示词：始终注入（最高优先级的个人偏好）
-        let custom = AppSettings.shared.aiCustomSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 走注入的 settings（与 runCompletion 的 AIConfig.current(settings, ...) 一致），
+        // 不直接读 AppSettings.shared，保持 DI 可测
+        let custom = settings.aiCustomSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         if !custom.isEmpty {
             ctx += "\n\n---\n\n# 用户自定义指令（务必遵守）\n\n" + custom
         }

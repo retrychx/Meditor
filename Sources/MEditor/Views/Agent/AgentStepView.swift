@@ -39,8 +39,9 @@ struct AgentStepView: View {
                     thinkingView(label: label)
                 case .toolCall(_, let name, let args):
                     toolCallView(name: name, args: args)
-                case .toolCallDone(_, let name, _, let result, let isError):
-                    toolCallView(name: name, args: "", result: result, isError: isError)
+                case .toolCallDone(_, let name, _, let result, let isError, let duration):
+                    toolCallView(name: name, args: "", result: result, isError: isError,
+                                 durationSeconds: duration)
                 }
             }
         }
@@ -80,7 +81,7 @@ struct AgentStepView: View {
             .onDisappear { pulsing = false }
         case .toolCall(_, let name, let args):
             compactToolRow(text: AgentToolDisplay.info(name: name, args: args).text, done: false, isError: false)
-        case .toolCallDone(_, let name, let args, _, let isError):
+        case .toolCallDone(_, let name, let args, _, let isError, _):
             compactToolRow(text: AgentToolDisplay.info(name: name, args: args).text, done: true, isError: isError)
         }
     }
@@ -165,12 +166,14 @@ struct AgentStepView: View {
     }
 
     /// `args` 在 done=true 时为空，利用 `resultShown` 控制结果文字的展开动画。
+    /// `durationSeconds` 为工具实际执行耗时（仅真实执行分支有值），在标题行右侧弱展示。
     @ViewBuilder
     private func toolCallView(
         name: String,
         args: String,
         result: String? = nil,
-        isError: Bool = false
+        isError: Bool = false,
+        durationSeconds: TimeInterval? = nil
     ) -> some View {
         let done   = step.isDone
         let label  = AgentToolDisplay.info(name: name, args: args)
@@ -197,6 +200,11 @@ struct AgentStepView: View {
                         .controlSize(.small)
                         .tint(accent)
                         .transition(.opacity)
+                } else if let durationSeconds {
+                    // 执行耗时弱展示（仅真实执行过的工具有值）
+                    Text(String(format: "%.1fs", durationSeconds))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.tertiary)
                 }
                 Spacer(minLength: 0)
             }

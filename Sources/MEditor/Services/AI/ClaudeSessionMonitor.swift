@@ -139,7 +139,8 @@ final class ClaudeSessionMonitor {
 
     // MARK: - Prescan
 
-    private nonisolated func prescanExistingFiles(in dir: URL) {
+    // internal（非 private）以便单测直接驱动扫描
+    nonisolated func prescanExistingFiles(in dir: URL) {
         let fm = FileManager.default
         guard let enumerator = fm.enumerator(
             at: dir,
@@ -151,15 +152,34 @@ final class ClaudeSessionMonitor {
         for case let url as URL in enumerator {
             guard url.pathExtension.lowercased() == "jsonl" else { continue }
             if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize {
-                offsets[url.path] = UInt64(size)
+                offsets[url.path] = Self.committedOffset(atPath: url.path, fileSize: UInt64(size))
             }
         }
         stateLock.withLock { _fileOffsets = offsets }
     }
 
+    /// 预扫描同样只提交到最后一个完整换行处：文件尾部的半行（Claude 正在写入中）
+    /// 不算"已有内容"。若直接把偏移记为文件大小，行补全后 scan 会从半行中间开始读，
+    /// 只剩半截 JSON 解析失败，事件被永久丢失。
+    /// 只读文件尾部一段来定位最后的换行，避免全量读取大 session 文件。
+    private nonisolated static func committedOffset(atPath path: String, fileSize: UInt64) -> UInt64 {
+        guard fileSize > 0, let fh = FileHandle(forReadingAtPath: path) else { return fileSize }
+        defer { fh.closeFile() }
+        let tailLength = min(fileSize, 256 * 1024)
+        fh.seek(toFileOffset: fileSize - tailLength)
+        let tail = fh.readData(ofLength: Int(tailLength))
+        // 换行符是 ASCII 单字节，尾部起点即使落在多字节字符中间也不影响查找
+        if let lastNewline = tail.lastIndex(of: 0x0A) {
+            return fileSize - tailLength + UInt64(lastNewline + 1)
+        }
+        // 尾部整段都没有换行：视为一条尚未写完的半行，从头留待下轮重读
+        return fileSize - tailLength
+    }
+
     // MARK: - JSONL scan
 
-    private nonisolated func scanNewLines(in dir: URL) -> [ClaudeFileEvent] {
+    // internal（非 private）以便单测直接驱动扫描
+    nonisolated func scanNewLines(in dir: URL) -> [ClaudeFileEvent] {
         let fm = FileManager.default
         guard let enumerator = fm.enumerator(
             at: dir,
@@ -189,10 +209,16 @@ final class ClaudeSessionMonitor {
             fh.seek(toFileOffset: lastOffset)
             let newData = fh.readData(ofLength: Int(currentSize - lastOffset))
             fh.closeFile()
-            stateLock.withLock { _fileOffsets[key] = currentSize }
 
-            // 逐行解析 JSONL
-            let newText = String(data: newData, encoding: .utf8) ?? ""
+            // 只提交到最后一个完整换行处的偏移：JSONL 尾部半行（Claude 正在写入中）
+            // 留到下轮重读，否则半行解析失败后会被永久跳过（丢事件）。
+            // 换行符是 ASCII 单字节，前缀必落在合法 UTF-8 边界上。
+            guard let lastNewline = newData.lastIndex(of: 0x0A) else { continue }
+            let consumed = lastNewline + 1
+            stateLock.withLock { _fileOffsets[key] = lastOffset + UInt64(consumed) }
+
+            // 逐行解析 JSONL（只取已确认的完整行）
+            let newText = String(data: newData.prefix(consumed), encoding: .utf8) ?? ""
             for line in newText.split(separator: "\n", omittingEmptySubsequences: true) {
                 if let fileEvent = parseJSONL(String(line), sessionURL: jsonlURL) {
                     events.append(fileEvent)

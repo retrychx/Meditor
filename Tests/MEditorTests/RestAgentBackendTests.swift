@@ -322,4 +322,80 @@ final class RestAgentBackendTests: XCTestCase {
         // Mock 不应被调用
         XCTAssertTrue(mock.capturedRequests.isEmpty)
     }
+
+    // MARK: 429 重试耗尽 — 抛最后一次的真实错误（含响应体），不得换成 "retrying" 占位文案
+
+    func test_complete_retriesExhausted_throwsLastRealErrorWithBody() async throws {
+        let mock = MockURLSession()
+        mock.stubbedData = Data(#"{"error":{"message":"slow down"}}"#.utf8)
+        mock.stubbedResponse = HTTPURLResponse(
+            url: URL(string: "https://api.openai.com/v1/chat/completions")!,
+            statusCode: 429,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+
+        let backend = RestAgentBackend(config: makeConfig(), wire: .openAI, session: mock, retryBaseDelayNs: 1_000_000)
+        do {
+            _ = try await backend.complete(messages: [AgentMessage(role: .user, content: "Hi")], tools: [])
+            XCTFail("重试耗尽必须抛错")
+        } catch AIError.server(let code, let body) {
+            XCTAssertEqual(code, 429)
+            XCTAssertTrue(body.contains("slow down"),
+                          "耗尽后必须保留 429 的真实响应体，而非 \"retrying (attempt N)\" 占位文案")
+        }
+        XCTAssertEqual(mock.capturedRequests.count, 3, "默认 1 + 2 次重试，共 3 次尝试")
+    }
+
+    // MARK: Anthropic 请求 — 连续同角色消息合并（Anthropic 要求 user/assistant 严格交替）
+
+    func test_completeAnthropic_consecutiveUserMessages_mergedIntoOne() async throws {
+        let mock = MockURLSession()
+        let json: [String: Any] = ["content": [["type": "text", "text": "ok"]], "stop_reason": "end_turn"]
+        mock.stubbedData = try JSONSerialization.data(withJSONObject: json)
+
+        let config = makeConfig(kind: .anthropic, baseURL: "https://api.anthropic.com/v1", apiKey: "ant-key", model: "claude-3-5-sonnet-20241022")
+        let backend = RestAgentBackend(config: config, wire: .anthropic, session: mock)
+        // fallback 重建历史时可能出现 user-user 相邻
+        _ = try await backend.complete(messages: [
+            AgentMessage(role: .user, content: "第一问"),
+            AgentMessage(role: .user, content: "第二问"),
+        ], tools: [])
+
+        let body = try XCTUnwrap(mock.capturedRequests.first?.httpBody)
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let msgs = try XCTUnwrap(payload["messages"] as? [[String: Any]])
+        XCTAssertEqual(msgs.count, 1, "连续 user 消息必须合并为一条")
+        XCTAssertEqual(msgs[0]["role"] as? String, "user")
+        let blocks = try XCTUnwrap(msgs[0]["content"] as? [[String: Any]],
+                                   "合并后 content 必须升级为文本块数组")
+        XCTAssertEqual(blocks.count, 2)
+        XCTAssertEqual(blocks[0]["text"] as? String, "第一问")
+        XCTAssertEqual(blocks[1]["text"] as? String, "第二问")
+    }
+
+    func test_completeAnthropic_consecutiveAssistantMessages_mergedIntoOne() async throws {
+        let mock = MockURLSession()
+        let json: [String: Any] = ["content": [["type": "text", "text": "ok"]], "stop_reason": "end_turn"]
+        mock.stubbedData = try JSONSerialization.data(withJSONObject: json)
+
+        let config = makeConfig(kind: .anthropic, baseURL: "https://api.anthropic.com/v1", apiKey: "ant-key", model: "claude-3-5-sonnet-20241022")
+        let backend = RestAgentBackend(config: config, wire: .anthropic, session: mock)
+        // 截断提示条紧邻上一轮回复时会出现 assistant-assistant 相邻（均为纯文本）
+        _ = try await backend.complete(messages: [
+            AgentMessage(role: .user, content: "问"),
+            AgentMessage(role: .assistant, content: "答一"),
+            AgentMessage(role: .assistant, content: "答二"),
+        ], tools: [])
+
+        let body = try XCTUnwrap(mock.capturedRequests.first?.httpBody)
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let msgs = try XCTUnwrap(payload["messages"] as? [[String: Any]])
+        XCTAssertEqual(msgs.count, 2, "连续纯文本 assistant 必须合并，保持严格交替")
+        XCTAssertEqual(msgs[0]["role"] as? String, "user")
+        XCTAssertEqual(msgs[0]["content"] as? String, "问", "单条 user 不触发合并，content 保持字符串")
+        XCTAssertEqual(msgs[1]["role"] as? String, "assistant")
+        let blocks = try XCTUnwrap(msgs[1]["content"] as? [[String: Any]])
+        XCTAssertEqual(blocks.map { $0["text"] as? String }, ["答一", "答二"])
+    }
 }

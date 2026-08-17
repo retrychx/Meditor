@@ -307,7 +307,11 @@ final class DefaultAgentFileRepository: AgentFileRepository {
         let includes    = extensions.flatMap { ["--include", "*.\($0)"] }
         let excludeDirs = DefaultAgentFileRepository.noiseDirectories.sorted()
                               .flatMap { ["--exclude-dir", $0] }
-        let args: [String] = ["-r", "-n", "-i", "--max-count=5"] + includes + excludeDirs + [query, root.path]
+        // query/路径前插 `--`：`-` 开头的 query（如 "-foo"）此前会被 grep 当成
+        // 未知 flag（exit 2 静默回退慢路径）；query 恰好是合法 flag（如 "-r"）时
+        // 更糟——root.path 会被当作 pattern、无文件操作数导致 grep 读 stdin 挂起。
+        let args: [String] = ["-r", "-n", "-i", "--max-count=5"] + includes + excludeDirs
+                           + ["--", query, root.path]
         return await Task.detached(priority: .userInitiated) {
             let proc = Process()
             proc.executableURL  = URL(fileURLWithPath: "/usr/bin/grep")

@@ -287,6 +287,69 @@ final class RunCommandToolTests: XCTestCase {
                       "非零退出码应在结果中体现")
     }
 
+    // MARK: - 超时与取消：子进程必须被真正终止（ProcessBox 竞态修复）
+    // 修复前超时/取消哨兵在 box.process 赋值前触发时 terminate 落空，产生孤儿进程，
+    // 且 runViaLoginShell 会一直阻塞在管道读取上直到子进程自然结束。
+
+    func test_timeout_terminatesProcess_returnsTimeoutMessage() async throws {
+        ctx.workspaceURL = nil
+        ctx.commandConfirmResult = true
+        var shortTool = RunCommandTool()
+        shortTool.executionTimeoutSeconds = 1
+
+        let startedAt = Date()
+        let result = try await shortTool.execute(
+            arguments: ["command": .string("sleep 30")],
+            context: ctx
+        )
+        let elapsed = Date().timeIntervalSince(startedAt)
+
+        XCTAssertTrue(result.contains("超时"), "超时应返回超时提示，实际：\(result)")
+        XCTAssertLessThan(elapsed, 20, "超时后不应继续等 sleep 30 自然结束，实际耗时 \(elapsed)s")
+    }
+
+    func test_tinyTimeout_sentinelFiresBeforeProcessAssigned_stillTerminates() async throws {
+        // 竞态回归：用远小于 login shell 启动耗时的超时值，让哨兵大概率在
+        // box.process 赋值前触发。terminate 请求应先记账、进程就绪时补发；
+        // 若补发失效，sleep 30 不结束，runViaLoginShell 会阻塞 30s。
+        ctx.workspaceURL = nil
+        ctx.commandConfirmResult = true
+        var racyTool = RunCommandTool()
+        racyTool.executionTimeoutSeconds = 0.05
+
+        let startedAt = Date()
+        let result = try await racyTool.execute(
+            arguments: ["command": .string("sleep 30")],
+            context: ctx
+        )
+        let elapsed = Date().timeIntervalSince(startedAt)
+
+        XCTAssertTrue(result.contains("超时"), "哨兵抢先时仍应返回超时提示，实际：\(result)")
+        XCTAssertLessThan(elapsed, 20, "哨兵抢先时 terminate 不得落空，实际耗时 \(elapsed)s")
+    }
+
+    func test_cancellation_terminatesProcess_returnsPromptly() async throws {
+        ctx.workspaceURL = nil
+        ctx.commandConfirmResult = true
+
+        let task = Task {
+            try await self.tool.execute(
+                arguments: ["command": .string("sleep 30")],
+                context: self.ctx
+            )
+        }
+        // 等命令真正进入执行；即使取消先于 box.process 赋值，记账-补发机制也保证终止
+        try await Task.sleep(for: .milliseconds(300))
+        task.cancel()
+
+        let startedAt = Date()
+        let result = try await task.value
+        let elapsed = Date().timeIntervalSince(startedAt)
+
+        XCTAssertLessThan(elapsed, 20, "取消后不应等 sleep 30 自然结束，实际耗时 \(elapsed)s")
+        XCTAssertFalse(result.isEmpty, "取消后应返回已终止进程的部分输出/状态")
+    }
+
     // MARK: - Spec 完整性
 
     func test_spec_name_isRunCommand() {

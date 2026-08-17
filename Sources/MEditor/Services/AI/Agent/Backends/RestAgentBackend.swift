@@ -87,8 +87,10 @@ struct RestAgentBackend: AgentBackend {
         for attempt in 1...maxAttempts {
             do {
                 return try await block()
-            } catch AIError.server(let code, _) where (code == 429 || code == 503) && attempt < maxAttempts {
-                lastError = AIError.server(code, "retrying (attempt \(attempt))")
+            } catch AIError.server(let code, let body) where (code == 429 || code == 503) && attempt < maxAttempts {
+                // 保留真实错误（含响应体）：走到耗尽分支时抛出的必须是真实错误，
+                // 不能换成 "retrying" 占位文案把 429/503 的 body 丢掉
+                lastError = AIError.server(code, body)
                 // 退避期间任务被取消：Task.sleep 会抛 CancellationError 并向上传播
                 // （不用 try?，否则会吞掉取消信号，退避结束后仍会再发一次请求）。
                 try await Task.sleep(nanoseconds: delayNs)
@@ -253,6 +255,16 @@ struct RestAgentBackend: AgentBackend {
                     stopReason = sr
                 }
 
+            case "error":
+                // 流中途的 error 事件（如 overloaded_error）不能当畸形行静默跳过：
+                // 解析 message 作为正常错误抛出，让用户可见
+                let errObj = obj["error"] as? [String: Any]
+                let message = errObj?["message"] as? String ?? "unknown stream error"
+                throw AIError.server(0, message)
+
+            case "ping":
+                break   // 保活帧，忽略
+
             default: break
             }
         }
@@ -354,7 +366,26 @@ struct RestAgentBackend: AgentBackend {
             case .system: break   // 已在外层提取
 
             case .user:
-                result.append(["role": "user", "content": msg.content])
+                // 连续 user 消息合并（Anthropic 要求 user/assistant 严格交替）：
+                // 从 AIChatMessage fallback 重建历史时可能出现 user-user 相邻。
+                // 与下方 tool_result 合并同手法：content 统一升级为块数组再追加。
+                if var last = result.last, (last["role"] as? String) == "user" {
+                    var blocks: [[String: Any]]
+                    if let arr = last["content"] as? [[String: Any]] {
+                        blocks = arr
+                    } else if let str = last["content"] as? String, !str.isEmpty {
+                        blocks = [["type": "text", "text": str]]
+                    } else {
+                        blocks = []
+                    }
+                    if !msg.content.isEmpty {
+                        blocks.append(["type": "text", "text": msg.content])
+                    }
+                    last["content"] = blocks
+                    result[result.count - 1] = last
+                } else {
+                    result.append(["role": "user", "content": msg.content])
+                }
 
             case .assistant:
                 if let calls = msg.toolCalls, !calls.isEmpty {
@@ -372,6 +403,17 @@ struct RestAgentBackend: AgentBackend {
                         ] as [String: Any])
                     }
                     result.append(["role": "assistant", "content": content])
+                } else if var last = result.last, (last["role"] as? String) == "assistant",
+                          let lastText = last["content"] as? String {
+                    // 连续纯文本 assistant 合并（如截断提示条紧邻上一轮回复）：与上方
+                    // user 合并同手法，统一升级为块数组。带 tool_use 块的 assistant 不动
+                    // （后面必须紧跟 tool_result，并入文字会破坏配对）。
+                    var blocks: [[String: Any]] = lastText.isEmpty ? [] : [["type": "text", "text": lastText]]
+                    if !msg.content.isEmpty {
+                        blocks.append(["type": "text", "text": msg.content])
+                    }
+                    last["content"] = blocks
+                    result[result.count - 1] = last
                 } else {
                     result.append(["role": "assistant", "content": msg.content])
                 }

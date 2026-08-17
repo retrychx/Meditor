@@ -281,6 +281,58 @@ final class AgentSSEStabilityTests: XCTestCase {
         XCTAssertEqual(response.toolCalls[1].name, "write_document")
         XCTAssertEqual(response.toolCalls[1].arguments["content"], .string("v2"))
     }
+
+    // MARK: - A9 Anthropic：流中途 error 事件 → 解析 message 抛出（不得当畸形行静默跳过）
+
+    func test_streamAnthropic_errorEventMidStream_throwsWithMessage() async throws {
+        let mock = MockURLSession()
+        mock.stubbedData = sseData([
+            "event: message_start",
+            #"data: {"type":"message_start","message":{"id":"msg_1"}}"#,
+            "event: content_block_delta",
+            #"data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"partial"}}"#,
+            "event: error",
+            #"data: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#,
+        ])
+
+        let backend = RestAgentBackend(config: makeAnthropicConfig(), wire: .anthropic, session: mock)
+        do {
+            _ = try await backend.completeStreaming(
+                messages: [AgentMessage(role: .user, content: "hi")],
+                tools: [],
+                onTextChunk: { _ in }
+            )
+            XCTFail("流中途 error 事件必须抛出，不能静默跳过")
+        } catch AIError.server(_, let message) {
+            XCTAssertEqual(message, "Overloaded", "error 事件的 message 必须用户可见")
+        }
+    }
+
+    // MARK: - A10 Anthropic：ping 保活帧忽略，流正常完成
+
+    func test_streamAnthropic_pingEventIgnored_streamCompletes() async throws {
+        let mock = MockURLSession()
+        mock.stubbedData = sseData([
+            "event: message_start",
+            #"data: {"type":"message_start","message":{"id":"msg_1"}}"#,
+            "event: ping",
+            #"data: {"type":"ping"}"#,   // 保活帧 → 忽略
+            "event: content_block_delta",
+            #"data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"你好"}}"#,
+            "event: message_delta",
+            #"data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}"#,
+        ])
+
+        let backend = RestAgentBackend(config: makeAnthropicConfig(), wire: .anthropic, session: mock)
+        let response = try await backend.completeStreaming(
+            messages: [AgentMessage(role: .user, content: "hi")],
+            tools: [],
+            onTextChunk: { _ in }
+        )
+
+        XCTAssertEqual(response.text, "你好")
+        XCTAssertEqual(response.finishReason, "stop")
+    }
 }
 
 // MARK: - 私有 SSE 回放 URLProtocol

@@ -59,6 +59,9 @@ extension AIAssistantPanel {
                     if let pending = convo.pendingCommand {
                         commandConfirmBar(pending)
                     }
+                    if let pending = convo.pendingWrite {
+                        writeConfirmBar(pending)
+                    }
                     if !convo.isResponding && convo.messages.last?.role == .assistant {
                         Button(action: regenerate) {
                             HStack(spacing: 5) {
@@ -128,6 +131,10 @@ extension AIAssistantPanel {
             }
             .onChange(of: convo.pendingCommand?.id) { _, newID in
                 // 待确认命令出现时滚到底，避免长命令把"执行/拒绝"按钮推到视口外
+                if newID != nil { DispatchQueue.main.async { scrollToEnd(proxy) } }
+            }
+            .onChange(of: convo.pendingWrite?.id) { _, newID in
+                // 待确认写入出现时同样滚到底（与 pendingCommand 同理）
                 if newID != nil { DispatchQueue.main.async { scrollToEnd(proxy) } }
             }
             .onAppear {

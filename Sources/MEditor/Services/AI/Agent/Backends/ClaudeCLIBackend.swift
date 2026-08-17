@@ -203,7 +203,8 @@ Rules: arguments MUST be valid JSON • wait for result before continuing • ne
 
     // MARK: - XML Parsing（带容错）
 
-    private func parseToolCalls(from text: String) -> [AgentToolCall] {
+    // internal（非 private）以便单测直接验证 _parse_error 等容错路径
+    func parseToolCalls(from text: String) -> [AgentToolCall] {
         var calls: [AgentToolCall] = []
 
         // 主模式：标准格式
@@ -237,12 +238,16 @@ Rules: arguments MUST be valid JSON • wait for result before continuing • ne
                 }
                 // 修复彻底失败 → 注入 _parse_error，让 AI 看到错误并重试
                 let errID = "parse-err-\(calls.count)-\(name)"
-                let safeRaw = String(argsStr.prefix(300))
-                    .replacingOccurrences(of: "\\", with: "\\\\")
-                    .replacingOccurrences(of: "\"", with: "\\\"")
-                    .replacingOccurrences(of: "\n", with: "\\n")
-                    .replacingOccurrences(of: "\r", with: "\\r")
-                let errJSON = "{\"original_tool\": \"\(name)\", \"raw_arguments\": \"\(safeRaw)\", \"error\": \"Arguments JSON is malformed — please retry with valid JSON\"}"
+                // 用 JSONSerialization 构造：工具名 / 原始参数含引号、反斜杠、换行时，
+                // 手工拼接会产出非法 JSON
+                let errObj: [String: String] = [
+                    "original_tool": name,
+                    "raw_arguments": String(argsStr.prefix(300)),
+                    "error": "Arguments JSON is malformed — please retry with valid JSON"
+                ]
+                let errJSON = (try? JSONSerialization.data(withJSONObject: errObj))
+                    .flatMap { String(data: $0, encoding: .utf8) }
+                    ?? #"{"error": "Arguments JSON is malformed — please retry with valid JSON"}"#
                 calls.append(AgentToolCall(id: errID, name: "_parse_error", argumentsJSON: errJSON))
                 continue
             }

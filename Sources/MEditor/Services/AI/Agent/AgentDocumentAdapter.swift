@@ -31,6 +31,15 @@ protocol AgentDocumentAdapter: AnyObject {
     func confirmCommandExecution(_ command: String, cwd: String?) async -> Bool
     /// 取消挂起的命令确认（Runner 超时/正常结束时触发），恢复工具内挂起的 continuation。
     func cancelPendingCommandConfirmation()
+
+    // 文件写入授权（与命令确认同一范式）
+    /// 向用户展示确认条，询问是否允许 agent 写入/修改该文件。
+    func confirmFileWrite(_ path: String, summary: String) async -> Bool
+    /// 取消挂起的文件写入确认（Runner 超时/正常结束时触发），语义与
+    /// cancelPendingCommandConfirmation 完全对齐。
+    func cancelPendingWriteConfirmation()
+    /// 本次 agent run 的「全部允许」开关（确认条点过「本次运行全部允许」后为 true）。
+    var isFileWriteAllowedForRun: Bool { get }
 }
 
 extension AgentDocumentAdapter {
@@ -38,6 +47,12 @@ extension AgentDocumentAdapter {
     func hasOpenTab(at url: URL) -> Bool { false }
     /// 默认无挂起确认——mock / 测试实现无需关心此方法。
     func cancelPendingCommandConfirmation() {}
+    /// 默认放行——mock / headless 实现无需感知写入确认流程，不破坏既有 conformer。
+    func confirmFileWrite(_ path: String, summary: String) async -> Bool { true }
+    /// 默认无挂起确认——与 cancelPendingCommandConfirmation 的默认实现同理。
+    func cancelPendingWriteConfirmation() {}
+    /// 默认无「全部允许」状态——未接入 UI 的实现每次写都走 confirmFileWrite（其默认实现放行）。
+    var isFileWriteAllowedForRun: Bool { false }
 }
 
 // MARK: - AppState Implementation
@@ -185,5 +200,38 @@ final class AppStateDocumentAdapter: AgentDocumentAdapter {
         guard let convo = appState?.aiConversation else { return }
         convo.pendingCommand?.reject()
         convo.pendingCommand = nil
+    }
+
+    // MARK: - File write confirmation
+
+    /// 「本次运行全部允许」开关。作用域 = 本 adapter 实例：
+    /// macOS 每次 run 由 AIChatCoordinator 经 AgentContext.make 新建 adapter，
+    /// 因此实例级标志天然是 run 级——新 run 自动重置，无需 Runner 显式清零。
+    /// 不做 per-path 缓存的理由见 PendingWrite.approveAll 注释。
+    private var fileWriteAllowedForRun = false
+    var isFileWriteAllowedForRun: Bool { fileWriteAllowedForRun }
+
+    func confirmFileWrite(_ path: String, summary: String) async -> Bool {
+        guard let convo = appState?.aiConversation else { return false }
+        // 与 confirmCommandExecution 同范式：此方法仅负责 UI 层确认，
+        // 「是否跳过确认」由工具层经 isFileWriteAllowedForRun 判断。
+        return await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+            convo.pendingWrite = PendingWrite(
+                path: path,
+                summary: summary,
+                allowAllForRun: { [weak self] in self?.fileWriteAllowedForRun = true }
+            ) { approved in
+                convo.pendingWrite = nil
+                cont.resume(returning: approved)
+            }
+        }
+    }
+
+    /// Runner 超时/正常结束时拒绝挂起的写入确认（PendingWrite.reject 幂等，
+    /// 与 AIConversation.cancelStreaming 的补救路径不冲突）。
+    func cancelPendingWriteConfirmation() {
+        guard let convo = appState?.aiConversation else { return }
+        convo.pendingWrite?.reject()
+        convo.pendingWrite = nil
     }
 }

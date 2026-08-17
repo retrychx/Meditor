@@ -1,0 +1,205 @@
+import XCTest
+@testable import MEditor
+
+// MARK: - FileWriteConfirmationTests
+//
+// 文件写入确认（agent 运行中的写操作需用户确认）单测：
+//   - 协议默认实现放行（不破坏 headless / 未接入 UI 的 conformer）
+//   - 拒绝时工具不执行，且返回模型可读的错误文案
+//   - run 级「全部允许」后，同 run 后续写不再挂起确认
+// mock 模式参照 AgentToolTests.swift（MockAgentContext spy + 结果注入）。
+
+@MainActor
+final class FileWriteConfirmationTests: XCTestCase {
+
+    // MARK: - Setup
+
+    var ctx: MockAgentContext!
+
+    override func setUp() {
+        super.setUp()
+        ctx = MockAgentContext()
+        ctx.currentDocument     = "Hello world\nSecond line\nThird line"
+        ctx.currentDocumentName = "doc.md"
+        ctx.addFile("notes.md", content: "# Notes\n\nSome notes here.\nMore content.")
+    }
+
+    // MARK: - 协议默认实现（ShellContext extension）
+
+    /// 最小 ShellContext 实现：不实现任何写入确认方法，全部走协议扩展默认值。
+    private final class MinimalShellContext: ShellContext {
+        func confirmCommandExecution(_ command: String, cwd: String?) async -> Bool { true }
+        func isCommandApproved(_ key: String) -> Bool { false }
+        func markCommandApproved(_ key: String) {}
+        var allowedCommandPatterns: [String]? { nil }
+        func setAllowedCommandPatterns(_ patterns: [String]?) {}
+    }
+
+    func testDefaultConfirmFileWrite_allows() async {
+        let shell = MinimalShellContext()
+        let allowed = await shell.confirmFileWrite("docs/a.md", summary: "写入 docs/a.md（约 3 行）")
+        XCTAssertTrue(allowed, "协议扩展的默认实现应直接放行（headless / 未接入 UI 场景）")
+        XCTAssertFalse(shell.isFileWriteAllowedForRun, "默认无「全部允许」状态")
+        shell.cancelPendingWriteConfirmation()   // 默认 no-op，不应崩溃
+    }
+
+    // MARK: - 用户确认流程（每个写工具都会挂起确认）
+
+    func testWriteDocument_asksConfirmationWithSummary() async throws {
+        let tool = WriteDocumentTool()
+        let result = try await tool.execute(
+            arguments: ["filename": .string("new.md"), "content": .string("a\nb\nc")],
+            context: ctx
+        )
+        XCTAssertEqual(ctx.confirmedWrites.count, 1, "写入前应挂起一次确认")
+        XCTAssertEqual(ctx.confirmedWrites[0].path, "new.md")
+        XCTAssertTrue(ctx.confirmedWrites[0].summary.contains("约 3 行"), "summary 应包含行数信息")
+        XCTAssertTrue(result.contains("[OK]"))
+        XCTAssertEqual(ctx.writtenFiles.count, 1, "允许后应真正写入")
+    }
+
+    func testPatchDocument_asksConfirmation() async throws {
+        let tool = PatchDocumentTool()
+        _ = try await tool.execute(
+            arguments: ["find": .string("Hello world"), "replace": .string("Hi there")],
+            context: ctx
+        )
+        XCTAssertEqual(ctx.confirmedWrites.count, 1, "patch 前应挂起一次确认")
+        XCTAssertEqual(ctx.confirmedWrites[0].path, "doc.md", "当前文档 patch 的 path 应为文档名")
+        XCTAssertEqual(ctx.patchCalls.count, 1)
+    }
+
+    func testCreateFile_asksConfirmation() async throws {
+        let tool = CreateFileTool()
+        _ = try await tool.execute(
+            arguments: ["filename": .string("created.md"), "content": .string("# New")],
+            context: ctx
+        )
+        XCTAssertEqual(ctx.confirmedWrites.count, 1)
+        XCTAssertEqual(ctx.createdFiles.count, 1)
+    }
+
+    func testWriteFile_asksConfirmation() async throws {
+        let tool = WriteFileTool()
+        _ = try await tool.execute(
+            arguments: ["filename": .string("out.md"), "content": .string("body")],
+            context: ctx
+        )
+        XCTAssertEqual(ctx.confirmedWrites.count, 1)
+        XCTAssertEqual(ctx.writtenFiles.count, 1)
+    }
+
+    // MARK: - 拒绝：工具不执行，返回模型可读错误
+
+    func testWriteDocument_rejected_doesNotWrite() async throws {
+        ctx.writeConfirmResult = false
+        let tool = WriteDocumentTool()
+        let result = try await tool.execute(
+            arguments: ["content": .string("overwritten")],
+            context: ctx
+        )
+        XCTAssertTrue(ctx.writtenContents.isEmpty, "拒绝后不应写入当前文档")
+        XCTAssertTrue(result.contains("[!]") && result.contains("拒绝"),
+                      "拒绝时应返回模型可读的错误文案，而非静默成功")
+    }
+
+    func testPatchDocument_rejected_doesNotPatch() async throws {
+        ctx.writeConfirmResult = false
+        let tool = PatchDocumentTool()
+        let result = try await tool.execute(
+            arguments: ["filename": .string("notes.md"),
+                        "find": .string("Some notes"), "replace": .string("x")],
+            context: ctx
+        )
+        XCTAssertTrue(ctx.patchCalls.isEmpty, "拒绝后不应执行 patch")
+        XCTAssertTrue(result.contains("[!]") && result.contains("拒绝"))
+    }
+
+    func testCreateFile_rejected_doesNotCreate() async throws {
+        ctx.writeConfirmResult = false
+        let tool = CreateFileTool()
+        let result = try await tool.execute(
+            arguments: ["filename": .string("created.md")],
+            context: ctx
+        )
+        XCTAssertTrue(ctx.createdFiles.isEmpty, "拒绝后不应创建文件")
+        XCTAssertTrue(result.contains("[!]") && result.contains("拒绝"))
+    }
+
+    func testWriteFile_rejected_doesNotWrite() async throws {
+        ctx.writeConfirmResult = false
+        let tool = WriteFileTool()
+        let result = try await tool.execute(
+            arguments: ["filename": .string("out.md"), "content": .string("body")],
+            context: ctx
+        )
+        XCTAssertTrue(ctx.writtenFiles.isEmpty, "拒绝后不应写文件")
+        XCTAssertTrue(result.contains("[!]") && result.contains("拒绝"))
+    }
+
+    // MARK: - run 级「全部允许」：后续写不再挂起
+
+    func testAllowAllForRun_skipsConfirmationForSubsequentWrites() async throws {
+        ctx.fileWriteAllowedForRun = true   // 模拟用户已点「本次运行全部允许」
+        let write = WriteFileTool()
+        let r1 = try await write.execute(
+            arguments: ["filename": .string("a.md"), "content": .string("1")], context: ctx)
+        let r2 = try await write.execute(
+            arguments: ["filename": .string("b.md"), "content": .string("2")], context: ctx)
+        XCTAssertTrue(ctx.confirmedWrites.isEmpty, "全部允许后不应再挂起确认")
+        XCTAssertEqual(ctx.writtenFiles.count, 2, "写操作应直接放行执行")
+        XCTAssertTrue(r1.contains("[OK]") && r2.contains("[OK]"))
+    }
+
+    func testAllowAllForRun_alsoSkipsDocumentAndPatch() async throws {
+        ctx.fileWriteAllowedForRun = true
+        _ = try await WriteDocumentTool().execute(
+            arguments: ["content": .string("new body")], context: ctx)
+        _ = try await PatchDocumentTool().execute(
+            arguments: ["find": .string("Hello"), "replace": .string("Hi")], context: ctx)
+        XCTAssertTrue(ctx.confirmedWrites.isEmpty)
+        XCTAssertEqual(ctx.writtenContents.count, 1)
+        XCTAssertEqual(ctx.patchCalls.count, 1)
+    }
+
+    // MARK: - create_directory 不拦确认
+
+    func testCreateDirectory_doesNotAskConfirmation() async throws {
+        let tool = CreateDirectoryTool()
+        let result = try await tool.execute(
+            arguments: ["path": .string("docs/sub")], context: ctx)
+        XCTAssertTrue(ctx.confirmedWrites.isEmpty, "创建空目录不应触发写入确认")
+        XCTAssertTrue(result.contains("[OK]"))
+        XCTAssertEqual(ctx.createdDirectories, ["docs/sub"])
+    }
+
+    // MARK: - PendingWrite 模型（幂等 / approveAll 语义）
+
+    func testPendingWrite_rejectIsIdempotent() {
+        var responses: [Bool] = []
+        var allowAllCalled = false
+        let pending = PendingWrite(
+            path: "a.md", summary: "写入 a.md",
+            allowAllForRun: { allowAllCalled = true },
+            respond: { responses.append($0) }
+        )
+        pending.reject()
+        pending.reject()      // 第二次应为 no-op（与 Runner/cancelStreaming 双兜底对齐）
+        pending.approve()
+        XCTAssertEqual(responses, [false], "reject 应幂等，先到先生效")
+        XCTAssertFalse(allowAllCalled)
+    }
+
+    func testPendingWrite_approveAllSetsFlagThenApproves() {
+        var responses: [Bool] = []
+        var allowAllCalled = false
+        let pending = PendingWrite(
+            path: "a.md", summary: "写入 a.md",
+            allowAllForRun: { allowAllCalled = true },
+            respond: { responses.append($0) }
+        )
+        pending.approveAll()
+        XCTAssertTrue(allowAllCalled, "approveAll 应先置位 run 级开关")
+        XCTAssertEqual(responses, [true], "approveAll 同时放行当前写")
+    }
+}

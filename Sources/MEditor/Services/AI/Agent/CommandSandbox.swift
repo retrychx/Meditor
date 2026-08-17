@@ -103,6 +103,10 @@ public enum CommandSandbox {
         .init(pattern: ">/dev/",              label: "blocked", description: "写入设备文件"),
         .init(pattern: "> /dev/",             label: "blocked", description: "写入设备文件"),
         .init(pattern: "sudo",                kind: .commandToken, label: "blocked", description: "sudo 提权"),
+        .init(pattern: "doas",                kind: .commandToken, label: "blocked", description: "doas 提权"),
+        // osascript 的 AppleScript 提权写法（do shell script ... with administrator privileges）
+        // 会弹系统密码框拿到 root，与 sudo 同级拦截
+        .init(pattern: "administrator privileges", label: "blocked", description: "AppleScript 提权"),
         .init(pattern: "su -",                label: "blocked", description: "切换 root"),
         .init(pattern: "chmod 777 /",         label: "blocked", description: "系统目录权限篡改"),
         .init(pattern: "chown -r /",          label: "blocked", description: "系统目录 owner 篡改"),
@@ -204,14 +208,27 @@ public enum CommandSandbox {
     /// 这类用绝对/相对路径调用二进制的写法会完全绕过 blocked 规则——之前的边界集
     /// 只在结束侧含 `/`（覆盖 "curl/wget" 这种子串误判防护），起始侧遗漏了对称的
     /// "路径分隔符后紧跟命令名" 场景，被视为真实存在的绕过路径而不是误判。
+    /// 结束边界不含 `.`：否则 `cat curl.min.js`、`less ./ssh_config.bak` 这类
+    /// 「文件名恰好以命令名开头」的无辜参数会被误拦。带 `.` 后缀的真实命令名变体
+    /// （mkfs.ext4/mkfs.vfat 是真实存在的二进制）由下面的 command-position 规则单独覆盖：
+    /// 只在严格命令位置（行首或 `;` `|` `&` `(` 之后，允许空白）才接受 `.` 后缀，
+    /// 参数位置一律不认，从而不再误伤 curl.min.js。
+    /// 已知缺口：`/usr/bin/mkfs.ext4` 这类「绝对路径 + 带后缀变体」不再命中
+    /// （路径前缀与参数文件名无法静态区分），属可接受的收窄。
     /// 注意：字符串匹配只是纵深防御的一层（可被 shell 语法进一步绕过），
     /// 真正的安全边界是 warn/blocked 之外命令的用户确认流程。
     private static func containsCommandToken(_ token: String, in command: String) -> Bool {
-        guard let regex = try? NSRegularExpression(
-            pattern: "(?:^|[\\s;|&(\"'/])" + NSRegularExpression.escapedPattern(for: token) + "(?:$|[\\s;|&)/.\"'])"
-        ) else { return command.contains(token) }
+        let escaped = NSRegularExpression.escapedPattern(for: token)
         let range = NSRange(command.startIndex..., in: command)
-        return regex.firstMatch(in: command, range: range) != nil
+        guard let general = try? NSRegularExpression(
+            pattern: "(?:^|[\\s;|&(\"'/])" + escaped + "(?:$|[\\s;|&)/\"'])"
+        ) else { return command.contains(token) }
+        if general.firstMatch(in: command, range: range) != nil { return true }
+        // 带后缀命令名变体（mkfs.ext4）：仅限严格命令位置，见上方 doc comment
+        guard let extended = try? NSRegularExpression(
+            pattern: "(?:^|[;|&(])\\s*" + escaped + "\\."
+        ) else { return false }
+        return extended.firstMatch(in: command, range: range) != nil
     }
 
     // MARK: - Cwd Validation

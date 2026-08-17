@@ -66,7 +66,7 @@ struct AgentStepsView: View {
                     .font(.footnote)
                     .foregroundStyle(PaperTheme.inkSecondary)
             }
-        case .toolCallDone(_, let name, let args, _, let isError):
+        case .toolCallDone(_, let name, let args, _, let isError, _):
             let info = AgentToolDisplay.info(name: name, args: args)
             HStack(spacing: 7) {
                 Image(systemName: isError ? "xmark.circle.fill" : "checkmark.circle.fill")

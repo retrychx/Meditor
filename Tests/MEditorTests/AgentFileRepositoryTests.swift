@@ -376,6 +376,29 @@ final class AgentFileRepositoryTests: XCTestCase {
         XCTAssertTrue(results.isEmpty)
     }
 
+    // MARK: - searchWorkspace：grep 快路径 `--` 分隔（`-` 开头的 query 不被当成 flag）
+
+    func testSearchWorkspace_dashPrefixedQuery_searchesLiterally() async throws {
+        // "-needle" 含正则元字符检查之外的 `-`：修复前会被 grep 当成未知 flag
+        //（exit 2 静默回退慢路径）；query 恰为合法 flag（如 "-r"）时 root 路径会被
+        // 当作 pattern、grep 读 stdin 挂起。现在 pattern/路径前插 `--`，走快路径直搜。
+        createFile("flag.md", content: "use -needle option here\nnothing on this line")
+
+        let results = await repo.searchWorkspace(query: "-needle", extensions: ["md"])
+        XCTAssertEqual(results.count, 1, "`-` 开头的 query 应按字面搜到，实际：\(results)")
+        XCTAssertTrue(results[0].hasPrefix("flag.md:1:"), "实际：\(results)")
+        XCTAssertTrue(results[0].contains("-needle"))
+    }
+
+    func testSearchWorkspace_queryLooksLikeGrepFlag_notMisparsed() async throws {
+        // "-i" 是合法 grep flag：修复前会被当选项吞掉，root.path 变成 pattern 导致误搜/挂起
+        createFile("dash.md", content: "the -i flag is case insensitive")
+
+        let results = await repo.searchWorkspace(query: "-i", extensions: ["md"])
+        XCTAssertEqual(results.count, 1, "query 恰为合法 flag 时应按字面搜到，实际：\(results)")
+        XCTAssertTrue(results[0].hasPrefix("dash.md:1:"), "实际：\(results)")
+    }
+
     func testSearchWorkspace_noWorkspace_returnsEmpty() async {
         let noRoot = DefaultAgentFileRepository { nil }
         let results = await noRoot.searchWorkspace(query: "agent", extensions: ["md"])

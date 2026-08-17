@@ -8,6 +8,9 @@ import XCTest
 //   B8  工具执行中被 cancel 中断 → reconcileToolResults 保证 tool_calls 配对
 //   B9  后端返回非法参数 JSON → 不执行工具、回灌「解析失败」tool result
 //   B10 classifyError 文案：401→鉴权 / 429→频繁或额度 / URLError.timedOut→超时
+//   B11 cancel 后旧 run 收尾不得覆盖新 run（generation 防护）
+//   B12 停滞检测：相同 (工具, 参数) 连续失败 3 次 → 中断 run，不再发第 4 次请求
+//   B13 工具耗时记录：真实执行分支写入 durationSeconds，短路分支为 nil
 //
 // mock 模式沿用 AgentRunnerMultiTurnTests（其 mock 为 private，这里自带等价实现）。
 
@@ -215,6 +218,153 @@ final class AgentRunnerStabilityTests: XCTestCase {
         XCTAssertEqual(completeCount, 1, "旧 run 收尾不得再次触发 onComplete")
     }
 
+    // MARK: - B12 停滞检测：相同 (工具, 参数) 连续失败 3 次 → 中断 run
+
+    func test_stallDetection_sameFailingCallThreeTimes_abortsRun() async {
+        let tool = FailingTool(name: "failing_tool")
+        let failingCall = { (id: String) in
+            AgentCompletionResponse(
+                text: "",
+                toolCalls: [AgentToolCall(id: id, name: "failing_tool",
+                                          argumentsJSON: #"{"path":"missing.md"}"#)],
+                finishReason: "tool_calls"
+            )
+        }
+        let backend = ScriptedBackend(script: [
+            .respond(failingCall("tc1")),
+            .respond(failingCall("tc2")),
+            .respond(failingCall("tc3")),
+            // 第 4 轮不应被消费：停滞中断后不再发后端请求
+            .respond(AgentCompletionResponse(text: "不应到达", toolCalls: [], finishReason: "stop")),
+        ])
+        let runner = AgentRunner(maxSteps: 10, backendFactory: { _ in backend })
+
+        await runAndWait(runner, tools: [tool])
+
+        XCTAssertEqual(tool.callCount, 3, "工具应恰好执行 3 次")
+        XCTAssertEqual(backend.receivedMessages.count, 3,
+                       "停滞中断后不应再发第 4 次后端请求，实际：\(backend.receivedMessages.count)")
+        XCTAssertFalse(runner.isRunning)
+
+        // 错误文案：指出卡住的工具、连续失败次数、建议换说法
+        let error = runner.error ?? ""
+        XCTAssertTrue(error.contains("failing_tool"), "文案应指出卡住的工具，实际：\(error)")
+        XCTAssertTrue(error.contains("停滞"), "文案应说明停滞中断，实际：\(error)")
+        XCTAssertTrue(error.contains("3"), "文案应包含连续失败次数，实际：\(error)")
+
+        // 诊断信息写入 run state
+        let stall = runner.state.stall
+        XCTAssertEqual(stall?.toolName, "failing_tool")
+        XCTAssertEqual(stall?.repeatCount, 3)
+        XCTAssertTrue(stall?.lastErrorSummary.contains("总是失败") == true,
+                      "诊断应含最后一次错误摘要，实际：\(stall?.lastErrorSummary ?? "nil")")
+
+        // 不是误报步数超限
+        XCTAssertFalse(error.contains("最大步数"), "停滞中断不应报步数超限，实际：\(error)")
+    }
+
+    func test_stallDetection_sameToolDifferentArgs_notStalled() async {
+        // 同工具但参数不同 → 指纹不同，不计入连续失败
+        let tool = FailingTool(name: "failing_tool")
+        let failingCall = { (id: String, path: String) in
+            AgentCompletionResponse(
+                text: "",
+                toolCalls: [AgentToolCall(id: id, name: "failing_tool",
+                                          argumentsJSON: "{\"path\":\"\(path)\"}")],
+                finishReason: "tool_calls"
+            )
+        }
+        let backend = ScriptedBackend(script: [
+            .respond(failingCall("tc1", "a.md")),
+            .respond(failingCall("tc2", "b.md")),
+            .respond(failingCall("tc3", "c.md")),
+            .respond(AgentCompletionResponse(text: "最终答案", toolCalls: [], finishReason: "stop")),
+        ])
+        let runner = AgentRunner(maxSteps: 10, backendFactory: { _ in backend })
+
+        await runAndWait(runner, tools: [tool])
+
+        XCTAssertEqual(runner.finalText, "最终答案")
+        XCTAssertNil(runner.error)
+        XCTAssertNil(runner.state.stall, "参数不同的失败不应判定停滞")
+        XCTAssertEqual(backend.receivedMessages.count, 4)
+    }
+
+    func test_stallDetection_successResetsConsecutiveCount() async {
+        // fail fail success fail fail：成功会重置连续计数，达不到阈值
+        let tool = FlappingTool(name: "flapping_tool", successArg: "good.md")
+        let call = { (id: String, path: String) in
+            AgentCompletionResponse(
+                text: "",
+                toolCalls: [AgentToolCall(id: id, name: "flapping_tool",
+                                          argumentsJSON: "{\"path\":\"\(path)\"}")],
+                finishReason: "tool_calls"
+            )
+        }
+        let backend = ScriptedBackend(script: [
+            .respond(call("tc1", "bad.md")),
+            .respond(call("tc2", "bad.md")),
+            .respond(call("tc3", "good.md")),   // 成功：重置连续失败计数
+            .respond(call("tc4", "bad.md")),
+            .respond(call("tc5", "bad.md")),
+            .respond(AgentCompletionResponse(text: "最终答案", toolCalls: [], finishReason: "stop")),
+        ])
+        let runner = AgentRunner(maxSteps: 10, backendFactory: { _ in backend })
+
+        await runAndWait(runner, tools: [tool])
+
+        XCTAssertEqual(runner.finalText, "最终答案")
+        XCTAssertNil(runner.state.stall, "中间有成功不应判定停滞（只计「连续」失败）")
+        XCTAssertEqual(backend.receivedMessages.count, 6)
+    }
+
+    // MARK: - B13 工具耗时记录：真实执行分支写入 durationSeconds
+
+    func test_toolCallDone_recordsDuration() async {
+        let spy = RunnerSpyTool(name: "read_document", result: "doc")
+        let backend = ScriptedBackend(script: [
+            .respond(AgentCompletionResponse(
+                text: "",
+                toolCalls: [AgentToolCall(id: "tc1", name: "read_document", argumentsJSON: "{}")],
+                finishReason: "tool_calls"
+            )),
+            .respond(AgentCompletionResponse(text: "done", toolCalls: [], finishReason: "stop")),
+        ])
+        let runner = AgentRunner(maxSteps: 5, backendFactory: { _ in backend })
+
+        await runAndWait(runner, tools: [spy])
+
+        let done = runner.steps.first { $0.isDone }
+        guard case .toolCallDone(_, _, _, _, _, let duration)? = done else {
+            XCTFail("应有 toolCallDone step，实际：\(String(describing: done))")
+            return
+        }
+        XCTAssertNotNil(duration, "真实执行的工具应记录耗时")
+        XCTAssertGreaterThanOrEqual(duration ?? -1, 0)
+    }
+
+    func test_toolCallDone_parseErrorBranch_noDuration() async {
+        // 参数解析失败的短路分支不执行工具，duration 应为 nil
+        let backend = ScriptedBackend(script: [
+            .respond(AgentCompletionResponse(
+                text: "",
+                toolCalls: [AgentToolCall(id: "bad1", name: "read_document", argumentsJSON: "{bad")],
+                finishReason: "tool_calls"
+            )),
+            .respond(AgentCompletionResponse(text: "done", toolCalls: [], finishReason: "stop")),
+        ])
+        let runner = AgentRunner(maxSteps: 5, backendFactory: { _ in backend })
+
+        await runAndWait(runner)
+
+        let done = runner.steps.first { $0.isDone }
+        guard case .toolCallDone(_, _, _, _, _, let duration)? = done else {
+            XCTFail("应有 toolCallDone step")
+            return
+        }
+        XCTAssertNil(duration, "短路分支不应有执行耗时")
+    }
+
     // MARK: - Helpers
 
     private func runAndWait(_ runner: AgentRunner, tools: [any AgentTool] = []) async {
@@ -343,5 +493,37 @@ private final class BackendQueue: @unchecked Sendable {
         let backend = backends[min(index, backends.count - 1)]
         index += 1
         return backend
+    }
+}
+
+/// 总是失败的工具：用于停滞检测（相同调用连续失败）。
+private final class FailingTool: AgentTool, @unchecked Sendable {
+    let spec: AgentToolSpec
+    private(set) var callCount = 0
+
+    init(name: String) {
+        self.spec = AgentToolSpec(name: name, description: "Failing tool: \(name)")
+    }
+
+    func execute(arguments: [String: AnySendableValue], context: any AgentContextProtocol) async throws -> String {
+        callCount += 1
+        throw AgentError.executionError("总是失败")
+    }
+}
+
+/// 按参数决定成败的工具：arguments["path"] == successArg 时成功，否则失败。
+/// 用于验证「成功会重置连续失败计数」。
+private final class FlappingTool: AgentTool, @unchecked Sendable {
+    let spec: AgentToolSpec
+    private let successArg: String
+
+    init(name: String, successArg: String) {
+        self.spec = AgentToolSpec(name: name, description: "Flapping tool: \(name)")
+        self.successArg = successArg
+    }
+
+    func execute(arguments: [String: AnySendableValue], context: any AgentContextProtocol) async throws -> String {
+        if arguments["path"]?.stringValue == successArg { return "ok" }
+        throw AgentError.executionError("总是失败")
     }
 }

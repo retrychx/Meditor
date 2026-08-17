@@ -32,6 +32,7 @@ final class MockAgentContext: AgentContextProtocol {
     var openedFiles:        [String]                         = []
     var createdDirectories: [String]                         = []
     var confirmedCommands:  [String]                         = []
+    var confirmedWrites:    [(path: String, summary: String)] = []
 
     // MARK: - Error injection
 
@@ -43,6 +44,9 @@ final class MockAgentContext: AgentContextProtocol {
     var fileContentError:    Error?                 = nil
     var commandConfirmResult: Bool                  = true
     var allowedCommandPatterns: [String]?           = nil
+    /// 文件写入确认的注入结果 / run 级「全部允许」开关（spy 语义同 commandConfirmResult）
+    var writeConfirmResult: Bool                    = true
+    var fileWriteAllowedForRun: Bool                = false
 
     func setAllowedCommandPatterns(_ patterns: [String]?) {
         allowedCommandPatterns = patterns?.isEmpty == false ? patterns : nil
@@ -169,6 +173,13 @@ final class MockAgentContext: AgentContextProtocol {
         return commandConfirmResult
     }
 
+    func confirmFileWrite(_ path: String, summary: String) async -> Bool {
+        confirmedWrites.append((path: path, summary: summary))
+        return writeConfirmResult
+    }
+
+    var isFileWriteAllowedForRun: Bool { fileWriteAllowedForRun }
+
     func isCommandApproved(_ key: String) -> Bool {
         _approvedKeys.contains(key)
     }
@@ -212,6 +223,7 @@ final class MockAgentContext: AgentContextProtocol {
         openedFiles        = []
         createdDirectories = []
         confirmedCommands  = []
+        confirmedWrites    = []
         _approvedKeys      = []
     }
 

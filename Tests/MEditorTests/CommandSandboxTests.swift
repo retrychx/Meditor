@@ -159,6 +159,44 @@ final class CommandSandboxTests: XCTestCase {
         XCTAssertEqual(CommandSandbox.assess("summary of movement"), .safe)
     }
 
+    // MARK: - assess: 结束边界 "." 误伤回归测试
+    // containsCommandToken 结束边界曾含 "."，会把「文件名恰好以命令名开头」的无辜参数
+    // （curl.min.js、ssh_config.bak）误判为命令调用。修复后参数位置一律不认 "." 后缀，
+    // 但严格命令位置（行首或 ; | & ( 之后）的带后缀真实变体（mkfs.ext4）仍应拦截。
+
+    func test_assess_catCurlMinJs_notBlocked() {
+        XCTAssertFalse(CommandSandbox.assess("cat curl.min.js").isBlocked,
+                       "文件名 curl.min.js 不应误判为 curl 命令")
+    }
+
+    func test_assess_lessSshConfigBak_notBlocked() {
+        XCTAssertFalse(CommandSandbox.assess("less ./ssh_config.bak").isBlocked,
+                       "文件名 ssh_config.bak 不应误判为 ssh 命令")
+    }
+
+    func test_assess_mkfsVariant_stillBlocked() {
+        // 带后缀的真实命令名变体（mkfs.ext4 是真实二进制），严格命令位置仍应拦截
+        XCTAssertTrue(CommandSandbox.assess("mkfs.ext4 /dev/sdb").isBlocked)
+        XCTAssertTrue(CommandSandbox.assess("echo ok; mkfs.vfat /dev/sdb").isBlocked,
+                      "分号后的 mkfs 变体仍应拦截")
+        XCTAssertTrue(CommandSandbox.assess("echo ok && mkfs.ext4 /dev/sdb").isBlocked,
+                      "&& 后的 mkfs 变体仍应拦截")
+    }
+
+    // MARK: - assess: 提权路径（doas / osascript administrator privileges）
+
+    func test_assess_doas_isBlocked() {
+        XCTAssertTrue(CommandSandbox.assess("doas rm -rf /tmp").isBlocked, "doas 应与 sudo 同级拦截")
+        XCTAssertFalse(CommandSandbox.assess("echo doasmode").isBlocked,
+                       "含 doas 子串的普通词不应误判")
+    }
+
+    func test_assess_osascriptAdminPrivileges_isBlocked() {
+        let cmd = #"osascript -e 'do shell script "rm -rf /tmp/x" with administrator privileges'"#
+        XCTAssertTrue(CommandSandbox.assess(cmd).isBlocked,
+                      "AppleScript 提权写法应被拦截")
+    }
+
     // MARK: - assess: Warn
 
     func test_assess_rmFile_isWarn() {

@@ -59,6 +59,10 @@ final class AgentRunner {
     private let backendFactory: @Sendable (AIConfig) -> any AgentBackend
     private var runTask: Task<Void, Never>? = nil
 
+    /// 停滞检测阈值：相同 (工具名, 参数) 的调用连续失败达到该次数即中断 run。
+    /// 3 = 给模型两次换参数/换思路的机会，第三次原样失败基本可判定卡住。
+    private static let stallThreshold = 3
+
     /// 运行代际计数：cancel() 会同步放行 isRunning，但旧 _run 可能仍卡在不可取消点
     /// （如工具确认 continuation），此时新 run() 能通过 guard 启动，两个 _run 共享
     /// state/回调。每次 runMessages 递增 generation，旧 _run 发现代际不匹配时静默
@@ -67,6 +71,14 @@ final class AgentRunner {
 
     /// 总执行超时（秒），0 = 不限。默认 5 分钟。
     var timeoutSeconds: TimeInterval = 300
+
+    /// 发给后端的上下文预算（token 估算值）：超出时对线上副本做预算裁剪，
+    /// 本地 messages（最终写入持久化历史）保持完整。测试可调小以覆盖裁剪路径。
+    var contextBudgetTokens = AgentHistoryBudget.defaultBudgetTokens
+
+    /// 上下文预算淘汰回调（每次 run 首次发生淘汰时触发一次）：UI 据此在 transcript
+    /// 给出 subtle 提示，不让淘汰静默发生。
+    var onContextEviction: (@MainActor (AgentHistoryBudget.TrimResult) -> Void)? = nil
 
     /// lastThinkingIndex 缓存，O(1) 更新/删除 thinking step
     private var lastThinkingIndex: Int? = nil
@@ -121,6 +133,7 @@ final class AgentRunner {
         finalText          = ""
         error              = nil
         wasTruncated       = false
+        state.stall        = nil
         lastThinkingIndex  = nil
         isRunning          = true
 
@@ -154,6 +167,7 @@ final class AgentRunner {
                     // 拒绝挂起的命令确认：恢复工具内 withCheckedContinuation，否则确认框
                     // 弹出期间超时会让 _run 永不结束（reject 幂等，与 cancelStreaming 不冲突）
                     context.cancelPendingCommandConfirmation()
+                    context.cancelPendingWriteConfirmation()
                     // onComplete 不在此处调用 —— _run 的 cleanup 必然执行并统一触发
                     // (group.cancelAll 后 withTaskGroup 会等待 _run 响应取消并结束)
                 }
@@ -190,6 +204,16 @@ final class AgentRunner {
 
         var stepCount = 0
 
+        // 停滞检测状态：跟踪最近一次失败的 (工具名, 参数) 指纹及连续失败次数。
+        // 模型反复用相同参数调同一个失败工具时会烧满 maxSteps 才报"超过最大步数"，
+        // 这里在「相同调用连续失败达阈值」时提前中断，错误文案指出具体工具。
+        // 只读工具同样适用（如反复 read 不存在的文件）。
+        var lastFailureFingerprint: String? = nil
+        var consecutiveFailures = 0
+        var stalled = false
+        /// 每次 run 只向 UI 报告一次预算淘汰（后续 step 再淘汰不再重复提示）
+        var evictionNotified = false
+
         while stepCount < maxSteps {
             stepCount += 1
             guard !Task.isCancelled else { break }
@@ -200,8 +224,18 @@ final class AgentRunner {
             do {
                 streamAccumulated = ""   // 每个 step 重置，reply 只显示当前轮累积文本
                 lastStreamFlush = .distantPast   // 每个 step 的首个 delta 立即显示
+
+                // 上下文预算裁剪：只作用于发给后端的线上副本，本地 messages
+                //（最终写入持久化历史）保持完整。早期长 tool 结果先替换为占位符，
+                // 仍超预算才整轮裁最老历史（tool_call/tool_result 配对保持，见 AgentHistoryBudget）。
+                let outgoing = AgentHistoryBudget.trim(messages, budgetTokens: contextBudgetTokens)
+                if outgoing.didTrim, !evictionNotified {
+                    evictionNotified = true
+                    onContextEviction?(outgoing)
+                }
+
                 let response = try await backend.completeStreaming(
-                    messages: messages,
+                    messages: outgoing.messages,
                     tools: tools,
                     onTextChunk: { [weak self] chunk in
                         // 用 DispatchQueue.main.async 而非 Task { @MainActor }：
@@ -256,6 +290,8 @@ final class AgentRunner {
                         addToolCall(id: call.id, name: call.name, args: prettyArgs(call.arguments))
 
                         var result: AgentToolResult
+                        /// 工具实际执行耗时（仅真实执行分支有值，存入 step 供 UI/排查用）
+                        var duration: TimeInterval? = nil
                         if let parseError = call.argumentsParseError {
                             // 参数 JSON 非法（对所有后端生效，同 ClaudeCLIBackend 的 _parse_error）：
                             // 跳过执行，直接回灌错误，让模型重新生成合法 JSON
@@ -278,6 +314,7 @@ final class AgentRunner {
                                 isError: true
                             )
                         } else if let tool = tools.first(where: { $0.spec.name == call.name }) {
+                            let startedAt = Date()
                             do {
                                 let output = try await tool.execute(arguments: call.arguments, context: context)
                                 result = AgentToolResult(toolCallID: call.id, toolName: call.name, content: output)
@@ -287,6 +324,7 @@ final class AgentRunner {
                                     content: "错误：\(error.localizedDescription)", isError: true
                                 )
                             }
+                            duration = Date().timeIntervalSince(startedAt)
                         } else {
                             result = AgentToolResult(
                                 toolCallID: call.id, toolName: call.name,
@@ -294,7 +332,7 @@ final class AgentRunner {
                             )
                         }
 
-                        markToolCallDone(id: call.id, result: result)
+                        markToolCallDone(id: call.id, result: result, durationSeconds: duration)
 
                         messages.append(AgentMessage(
                             role: .tool,
@@ -302,9 +340,36 @@ final class AgentRunner {
                             toolCallID: result.toolCallID,
                             toolName: result.toolName
                         ))
+
+                        // 停滞检测：相同 (工具名, 参数) 指纹的失败连续出现达阈值即中断 run，
+                        // 避免烧满 maxSteps 才失败。指纹用排序键的 JSON，保证参数顺序无关。
+                        if result.isError {
+                            let fingerprint = stallFingerprint(call)
+                            if fingerprint == lastFailureFingerprint {
+                                consecutiveFailures += 1
+                            } else {
+                                lastFailureFingerprint = fingerprint
+                                consecutiveFailures = 1
+                            }
+                            if consecutiveFailures >= Self.stallThreshold {
+                                let summary = Self.firstLine(result.content, maxLength: 120)
+                                state.stall = AgentStallDiagnostic(
+                                    toolName: call.name,
+                                    repeatCount: consecutiveFailures,
+                                    lastErrorSummary: summary
+                                )
+                                error = "Agent 在工具 '\(call.name)' 上停滞：相同调用已连续失败 \(consecutiveFailures) 次（最后错误：\(summary)）。已中断运行，请检查该工具的输入或换个说法重试。"
+                                stalled = true
+                                break
+                            }
+                        } else {
+                            // 成功即重置：只有「连续」的相同失败才算停滞
+                            lastFailureFingerprint = nil
+                            consecutiveFailures = 0
+                        }
                     }
 
-                    if cancelled { break }
+                    if cancelled || stalled { break }
 
                     addThinking(label: "AI 处理结果…")
                     continue
@@ -347,6 +412,7 @@ final class AgentRunner {
         runTask           = nil
         // 正常结束也拒绝挂起的命令确认（幂等），兜底防 continuation 泄漏
         context.cancelPendingCommandConfirmation()
+        context.cancelPendingWriteConfirmation()
         onComplete?()
     }
 
@@ -371,7 +437,7 @@ final class AgentRunner {
         steps.append(.toolCall(id: id, name: name, args: args))
     }
 
-    private func markToolCallDone(id: String, result: AgentToolResult) {
+    private func markToolCallDone(id: String, result: AgentToolResult, durationSeconds: TimeInterval? = nil) {
         // toolCall 在 steps 末尾，从末尾往前找，通常 O(1)
         guard let idx = steps.indices.last(where: {
             if case .toolCall(let cid, _, _) = steps[$0], cid == id { return true }
@@ -382,7 +448,8 @@ final class AgentRunner {
             name: result.toolName,
             args: "",
             result: result.content,
-            isError: result.isError
+            isError: result.isError,
+            durationSeconds: durationSeconds
         )
     }
 
@@ -404,6 +471,23 @@ final class AgentRunner {
             return "网络连接失败：\(urlError.localizedDescription)"
         }
         return error.localizedDescription
+    }
+
+    /// 停滞检测用的调用指纹：工具名 + 排序键参数 JSON。
+    /// AnySendableValue.anyValue 产出的都是 JSON 安全类型（含 NSNull），序列化不会失败；
+    /// 失败时退化为「工具名|?」，仍能保证相同工具重复失败可被检测到。
+    private func stallFingerprint(_ call: AgentToolCall) -> String {
+        let raw = call.arguments.reduce(into: [String: Any]()) { $0[$1.key] = $1.value.anyValue }
+        guard let data = try? JSONSerialization.data(withJSONObject: raw, options: [.sortedKeys]),
+              let json = String(data: data, encoding: .utf8)
+        else { return "\(call.name)|?" }
+        return "\(call.name)|\(json)"
+    }
+
+    /// 取首行并按长度截断，供错误摘要使用（停滞诊断 / 文案）。
+    private static func firstLine(_ s: String, maxLength: Int) -> String {
+        let line = s.components(separatedBy: "\n").first ?? s
+        return line.count > maxLength ? String(line.prefix(maxLength)) + "…" : line
     }
 
     /// 为没有对应 tool result 的 tool call 追加合成的中断结果（紧跟其 assistant 消息之后），

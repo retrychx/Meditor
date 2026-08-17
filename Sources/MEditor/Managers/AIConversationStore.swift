@@ -20,6 +20,36 @@ final class PendingCommand: Identifiable {
     func reject()  { guard !answered else { return }; answered = true; respond(false) }
 }
 
+/// 一条等待用户确认的 agent 文件写入（与 PendingCommand 同一范式）。
+@MainActor
+final class PendingWrite: Identifiable {
+    let id = UUID()
+    /// 展示用目标路径（解析后的文件路径或当前文档名）
+    let path: String
+    /// 一句话变更描述（如「写入 docs/a.md（约 120 行）」）
+    let summary: String
+    /// 「本次运行全部允许」时置位 run 级开关（由 Adapter 注入，见 AppStateDocumentAdapter）。
+    /// 语义对齐 PendingCommand.respond(true)。
+    private let allowAllForRun: () -> Void
+    private let respond: (Bool) -> Void
+    private var answered = false
+
+    init(path: String, summary: String, allowAllForRun: @escaping () -> Void,
+         respond: @escaping (Bool) -> Void) {
+        self.path = path
+        self.summary = summary
+        self.allowAllForRun = allowAllForRun
+        self.respond = respond
+    }
+
+    func approve() { guard !answered else { return }; answered = true; respond(true) }
+    /// 先置位 run 级开关再放行当前写：之后本 run 的写工具直接放行、不再弹确认条。
+    /// 不做 per-path 缓存：写操作的目标路径每次由模型即时给出，缓存命中率低，
+    /// 且同一文件反复写的语义与「同一命令重复执行」不同，粗粒度 run 级开关更简单可控。
+    func approveAll() { guard !answered else { return }; allowAllForRun(); approve() }
+    func reject()  { guard !answered else { return }; answered = true; respond(false) }
+}
+
 /// Persistent, multi-session conversation state for the AI assistant.
 ///
 /// Owned by `AppState` and injected into the views (not a singleton), so it is
@@ -59,6 +89,10 @@ final class AIConversation {
 
     /// 待用户确认执行的命令（nil = 无）。AIAssistant 观察它显示确认条。
     var pendingCommand: PendingCommand? = nil
+
+    /// 待用户确认的文件写入（nil = 无）。与 pendingCommand 互斥同一时刻只挂一个
+    /// （工具串行执行，确认期间 agent loop 挂起，不可能同时存在两个待确认）。
+    var pendingWrite: PendingWrite? = nil
 
     private static let fileURL: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -161,6 +195,15 @@ final class AIConversation {
     func removeMessage(_ messageID: UUID, sessionID: UUID) {
         guard let si = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
         sessions[si].messages.removeAll { $0.id == messageID }
+    }
+
+    /// 向指定会话的 transcript 插入一条 subtle 系统提示（插在末尾流式占位 bubble 之前）。
+    /// 用于超长截断 / 上下文预算淘汰这类非阻断性提示，与截断提示走同一通道。
+    func insertTranscriptNotice(_ message: AIChatMessage, sessionID: UUID) {
+        guard let si = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        let at = max(0, sessions[si].messages.count - 1)
+        sessions[si].messages.insert(message, at: at)
+        sessions[si].updatedAt = .now
     }
 
     /// 写入指定会话的 agentHistory（含工具调用上下文）。
@@ -308,6 +351,9 @@ final class AIConversation {
         // 让卡在确认框的 Agent loop 能响应取消退出，确认条同时从 UI 消失。
         pendingCommand?.reject()
         pendingCommand = nil
+        // 挂起的文件写入确认同理（reject 幂等，与 Runner 收尾的兜底不冲突）
+        pendingWrite?.reject()
+        pendingWrite = nil
         isResponding = false
         persist()
     }

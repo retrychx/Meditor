@@ -275,20 +275,23 @@ protocol AgentTool: Sendable {
 enum AgentRunnerStep: Identifiable, Sendable {
     case thinking(label: String, id: UUID = UUID())
     case toolCall(id: String, name: String, args: String)
-    case toolCallDone(id: String, name: String, args: String, result: String, isError: Bool)
+    /// durationSeconds：工具实际执行耗时（仅 tool.execute 真实执行的分支有值；
+    /// 参数解析失败/未找到工具等短路分支为 nil）。默认 nil，旧构造点不受影响。
+    case toolCallDone(id: String, name: String, args: String, result: String, isError: Bool,
+                      durationSeconds: TimeInterval? = nil)
 
     /// SwiftUI 用来标识同一视图的 key。
     /// toolCall 和 toolCallDone 共享同一 id，让 SwiftUI 将它们识别为同一个视图，实现原地内容过渡。
     var id: String {
         switch self {
-        case .thinking(_, let uid):              return uid.uuidString
-        case .toolCall(let id, _, _):            return "call-\(id)"
-        case .toolCallDone(let id, _, _, _, _):  return "call-\(id)"   // 意图与 toolCall 相同
+        case .thinking(_, let uid):                 return uid.uuidString
+        case .toolCall(let id, _, _):               return "call-\(id)"
+        case .toolCallDone(let id, _, _, _, _, _):  return "call-\(id)"   // 意图与 toolCall 相同
         }
     }
 
     var isDone:  Bool { if case .toolCallDone = self { return true  }; return false }
-    var isError: Bool { if case .toolCallDone(_, _, _, _, let e) = self { return e }; return false }
+    var isError: Bool { if case .toolCallDone(_, _, _, _, let e, _) = self { return e }; return false }
 }
 
 // MARK: - Errors

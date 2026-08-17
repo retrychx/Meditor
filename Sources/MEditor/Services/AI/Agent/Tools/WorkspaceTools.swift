@@ -82,6 +82,12 @@ struct CreateFileTool: AgentTool {
             throw AgentError.executionError("缺少 filename 参数")
         }
         let content = arguments["content"]?.stringValue ?? ""
+        // 写入前确认：本 run 已「全部允许」则直接放行，否则挂起等用户在确认条上决定
+        if !(await context.isFileWriteAllowedForRun) {
+            let lines = content.components(separatedBy: "\n").count
+            let approved = await context.confirmFileWrite(filename, summary: "新建 \(filename)（约 \(lines) 行）")
+            guard approved else { return "[!] 用户已拒绝写入：\(filename)" }
+        }
         do {
             let url = try await context.createFile(name: filename, content: content)
             return "[OK] 已创建文件：\(url.lastPathComponent)（\(content.count) 字符）"
@@ -110,6 +116,12 @@ struct WriteFileTool: AgentTool {
         guard let filename = arguments["filename"]?.stringValue,
               let content  = arguments["content"]?.stringValue
         else { throw AgentError.executionError("缺少 filename 或 content 参数") }
+        // 写入前确认：本 run 已「全部允许」则直接放行，否则挂起等用户在确认条上决定
+        if !(await context.isFileWriteAllowedForRun) {
+            let lines = content.components(separatedBy: "\n").count
+            let approved = await context.confirmFileWrite(filename, summary: "写入 \(filename)（约 \(lines) 行）")
+            guard approved else { return "[!] 用户已拒绝写入：\(filename)" }
+        }
         let url = try await context.writeFile(name: filename, content: content)
         return "[OK] 已写入文件：\(url.lastPathComponent)（\(content.count) 字符）"
     }
@@ -133,6 +145,8 @@ struct CreateDirectoryTool: AgentTool {
         guard let path = arguments["path"]?.stringValue, !path.isEmpty else {
             throw AgentError.executionError("缺少 path 参数")
         }
+        // 不拦确认：创建空目录不覆盖任何用户内容，风险与收益不对等；
+        // 真正写入内容的 create_file / write_file 会各自确认
         let url = try await context.createDirectory(name: path)
         return "[OK] 已创建目录：\(url.path)"
     }

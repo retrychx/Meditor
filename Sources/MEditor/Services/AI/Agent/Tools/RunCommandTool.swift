@@ -134,7 +134,86 @@ struct RunCommandTool: AgentTool {
     // MARK: - Execution
 
     /// 共享的 Process 引用，让超时/取消分支能够触达 detached 任务里的子进程。
-    private final class ProcessBox: @unchecked Sendable { var process: Process? }
+    ///
+    /// 竞态修复：原实现是无锁的 `var process: Process?`，超时/取消哨兵若在
+    /// `box.process = process` 赋值前触发，`terminate()` 读到 nil 落空，产生孤儿进程。
+    /// 现在用 NSLock 保护读写，并记录 killRequested：赋值前收到的 kill
+    /// 请求会在赋值时补发，彻底关闭「哨兵抢先」窗口（kill 重复调用无害）。
+    private final class ProcessBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _process: Process?
+        private var killRequested = false
+
+        var process: Process? {
+            get {
+                lock.lock(); defer { lock.unlock() }
+                return _process
+            }
+            set {
+                lock.lock()
+                _process = newValue
+                let shouldKill = killRequested
+                lock.unlock()
+                // 赋值前哨兵已请求终止：进程一就绪立即补 kill，避免孤儿
+                if shouldKill, let p = newValue { RunCommandTool.killProcessTree(root: p) }
+            }
+        }
+
+        /// 请求终止子进程（整棵进程树）；进程尚未就绪时先记账，待赋值时补发。
+        func terminate() {
+            lock.lock()
+            killRequested = true
+            let p = _process
+            lock.unlock()
+            if let p { RunCommandTool.killProcessTree(root: p) }
+        }
+    }
+
+    /// 真正杀掉 shell 及其整棵后代进程树。
+    ///
+    /// 为什么不能只用 `process.terminate()`（SIGTERM）：
+    /// 1. shell 以 `-l -i`（交互式）启动，交互式 zsh/bash 会忽略 SIGTERM，
+    ///    terminate() 完全落空，子进程（如 `sleep 30`）一直跑到自然结束；
+    /// 2. 即使 shell 被杀，其子进程继承了 stdout 管道的写端，管道不关闭，
+    ///    runViaLoginShell 的读取循环仍会阻塞到子进程退出。
+    /// 因此改用不可屏蔽的 SIGKILL，并按 ppid 枚举所有后代一并杀掉，
+    /// 确保管道尽快 EOF、读取循环解除阻塞。
+    private static func killProcessTree(root process: Process) {
+        let rootPid = process.processIdentifier
+        guard rootPid > 0 else { return }
+        for pid in descendantPids(of: rootPid) {
+            kill(pid, SIGKILL)
+        }
+        kill(rootPid, SIGKILL)
+    }
+
+    /// 枚举 rootPid 的全部后代进程 pid（按进程表的 ppid 关系，与进程组无关，
+    /// 因此对交互式 shell 为 job control 另建进程组的情况同样有效）。
+    private static func descendantPids(of rootPid: pid_t) -> [pid_t] {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
+        var byteCount = 0
+        guard sysctl(&mib, u_int(mib.count), nil, &byteCount, nil, 0) == 0, byteCount > 0 else { return [] }
+        // 进程数可能在两次 sysctl 之间增长，多留一些余量
+        let capacity = byteCount / MemoryLayout<kinfo_proc>.stride + 16
+        var procs = [kinfo_proc](repeating: kinfo_proc(), count: capacity)
+        guard sysctl(&mib, u_int(mib.count), &procs, &byteCount, nil, 0) == 0 else { return [] }
+        let count = byteCount / MemoryLayout<kinfo_proc>.stride
+
+        var childrenByParent: [pid_t: [pid_t]] = [:]
+        for i in 0..<count {
+            let proc = procs[i]
+            childrenByParent[proc.kp_eproc.e_ppid, default: []].append(proc.kp_proc.p_pid)
+        }
+        var result: [pid_t] = []
+        var stack: [pid_t] = [rootPid]
+        while let pid = stack.popLast() {
+            for child in childrenByParent[pid] ?? [] {
+                result.append(child)
+                stack.append(child)
+            }
+        }
+        return result
+    }
 
     /// 执行命令，带超时保护。超时或外层取消时会真正终止子进程。
     private func runWithTimeout(command: String, cwd: String?) async -> String {
@@ -165,8 +244,8 @@ struct RunCommandTool: AgentTool {
                     group.cancelAll()
                     if value == "__CANCELLED__" { continue }
                     if value == "__TIMEOUT__" {
-                        // 真正终止子进程：SIGTERM 关闭管道，解除 runViaLoginShell 的阻塞
-                        box.process?.terminate()
+                        // 真正终止整棵进程树：SIGKILL 关闭管道，解除 runViaLoginShell 的阻塞
+                        box.terminate()
                         result = "[!] 命令执行超时（\(Int(timeout))s），进程已终止。\n命令：\(command)"
                     } else {
                         result = value
@@ -176,7 +255,9 @@ struct RunCommandTool: AgentTool {
                 return result
             }
         } onCancel: {
-            box.process?.terminate()
+            // 与超时路径同走 box.terminate()：进程尚未写入 box 时先记账、赋值时补发，
+            // 直接读 box.process 会在「取消先于赋值」的窗口里落空产生孤儿进程
+            box.terminate()
         }
     }
 

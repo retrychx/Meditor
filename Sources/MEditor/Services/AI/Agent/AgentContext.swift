@@ -175,6 +175,19 @@ final class AgentContext: AgentContextProtocol {
         doc.cancelPendingCommandConfirmation()
     }
 
+    // MARK: - File Write Confirmation（与命令确认同一范式，全部转发 doc）
+
+    func confirmFileWrite(_ path: String, summary: String) async -> Bool {
+        await doc.confirmFileWrite(path, summary: summary)
+    }
+
+    func cancelPendingWriteConfirmation() {
+        doc.cancelPendingWriteConfirmation()
+    }
+
+    /// run 级「全部允许」开关存于 doc adapter（实例随 run 新建，天然 run 级作用域）。
+    var isFileWriteAllowedForRun: Bool { doc.isFileWriteAllowedForRun }
+
     func isCommandApproved(_ key: String) -> Bool {
         approvals.contains(key)
     }

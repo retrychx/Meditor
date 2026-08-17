@@ -106,6 +106,7 @@ struct WriteDocumentTool: AgentTool {
         guard let content = arguments["content"]?.stringValue else {
             throw AgentError.executionError("缺少 content 参数")
         }
+        let lines = content.components(separatedBy: "\n").count
         if let filename = arguments["filename"]?.stringValue, !filename.isEmpty {
             // 已存在则用其绝对路径覆盖（避免裸文件名在根目录误建新文件）；否则按给定路径新建
             let resolved = await context.resolveFile(filename)
@@ -115,12 +116,23 @@ struct WriteDocumentTool: AgentTool {
             // found 则用其绝对路径覆盖（避免裸文件名在根目录误建新文件）；notFound 则按给定路径新建
             let target: String
             if case .found(let foundURL) = resolved { target = foundURL.path } else { target = filename }
+            // 写入前确认：本 run 已「全部允许」则直接放行，否则挂起等用户在确认条上决定
+            if !(await context.isFileWriteAllowedForRun) {
+                let approved = await context.confirmFileWrite(target, summary: "写入 \(target)（约 \(lines) 行）")
+                guard approved else { return "[!] 用户已拒绝写入：\(target)" }
+            }
             do {
                 let url = try await context.writeFile(name: target, content: content)
                 return "[OK] 已写入文件：\(url.lastPathComponent)（\(content.count) 字符）"
             } catch {
                 return "[!] 写入失败：\(error.localizedDescription)"
             }
+        }
+        let docName = await context.currentDocumentName ?? "当前文档"
+        // 写入前确认（当前文档全量重写）
+        if !(await context.isFileWriteAllowedForRun) {
+            let approved = await context.confirmFileWrite(docName, summary: "全量重写 \(docName)（约 \(lines) 行）")
+            guard approved else { return "[!] 用户已拒绝写入：\(docName)" }
         }
         do {
             try await context.writeDocument(content)
@@ -160,8 +172,14 @@ struct PatchDocumentTool: AgentTool {
         }
 
         let replaceAll = arguments["replace_all"]?.boolValue ?? false
+        let matchDesc = replaceAll ? "全部匹配" : "首个匹配"
 
         if let filename = arguments["filename"]?.stringValue, !filename.isEmpty {
+            // 写入前确认：本 run 已「全部允许」则直接放行，否则挂起等用户在确认条上决定
+            if !(await context.isFileWriteAllowedForRun) {
+                let approved = await context.confirmFileWrite(filename, summary: "在 \(filename) 中替换\(matchDesc)")
+                guard approved else { return "[!] 用户已拒绝写入：\(filename)" }
+            }
             do {
                 let count = try await context.patchFile(name: filename, find: find, replace: replace, all: replaceAll)
                 return "[OK] 已在 \(filename) 替换 \(count) 处"
@@ -172,6 +190,12 @@ struct PatchDocumentTool: AgentTool {
             }
         }
 
+        let docName = await context.currentDocumentName ?? "当前文档"
+        // 写入前确认（当前文档局部替换）
+        if !(await context.isFileWriteAllowedForRun) {
+            let approved = await context.confirmFileWrite(docName, summary: "在 \(docName) 中替换\(matchDesc)")
+            guard approved else { return "[!] 用户已拒绝写入：\(docName)" }
+        }
         do {
             let count = try await context.patchDocument(find: find, replace: replace, all: replaceAll)
             return "[OK] 已替换 \(count) 处"
