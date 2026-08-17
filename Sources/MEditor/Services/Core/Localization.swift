@@ -278,6 +278,7 @@ extension LocalizationManager {
         "menu.findPrevious": ("Find Previous", "查找上一个"),
         "menu.useSelectionForFind": ("Use Selection for Find", "用所选内容查找"),
         "menu.jumpToLine": ("Jump to Line…", "跳转到行…"),
+        "menu.findInWorkspace": ("Find in Workspace…", "在工作区中查找…"),
         "menu.replace": ("Replace…", "替换…"),
         "menu.closeTab": ("Close Tab", "关闭标签"),
         "menu.reopenClosedTab": ("Reopen Closed Tab", "重新打开关闭的标签"),
@@ -410,6 +411,10 @@ extension LocalizationManager {
 
         // Quick Open
         "quickOpen.placeholder": ("Open file by name…", "按名称打开文件…"),
+        "globalSearch.placeholder": ("Search workspace content…", "搜索工作区内容…"),
+        "globalSearch.typeToSearch": ("Type to search file contents", "输入以搜索文件内容"),
+        "globalSearch.indexing": ("Building index…", "正在构建索引…"),
+        "globalSearch.searching": ("Searching…", "搜索中…"),
         "quickOpen.commandPlaceholder": ("Search files and actions…", "搜索文件和操作…"),
         "quickOpen.typeToSearch": ("Type to search files", "输入以搜索文件"),
         "quickOpen.actions": ("Actions", "操作"),

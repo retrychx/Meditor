@@ -45,7 +45,10 @@ final class AgentContext: AgentContextProtocol {
     /// 工厂方法：从 AppState 创建标准 AgentContext（App 侧调用）
     /// 审批缓存共享 AppState 的会话级实例，safe 命令批准一次全 session 有效。
     static func make(appState: AppState) -> AgentContext {
-        let repo    = DefaultAgentFileRepository { [weak appState] in appState?.rootURL }
+        let repo    = DefaultAgentFileRepository(
+            { [weak appState] in appState?.rootURL },
+            indexProvider: { [weak appState] in appState?.workspaceIndex }
+        )
         let adapter = AppStateDocumentAdapter(appState: appState, fileRepo: repo)
         return AgentContext(files: repo, doc: adapter, approvals: appState.commandApprovals)
     }

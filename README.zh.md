@@ -5,7 +5,7 @@
 <h1 align="center">MEditor</h1>
 
 <p align="center">
-  <strong>原生 macOS Markdown 编辑器，内置 AI Agent</strong>
+  <strong>macOS 上给技术人写文档的 Agent 工作台</strong>
 </p>
 
 <p align="center">
@@ -16,50 +16,50 @@
 </p>
 
 <p align="center">
-  🌐 <strong>中文</strong> | <a href="README.md"><strong>English</strong></a>
+  🌐 <strong>中文</strong> | <a href="README.md"><strong>English</strong></a> | <a href="https://meditorapp.pages.dev"><strong>官网</strong></a>
 </p>
 
 ---
 
-MEditor 是一款纯 SwiftUI + AppKit 的 macOS Markdown 编辑器，内置 AI Agent，可通过工具调用直接读写、重构你的文档 —— 无插件、无 Electron、无云同步。
+MEditor 是 **macOS 上给技术人写文档的 Agent 工作台**。核心闭环：**Agent 改文档 → 预览立即渲染 → 人机迭代**。
+
+把它指向一个代码仓库或工作区，让 Agent 把工程师真正要写的文档写好 —— 周报、技术方案、changelog、API 文档、会议纪要。
+
+纯 SwiftUI + AppKit，**无 Electron**；自带密钥（BYOK），**你的文档和模型密钥永远不离开你的机器**。
 
 ---
 
 ## ✨ 功能特性
 
-### 🤖 AI Agent（核心能力）
+### 🤖 真 Agent，不是聊天框
 
-- **多轮工具循环** — Agent 推理、调用工具、读取结果，反复迭代直到任务完成
-- **文档工具** — 通过精准工具调用读取、写入、补丁式修改当前文档
-- **工作区工具** — 列出文件、全局搜索、打开标签、执行 Shell 命令（沙盒隔离）
-- **流式输出** — 回复逐字出现；工具步骤内联展示，支持展开/折叠查看详情
-- **OpenAI & Anthropic** — 两套协议均支持完整 SSE 流式；同时支持 ClaudeCLI 后端
-- **自带密钥** — 兼容任何 OpenAI 格式端点（Ollama、OpenRouter、本地大模型）
-- **技能系统** — 内置技能（总结、美化、代码审查…）+ 精选技能库，可自由扩展
+- **14 个工具，多轮循环** — Agent 读写、补丁式修改、搜索文档，操作工作区文件，驱动编辑器，执行沙盒 Shell 命令 —— 在多轮工具调用中持续推理，直到把活干完
+- **三种后端** — OpenAI 兼容（内置 8 家预设：OpenAI、DeepSeek、Kimi、GLM、通义千问、OpenRouter、Groq、Ollama）、Anthropic，以及复用本机 Claude Code 登录态的 Claude CLI 后端
+- **自带密钥（BYOK）** — 兼容任何 OpenAI 格式端点，密钥只存在本地设置里
+- **全程流式** — 回复逐字流出；工具步骤内联展示，支持展开/折叠查看详情
 
-### 编辑与预览
-- **📝 实时预览** — 基于 marked.js 的 Markdown 渲染，highlight.js 代码高亮，Mermaid.js 图表支持
-- **🎨 语法高亮** — 编辑器（原生 `NSTextView`）和预览区均支持 40+ 语言，含完整的别名映射（`shell`→`bash`，`ts`→`typescript` 等）
-- **🔀 双向滚动同步** — 编辑器和预览区滚动互相同步，带防循环保护
-- **🔍 查找与替换** — 集成系统查找面板：查找、查找下一个/上一个、用所选内容查找、跳转到行、替换
-- **🖥 HTML 预览** — `.html`/`.htm` 文件直接以网页形式渲染
+### 🛡 敢让它动你的文件
 
-### 文件与标签
-- **📂 文件浏览器** — 侧栏支持搜索、右键菜单（新建文件/文件夹、重命名、删除、在 Finder 中显示），并记忆目录展开状态
-- **📁 文件树自动刷新** — 基于 FSEvents 的文件监控，外部修改即时反映
-- **📑 标签页管理** — 拖拽排序、关闭确认（保存/不保存/取消）、重开最近关闭的标签（⌘⇧T）、上一个/下一个标签
-- **⚡️ 快速打开** — 模糊文件查找（⌘P），支持键盘上下选择
+- **写文件前确认** — Agent 写入前先问你；顺手时可"本次运行全部允许"
+- **命令沙盒风险分级** — Shell 命令按风险分级后再执行
+- **上下文预算** — token 预算自动淘汰，长会话不跑偏；停滞检测掐死空转循环；只读工具并行执行
+- **运行可观测** — 每次运行展示 token 用量与耗时
+- **行内 diff 审阅** — Agent 的修改以可审阅的 diff 落地，绝不覆盖你正在输入的内容；`@mention` 把文件拉进上下文；多会话历史保留每段对话
 
-### 工作区
-- **🎨 预览主题** — GitHub（浅色）、Nord、Dracula（深色），整窗外观联动并持久化选择
-- **📤 导出** — 预览可导出为 HTML / PDF / 图片（2× PNG）；HTML 文件还可导出为 Markdown
-- **🌐 局域网分享** — 内置 HTTP 服务（NWListener）把已打开文档分享到局域网；访问受一次性令牌 + 仅当前打开文件的白名单双重限制
-- **💾 会话恢复** — 通过安全作用域书签记住根目录、打开的标签及顺序、当前选中标签，重启后自动恢复
-- **⏱ 自动保存** — 可选的定时自动保存（间隔可配置）；退出时也会保存已修改标签
-- **⚙️ 设置** — 预览字号、自动保存、启动默认布局、局域网分享端口（⌘,）
-- **🔄 面板拖拽缩放** — 侧栏、编辑器、预览区可独立显隐并拖拽调整宽度
-- **📊 状态栏** — 光标位置（Ln/Col）、文件大小、UTF-8 编码指示
-- **💻 原生体验** — 纯 SwiftUI + AppKit，无 Electron 依赖；内置 JS 库完全离线可用
+### 🔄 闭环：改 → 渲染 → 迭代
+
+- **实时预览** — 基于 marked.js 的 Markdown 渲染、highlight.js 代码高亮、Mermaid.js 图表
+- **跟得上的编辑器** — 原生 `NSTextView` 编辑，40+ 语言高亮，双向滚动同步，查找替换，快速打开（⌘P），标签页，FSEvents 驱动的文件浏览器
+
+### 🚀 交付与分享
+
+- **局域网分享** — 内置 HTTP 服务，一次性令牌鉴权
+- **在线发布** — 经 Cloudflare 一键发布到公网
+- **iOS 伴侣** — 在手机上通过 iCloud 编辑、聊天、发布
+- **放映模式与专注模式**，HTML / PDF / 2× PNG 导出，预览主题（GitHub / Nord / Dracula）
+- **Sparkle 自动更新** — 安装包见 [meditorapp.pages.dev](https://meditorapp.pages.dev)
+
+---
 
 ## 📋 系统要求
 
@@ -123,97 +123,90 @@ open Package.swift
 
 ---
 
+## ⚙️ AI 设置
+
+打开 **设置（⌘,）→ AI**，选择一种后端：
+
+| 后端 | 需要什么 |
+|------|----------|
+| OpenAI 兼容预设 | 从 8 家预设（OpenAI、DeepSeek、Kimi、GLM、通义千问、OpenRouter、Groq、Ollama）中选一个，填入 API Key，选模型 |
+| Anthropic | API Key + 模型（如 `claude-opus-4-5`） |
+| Claude CLI | 什么都不用 —— 直接复用本机 Claude Code 登录态 |
+| 自定义端点 | 任何 OpenAI 兼容的 Base URL + Key + 模型 |
+
+没有 key？选 Claude CLI 后端，零配置跑起来。
+
+---
+
 ## 🏗 项目结构
 
 ```
 MEditor/
-├── Package.swift                # SPM 配置文件
+├── Package.swift
 ├── scripts/
-│   └── bundle.sh                # .app 包组装脚本
-├── docs/
-│   └── code-review-and-roadmap.zh.md  # 代码质量分析 & 功能路线图
+│   ├── bundle.sh          # .app 包组装脚本
+│   └── test.sh            # Xcode toolchain 测试脚本
+├── docs/                  # 设计文档与历史分析
+├── plans/                 # 进行中的开发计划
 └── Sources/MEditor/
-    ├── MEditorApp.swift         # 应用入口 & @main 结构体
-    ├── Info.plist               # 应用配置 & 文档类型关联
-    ├── Models/
-    │   ├── EditorTab.swift      # 标签模型（路径、内容、语言、修改标记）
-    │   └── FileItem.swift       # 文件树节点（路径、目录标记、子节点）
-    ├── Protocols/
-    │   ├── FileServiceProtocol.swift      # 文件 I/O 抽象
-    │   └── SyntaxHighlightEngine.swift    # 语法高亮抽象
-    ├── Resources/
-    │   ├── AppIcon.icns         # 应用图标（全分辨率）
-    │   └── Preview/             # 本地 JS 库（无需网络请求）
-    │       ├── marked.min.js    # Markdown → HTML 渲染器
-    │       ├── highlight.min.js # 代码语法高亮器
-    │       └── mermaid.min.js   # 图表渲染器（流程图、时序图等）
+    ├── Models/            # EditorTab、FileItem、AgentTool、PluginSkill…
+    ├── Protocols/         # FileService、SyntaxHighlight、AgentContext…
     ├── Services/
-    │   ├── FileService.swift              # 文件 I/O 实现
-    │   ├── FileWatcherService.swift       # FSEvents 目录监控
-    │   ├── FileTypeConfiguration.swift    # 文件类型注册表（图标、颜色、语言）
-    │   ├── HTMLHighlightEngine.swift      # 基于正则的 HTML 高亮
-    │   ├── HighlightService.swift         # 高亮引擎注册表
-    │   └── MarkdownHighlightEngine.swift  # 基于正则的 Markdown 高亮
-    ├── ViewModels/
-    │   └── AppState.swift       # 全局可观察状态（@Observable macro）
+    │   ├── AI/
+    │   │   ├── Agent/
+    │   │   │   ├── AgentRunner.swift          # 多轮循环与状态
+    │   │   │   ├── CommandSandbox.swift       # 风险分级的 Shell 沙盒
+    │   │   │   ├── AgentHistoryBudget.swift   # 上下文 token 预算
+    │   │   │   ├── Backends/
+    │   │   │   │   ├── AgentBackend.swift     # 协议 + 默认流式回退
+    │   │   │   │   ├── RestAgentBackend.swift # OpenAI 与 Anthropic SSE
+    │   │   │   │   └── ClaudeCLIBackend.swift # claude CLI 子进程
+    │   │   │   └── Tools/                     # 文档、编辑器、工作区、Shell 工具
+    │   │   ├── InlineEditAgent.swift          # 选区级修改 + diff 审阅
+    │   │   ├── AIService.swift                # 对话补全与 provider 预设
+    │   │   └── BeautifyAgent.swift            # 单发文档润色
+    │   ├── Core/          # AppSettings、Localization、MarkdownFormatter
+    │   ├── File/          # FileService、FileWatcher、文件类型配置
+    │   └── Calendar/      # CalendarService（EventKit）
+    ├── Managers/          # Tab、FileTree、Share、Template、Todo…
     └── Views/
-        ├── ContentView.swift    # 根布局（欢迎页 + 主界面）
-        ├── Editor/
-        │   ├── EditorTabBar.swift       # 可拖拽排序的标签栏
-        │   ├── EditorView.swift         # 编辑器容器
-        │   └── NativeEditorView.swift   # NSTextView 封装 + 语法高亮
-        ├── Preview/
-        │   ├── MarkdownWebPreview.swift # WKWebView Markdown 渲染
-        │   ├── PreviewPanel.swift       # 预览容器
-        │   └── WebPreviewView.swift     # WKWebView 原始 HTML
-        ├── Shared/
-        │   ├── PanelLabel.swift         # 可复用的面板标题
-        │   └── VisualEffect.swift       # NSVisualEffectView 封装
-        └── Sidebar/
-            ├── FileRow.swift            # 文件行 + 右键菜单
-            └── FileSidebar.swift        # 文件树 + 搜索 + 增删改查
+        ├── Agent/         # AgentStepView、AgentResultPanel
+        ├── AI/            # AIAssistant、@mention 输入器
+        ├── Editor/        # NativeEditorView、TabBar、InlineEdit…
+        ├── Preview/       # MarkdownWebPreview、TOC、ExportBar
+        ├── Sidebar/       # FileSidebar、FileRow、TodoSidebar…
+        └── Shared/        # DesignTokens、ChromeButton、Toast…
 ```
 
 ---
 
-## 🔍 代码质量与路线图
+## 🗺 路线图
 
-详见 [`docs/code-review-and-roadmap.zh.md`](docs/code-review-and-roadmap.zh.md)（中文完整版）。
+执行顺序以 [`plans/2026-08-18-agent-workstation-plan.md`](plans/2026-08-18-agent-workstation-plan.md) 为准。
 
-简要评价：
+**已交付**
+- [x] 真 Agent：14 个工具、多轮循环、三种后端（OpenAI 兼容 / Anthropic / Claude CLI）、BYOK
+- [x] Agent 加固：写文件确认、命令沙盒风险分级、上下文预算、停滞检测、只读工具并行、用量显示
+- [x] 行内编辑 diff 审阅、`@mention` 上下文、多会话历史
+- [x] 局域网分享 + Cloudflare 在线发布
+- [x] iOS 伴侣（iCloud 编辑 / 聊天 / 发布）
+- [x] 放映与专注模式、HTML 导出、预览主题、Sparkle 自动更新
 
-| 方面 | 评价 |
-|------|------|
-| **架构设计** | ⭐ 面向协议 + 清晰的 Service 层 |
-| **性能优化** | ⭐ 大文件阈值（500KB）、操作防抖 |
-| **安全性** | ⭐ 局域网分享按会话令牌 + 白名单鉴权、标准化路径防穿越、JSON 编码预览 |
-| **待改进** | 🔧 HTML 模板嵌入在 Swift 字符串中 |
-| **待改进** | 🔧 资源复制代码冗余 |
-| **已交付** | ✅ 偏好设置窗口、会话恢复、导出（PDF/HTML/图片）、局域网分享、预览主题 |
-| **即将开发** | 编辑器字体设置、Git 状态指示、全局搜索（⌘⇧F） |
+**下一步**（Phase 1–3）
+- [ ] Onboarding —— 首启引导、零配置 Claude CLI 默认后端、脚本化演示
+- [ ] 全局搜索（⌘⇧F）—— 建在共享工作区索引上，同时供 Agent 搜索与快速打开使用
+- [ ] Agent 运行一键回滚（run 级检查点）
 
-### 路线图概要
+**后续**（Phase 4–6）
+- [ ] Spotlight 索引与 Quick Look 插件、Shortcuts intents
+- [ ] MCP Server —— 把 Agent 工具暴露给 Claude Desktop / Cursor
+- [ ] 诊断中心 —— 死链、缺图、标题层级检查
 
-**P1（优先）**
-- [x] 应用图标
-- [x] 文档类型关联
-- [x] 偏好设置窗口
-- [x] 自动保存 + 会话恢复
-- [ ] 编辑器字体/字号设置
-- [ ] HTML 模板从 Swift 中抽离
+---
 
-**P2（体验增强）**
-- [ ] Git 状态指示（侧栏文件旁显示 M/A/?）
-- [ ] 全局搜索（⌘⇧F）
-- [ ] 目录导航（Outline 面板）
-- [ ] 图片粘贴/拖入
-- [ ] 代码折叠
+## 🤝 参与贡献
 
-**P3（锦上添花）**
-- [ ] 多窗口支持
-- [ ] CSV/JSON 预览增强
-- [ ] 打字机模式
-- [x] 导出 PDF/HTML
+欢迎提 PR，提交前请先跑 `make test`。
 
 ---
 

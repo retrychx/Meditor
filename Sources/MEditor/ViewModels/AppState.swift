@@ -59,6 +59,10 @@ final class AppState {
         didSet {
             shareManager.sync(rootURL: rootURL, openTabs: tabManager.openTabs)
             if !isRestoringSession { scheduleSessionPersist() }
+            // 工作区切换 → 重建内容索引；关闭（nil）→ 释放
+            if rootURL?.standardizedFileURL != oldValue?.standardizedFileURL {
+                rebuildWorkspaceIndex(root: rootURL)
+            }
         }
     }
 
@@ -214,10 +218,15 @@ final class AppState {
         didSet {
             if showingQuickOpen {
                 showingBeautifySheet = false
+                showingGlobalSearch = false
                 // Lazily build the file index only when QuickOpen is actually opened.
                 if let root = rootURL { fileTreeManager.ensureIndexReady(rootURL: root) }
             }
         }
+    }
+    /// 全局搜索面板（⌘⇧F）：基于 workspaceIndex 的内容搜索浮层。
+    var showingGlobalSearch = false {
+        didSet { if showingGlobalSearch { showingQuickOpen = false } }
     }
     var showingSettings = false
     /// SettingsHeroOverlay 遮罩/面板展开的真实动画状态（与 showingSettings 不同：
@@ -242,6 +251,32 @@ final class AppState {
     let themeStore: PreviewThemeStore
     let sessionStore: SessionStore
     let filePickerService: FilePickerServiceProtocol
+
+    // MARK: - 工作区内容索引（全局搜索 UI 与 Agent search_workspace 共用）
+
+    let workspaceIndex = WorkspaceIndexService()
+    /// 首次全量构建完成标记（@Observable 可追踪），搜索 UI 用它显示「索引构建中…」。
+    private(set) var workspaceIndexReady = false
+
+    /// rootURL 变化时重建/释放索引；构建在 actor 后台执行，不占主线程。
+    private func rebuildWorkspaceIndex(root: URL?) {
+        workspaceIndexReady = false
+        let index = workspaceIndex
+        guard let root else {
+            Task { await index.clear() }
+            return
+        }
+        Task {
+            await index.buildIndex(root: root)
+            workspaceIndexReady = true
+        }
+    }
+
+    /// FSEvents 变化后的索引增量刷新（服务内部防抖；首次构建未完成时由 buildIndex 全量兜底）。
+    func scheduleWorkspaceIndexRefresh(root: URL) {
+        let index = workspaceIndex
+        Task { await index.scheduleRefresh(root: root) }
+    }
 
     // MARK: - 散文件 & Claude 监听
 
@@ -402,7 +437,13 @@ final class AppState {
         tabManager.onRecordModDate           = { [weak self] url in self?.recordModDate(for: url) }
         tabManager.onReport                  = { [weak self] err in self?.report(err) }
         tabManager.onDidSave                 = { [weak self] in self?.lastSavedAt = Date() }
-        tabManager.onDidWriteToDisk          = { [weak self] url in self?.previewManager.reloadHTML(url: url) }
+        tabManager.onDidWriteToDisk          = { [weak self] url in
+            self?.previewManager.reloadHTML(url: url)
+            // 保存落盘后即时刷新内容索引（FSEvents diff 路径之外的就地快路径）
+            guard let self else { return }
+            let index = self.workspaceIndex
+            Task { await index.updateFile(at: url) }
+        }
     }
 
     // MARK: - Shared helpers (used by multiple extensions)
@@ -445,9 +486,9 @@ final class AppState {
 
     func updateCursorPosition(line: Int, column: Int) { cursorLine = line; cursorColumn = column }
 
-    func requestEditorScroll(to line: Int) {
+    func requestEditorScroll(to line: Int, select: Bool = false) {
         guard line >= 0 else { return }
-        editorScrollCommand = editorScrollCommand.advanced(to: line)
+        editorScrollCommand = editorScrollCommand.advanced(to: line, select: select)
     }
 
     func requestPreviewScroll(to line: Int) {

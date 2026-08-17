@@ -1,5 +1,7 @@
 # MEditor × GitLab Snippet 公网分享功能技术方案
 
+> ⚠️ **方向已搁置（标注于 2026-08-18）**：[`plans/2026-08-18-agent-workstation-plan.md`](../plans/2026-08-18-agent-workstation-plan.md) 的"明确不做"清单已将"企业流转（GitLab Snippet）"列入。在线分享的交付路径改为 Cloudflare 发布（已上线）。本文技术方案存档备查，暂无实施计划。
+
 > 版本：v1.0 · 日期：2026-06-14 · 作者：醉月
 
 ---

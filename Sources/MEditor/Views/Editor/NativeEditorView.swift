@@ -29,6 +29,8 @@ struct NativeEditorView: NSViewRepresentable {
     let scrollToLine: Int
     /// Monotonic token so the same target line can be requested more than once.
     let scrollRequestID: Int
+    /// true = 滚动后光标落到目标行并闪烁高亮（全局搜索跳转）；false = 纯滚动。
+    var scrollSelectsLine: Bool = false
     /// Reports the currently selected text (empty when nothing is selected).
     var onSelectionChange: ((String) -> Void)? = nil
     /// Reports the current NSRange selection (used to save range before sheet opens).
@@ -179,7 +181,7 @@ struct NativeEditorView: NSViewRepresentable {
         if scrollToLine >= 0 && scrollRequestID != context.coordinator.lastAppliedRequestID {
             context.coordinator.lastAppliedTargetLine = scrollToLine
             context.coordinator.lastAppliedRequestID = scrollRequestID
-            context.coordinator.scrollToLine(scrollToLine)
+            context.coordinator.scrollToLine(scrollToLine, select: scrollSelectsLine)
         }
 
         // Insert text from the AI panel at the caret (replacing any selection).

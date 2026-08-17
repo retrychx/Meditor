@@ -102,6 +102,14 @@ struct ContentView: View {
                 .presentationBackground(.regularMaterial)
         }
         .sheet(isPresented: Binding(
+            get: { state.showingGlobalSearch },
+            set: { state.showingGlobalSearch = $0 }
+        )) {
+            GlobalSearchSheet()
+                .environment(state)
+                .presentationBackground(.regularMaterial)
+        }
+        .sheet(isPresented: Binding(
             get: { state.showingTemplatePicker },
             set: { state.showingTemplatePicker = $0 }
         )) {

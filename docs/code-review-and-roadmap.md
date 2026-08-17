@@ -1,5 +1,7 @@
 # MEditor — Code Quality Review & Feature Roadmap
 
+> ⚠️ **Outdated (annotated 2026-08-18)**: This is a snapshot review of the initial release (2026-05-26, pre-Agent). The §2 Feature Roadmap and the code metrics (23 files / ~1,350 lines, "no unit tests") no longer reflect the project — MEditor is now an agent-native document workstation with a 14-tool Agent and a full test suite. Current positioning and sequencing: [`plans/2026-08-18-agent-workstation-plan.md`](../plans/2026-08-18-agent-workstation-plan.md). Several issues listed here (no tests, no preferences window, no session restore) have since been fixed.
+
 > Review date: 2026-05-26
 > Project version: Initial release (post MarkEdit → MEditor rename)
 

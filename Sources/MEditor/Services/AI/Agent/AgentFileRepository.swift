@@ -117,6 +117,10 @@ final class DefaultAgentFileRepository: AgentFileRepository {
     /// workspaceURL 通过闭包延迟求值，保证每次都是 AppState 最新的 rootURL
     private let workspaceProvider: () -> URL?
 
+    /// 工作区内容索引（App 侧装配注入；与全局搜索 UI 共用同一实例）。
+    /// 闭包延迟求值：repository 随 AgentContext 每条消息新建，索引实例则随工作区存活。
+    private let indexProvider: () -> WorkspaceIndexService?
+
     static let maxReadBytes     = 64_000       // 截断阈值（按字符数，约 64 KB ASCII 等量，~16 k tokens）
     static let maxFullReadBytes = 5_000_000    // 5 MB
 
@@ -126,8 +130,10 @@ final class DefaultAgentFileRepository: AgentFileRepository {
         "DerivedData", ".gradle", "Pods", "vendor", ".cache", "__pycache__"
     ]
 
-    init(_ provider: @escaping () -> URL?) {
+    init(_ provider: @escaping () -> URL?,
+         indexProvider: @escaping () -> WorkspaceIndexService? = { nil }) {
         self.workspaceProvider = provider
+        self.indexProvider = indexProvider
     }
 
     var workspaceURL: URL? { workspaceProvider() }
@@ -287,6 +293,15 @@ final class DefaultAgentFileRepository: AgentFileRepository {
 
     func searchWorkspace(query: String, extensions: [String] = ["md", "txt", "markdown"]) async -> [String] {
         guard let root = workspaceURL else { return [] }
+        // 内容索引就绪时走内存索引（毫秒级，与全局搜索 UI 共用同一份数据）；
+        // 未注入索引或首次构建中（如会话恢复早期）回退 grep → swift 磁盘扫描。
+        // 输出格式与 grep 路径一致（"相对路径:行号: 行内容"），工具结果格式不变。
+        if let index = indexProvider(), index.isReady {
+            return await index.search(
+                query: query, extensions: extensions,
+                includeFileNames: false, maxTotal: 100, maxPerFile: 5
+            ).map { "\($0.relativePath):\($0.lineNumber): \($0.line)" }
+        }
         if let results = await grepSearch(query: query, extensions: extensions, root: root) {
             return results
         }

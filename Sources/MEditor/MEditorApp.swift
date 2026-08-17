@@ -115,6 +115,14 @@ struct MEditorApp: App {
 
                 Divider()
 
+                Button(L("menu.findInWorkspace")) {
+                    appState.showingGlobalSearch = true
+                }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
+                .disabled(appState.rootURL == nil)
+
+                Divider()
+
                 Button(L("menu.replace")) {
                     let menuItem = NSMenuItem()
                     menuItem.tag = 1

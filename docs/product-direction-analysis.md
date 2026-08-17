@@ -1,5 +1,7 @@
 # MEditor — 产品方向分析
 
+> ⚠️ **本文已过时（标注于 2026-08-18）**：本文写于 2026-05-26（初版时期），分析的四个方向（模板、HTML↔MD 互转、代码块增强、主题切换）里，模板系统被评为 P0 的判断已被推翻（见 `project-review.md` 及后续实践）；且全文未覆盖后来成为产品核心的 Agent 方向。当前定位是"macOS 上给技术人写文档的 Agent 工作台"，方向与优先级以 [`plans/2026-08-18-agent-workstation-plan.md`](../plans/2026-08-18-agent-workstation-plan.md) 为准。各方向的技术方案细节（如 turndown.js 转换）仍有参考价值。
+
 > 分析日期：2026-05-26
 > 当前版本：Initial release（MarkEdit → MEditor 更名后）
 

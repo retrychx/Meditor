@@ -5,7 +5,7 @@
 <h1 align="center">MEditor</h1>
 
 <p align="center">
-  <strong>A native macOS Markdown editor with a built-in AI Agent</strong>
+  <strong>An agent-native document workstation for people who write technical docs</strong>
 </p>
 
 <p align="center">
@@ -16,49 +16,48 @@
 </p>
 
 <p align="center">
-  🌐 <a href="README.zh.md"><strong>中文</strong></a> | <strong>English</strong>
+  🌐 <a href="README.zh.md"><strong>中文</strong></a> | <strong>English</strong> | <a href="https://meditorapp.pages.dev"><strong>Website</strong></a>
 </p>
 
 ---
 
-MEditor is a **pure SwiftUI + AppKit** Markdown editor for macOS. It ships with a built-in AI Agent that can read, write, and refactor your documents using tool calls — no plugins, no Electron, no cloud sync required.
+MEditor is an **agent-native document workstation for people who write technical docs** on macOS. The core loop: **the Agent edits your document → the preview renders it instantly → you iterate together**.
+
+Point it at a code repo or workspace and let the Agent do the writing engineers actually need — weekly reports, design proposals, changelogs, API references, meeting notes.
+
+Pure SwiftUI + AppKit — **no Electron**. Bring-your-own-key — **your documents and your model credentials never leave your machine**.
 
 ---
 
 ## ✨ Features
 
-### 🤖 AI Agent (the main thing)
+### 🤖 A real Agent, not a chat box
 
-- **Multi-turn tool loop** — The Agent reasons, calls tools, reads results, and keeps going until the task is done
-- **Document tools** — Read, write, patch, and insert into the current document via precise tool calls
-- **Workspace tools** — List files, search across the workspace, open tabs, run shell commands (sandboxed)
-- **Streaming output** — Responses appear word-by-word; tool steps show inline with expand/collapse detail
-- **OpenAI & Anthropic** — Full SSE streaming for both wire protocols; ClaudeCLI backend also supported
-- **Bring your own key** — Works with any OpenAI-compatible endpoint (Ollama, OpenRouter, local LLMs)
-- **Skill system** — Built-in skills (summarize, beautify, review…) plus a curated gallery to extend
+- **14 tools, multi-turn loop** — The Agent reads, writes, patches, and searches documents; operates workspace files; drives the editor; and runs sandboxed shell commands — reasoning across tool calls until the job is done
+- **Three backends** — OpenAI-compatible (8 built-in presets: OpenAI, DeepSeek, Kimi, GLM, Qwen, OpenRouter, Groq, Ollama), Anthropic, and a local Claude CLI backend that reuses your Claude Code login
+- **BYOK** — Any OpenAI-compatible endpoint works; keys stay in your local settings
+- **Streaming everywhere** — Responses stream token-by-token; tool steps render inline with expand/collapse detail
 
-### 📝 Editing & Preview
+### 🛡 Built to be trusted with your files
 
-- **Live Preview** — Real-time Markdown rendering (marked.js), code highlighting (highlight.js), diagrams (Mermaid.js)
-- **Syntax Highlighting** — 40+ languages in both editor and preview
-- **Bidirectional Scroll Sync** — Editor and preview scroll in sync, with anti-loop protection
-- **Find & Replace** — Native find panel with Jump to Line and Replace
-- **HTML Preview** — `.html`/`.htm` files render as web pages
+- **Write confirmation** — The Agent asks before writing files; "allow all for this run" when you're in flow
+- **Risk-tiered command sandbox** — Shell commands are classified by risk before execution
+- **Context budget** — Token budget with automatic eviction keeps long sessions on track; stall detection stops runaway loops; read-only tools run in parallel
+- **Observable runs** — Token usage and elapsed time shown per run
+- **Inline diff review** — Agent edits land as reviewable diffs that never clobber your own typing; `@mention` pulls files into context; multi-session history keeps every conversation
 
-### 📂 Files & Tabs
+### 🔄 The loop: edit → render → iterate
 
-- **File Browser** — Sidebar with search, context menus, FSEvents auto-refresh
-- **Tab Management** — Drag-to-reorder, close confirmation, reopen closed tab (⌘⇧T)
-- **Quick Open** — Fuzzy file finder (⌘P)
+- **Live preview** — Real-time Markdown rendering (marked.js), code highlighting (highlight.js), diagrams (Mermaid.js)
+- **Editor that keeps up** — Native `NSTextView` editing with 40+ language highlighting, bidirectional scroll sync, find & replace, Quick Open (⌘P), tabs, and an FSEvents-driven file browser
 
-### 🗂 Workspace
+### 🚀 Deliver & share
 
-- **Preview Themes** — GitHub (light), Nord, Dracula (dark)
-- **Export** — HTML / PDF / 2× PNG; HTML → Markdown conversion
-- **LAN Sharing** — Built-in HTTP server with one-time token auth
-- **Session Restore** — Remembers tabs, folder, and selection across launches
-- **Auto-Save** — Optional timed auto-save; saves on quit
-- **No Electron** — Pure Swift, bundled JS runs fully offline
+- **LAN share** — Built-in HTTP server with one-time token auth
+- **Online publish** — One-click publish via Cloudflare
+- **iOS companion** — Edit, chat, and publish over iCloud from your phone
+- **Presentation & focus modes**, HTML / PDF / 2× PNG export, preview themes (GitHub / Nord / Dracula)
+- **Auto-update** via Sparkle — grab builds from [meditorapp.pages.dev](https://meditorapp.pages.dev)
 
 ---
 
@@ -123,16 +122,16 @@ open Package.swift
 
 ## ⚙️ AI Setup
 
-Open **Settings (⌘,) → AI** and fill in:
+Open **Settings (⌘,) → AI** and pick a backend:
 
-| Field | Example |
-|-------|---------|
-| Provider | OpenAI / Anthropic / OpenAI-compatible |
-| Base URL | `https://api.openai.com/v1` |
-| API Key | `sk-...` |
-| Model | `gpt-4o` / `claude-opus-4-5` |
+| Backend | What you need |
+|---------|---------------|
+| OpenAI-compatible preset | Pick one of the 8 presets (OpenAI, DeepSeek, Kimi, GLM, Qwen, OpenRouter, Groq, Ollama), paste your API key, pick a model |
+| Anthropic | API key + model (e.g. `claude-opus-4-5`) |
+| Claude CLI | Nothing — reuses your local Claude Code login |
+| Custom endpoint | Any OpenAI-compatible Base URL + key + model |
 
-Any OpenAI-compatible endpoint works (Ollama, LM Studio, OpenRouter, etc.).
+No key? The Claude CLI backend gets you running with zero configuration.
 
 ---
 
@@ -144,7 +143,8 @@ MEditor/
 ├── scripts/
 │   ├── bundle.sh          # .app assembler
 │   └── test.sh            # Xcode-toolchain test runner
-├── docs/                  # Design specs & roadmap
+├── docs/                  # Design specs & historical analyses
+├── plans/                 # Active development plans
 └── Sources/MEditor/
     ├── Models/            # EditorTab, FileItem, AgentTool, PluginSkill…
     ├── Protocols/         # FileService, SyntaxHighlight, AgentContext…
@@ -152,12 +152,15 @@ MEditor/
     │   ├── AI/
     │   │   ├── Agent/
     │   │   │   ├── AgentRunner.swift          # Multi-turn loop & state
+    │   │   │   ├── CommandSandbox.swift       # Risk-tiered shell sandbox
+    │   │   │   ├── AgentHistoryBudget.swift   # Context token budget
     │   │   │   ├── Backends/
     │   │   │   │   ├── AgentBackend.swift     # Protocol + default streaming fallback
     │   │   │   │   ├── RestAgentBackend.swift # OpenAI & Anthropic SSE
     │   │   │   │   └── ClaudeCLIBackend.swift # claude CLI subprocess
-    │   │   │   └── Tools/                     # Document, editor, workspace tools
-    │   │   ├── AIService.swift                # Chat (non-agent) completions
+    │   │   │   └── Tools/                     # Document, editor, workspace, shell tools
+    │   │   ├── InlineEditAgent.swift          # Selection-scoped edits with diff review
+    │   │   ├── AIService.swift                # Chat completions & provider presets
     │   │   └── BeautifyAgent.swift            # Single-shot document polish
     │   ├── Core/          # AppSettings, Localization, MarkdownFormatter
     │   ├── File/          # FileService, FileWatcher, FileType config
@@ -176,22 +179,25 @@ MEditor/
 
 ## 🗺 Roadmap
 
-**Now**
-- [x] AI Agent with streaming (OpenAI + Anthropic SSE)
-- [x] Tool call expand/collapse with result details
-- [x] Built-in skills & curated gallery
-- [x] Session restore, auto-save, LAN share
+Sequenced by [`plans/2026-08-18-agent-workstation-plan.md`](plans/2026-08-18-agent-workstation-plan.md).
 
-**Next**
-- [ ] Editor font & size settings
-- [ ] Git status indicators in sidebar
-- [ ] Global search (⌘⇧F)
-- [ ] Onboarding for first-time AI setup
+**Delivered**
+- [x] Real Agent: 14 tools, multi-turn loop, three backends (OpenAI-compatible / Anthropic / Claude CLI), BYOK
+- [x] Agent hardening: write confirmation, risk-tiered sandbox, context budget, stall detection, parallel read-only tools, usage display
+- [x] Inline edit diff review, `@mention` context, multi-session history
+- [x] LAN share + Cloudflare online publish
+- [x] iOS companion (iCloud edit / chat / publish)
+- [x] Presentation & focus modes, HTML export, preview themes, Sparkle auto-update
 
-**Later**
-- [ ] Multi-window support
-- [ ] MCP (Model Context Protocol) tool servers
-- [ ] iOS / iPadOS companion
+**Next** (Phase 1–3)
+- [ ] Onboarding — first-launch guide, zero-config Claude CLI default, scripted demo
+- [ ] Global search (⌘⇧F) on a shared workspace index — also powers Agent search and Quick Open
+- [ ] One-click rollback of an Agent run (run-level checkpoints)
+
+**Later** (Phase 4–6)
+- [ ] Spotlight indexing & Quick Look plugin, Shortcuts intents
+- [ ] MCP server — expose the Agent's tools to Claude Desktop / Cursor
+- [ ] Diagnostics center — dead links, missing images, heading-structure checks
 
 ---
 

@@ -26,6 +26,7 @@ struct EditorView: View {
                         language: tab.language,
                         scrollToLine: state.editorScrollCommand.line,
                         scrollRequestID: state.editorScrollCommand.nonce,
+                        scrollSelectsLine: state.editorScrollCommand.selectLine,
                         insertText: state.editorInsertText,
                         insertRequestID: state.editorInsertNonce,
                         replaceText: state.editorReplaceText,
@@ -155,6 +156,7 @@ private struct EditorViewContent: View, Equatable {
     let language: EditorLanguage
     let scrollToLine: Int
     let scrollRequestID: Int
+    let scrollSelectsLine: Bool
     let insertText: String
     let insertRequestID: Int
     let replaceText: String
@@ -193,6 +195,7 @@ private struct EditorViewContent: View, Equatable {
             },
             scrollToLine: scrollToLine,
             scrollRequestID: scrollRequestID,
+            scrollSelectsLine: scrollSelectsLine,
             onSelectionChange: { text in
                 state.editorSelectedText = text
             },

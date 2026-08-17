@@ -279,6 +279,7 @@ struct FocusEscapeMonitor: NSViewRepresentable {
             workspaceUI.isFocusMode
                 && !state.showingDiffReview
                 && !state.showingQuickOpen
+                && !state.showingGlobalSearch
                 && !state.showingSettings
                 && !state.showingBeautifySheet
                 && !state.showingTemplatePicker

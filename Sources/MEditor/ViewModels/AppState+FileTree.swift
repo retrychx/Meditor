@@ -43,6 +43,7 @@ extension AppState {
             guard let self else { return }
             self.fileTreeManager.scheduleWatchedReload(rootURL: url)
             self.checkExternalModifications()
+            self.scheduleWorkspaceIndexRefresh(root: url)
         }
     }
 

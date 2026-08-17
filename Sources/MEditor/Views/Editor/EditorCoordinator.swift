@@ -64,7 +64,9 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
     }
 
     /// Scroll the editor so the given 0-based source line is at the top (preview→editor sync).
-    func scrollToLine(_ line: Int) {
+    /// select = true 时（全局搜索跳转）额外把光标放到目标行行首，并用系统 Find 指示器
+    /// 闪烁高亮整行——一次性视觉提示，不留持久选区。
+    func scrollToLine(_ line: Int, select: Bool = false) {
         guard line >= 0,
               let textView = textView,
               let layoutManager = textView.layoutManager,
@@ -83,6 +85,15 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
         scrollSync.isProgrammaticScroll = true
         scrollView.contentView.scroll(to: NSPoint(x: 0, y: targetY))
         scrollView.reflectScrolledClipView(scrollView.contentView)
+        if select {
+            let nsString = textView.string as NSString
+            let lineEnd = safeLine + 1 < highlighter.lineOffsets.count
+                ? highlighter.lineOffsets[safeLine + 1]
+                : nsString.length
+            let lineRange = NSRange(location: charIndex, length: max(0, lineEnd - charIndex))
+            textView.setSelectedRange(NSRange(location: charIndex, length: 0))
+            textView.showFindIndicator(for: lineRange)
+        }
         PerformanceTracer.end("EditorScrollToLine", log: PerformanceTracer.editor, id: sid)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             self?.scrollSync.isProgrammaticScroll = false
