@@ -6,6 +6,8 @@ final class EditorHighlightScheduler {
     weak var textView: NSTextView?
     var theme: PreviewTheme = .github
     var language: EditorLanguage = .markdown
+    /// 正文基础字体（跟随设置页编辑器字体/字号），粗体/斜体/等宽都由此派生。
+    var baseFont: NSFont = NSFont.systemFont(ofSize: 14)
 
     /// Cached line offset table: lineOffsets[i] = character index of line i's start.
     /// Invalidated on every content change for O(1) line lookups during scroll.
@@ -112,7 +114,7 @@ final class EditorHighlightScheduler {
         let highlightRange = NSRange(location: rangeStart, length: rangeEnd - rangeStart)
 
         let baseColor = theme.foregroundNSColor
-        let baseFont = NSFont.systemFont(ofSize: 14)
+        let baseFont = self.baseFont
 
         storage.beginEditing()
         // Reset only the highlight range

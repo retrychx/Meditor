@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>MEditor Quick Look</string>
+	<key>CFBundleExecutable</key>
+	<string>MEditorQuickLook</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.meditor.app.QuickLook</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>MEditorQuickLook</string>
+	<!-- XPC! 是所有 app extension 的包类型 -->
+	<key>CFBundlePackageType</key>
+	<string>XPC!</string>
+	<!-- 版本占位符：与主 app 一致，bundle.sh 打包时覆写为同一版本 -->
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionAttributes</key>
+		<dict>
+			<!-- .md 在系统上解析为 net.daringfireball.markdown；
+			     com.meditor.markdown 是主 app 导出的 UTI，两者都声明以覆盖
+			     有/无其他 Markdown app 注册的情况 -->
+			<key>QLSupportedContentTypes</key>
+			<array>
+				<string>net.daringfireball.markdown</string>
+				<string>com.meditor.markdown</string>
+			</array>
+			<key>QLSupportsSearchableItems</key>
+			<false/>
+		</dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.quicklook.preview</string>
+		<!-- @objc 固定名，避免 Swift 模块名前缀导致的类查找失败 -->
+		<key>NSExtensionPrincipalClass</key>
+		<string>MEditorQLPreviewViewController</string>
+	</dict>
+</dict>
+</plist>

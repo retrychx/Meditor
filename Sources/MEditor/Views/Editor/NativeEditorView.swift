@@ -53,6 +53,13 @@ struct NativeEditorView: NSViewRepresentable {
     /// Editor font size in points. Defaults to the shared AppSettings value.
     /// Default 14pt (同 AppSettings 默认值)。父视图（@MainActor）可在初始化时传入实际值。
     var editorFontSize: Int = 14
+    /// 编辑器正文字体（对应 AppSettings.editorFontName）。默认跟随系统字体。
+    var editorFont: EditorFont = .system
+
+    /// 按当前设置解析正文基础字体。
+    private var resolvedBaseFont: NSFont {
+        editorFont.nsFont(size: CGFloat(editorFontSize))
+    }
 
     func makeCoordinator() -> EditorCoordinator {
         EditorCoordinator(
@@ -71,11 +78,11 @@ struct NativeEditorView: NSViewRepresentable {
         // Generous insets give the content room to breathe — code editors
         // can feel cramped when text starts at the very edge.
         textView.textContainerInset = NSSize(width: 24, height: 20)
-        // System UI font (not monospaced): renders Chinese / Japanese / Korean
-        // characters with the correct glyph widths and avoids the awkward
-        // mid-line gaps that monospaced + CJK fallback produces.
+        // 字体跟随设置页（编辑器字体/字号）。默认系统 UI 字体（非等宽）：渲染中日韩
+        // 字符时字形宽度正确，避免等宽 + CJK 回退产生的行间空隙。
         // Code spans / fenced blocks switch to monospaced via the highlighter.
-        textView.font = NSFont.systemFont(ofSize: CGFloat(editorFontSize))
+        textView.font = resolvedBaseFont
+        context.coordinator.highlighter.baseFont = resolvedBaseFont
 
         // Comfortable line height + a touch of paragraph spacing for prose feel.
         let baseParagraph = NSMutableParagraphStyle()
@@ -163,6 +170,15 @@ struct NativeEditorView: NSViewRepresentable {
             context.coordinator.highlighter.scheduleHighlight()
         }
 
+        // 设置页字体/字号变化时实时跟随：更新 textView 与高亮器基础字体后重新高亮
+        //（高亮器会重写 .font 属性，只改 textView.font 对已排版文本不生效）。
+        let newBaseFont = resolvedBaseFont
+        if context.coordinator.highlighter.baseFont != newBaseFont {
+            context.coordinator.highlighter.baseFont = newBaseFont
+            textView.font = newBaseFont
+            context.coordinator.highlighter.scheduleHighlight()
+        }
+
         // Only push content to the editor if it changed externally (e.g., tab switch).
         // Highlighting is deferred to the next runloop tick so the user sees plain
         // text instantly, with syntax colors fading in shortly after.
@@ -229,5 +245,28 @@ struct NativeEditorView: NSViewRepresentable {
 extension NSFont {
     var isBold: Bool {
         fontDescriptor.symbolicTraits.contains(.bold)
+    }
+}
+
+extension EditorFont {
+    /// 解析为指定字号的 NSFont，候选字体不可用时回退到系统字体。
+    func nsFont(size: CGFloat) -> NSFont {
+        switch self {
+        case .system:
+            return .systemFont(ofSize: size)
+        case .sfMono:
+            return .monospacedSystemFont(ofSize: size, weight: .regular)
+        case .menlo:
+            return NSFont(name: "Menlo", size: size)
+                ?? .monospacedSystemFont(ofSize: size, weight: .regular)
+        case .newYork:
+            // New York 是系统衬线字体，通过 serif design descriptor 获取最可靠。
+            let serif = NSFont.systemFont(ofSize: size).fontDescriptor.withDesign(.serif)
+            return serif.flatMap { NSFont(descriptor: $0, size: size) }
+                ?? .systemFont(ofSize: size)
+        case .pingFang:
+            return NSFont(name: "PingFang SC", size: size)
+                ?? .systemFont(ofSize: size)
+        }
     }
 }

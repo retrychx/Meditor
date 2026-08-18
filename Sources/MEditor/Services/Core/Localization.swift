@@ -159,6 +159,11 @@ extension LocalizationManager {
         "ai.write.allow": ("Allow", "允许"),
         "ai.write.allowAll": ("Allow all for this run", "本次运行全部允许"),
         "ai.write.allowAllHint": ("\"Allow all\" only applies to the current run", "「全部允许」仅对本次运行有效"),
+        // 写确认条 diff 预览（默认收起，点「查看改动」展开）
+        "ai.write.viewDiff": ("View changes (%d)", "查看改动（%d 处）"),
+        "ai.write.hideDiff": ("Hide changes", "收起改动"),
+        "ai.write.diffTooLarge": ("File too large — diff not shown", "文件过大，不显示改动详情"),
+        "ai.write.diffMore": ("… and %d more", "…… 另有 %d 处改动"),
 
         // Agent run 一键回滚（步骤面板尾部入口）
         "ai.rollback.undoRun": ("Undo all changes from this run", "撤销本次运行的全部修改"),
@@ -301,6 +306,18 @@ extension LocalizationManager {
         "menu.copyRelativePath": ("Copy Relative Path", "复制相对路径"),
         "menu.revealInFinder": ("Reveal in Finder", "在 Finder 中显示"),
         "panel.chooseFolder": ("Choose a project folder", "选择一个项目文件夹"),
+        "menu.tools": ("Tools", "工具"),
+        "menu.documentDiagnostics": ("Document Diagnostics…", "文档诊断…"),
+        "diagnostics.title": ("Document Diagnostics", "文档诊断"),
+        "diagnostics.scanning": ("Scanning %1$d/%2$d files…", "正在扫描 %1$d/%2$d 个文件…"),
+        "diagnostics.summary": ("%1$d issues in %2$d files", "%2$d 个文件共 %1$d 个问题"),
+        "diagnostics.noIssues": ("No issues found", "未发现问题"),
+        "diagnostics.rescan": ("Rescan", "重新扫描"),
+        "diagnostics.close": ("Close", "关闭"),
+        "diagnostics.deadLink": ("Dead link: %@", "死链：%@"),
+        "diagnostics.missingImage": ("Missing image: %@", "图片缺失：%@"),
+        "diagnostics.duplicateHeading": ("Duplicate heading: %@", "重复标题：%@"),
+        "diagnostics.headingLevelSkip": ("Heading level skipped: H%1$d → H%2$d", "标题层级跳跃：H%1$d → H%2$d"),
     ]
 
     private static let table1: [String: (en: String, zh: String)] = [
@@ -589,6 +606,12 @@ extension LocalizationManager {
         "settings.desc.accent": ("App-wide highlight color for buttons and selection", "全局按钮与选中态的强调色"),
         "settings.desc.language": ("Interface display language", "界面显示语言"),
         "settings.desc.fontSize": ("Base text size in the rendered preview", "预览渲染的基础字号"),
+        "settings.section.editor": ("Editor", "编辑器"),
+        "settings.editorFont": ("Font", "字体"),
+        "settings.desc.editorFont": ("Body font for the editor; code spans always use monospace", "编辑器正文字体，代码片段始终使用等宽字体"),
+        "settings.editorFont.system": ("System Default", "系统默认"),
+        "settings.editorFontSize": ("Font Size", "字号"),
+        "settings.desc.editorFontSize": ("Editor text size in points", "编辑器文字大小（磅）"),
         "settings.desc.autoSave": ("Automatically save modified documents on a timer", "按间隔自动保存已修改的文档"),
         "settings.desc.provider": ("Where assistant replies are generated", "助手回复的生成来源"),
         "settings.language": ("Language", "语言"),

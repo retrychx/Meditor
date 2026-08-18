@@ -39,11 +39,15 @@ extension AppState {
         fileTreeManager.reloadFresh(rootURL: url)
         rootURL = url
 
+        // Git 状态：打开工作区后立即刷新一次（非 git 目录内部静默）
+        gitStatusService.refreshNow(rootURL: url)
+
         fileWatcher.startWatching(urls: [url]) { [weak self] in
             guard let self else { return }
             self.fileTreeManager.scheduleWatchedReload(rootURL: url)
             self.checkExternalModifications()
             self.scheduleWorkspaceIndexRefresh(root: url)
+            self.gitStatusService.scheduleRefresh(rootURL: url)
         }
     }
 

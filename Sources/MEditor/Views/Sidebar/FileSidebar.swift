@@ -239,7 +239,8 @@ struct FileSidebar: View {
         } else {
             List(displayedTree, id: \.id) { item in
                 FileRow(item: item, isSelected: item.id == state.selectedFileID,
-                        searchText: searchText, onAction: handleFileAction)
+                        searchText: searchText, onAction: handleFileAction,
+                        gitStatus: state.gitStatusService.status(for: item.url))
                     .help(item.url.path)
                     .contentShape(Rectangle())
                     .onTapGesture { state.openFile(item) }

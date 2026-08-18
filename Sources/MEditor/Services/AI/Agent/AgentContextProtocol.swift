@@ -67,6 +67,9 @@ protocol ShellContext: AnyObject {
     /// - path：展示用目标路径（解析后的文件路径或当前文档名）；
     /// - summary：一句话变更描述（如「写入 docs/a.md（约 120 行）」）。
     func confirmFileWrite(_ path: String, summary: String) async -> Bool
+    /// 携带 diff 预览的写入确认（写工具在确认前预算好「写前 vs 写入」的段落级 diff）。
+    /// 是协议要求而非扩展方法：保证 existential 调用动态分发到 conformer 的实现。
+    func confirmFileWrite(_ preview: FileWritePreview) async -> Bool
     /// 取消挂起的文件写入确认（Runner 超时/正常结束时调用），语义与
     /// cancelPendingCommandConfirmation 完全对齐：拒绝并恢复工具内挂起的 continuation。
     func cancelPendingWriteConfirmation()
@@ -80,6 +83,11 @@ extension ShellContext {
     func cancelPendingCommandConfirmation() {}
     /// 默认放行——测试 / 无 UI（headless）场景无需感知确认流程，不破坏既有 conformer。
     func confirmFileWrite(_ path: String, summary: String) async -> Bool { true }
+    /// 默认丢弃 diff、转发给 path/summary 版本——只实现旧签名的既有 conformer
+    /// （mock / headless）语义不变，diff 预览只有接入 UI 的实现才消费。
+    func confirmFileWrite(_ preview: FileWritePreview) async -> Bool {
+        await confirmFileWrite(preview.path, summary: preview.summary)
+    }
     /// 默认无挂起确认——与 cancelPendingCommandConfirmation 的默认实现同理。
     func cancelPendingWriteConfirmation() {}
     /// 默认无「全部允许」状态——未接入 UI 的实现每次写都走 confirmFileWrite（其默认实现放行）。

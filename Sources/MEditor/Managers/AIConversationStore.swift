@@ -28,16 +28,20 @@ final class PendingWrite: Identifiable {
     let path: String
     /// 一句话变更描述（如「写入 docs/a.md（约 120 行）」）
     let summary: String
+    /// diff 预览（确认前由写工具预算好；默认 .unavailable = 无 diff 数据，UI 不展示）。
+    let diff: WriteDiff
     /// 「本次运行全部允许」时置位 run 级开关（由 Adapter 注入，见 AppStateDocumentAdapter）。
     /// 语义对齐 PendingCommand.respond(true)。
     private let allowAllForRun: () -> Void
     private let respond: (Bool) -> Void
     private var answered = false
 
-    init(path: String, summary: String, allowAllForRun: @escaping () -> Void,
+    init(path: String, summary: String, diff: WriteDiff = .unavailable,
+         allowAllForRun: @escaping () -> Void,
          respond: @escaping (Bool) -> Void) {
         self.path = path
         self.summary = summary
+        self.diff = diff
         self.allowAllForRun = allowAllForRun
         self.respond = respond
     }

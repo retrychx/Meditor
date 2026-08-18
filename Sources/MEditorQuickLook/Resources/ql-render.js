@@ -1,0 +1,120 @@
+// ql-render.js — Quick Look 预览扩展的 DOM-less 渲染驱动（运行在 JavaScriptCore / JSContext 里）。
+//
+// 为什么不是直接复用 scripts/render.js：render.js 是浏览器 IIFE，依赖 DOM、
+// messageHandlers、增量更新等主 app 交互设施；QL 扩展是数据式预览（QLPreviewReply），
+// 系统拿到的是一份静态 HTML，没有 WebView 让我们跑脚本。
+// 因此这里只移植 render.js 的「纯函数」部分：
+//   - 预处理规则（标题/分割线补空行、fixTableSeparators 修表格分隔行）
+//   - marked.parse 参数（gfm: true, breaks: false）——解析器就是主 app 同一份 marked.min.js
+//   - 语言别名表 + hljs 高亮（主 app 在渲染后批处理高亮，这里在解析时经 highlight 回调同步完成）
+// 有意省略：mermaid（需要 DOM，降级为代码块显示）、段落缓存（一次性渲染不需要）、
+// data-source-line 锚点（QL 无编辑器滚动同步）。
+(function (global) {
+  'use strict';
+
+  // 与主 app render.js 一致的语言别名表
+  var LANG_ALIASES = {
+    'shell': 'bash', 'sh': 'bash', 'zsh': 'bash',
+    'js': 'javascript', 'jsx': 'javascript', 'mjs': 'javascript', 'cjs': 'javascript',
+    'ts': 'typescript', 'tsx': 'typescript',
+    'py': 'python', 'gyp': 'python',
+    'rb': 'ruby', 'gemspec': 'ruby', 'rs': 'rust',
+    'go': 'go', 'golang': 'go',
+    'c++': 'cpp', 'cc': 'cpp', 'cxx': 'cpp', 'hpp': 'cpp',
+    'cs': 'csharp', 'c#': 'csharp',
+    'kt': 'kotlin', 'kts': 'kotlin',
+    'yml': 'yaml', 'html': 'xml', 'xhtml': 'xml', 'svg': 'xml',
+    'make': 'makefile', 'mk': 'makefile', 'mak': 'makefile',
+    'patch': 'diff', 'gql': 'graphql', 'toml': 'ini',
+    'txt': 'plaintext', 'text': 'plaintext',
+    'console': 'plaintext', 'shellsession': 'plaintext'
+  };
+
+  // 以下两个函数与 render.js 逐字一致
+  function countPipeCols(line) {
+    var t = line.trim();
+    if (t.charAt(0) === '|') t = t.substring(1);
+    if (t.charAt(t.length - 1) === '|') t = t.substring(0, t.length - 1);
+    return t.length === 0 ? 0 : t.split('|').length;
+  }
+
+  function splitPipeCols(line) {
+    var t = line.trim();
+    if (t.charAt(0) === '|') t = t.substring(1);
+    if (t.charAt(t.length - 1) === '|') t = t.substring(0, t.length - 1);
+    return t.split('|').map(function(s) { return s.trim(); });
+  }
+
+  // 移植自 render.js：把列数对不上的表格分隔行补齐/裁齐，让 marked 能识别为表格
+  function fixTableSeparators(text) {
+    if (text.indexOf('|') === -1) return text;
+    var lines = text.split('\n');
+    var modified = false;
+    for (var i = 1; i < lines.length; i++) {
+      var line = lines[i];
+      if (!/^\|?[\s|:\-]+\|?$/.test(line) || line.indexOf('-') === -1) continue;
+      var prev = lines[i - 1];
+      if (!prev || prev.indexOf('|') === -1) continue;
+      var hc = countPipeCols(prev), sc = countPipeCols(line);
+      if (hc > 0 && sc > 0 && sc !== hc) {
+        var parts = splitPipeCols(line);
+        while (parts.length < hc) parts.push('---');
+        if (parts.length > hc) parts = parts.slice(0, hc);
+        lines[i] = '| ' + parts.join(' | ') + ' |';
+        modified = true;
+      }
+    }
+    return modified ? lines.join('\n') : text;
+  }
+
+  // 移植自 render.js 的 renderMarkdown 预处理：
+  // 标题/分割线后补空行（宽容处理紧贴下一段的写法）
+  function preprocess(content) {
+    var processed = content
+      .replace(/^(#{1,6}\s+[^\n]+)\n(?!\n)/gm, '$1\n\n')
+      .replace(/^(---+|\*\*\*+|___+)\s*\n(?!\n)/gm, '$1\n\n');
+    return fixTableSeparators(processed);
+  }
+
+  function escapeHtml(s) {
+    return s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  global.MEditorQL = {
+    /// Markdown → 正文 HTML 片段（不含 <html> 外壳，外壳由 Swift 侧拼）。
+    render: function (markdown) {
+      // 代码高亮：marked v12 已移除 parse 的 highlight 选项，改用自定义 renderer。
+      // v12 的 renderer.code 仍是位置参数签名 code(code, infostring, escaped)
+      // （对象 token 签名是更晚版本的事）；返回值直接进 HTML，不高亮时必须自己转义。
+      // 高亮结果与主 app 的 DOM 后处理输出等价（同样的 hljs.highlight 调用、
+      // 同样的 language-x + hljs 类名）。
+      var renderer = new marked.Renderer();
+      renderer.code = function (code, infostring) {
+        var rawLang = (infostring || '').match(/^\S*/)[0];
+        var lang = LANG_ALIASES[rawLang] || rawLang;
+        var inner;
+        var highlighted = false;
+        if (lang && global.hljs && hljs.getLanguage(lang)) {
+          try {
+            inner = hljs.highlight(code, { language: lang, ignoreIllegals: true }).value;
+            highlighted = true;
+          } catch (e) { /* 落到下方转义分支 */ }
+        }
+        if (!highlighted) {
+          inner = escapeHtml(code.replace(/\n$/, '')) + '\n'; // 与 marked 默认渲染一致
+        }
+        var cls = (rawLang ? 'language-' + rawLang + ' ' : '') + 'hljs';
+        return '<pre><code class="' + cls + '">' + inner + '</code></pre>\n';
+      };
+      return marked.parse(preprocess(markdown), {
+        gfm: true,
+        breaks: false,
+        renderer: renderer
+      });
+    }
+  };
+})(this);

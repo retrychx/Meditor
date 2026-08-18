@@ -41,6 +41,9 @@ final class AppState {
     let pluginManager: PluginManager
     let presentationManager: PresentationManager
 
+    /// 工作区 Git 状态（侧边栏文件树 M/A/? 标记）；非 git 工作区静默为空。
+    let gitStatusService = GitStatusService()
+
     /// Agent 命令审批缓存（App 会话级）：safe 命令批准一次，整个会话内
     /// 不再逐轮弹框——缓存从 per-context（每轮消息新建即失效）提升到共享实例。
     let commandApprovals = CommandApprovalStore()
@@ -62,6 +65,7 @@ final class AppState {
             // 工作区切换 → 重建内容索引；关闭（nil）→ 释放
             if rootURL?.standardizedFileURL != oldValue?.standardizedFileURL {
                 rebuildWorkspaceIndex(root: rootURL)
+                if rootURL == nil { gitStatusService.clear() }
             }
         }
     }
@@ -244,6 +248,15 @@ final class AppState {
     }
     var showingBeautifySheet = false {
         didSet { if showingBeautifySheet { showingQuickOpen = false } }
+    }
+    /// 文档诊断面板（工具菜单）：本地规则引擎扫描工作区死链/缺图/标题问题。
+    var showingDiagnostics = false {
+        didSet {
+            if showingDiagnostics {
+                showingQuickOpen = false
+                showingGlobalSearch = false
+            }
+        }
     }
     var showingInlineEdit = false
 

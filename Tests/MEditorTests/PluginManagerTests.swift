@@ -150,6 +150,122 @@ final class PluginManagerTests: XCTestCase {
         XCTAssertTrue(allIDs.contains(BuiltinSkills.ID.reviewHelper))
     }
 
+    // MARK: - Command 解析（SKILL.md frontmatter）
+
+    /// 手动技能的 commands 多字段（trigger/icon/tools/allowedCommands）必须完整解析，
+    /// 多行列表形式的 allowedCommands 也要逐条收齐。
+    func test_extractCommands_parsesFullCommandFields() async throws {
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent("meditor-skill-cmd-\(UUID().uuidString)", isDirectory: true)
+        let dir = base.appendingPathComponent("cmd-skill", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let md = """
+        ---
+        name: cmd-skill
+        description: 带命令的测试技能
+        commands:
+          - name: gen_commit
+            trigger: 生成 Commit
+            icon: arrow.triangle.branch
+            description: 运行 git diff 并生成 commit message
+            tools: [run_command]
+            allowedCommands:
+              - git status
+              - git diff
+              - git log
+        ---
+
+        正文。
+        """
+        try md.write(to: dir.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+
+        let pm = PluginManager()
+        XCTAssertTrue(pm.addManual(skillMDURL: dir))
+        await pm.reloadAll()
+
+        let cmd = pm.skills.first { $0.source == .manual }?.commands.first
+        XCTAssertEqual(cmd?.name, "gen_commit")
+        XCTAssertEqual(cmd?.trigger, "生成 Commit")
+        XCTAssertEqual(cmd?.icon, "arrow.triangle.branch")
+        XCTAssertEqual(cmd?.allowedTools, ["run_command"])
+        XCTAssertEqual(cmd?.allowedCommands, ["git status", "git diff", "git log"])
+    }
+
+    /// 同一 skill 内多个 command 都要解析出来，不能只保留第一个。
+    func test_extractCommands_parsesMultipleCommands() async throws {
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent("meditor-skill-multi-\(UUID().uuidString)", isDirectory: true)
+        let dir = base.appendingPathComponent("multi-cmd", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let md = """
+        ---
+        name: multi-cmd
+        description: 多命令测试
+        commands:
+          - name: first
+            trigger: 第一个
+            tools: [read_document]
+          - name: second
+            trigger: 第二个
+            tools: [read_document, create_file]
+        ---
+
+        正文。
+        """
+        try md.write(to: dir.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+
+        let pm = PluginManager()
+        XCTAssertTrue(pm.addManual(skillMDURL: dir))
+        await pm.reloadAll()
+
+        let commands = pm.skills.first { $0.source == .manual }?.commands ?? []
+        XCTAssertEqual(commands.map(\.name), ["first", "second"])
+        XCTAssertEqual(commands.map(\.trigger), ["第一个", "第二个"])
+        XCTAssertEqual(commands.last?.allowedTools, ["read_document", "create_file"])
+    }
+
+    // MARK: - Gallery 技能
+
+    func test_gallery_allHaveUniqueIDsAndNonEmptyContent() {
+        let ids = CuratedSkillGallery.all.map(\.id)
+        XCTAssertEqual(ids.count, Set(ids).count, "Gallery 技能 id 必须唯一")
+        for def in CuratedSkillGallery.all {
+            XCTAssertFalse(def.name.isEmpty, "Gallery 技能 \(def.id) name 不能为空")
+            XCTAssertFalse(def.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                           "Gallery 技能 \(def.id) content 不能为空")
+        }
+    }
+
+    /// 旗舰技能（git 提交助手、会议纪要）安装后 frontmatter 里的 commands 必须完整保留。
+    func test_gallery_flagshipSkills_commandsSurviveInstall() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("meditor-gallery-\(UUID().uuidString)", isDirectory: true)
+        let pm = PluginManager()
+        for def in [CuratedSkillGallery.gitCommitHelper, CuratedSkillGallery.meetingNotes] {
+            let result = await SkillInstaller.install(def, into: dir, pluginManager: pm)
+            guard case .installed = result else {
+                XCTFail("\(def.id) 安装失败")
+                return
+            }
+        }
+
+        // 手动技能的 name 取自安装目录名（folderName），不是 frontmatter 里的 name
+        let git = pm.skills.first {
+            $0.skillPath.deletingLastPathComponent().lastPathComponent
+                == CuratedSkillGallery.gitCommitHelper.folderName
+        }
+        XCTAssertEqual(git?.commands.first?.trigger, "生成 Commit")
+        XCTAssertEqual(git?.commands.first?.allowedTools, ["run_command"])
+        XCTAssertFalse(git?.commands.first?.allowedCommands.isEmpty ?? true,
+                       "git 提交助手的 allowedCommands 白名单不能在解析中丢失")
+
+        let meeting = pm.skills.first {
+            $0.skillPath.deletingLastPathComponent().lastPathComponent
+                == CuratedSkillGallery.meetingNotes.folderName
+        }
+        XCTAssertFalse(meeting?.commands.isEmpty ?? true, "会议纪要技能应提供整理命令")
+    }
+
     // MARK: - Plugin Discovery
 
     func test_addSkills_pluginStructure_discoversNestedSkills() async throws {

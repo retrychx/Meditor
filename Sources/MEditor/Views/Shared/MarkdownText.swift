@@ -383,7 +383,8 @@ struct MarkdownText: View {
         return blocks
     }
 
-    private static func headingPrefix(_ line: String) -> (level: Int, text: String)? {
+    // internal（非 private）：文档诊断 DocumentDiagnostics 复用同一条 ATX 标题判定规则
+    static func headingPrefix(_ line: String) -> (level: Int, text: String)? {
         guard line.hasPrefix("#") else { return nil }
         var level = 0
         for ch in line { if ch == "#" { level += 1 } else { break } }

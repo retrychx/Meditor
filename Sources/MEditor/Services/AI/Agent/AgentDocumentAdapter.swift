@@ -35,6 +35,9 @@ protocol AgentDocumentAdapter: AnyObject {
     // 文件写入授权（与命令确认同一范式）
     /// 向用户展示确认条，询问是否允许 agent 写入/修改该文件。
     func confirmFileWrite(_ path: String, summary: String) async -> Bool
+    /// 携带 diff 预览的写入确认（协议要求，保证 existential 动态分发；
+    /// 默认实现转发旧签名，见下方 extension）。
+    func confirmFileWrite(_ preview: FileWritePreview) async -> Bool
     /// 取消挂起的文件写入确认（Runner 超时/正常结束时触发），语义与
     /// cancelPendingCommandConfirmation 完全对齐。
     func cancelPendingWriteConfirmation()
@@ -49,6 +52,10 @@ extension AgentDocumentAdapter {
     func cancelPendingCommandConfirmation() {}
     /// 默认放行——mock / headless 实现无需感知写入确认流程，不破坏既有 conformer。
     func confirmFileWrite(_ path: String, summary: String) async -> Bool { true }
+    /// 默认丢弃 diff、转发旧签名——只实现 path/summary 版本的 conformer 语义不变。
+    func confirmFileWrite(_ preview: FileWritePreview) async -> Bool {
+        await confirmFileWrite(preview.path, summary: preview.summary)
+    }
     /// 默认无挂起确认——与 cancelPendingCommandConfirmation 的默认实现同理。
     func cancelPendingWriteConfirmation() {}
     /// 默认无「全部允许」状态——未接入 UI 的实现每次写都走 confirmFileWrite（其默认实现放行）。
@@ -211,14 +218,20 @@ final class AppStateDocumentAdapter: AgentDocumentAdapter {
     private var fileWriteAllowedForRun = false
     var isFileWriteAllowedForRun: Bool { fileWriteAllowedForRun }
 
+    /// 旧签名入口：无 diff 数据，按「写前内容不可得」构造 preview 转发。
     func confirmFileWrite(_ path: String, summary: String) async -> Bool {
+        await confirmFileWrite(FileWritePreview(path: path, summary: summary, diff: .unavailable))
+    }
+
+    func confirmFileWrite(_ preview: FileWritePreview) async -> Bool {
         guard let convo = appState?.aiConversation else { return false }
         // 与 confirmCommandExecution 同范式：此方法仅负责 UI 层确认，
         // 「是否跳过确认」由工具层经 isFileWriteAllowedForRun 判断。
         return await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
             convo.pendingWrite = PendingWrite(
-                path: path,
-                summary: summary,
+                path: preview.path,
+                summary: preview.summary,
+                diff: preview.diff,
                 allowAllForRun: { [weak self] in self?.fileWriteAllowedForRun = true }
             ) { approved in
                 convo.pendingWrite = nil

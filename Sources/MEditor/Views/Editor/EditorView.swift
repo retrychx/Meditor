@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 struct EditorView: View {
     @Environment(AppState.self) private var state
+    @Environment(AppSettings.self) private var settings
 
     var body: some View {
         if let tab = state.selectedTab {
@@ -32,7 +33,9 @@ struct EditorView: View {
                         replaceText: state.editorReplaceText,
                         replaceRequestID: state.editorReplaceNonce,
                         pendingReplaceRange: state.pendingReplaceRange,
-                        theme: state.themeStore.current
+                        theme: state.themeStore.current,
+                        editorFontSize: settings.editorFontSize,
+                        editorFont: EditorFont(rawValue: settings.editorFontName) ?? .system
                     )
                     .equatable()
                     .onAppear  { state.isEditorMounted = true  }
@@ -163,6 +166,8 @@ private struct EditorViewContent: View, Equatable {
     let replaceRequestID: Int
     let pendingReplaceRange: NSRange?
     let theme: PreviewTheme
+    let editorFontSize: Int
+    let editorFont: EditorFont
 
     @Environment(AppState.self) private var state
 
@@ -176,7 +181,9 @@ private struct EditorViewContent: View, Equatable {
         lhs.insertRequestID == rhs.insertRequestID &&
         lhs.replaceRequestID == rhs.replaceRequestID &&
         lhs.theme == rhs.theme &&
-        lhs.language == rhs.language
+        lhs.language == rhs.language &&
+        lhs.editorFontSize == rhs.editorFontSize &&
+        lhs.editorFont == rhs.editorFont
     }
 
     var body: some View {
@@ -224,7 +231,9 @@ private struct EditorViewContent: View, Equatable {
             replaceText: replaceText,
             replaceRequestID: replaceRequestID,
             pendingReplaceRange: pendingReplaceRange,
-            theme: theme
+            theme: theme,
+            editorFontSize: editorFontSize,
+            editorFont: editorFont
         )
     }
 }

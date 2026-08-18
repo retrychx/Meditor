@@ -20,6 +20,7 @@ final class AppSettings {
         static let sharePort = "MEditor.sharePort"
         static let previewFontSize = "MEditor.previewFontSize"
         static let editorFontSize = "MEditor.editorFontSize"
+        static let editorFontName = "MEditor.editorFontName"
         static let showEditorOnLaunch = "MEditor.showEditorOnLaunch"
         static let showPreviewOnLaunch = "MEditor.showPreviewOnLaunch"
         static let showSidebarOnLaunch = "MEditor.showSidebarOnLaunch"
@@ -63,6 +64,14 @@ final class AppSettings {
     var editorFontSize: Int {
         didSet {
             defaults.set(editorFontSize, forKey: Key.editorFontSize)
+            NotificationCenter.default.post(name: .editorFontSizeChanged, object: nil)
+        }
+    }
+
+    /// 编辑器正文字体（EditorFont.rawValue，默认 system）。与字号共用同一变更通知。
+    var editorFontName: String {
+        didSet {
+            defaults.set(editorFontName, forKey: Key.editorFontName)
             NotificationCenter.default.post(name: .editorFontSizeChanged, object: nil)
         }
     }
@@ -287,6 +296,7 @@ final class AppSettings {
         sharePort = UInt16(d.integer(forKey: Key.sharePort) != 0 ? d.integer(forKey: Key.sharePort) : 8899)
         previewFontSize = d.integer(forKey: Key.previewFontSize) != 0 ? d.integer(forKey: Key.previewFontSize) : 15
         editorFontSize = d.integer(forKey: Key.editorFontSize) != 0 ? d.integer(forKey: Key.editorFontSize) : 14
+        editorFontName = d.string(forKey: Key.editorFontName) ?? EditorFont.system.rawValue
         showEditorOnLaunch = d.object(forKey: Key.showEditorOnLaunch) != nil ? d.bool(forKey: Key.showEditorOnLaunch) : false
         showPreviewOnLaunch = d.object(forKey: Key.showPreviewOnLaunch) != nil ? d.bool(forKey: Key.showPreviewOnLaunch) : true
         showSidebarOnLaunch = d.object(forKey: Key.showSidebarOnLaunch) != nil ? d.bool(forKey: Key.showSidebarOnLaunch) : true
@@ -316,4 +326,16 @@ final class AppSettings {
         claudeMonitorCustomPath = d.string(forKey: Key.claudeMonitorCustomPath) ?? ""
         claudeMonitorFileExts   = d.string(forKey: Key.claudeMonitorFileExts) ?? "md,txt"
     }
+}
+
+/// 编辑器正文字体候选，持久化存 rawValue（见 AppSettings.editorFontName）。
+/// 菜单显示名直接用字体本名（不本地化），system 的文案在设置页取 L("settings.editorFont.system")。
+enum EditorFont: String, CaseIterable {
+    case system           // 系统默认（SF，对 CJK 渲染最稳）
+    case sfMono = "SF Mono"
+    case menlo = "Menlo"
+    case newYork = "New York"
+    case pingFang = "PingFang SC"
+
+    var displayName: String { rawValue }
 }

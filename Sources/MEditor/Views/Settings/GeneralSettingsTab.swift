@@ -44,6 +44,29 @@ extension SettingsView {
                     }
                 }
 
+                settingsGroup(title: L("settings.section.editor")) {
+                    settingsRow(label: L("settings.editorFont"), subtitle: L("settings.desc.editorFont")) {
+                        SettingsMenu(
+                            selection: bindableSettings.editorFontName,
+                            options: EditorFont.allCases.map {
+                                ($0.rawValue, $0 == .system ? L("settings.editorFont.system") : $0.displayName)
+                            }
+                        )
+                        .frame(width: 170)
+                    }
+                    rowDivider
+                    settingsStackedRow(label: L("settings.editorFontSize"), subtitle: L("settings.desc.editorFontSize")) {
+                        HStack(spacing: DS.Space.md) {
+                            Slider(value: editorFontSizeBinding, in: 11...24, step: 1)
+                                .frame(maxWidth: .infinity)
+                            Text("\(settings.editorFontSize) pt")
+                                .font(DS.Font.mono(12))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 42, alignment: .trailing)
+                        }
+                    }
+                }
+
                 settingsGroup(title: L("settings.section.preview")) {
                     settingsStackedRow(label: L("settings.fontSize"), subtitle: L("settings.desc.fontSize")) {
                         HStack(spacing: DS.Space.md) {
@@ -109,6 +132,13 @@ extension SettingsView {
         Binding(
             get: { Double(settings.previewFontSize) },
             set: { settings.previewFontSize = Int($0) }
+        )
+    }
+
+    var editorFontSizeBinding: Binding<Double> {
+        Binding(
+            get: { Double(settings.editorFontSize) },
+            set: { settings.editorFontSize = Int($0) }
         )
     }
 

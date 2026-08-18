@@ -256,7 +256,13 @@ final class PluginManager {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed == "commands:" { inCommands = true; continue }
             if inCommands {
-                if trimmed.hasPrefix("- ") || trimmed.hasPrefix("-\t") {
+                // 缩进层级区分结构（必须看原始行的前导空白，不能看 trimmed）：
+                //   "  - name:"      → 新命令条目（2 格）
+                //   "    trigger:"   → 条目字段（4 格）
+                //   "      - git …"  → 字段的多行列表项（6 格）
+                let leadingSpaces = line.prefix(while: { $0 == " " }).count
+                let insideEntry = leadingSpaces >= 4 || line.hasPrefix("\t")
+                if (trimmed.hasPrefix("- ") || trimmed.hasPrefix("-\t")) && !insideEntry {
                     // New command entry — flush previous
                     if !currentCmd.isEmpty {
                         commands.append(makeCommand(from: currentCmd,
@@ -266,7 +272,7 @@ final class PluginManager {
                     currentCmd = [:]; currentTools = []; currentAllowedCmds = []; currentListKey = nil
                     let rest = String(trimmed.dropFirst(2))
                     if let kv = parseYAMLLine(rest) { currentCmd[kv.0] = kv.1 }
-                } else if trimmed.hasPrefix("  ") || trimmed.hasPrefix("\t") {
+                } else if insideEntry {
                     let inner = trimmed.trimmingCharacters(in: .whitespaces)
 
                     if inner.hasPrefix("tools:") {

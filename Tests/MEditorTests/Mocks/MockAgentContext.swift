@@ -33,6 +33,8 @@ final class MockAgentContext: AgentContextProtocol {
     var createdDirectories: [String]                         = []
     var confirmedCommands:  [String]                         = []
     var confirmedWrites:    [(path: String, summary: String)] = []
+    /// 携带 diff 预览的写入确认 spy（与 confirmedWrites 同步记录，另存完整 preview）
+    var confirmedWritePreviews: [FileWritePreview]           = []
 
     // MARK: - Error injection
 
@@ -42,6 +44,9 @@ final class MockAgentContext: AgentContextProtocol {
     var createFileError:     Error?                 = nil
     var writeFileError:      Error?                 = nil
     var fileContentError:    Error?                 = nil
+    /// fileContentFull 的内容覆盖（key = 文件 lastPathComponent）：模拟「tab 内存内容
+    /// 优先于磁盘」的场景，用于断言工具取写前内容走的是 fileContentFull 而非 readFile。
+    var fullContentOverrides: [String: String]      = [:]
     var commandConfirmResult: Bool                  = true
     var allowedCommandPatterns: [String]?           = nil
     /// 文件写入确认的注入结果 / run 级「全部允许」开关（spy 语义同 commandConfirmResult）
@@ -120,6 +125,7 @@ final class MockAgentContext: AgentContextProtocol {
 
     func fileContentFull(at url: URL) async throws -> String {
         if let e = fileContentError { throw e }
+        if let override = fullContentOverrides[url.lastPathComponent] { return override }
         return try await readFile(at: url)
     }
 
@@ -178,6 +184,12 @@ final class MockAgentContext: AgentContextProtocol {
         return writeConfirmResult
     }
 
+    func confirmFileWrite(_ preview: FileWritePreview) async -> Bool {
+        confirmedWritePreviews.append(preview)
+        confirmedWrites.append((path: preview.path, summary: preview.summary))
+        return writeConfirmResult
+    }
+
     var isFileWriteAllowedForRun: Bool { fileWriteAllowedForRun }
 
     func isCommandApproved(_ key: String) -> Bool {
@@ -224,6 +236,7 @@ final class MockAgentContext: AgentContextProtocol {
         createdDirectories = []
         confirmedCommands  = []
         confirmedWrites    = []
+        confirmedWritePreviews = []
         _approvedKeys      = []
     }
 

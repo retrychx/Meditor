@@ -118,7 +118,18 @@ struct WriteDocumentTool: AgentTool {
             if case .found(let foundURL) = resolved { target = foundURL.path } else { target = filename }
             // 写入前确认：本 run 已「全部允许」则直接放行，否则挂起等用户在确认条上决定
             if !(await context.isFileWriteAllowedForRun) {
-                let approved = await context.confirmFileWrite(target, summary: "写入 \(target)（约 \(lines) 行）")
+                // diff 预览：已存在文件取写前内容（fileContentFull = tab 内存优先，与
+                // AgentRunCheckpoint.captureBeforeWrite 的取舍一致）；新文件按纯新增
+                let base: WriteBaseContent
+                if case .found(let foundURL) = resolved {
+                    base = await Self.writeBase(for: foundURL, context: context)
+                } else {
+                    base = .newFile
+                }
+                let preview = WriteDiffPreviewBuilder.make(
+                    path: target, summary: "写入 \(target)（约 \(lines) 行）",
+                    base: base, newContent: content)
+                let approved = await context.confirmFileWrite(preview)
                 guard approved else { return "[!] 用户已拒绝写入：\(target)" }
             }
             do {
@@ -129,9 +140,14 @@ struct WriteDocumentTool: AgentTool {
             }
         }
         let docName = await context.currentDocumentName ?? "当前文档"
-        // 写入前确认（当前文档全量重写）
+        // 写入前确认（当前文档全量重写）；写前内容 = 当前 tab 内存内容
         if !(await context.isFileWriteAllowedForRun) {
-            let approved = await context.confirmFileWrite(docName, summary: "全量重写 \(docName)（约 \(lines) 行）")
+            let base: WriteBaseContent =
+                (await context.currentDocument).map { .existing($0) } ?? .newFile
+            let preview = WriteDiffPreviewBuilder.make(
+                path: docName, summary: "全量重写 \(docName)（约 \(lines) 行）",
+                base: base, newContent: content)
+            let approved = await context.confirmFileWrite(preview)
             guard approved else { return "[!] 用户已拒绝写入：\(docName)" }
         }
         do {
@@ -140,6 +156,14 @@ struct WriteDocumentTool: AgentTool {
         } catch {
             return "[!] 写入失败：\(error.localizedDescription)"
         }
+    }
+
+    /// 取已存在文件的写前内容（fileContentFull = tab 内存优先）；读失败降级 .unavailable。
+    static func writeBase(for url: URL, context: any AgentContextProtocol) async -> WriteBaseContent {
+        if let old = try? await context.fileContentFull(at: url) {
+            return .existing(old)
+        }
+        return .unavailable
     }
 }
 
@@ -177,7 +201,16 @@ struct PatchDocumentTool: AgentTool {
         if let filename = arguments["filename"]?.stringValue, !filename.isEmpty {
             // 写入前确认：本 run 已「全部允许」则直接放行，否则挂起等用户在确认条上决定
             if !(await context.isFileWriteAllowedForRun) {
-                let approved = await context.confirmFileWrite(filename, summary: "在 \(filename) 中替换\(matchDesc)")
+                // diff 预览：解析目标取写前内容（fileContentFull = tab 内存优先），
+                // 找不到 / 读失败时降级为只显示 summary
+                var oldContent: String? = nil
+                if case .found(let url) = await context.resolveFile(filename) {
+                    oldContent = try? await context.fileContentFull(at: url)
+                }
+                let preview = Self.patchPreview(
+                    path: filename, summary: "在 \(filename) 中替换\(matchDesc)",
+                    oldContent: oldContent, find: find, replace: replace, all: replaceAll)
+                let approved = await context.confirmFileWrite(preview)
                 guard approved else { return "[!] 用户已拒绝写入：\(filename)" }
             }
             do {
@@ -191,9 +224,13 @@ struct PatchDocumentTool: AgentTool {
         }
 
         let docName = await context.currentDocumentName ?? "当前文档"
-        // 写入前确认（当前文档局部替换）
+        // 写入前确认（当前文档局部替换）；写前内容 = 当前 tab 内存内容
         if !(await context.isFileWriteAllowedForRun) {
-            let approved = await context.confirmFileWrite(docName, summary: "在 \(docName) 中替换\(matchDesc)")
+            let preview = Self.patchPreview(
+                path: docName, summary: "在 \(docName) 中替换\(matchDesc)",
+                oldContent: await context.currentDocument,
+                find: find, replace: replace, all: replaceAll)
+            let approved = await context.confirmFileWrite(preview)
             guard approved else { return "[!] 用户已拒绝写入：\(docName)" }
         }
         do {
@@ -202,6 +239,19 @@ struct PatchDocumentTool: AgentTool {
         } catch let e as PatchNotFoundError {
             return e.errorDescription ?? "[!] 未找到匹配文本"
         }
+    }
+
+    /// 用 PatchEngine 预演替换结果构建 diff 预览（预演与实际 patchFile/patchDocument
+    /// 走同一引擎，预览所见即实际所得）。oldContent 为 nil = 写前内容不可得。
+    static func patchPreview(path: String, summary: String, oldContent: String?,
+                             find: String, replace: String, all: Bool) -> FileWritePreview {
+        guard let old = oldContent else {
+            return WriteDiffPreviewBuilder.make(
+                path: path, summary: summary, base: .unavailable, newContent: "")
+        }
+        let patched = PatchEngine.apply(to: old, find: find, replace: replace, all: all).updated
+        return WriteDiffPreviewBuilder.make(
+            path: path, summary: summary, base: .existing(old), newContent: patched)
     }
 }
 

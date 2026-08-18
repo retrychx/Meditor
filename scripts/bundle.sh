@@ -20,14 +20,21 @@ ARCHES=(arm64 x86_64)
 echo "🔨 Building $APP_NAME ($CONFIG) for: ${ARCHES[*]}..."
 
 BINARIES=()
+QL_BINARIES=()
 RESOURCE_DIR=""
+QL_RESOURCE_FILE=""
 for ARCH in "${ARCHES[@]}"; do
   swift build -c "$CONFIG" --arch "$ARCH" --package-path "$PROJECT_DIR"
   TRIPLE_DIR="$PROJECT_DIR/.build/${ARCH}-apple-macosx/$CONFIG"
   BINARIES+=("$TRIPLE_DIR/$APP_NAME")
+  QL_BINARIES+=("$TRIPLE_DIR/MEditorQuickLook")
   # 资源 bundle 各架构内容一致，记录第一份即可
   if [ -z "$RESOURCE_DIR" ] && [ -d "$TRIPLE_DIR/${APP_NAME}_${APP_NAME}.bundle/Resources" ]; then
     RESOURCE_DIR="$TRIPLE_DIR/${APP_NAME}_${APP_NAME}.bundle/Resources"
+  fi
+  # Quick Look 扩展的 SwiftPM 资源 bundle（包名_目标名）：ql-render.js
+  if [ -z "$QL_RESOURCE_FILE" ] && [ -f "$TRIPLE_DIR/${APP_NAME}_MEditorQuickLook.bundle/Resources/ql-render.js" ]; then
+    QL_RESOURCE_FILE="$TRIPLE_DIR/${APP_NAME}_MEditorQuickLook.bundle/Resources/ql-render.js"
   fi
 done
 
@@ -117,12 +124,52 @@ fi
 mkdir -p "$APP_BUNDLE/Contents/Frameworks"
 cp -R "$SPARKLE_FW" "$APP_BUNDLE/Contents/Frameworks/"
 
+# ---- Quick Look 预览扩展（.appex，手工组装，不经 Xcode 工程）----
+# 结构 = 普通 bundle：Contents/{MacOS,Resources,Info.plist}，
+# CFBundlePackageType=XPC! + NSExtension 声明（见 Sources/MEditorQuickLook/Info.plist）。
+# 渲染资源（marked/highlight/css）直接从上面已拷进主 app 的 Resources/Preview 复制，
+# 保证与 app 预览管线同源、单一来源；ql-render.js 来自扩展自己的 SwiftPM 资源 bundle。
+QL_NAME="MEditorQuickLook"
+QL_APPEX="$APP_BUNDLE/Contents/PlugIns/$QL_NAME.appex"
+echo "🔍 Assembling Quick Look extension ($QL_NAME.appex)..."
+rm -rf "$QL_APPEX"
+mkdir -p "$QL_APPEX/Contents/MacOS" "$QL_APPEX/Contents/Resources"
+lipo -create "${QL_BINARIES[@]}" -output "$QL_APPEX/Contents/MacOS/$QL_NAME"
+cp "$PROJECT_DIR/Sources/$QL_NAME/Info.plist" "$QL_APPEX/Contents/Info.plist"
+# 扩展版本与主 app 保持一致（同一份 VERSION / CI 环境变量）
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$QL_APPEX/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$QL_APPEX/Contents/Info.plist"
+# 渲染资源与主 app 同源（从已拷进主 app 的 Resources/Preview 里挑需要的复制，
+# 单一来源不双份维护）。扩展走 JavaScriptCore 离线渲染，只需要 marked/highlight/css；
+# template.html、scripts/、mermaid（~3.3MB）是 WebView 管线用的，不拷。
+mkdir -p "$QL_APPEX/Contents/Resources/Preview"
+for item in css marked.min.js highlight.min.js; do
+  cp -R "$APP_BUNDLE/Contents/Resources/Preview/$item" "$QL_APPEX/Contents/Resources/Preview/"
+done
+if [ -n "$QL_RESOURCE_FILE" ]; then
+  cp "$QL_RESOURCE_FILE" "$QL_APPEX/Contents/Resources/ql-render.js"
+else
+  echo "error: 未找到 ql-render.js（MEditorQuickLook 的 SwiftPM 资源 bundle）" >&2
+  exit 1
+fi
+plutil -lint "$QL_APPEX/Contents/Info.plist" > /dev/null
+
 # Validate Info.plist
 plutil -lint "$APP_BUNDLE/Contents/Info.plist" > /dev/null
 
 # Ad-hoc sign the bundle (required for macOS to launch from .app)
+# 签名顺序「由内向外」：
+#   1. appex 单独签并带沙箱 entitlement——若继续对整个 .app 用 --deep，
+#      主 app 的签名选项会套到嵌套代码上，entitlement 被丢掉，扩展必挂；
+#   2. Sparkle.framework 维持原 --deep 行为（其嵌套 XPC 也一并 ad-hoc 签）；
+#   3. 主 bundle 最后签，且不再 --deep，避免覆盖前两步。
 if command -v codesign &>/dev/null; then
-  codesign --force --deep --sign - "$APP_BUNDLE" 2>/dev/null
+  # appex 签名失败 = 扩展必挂，不容许静默通过（其余两步维持原静默风格）
+  codesign --force --sign - \
+    --entitlements "$PROJECT_DIR/Sources/$QL_NAME/Entitlements.plist" \
+    "$QL_APPEX" 2>/dev/null || { echo "error: Quick Look 扩展签名失败" >&2; exit 1; }
+  codesign --force --deep --sign - "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework" 2>/dev/null
+  codesign --force --sign - "$APP_BUNDLE" 2>/dev/null
 fi
 
 echo "✅ $APP_NAME.app created at:"

@@ -198,6 +198,13 @@ struct MEditorApp: App {
                 }
                 .disabled(appState.selectedTab == nil || appState.selectedTab?.language != .markdown)
             }
+            CommandMenu(L("menu.tools")) {
+                Button(L("menu.documentDiagnostics")) {
+                    appState.showingDiagnostics = true
+                }
+                .keyboardShortcut("d", modifiers: [.command, .option])
+                .disabled(appState.rootURL == nil)
+            }
             CommandGroup(after: .appVisibility) {
                 Button("Install CLI Tool…") {
                     installCLI()

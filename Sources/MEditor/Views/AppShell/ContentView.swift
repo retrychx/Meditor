@@ -110,6 +110,14 @@ struct ContentView: View {
                 .presentationBackground(.regularMaterial)
         }
         .sheet(isPresented: Binding(
+            get: { state.showingDiagnostics },
+            set: { state.showingDiagnostics = $0 }
+        )) {
+            DiagnosticsSheet()
+                .environment(state)
+                .presentationBackground(.regularMaterial)
+        }
+        .sheet(isPresented: Binding(
             get: { state.showingTemplatePicker },
             set: { state.showingTemplatePicker = $0 }
         )) {

@@ -225,6 +225,10 @@ final class AgentContext: AgentContextProtocol {
         await doc.confirmFileWrite(path, summary: summary)
     }
 
+    func confirmFileWrite(_ preview: FileWritePreview) async -> Bool {
+        await doc.confirmFileWrite(preview)
+    }
+
     func cancelPendingWriteConfirmation() {
         doc.cancelPendingWriteConfirmation()
     }

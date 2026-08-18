@@ -85,7 +85,11 @@ struct CreateFileTool: AgentTool {
         // 写入前确认：本 run 已「全部允许」则直接放行，否则挂起等用户在确认条上决定
         if !(await context.isFileWriteAllowedForRun) {
             let lines = content.components(separatedBy: "\n").count
-            let approved = await context.confirmFileWrite(filename, summary: "新建 \(filename)（约 \(lines) 行）")
+            // 新建文件：diff = 纯新增（写前内容为空）
+            let preview = WriteDiffPreviewBuilder.make(
+                path: filename, summary: "新建 \(filename)（约 \(lines) 行）",
+                base: .newFile, newContent: content)
+            let approved = await context.confirmFileWrite(preview)
             guard approved else { return "[!] 用户已拒绝写入：\(filename)" }
         }
         do {
@@ -119,7 +123,18 @@ struct WriteFileTool: AgentTool {
         // 写入前确认：本 run 已「全部允许」则直接放行，否则挂起等用户在确认条上决定
         if !(await context.isFileWriteAllowedForRun) {
             let lines = content.components(separatedBy: "\n").count
-            let approved = await context.confirmFileWrite(filename, summary: "写入 \(filename)（约 \(lines) 行）")
+            // diff 预览：已存在文件取写前内容（fileContentFull = tab 内存优先），新文件按纯新增
+            let base: WriteBaseContent
+            if case .found(let url) = await context.resolveFile(filename) {
+                base = (try? await context.fileContentFull(at: url))
+                    .map { .existing($0) } ?? .unavailable
+            } else {
+                base = .newFile
+            }
+            let preview = WriteDiffPreviewBuilder.make(
+                path: filename, summary: "写入 \(filename)（约 \(lines) 行）",
+                base: base, newContent: content)
+            let approved = await context.confirmFileWrite(preview)
             guard approved else { return "[!] 用户已拒绝写入：\(filename)" }
         }
         let url = try await context.writeFile(name: filename, content: content)

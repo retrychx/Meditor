@@ -22,6 +22,23 @@ var targets: [Target] = [
             .copy("Resources")
         ]
     ),
+    // Quick Look 预览扩展（Finder 空格预览 .md）。编译产物是裸可执行文件，
+    // appex bundle 由 scripts/bundle.sh 手工组装（Info.plist / 资源 / 签名）。
+    // 不内嵌资源：Preview 渲染资源打包时从主 app 拷贝，保证与 app 预览管线同源。
+    .executableTarget(
+        name: "MEditorQuickLook",
+        exclude: ["Info.plist", "Entitlements.plist"],
+        resources: [
+            .copy("Resources")
+        ],
+        linkerSettings: [
+            // appex 的入口必须是 Foundation 的 NSExtensionMain。该符号由
+            // Foundation 导出但没有公开头文件声明（macOS SDK），Swift 侧无法
+            // 直接调用——与 Xcode 扩展模板一样，用 -e 链接选项改入口符号。
+            // main.swift 只是 SwiftPM 的形式要求，运行时不会被执行。
+            .unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"])
+        ]
+    ),
     .testTarget(
         name: "MEditorTests",
         dependencies: ["MEditor"]

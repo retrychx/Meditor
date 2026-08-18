@@ -39,9 +39,10 @@ enum ParagraphDiffer {
     private static func lcsEdits(_ a: [String], _ b: [String]) -> [Edit] {
         let m = a.count, n = b.count
         // DP table
+        // stride 而非 1...m：一侧为空（全新增 / 全删除）时 1...0 会直接崩溃
         var dp = Array(repeating: Array(repeating: 0, count: n + 1), count: m + 1)
-        for i in 1...m {
-            for j in 1...n {
+        for i in stride(from: 1, through: m, by: 1) {
+            for j in stride(from: 1, through: n, by: 1) {
                 dp[i][j] = a[i-1] == b[j-1] ? dp[i-1][j-1] + 1
                                               : max(dp[i-1][j], dp[i][j-1])
             }

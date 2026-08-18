@@ -47,7 +47,9 @@ struct SidebarTreeNode: View {
                     item: item,
                     isSelected: item.id == state.selectedFileID,
                     searchText: searchText,
-                    onAction: onAction
+                    onAction: onAction,
+                    gitStatus: state.gitStatusService.status(for: item.url),
+                    isDirtyDirectory: state.gitStatusService.directoryContainsChanges(item.url)
                 )
                 .help(item.url.path)
                 .padding(.leading, -6)
@@ -70,7 +72,8 @@ struct SidebarTreeNode: View {
                 item: item,
                 isSelected: item.id == state.selectedFileID,
                 searchText: searchText,
-                onAction: onAction
+                onAction: onAction,
+                gitStatus: state.gitStatusService.status(for: item.url)
             )
             .help(item.url.path)
             .contentShape(Rectangle())

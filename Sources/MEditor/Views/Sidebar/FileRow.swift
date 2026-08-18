@@ -6,6 +6,10 @@ struct FileRow: View {
     let isSelected: Bool
     let searchText: String
     let onAction: ((FileAction) -> Void)?
+    /// Git 工作区状态标记（非 git 工作区或无变更为 nil）
+    let gitStatus: GitFileStatus?
+    /// 目录行：子树内有 Git 变更时显示聚合圆点
+    let isDirtyDirectory: Bool
 
     @State private var isHovered = false
 
@@ -13,12 +17,16 @@ struct FileRow: View {
         item: FileItem,
         isSelected: Bool = false,
         searchText: String = "",
-        onAction: ((FileAction) -> Void)? = nil
+        onAction: ((FileAction) -> Void)? = nil,
+        gitStatus: GitFileStatus? = nil,
+        isDirtyDirectory: Bool = false
     ) {
         self.item       = item
         self.isSelected = isSelected
         self.searchText = searchText
         self.onAction   = onAction
+        self.gitStatus  = gitStatus
+        self.isDirtyDirectory = isDirtyDirectory
     }
 
     var body: some View {
@@ -31,9 +39,18 @@ struct FileRow: View {
                 .truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Modified indicator — subtle dot on the right
-            if !item.isDirectory {
-                Spacer(minLength: 0)
+            Spacer(minLength: 0)
+
+            // Git 状态标记：行尾单字母（M/A/?/D/R/!）
+            if let gitStatus {
+                Text(gitStatus.badge)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Self.badgeColor(for: gitStatus))
+            } else if item.isDirectory, isDirtyDirectory {
+                // 目录自身无状态但子树内有变更：聚合圆点
+                Circle()
+                    .fill(Color.orange)
+                    .frame(width: 5, height: 5)
             }
         }
         .padding(.horizontal, 6)
@@ -113,6 +130,18 @@ struct FileRow: View {
     }
 
     // MARK: - Helpers
+
+    /// Git 标记颜色：用语义色，跟随系统外观（不硬编码 hex）。
+    static func badgeColor(for status: GitFileStatus) -> Color {
+        switch status {
+        case .modified:   return .orange
+        case .added:      return .green
+        case .deleted:    return .red
+        case .renamed:    return .blue
+        case .untracked:  return .secondary
+        case .conflicted: return .red
+        }
+    }
 
     private var iconName: String {
         FileTypeConfiguration.shared.icon(for: item.fileExtension)
