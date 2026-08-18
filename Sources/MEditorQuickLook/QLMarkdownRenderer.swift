@@ -1,24 +1,11 @@
-import AppKit
+import Foundation
 import JavaScriptCore
-import OSLog
-import QuickLookUI
-import UniformTypeIdentifiers
-import WebKit
 
-/// 扩展日志：log show --predicate 'subsystem == "com.meditor.app.QuickLook"'
-private let qlLog = Logger(subsystem: "com.meditor.app.QuickLook", category: "preview")
-
-/// Quick Look 预览控制器：Finder 选中 .md 按空格时，把 Markdown 渲染成 HTML 展示。
+/// Markdown → HTML 离线渲染器（JavaScriptCore，无 DOM、无 WebView）。
 ///
-/// 技术选型（macOS 26 SDK 的约束）：
-/// - SDK 里已没有 QLPreviewViewController（旧的视图式预览基类）。实测（qlmanage -p +
-///   unified log）macOS 的 com.apple.quicklook.preview 扩展点仍按「视图式」处理主类
-///   （建立 viewbridge、QLPreviewExtensionViewController 断言），纯 QLPreviewProvider
-///   （数据式）主类收不到预览请求——所以主类是普通 NSViewController，内置 WKWebView。
-/// - 渲染不走 WebView 里的 JS（模板那套要落盘 + 软链资源），而是直接用 JavaScriptCore
-///   在 JSContext 里跑主 app 同一份 marked.min.js + highlight.min.js + ql-render.js，
-///   产出静态 HTML 片段，再把主 app 同一份 themes.css/base.css 内联成完整文档，
-///   一次性 loadHTMLString。无外部资源引用，沙箱内最稳。
+/// 跑的是主 app 同一份 marked.min.js + highlight.min.js + ql-render.js，
+/// 产出静态 HTML 片段，再把主 app 同一份 themes.css/base.css 内联成完整文档。
+/// 预览本身由系统 QuickLookUI 渲染（见 PreviewProvider），扩展进程里没有 WebKit。
 ///
 /// 有意的取舍：
 /// - 主题固定默认 github，不读用户设置：扩展是独立沙箱进程，读 app 的 settings
@@ -26,46 +13,9 @@ private let qlLog = Logger(subsystem: "com.meditor.app.QuickLook", category: "pr
 /// - Markdown 里的相对路径图片不加载：沙箱只授予被预览文件本身的读权限，
 ///   主 app 靠自定义 scheme（meditor-asset）绕过，扩展不引入这套机制。
 /// - mermaid 需要 DOM，扩展里降级为代码块显示。
-@objc(MEditorQLPreviewViewController)
-final class PreviewViewController: NSViewController, QLPreviewingController {
+enum QLMarkdownRenderer {
 
-    private var webView: WKWebView?
-
-    override func loadView() {
-        let webView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
-        webView.setValue(false, forKey: "drawsBackground")
-        self.webView = webView
-        self.view = webView
-    }
-
-    // MARK: - QLPreviewingController
-
-    /// 系统在主线程调用一次；渲染是同步快路径（marked 同步解析），直接做完再回调。
-    func preparePreviewOfFile(at url: URL, completionHandler handler: @escaping (Error?) -> Void) {
-        qlLog.notice("preparePreviewOfFile: \(url.lastPathComponent, privacy: .public)")
-        // 系统可能先于视图加载回调本方法：此时 webView 还是 nil，
-        // loadHTMLString 会被静默丢弃、预览空白。先触一下 view 强制走 loadView。
-        _ = view
-        do {
-            let html = try Self.renderHTML(forFileAt: url)
-            qlLog.notice("render ok, html bytes=\(html.utf8.count)")
-            webView?.loadHTMLString(html, baseURL: nil)
-            handler(nil)
-        } catch {
-            qlLog.error("render failed: \(error.localizedDescription, privacy: .public)，退回纯文本")
-            // 渲染失败不退空：WebView 显示等宽纯文本，QL 至少能看到源文件内容
-            if let markdown = try? String(contentsOf: url, encoding: .utf8) {
-                webView?.loadHTMLString(Self.plainTextHTML(markdown), baseURL: nil)
-                handler(nil)
-            } else {
-                handler(error)
-            }
-        }
-    }
-
-    // MARK: - 渲染
-
-    private enum RenderError: LocalizedError {
+    enum RenderError: LocalizedError {
         case fileUnreadable
         case resourceMissing(String)
         case jsFailed(String)
@@ -87,7 +37,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         let bodyHTML = try renderBodyHTML(markdown: markdown)
 
         // 外壳与主 app 的 template.html 同构（<html class="theme-github"> + #content），
-        // 样式内联——loadHTMLString 没有 base URL，引不了外部 css。
+        // 样式内联——QLPreviewReply 的 HTML 数据不带 base URL，引不了外部 css。
         let themesCSS = try loadResourceString("Preview/css/themes.css")
         let baseCSS = try loadResourceString("Preview/css/base.css")
         return """

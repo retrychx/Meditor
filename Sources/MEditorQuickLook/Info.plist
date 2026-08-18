@@ -28,6 +28,10 @@
 	<dict>
 		<key>NSExtensionAttributes</key>
 		<dict>
+			<!-- 数据式预览开关（参照 Xcode 的 ProvisoningProfileQuicklookExtension）：
+			     不声明这个 key，系统一律按视图式处理主类，QLPreviewProvider 收不到请求 -->
+			<key>QLIsDataBasedPreview</key>
+			<true/>
 			<!-- .md 在系统上解析为 net.daringfireball.markdown；
 			     com.meditor.markdown 是主 app 导出的 UTI，两者都声明以覆盖
 			     有/无其他 Markdown app 注册的情况 -->
@@ -41,9 +45,11 @@
 		</dict>
 		<key>NSExtensionPointIdentifier</key>
 		<string>com.apple.quicklook.preview</string>
-		<!-- @objc 固定名，避免 Swift 模块名前缀导致的类查找失败 -->
+		<!-- 数据式预览主类：扩展只产出 HTML，系统 QuickLookUI 负责渲染。
+		     视图式（NSViewController + WKWebView）在 macOS 26 的扩展启动上下文里
+		     WebKit Networking 子进程活不下来，页面永远空白。 -->
 		<key>NSExtensionPrincipalClass</key>
-		<string>MEditorQLPreviewViewController</string>
+		<string>MEditorQLPreviewProvider</string>
 	</dict>
 </dict>
 </plist>
