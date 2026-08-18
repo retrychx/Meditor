@@ -75,6 +75,13 @@ final class SlashCommandHandler {
         slashPopover?.isShown == true && !slashItems.isEmpty
     }
 
+    /// 当前位置是否处于「/ask」或「/ask 问题」语境。
+    /// 用于空格键放行：/ask 的空格是 query 分隔符，不能像其他命令那样触发提交。
+    func isAskContext(in textView: NSTextView, at location: Int) -> Bool {
+        guard let ctx = slashContext(in: textView, at: location) else { return false }
+        return ctx.command == "/ask" || ctx.command.hasPrefix("/ask ")
+    }
+
     // MARK: - Command catalogue
 
     static let allCommands: [SlashCommandItem] = [
@@ -246,11 +253,13 @@ final class SlashCommandHandler {
     func filteredCommands(for command: String) -> [SlashCommandItem] {
         let query = String(command.dropFirst()).lowercased()
         guard !query.isEmpty else { return Self.allCommands }
+        // 「/ask 问题」形式：空格后的是提问内容，不参与命令匹配
+        let matchQuery = String(query.split(separator: " ", maxSplits: 1).first ?? "")
         return Self.allCommands.filter { item in
-            if item.aliases.contains(where: { $0.dropFirst().hasPrefix(query) }) { return true }
-            if item.title.lowercased().contains(query) { return true }
-            if item.subtitle.lowercased().contains(query) { return true }
-            return item.keywords.contains { $0.lowercased().contains(query) }
+            if item.aliases.contains(where: { $0.dropFirst().hasPrefix(matchQuery) }) { return true }
+            if item.title.lowercased().contains(matchQuery) { return true }
+            if item.subtitle.lowercased().contains(matchQuery) { return true }
+            return item.keywords.contains { $0.lowercased().contains(matchQuery) }
         }
     }
 
@@ -275,8 +284,11 @@ final class SlashCommandHandler {
         let typed = nsText.substring(with: NSRange(location: lineStart, length: typedLength))
         let indentLength = typed.prefix { $0 == " " || $0 == "\t" }.count
         let command = String(typed.dropFirst(indentLength)).lowercased()
-        guard command.hasPrefix("/"),
-              !command.dropFirst().contains(where: { $0.isWhitespace }) else { return nil }
+        guard command.hasPrefix("/") else { return nil }
+        // /ask 例外：允许「/ask 问题」带空格的形式（query 是命令的一部分）；
+        // 其他命令含空白即视为已脱离斜杠命令语境
+        if !command.hasPrefix("/ask "),
+           command.dropFirst().contains(where: { $0.isWhitespace }) { return nil }
 
         let commandStart = lineStart + indentLength
         return (NSRange(location: commandStart, length: location - commandStart), command)
@@ -313,8 +325,11 @@ final class SlashCommandHandler {
 
         // AI 命令：删除命令文本，获取上下文，回调触发
         if item.isAICommand {
+            // 「/ask 问题」的 query 提取必须在删除命令文本之前（range 覆盖命令+query 全段）
+            let rawCommand = (textView.string as NSString).substring(with: range)
+
             isApplyingCommand = true
-            textView.insertText("", replacementRange: range)   // 删除 /command
+            textView.insertText("", replacementRange: range)   // 删除 /command（含 /ask 的 query）
             isApplyingCommand = false
 
             // 拖取光标前最多 2000 字作为上下文
@@ -329,7 +344,12 @@ final class SlashCommandHandler {
             case "/continue", "/ai-continue": action = .continueWriting
             case "/improve",  "/ai-improve":  action = .improveCurrentParagraph
             case "/summarize","/ai-summarize":action = .summarizeAbove
-            case "/ask":                       action = .ask("")
+            case "/ask":
+                // query 在 rawCommand（删除前提取，保留大小写）；无 query 回退空串
+                let query = rawCommand.count > 4
+                    ? String(rawCommand.dropFirst(4)).trimmingCharacters(in: .whitespaces)
+                    : ""
+                action = .ask(query)
             default:                           action = .continueWriting
             }
             onAIAction?(action, contextText, NSRange(location: insertionLoc, length: 0))

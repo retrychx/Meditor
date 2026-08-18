@@ -199,6 +199,11 @@ struct MEditorApp: App {
                 .disabled(appState.selectedTab == nil || appState.selectedTab?.language != .markdown)
             }
             CommandMenu(L("menu.tools")) {
+                Button(L("menu.aiAssistant")) {
+                    withAnimation(DS.Motion.spring) { appState.showingAIAssistant.toggle() }
+                }
+                .keyboardShortcut("j", modifiers: .command)
+
                 Button(L("menu.documentDiagnostics")) {
                     appState.showingDiagnostics = true
                 }

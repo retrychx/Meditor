@@ -211,6 +211,16 @@ struct AgentToolCall: Sendable {
         arguments.reduce(into: [String: Any]()) { $0[$1.key] = $1.value.anyValue }
     }
 
+    /// 参数的回放 JSON 文本：优先后端返回的原始串（rawArgumentsJSON），
+    /// 缺失时（手工构造 / 持久化解码的 call）由强类型 arguments 重新序列化。
+    /// 与 AgentMessage.openAIDict 的回放口径一致；供上下文预算的 token 估算使用
+    /// （write_document 全量写入的参数可达数万字符，必须计入预算）。
+    var argumentsJSONForReplay: String {
+        if let raw = rawArgumentsJSON { return raw }
+        let data = (try? JSONSerialization.data(withJSONObject: argumentsDict)) ?? Data()
+        return String(data: data, encoding: .utf8) ?? "{}"
+    }
+
     init(id: String, name: String, arguments: [String: AnySendableValue] = [:]) {
         self.id = id
         self.name = name

@@ -130,12 +130,16 @@ final class AgentContext: AgentContextProtocol {
     /// 同一安全边界），或对应一个已打开的 Tab（散文件场景）。
     /// 防止提示注入诱导 Agent 写入 ~/.zshrc 等任意路径。
     func validateWriteTarget(_ url: URL) throws {
-        let target = url.standardizedFileURL
-        if let root = workspaceURL?.standardizedFileURL,
+        // 解析符号链接后再做前缀比较：standardizedFileURL 只规范化路径、不解析
+        // symlink，工作区内一个指向外部目录的 symlink 就能把写目标引到工作区外。
+        // root 与 target 两侧都解析（macOS 上 /tmp 本身是 /private/tmp 的 symlink）。
+        let target = CommandSandbox.resolveSymlinks(url)
+        if let root = workspaceURL.map(CommandSandbox.resolveSymlinks),
            target.path == root.path || target.path.hasPrefix(root.path + "/") {
             return
         }
-        if doc.hasOpenTab(at: target) { return }
+        // Tab 匹配沿用未解析的标准化路径：AppState 记录的是用户打开时的原始路径
+        if doc.hasOpenTab(at: url.standardizedFileURL) { return }
         throw AgentContextError.pathOutsideWorkspace(target.path)
     }
 

@@ -33,6 +33,12 @@ final class AIUIState {
     /// Monotonic nonce so the same text can be replaced more than once.
     var editorReplaceNonce: Int = 0
 
+    /// AI diff 审阅接受后的整文写回内容（走编辑器可撤销路径：最小化替换 +
+    /// 注册 undo + 保留滚动/光标；与 updateTabContent 的整体替换路径相对）。
+    var editorWriteBackContent: String = ""
+    /// Monotonic nonce so the same content can be written back more than once.
+    var editorWriteBackNonce: Int = 0
+
     /// 待消费的内联选区提示：AI 面板打开时自动带入该文本并预填输入框。
     var pendingSelectionPrompt: String? = nil
 
@@ -44,6 +50,12 @@ final class AIUIState {
     func requestReplace(_ text: String) {
         editorReplaceText = text
         editorReplaceNonce += 1
+    }
+
+    /// AI 写回请求（整文）：编辑器在 updateNSView 里做最小化可撤销替换。
+    func requestWriteBack(_ content: String) {
+        editorWriteBackContent = content
+        editorWriteBackNonce &+= 1
     }
 
     /// 打开 AI 面板，并把选中文本预填到输入框。

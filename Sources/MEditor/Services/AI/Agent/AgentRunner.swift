@@ -326,10 +326,10 @@ final class AgentRunner {
                     let readIndexSet = Set(readIndices)
 
                     // 只读组：task group 并行执行，省去多个只读调用串行的多次 RTT。
-                    // 取消会传播给子任务；withTaskGroup 会等所有已启动的子任务收尾后
+                    // 取消会传播给子任务；group 会等所有已启动的子任务收尾后
                     // 才返回，不会出现「run 结束了工具还在执行」的悬挂写。
                     if !readIndices.isEmpty && !Task.isCancelled {
-                        await withTaskGroup(of: (Int, AgentToolResult, TimeInterval).self) { group in
+                        try await withThrowingTaskGroup(of: (Int, AgentToolResult, TimeInterval).self) { group in
                             for i in readIndices {
                                 let call = calls[i]
                                 // isParallelReadOnly 已保证工具存在且参数解析成功
@@ -349,10 +349,14 @@ final class AgentRunner {
                                     return (i, result, Date().timeIntervalSince(startedAt))
                                 }
                             }
-                            for await (i, result, duration) in group {
+                            for try await (i, result, duration) in group {
                                 results[i]   = result
                                 durations[i] = duration
                             }
+                            // 批结束后检查取消（withTaskGroup 非 throwing 不能逐个透传）：
+                            // 被取消时丢弃整批结果抛出 CancellationError，与串行路径一致，
+                            // 避免误导性的「错误：cancelled」工具结果回灌历史
+                            if Task.isCancelled { throw CancellationError() }
                         }
                         // 步骤 UI 按原顺序统一标记完成：结果可乱序到达，但 state 更新
                         // 保持可预期顺序，避免步骤面板乱跳
@@ -409,6 +413,10 @@ final class AgentRunner {
                                     let output = try await tool.execute(arguments: call.arguments, context: context)
                                     result = AgentToolResult(toolCallID: call.id, toolName: call.name, content: output)
                                 } catch {
+                                    // 取消不是工具失败：直接抛给外层 catch（break 走向收尾，
+                                    // 缺口由 reconcileToolResults 补合成中断结果），不包装成
+                                    // 误导性的 tool error 回灌历史、也不计入停滞指纹。
+                                    if Self.isCancellation(error) { throw error }
                                     result = AgentToolResult(
                                         toolCallID: call.id, toolName: call.name,
                                         content: "错误：\(error.localizedDescription)", isError: true
@@ -462,9 +470,10 @@ final class AgentRunner {
                     messages.append(AgentMessage(role: .assistant, content: response.text))
                     break
                 }
-            } catch is CancellationError {
-                break
             } catch {
+                // 取消（含底层 cause 是 CancellationError 的包装错误）走向收尾，
+                // 不归类为 run 错误
+                if Self.isCancellation(error) { break }
                 removeLastThinking()
                 self.error = classifyError(error)
                 break
@@ -536,6 +545,13 @@ final class AgentRunner {
     }
 
     // MARK: - Helpers
+
+    /// 判断错误是否为取消信号：直接的 CancellationError，或底层 cause 链上
+    /// 含 CancellationError 的包装错误（如工具内部把子任务错误重新封装抛出）。
+    private static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        return (error as NSError).underlyingErrors.contains { isCancellation($0) }
+    }
 
     /// 将后端错误分类为统一的中文可操作文案；未识别的错误保留原始信息
     private func classifyError(_ error: Error) -> String {

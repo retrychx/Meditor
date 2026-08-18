@@ -15,8 +15,6 @@ struct InlineEditBar: View {
     @State private var showAgentPanel = false
     @State private var agentRunner    = AgentRunner()
 
-    private let agent = InlineEditAgent()
-
     /// Plugin skill commands from enabled manual skills
     private var pluginCommands: [(skill: PluginSkill, command: SkillCommand)] {
         state.pluginManager.skills
@@ -302,9 +300,10 @@ struct InlineEditBar: View {
             let modified = spliced(finalText)
             state.diffReview.commitStreamWithModified(modified, generation: streamGen) { merged in
                 if let tab = state.selectedTab {
-                    // 走 updateTabContent：同步预览 + 标 isModified（否则防抖保存会漏掉）
-                    state.updateTabContent(tab.id, content: merged)
-                    state.scheduleDebounceSave()
+                    // 统一走 applyAIWriteBack：编辑器挂载时可撤销最小化替换
+                    // （保留滚动/光标/undo），否则退回整体替换；内部已处理
+                    // 预览同步、isModified 与防抖保存
+                    state.applyAIWriteBack(tab.id, content: merged)
                 }
             }
         }

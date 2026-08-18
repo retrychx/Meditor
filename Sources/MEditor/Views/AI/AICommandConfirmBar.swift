@@ -35,6 +35,7 @@ extension AIAssistantPanel {
                 Button(L("ai.execute")) { pending.approve() }
                     .buttonStyle(.borderedProminent)
                     .tint(Color.appAccent)
+                    .keyboardShortcut(.return, modifiers: .command)
             }
             Text(L("ai.command.rememberHint"))
                 .font(.system(size: 10))
@@ -81,9 +82,11 @@ extension AIAssistantPanel {
                     .buttonStyle(.bordered)
                 Button(L("ai.write.allowAll")) { pending.approveAll() }
                     .buttonStyle(.bordered)
+                    .keyboardShortcut(.return, modifiers: [.command, .shift])
                 Button(L("ai.write.allow")) { pending.approve() }
                     .buttonStyle(.borderedProminent)
                     .tint(Color.appAccent)
+                    .keyboardShortcut(.return, modifiers: .command)
             }
             Text(L("ai.write.allowAllHint"))
                 .font(.system(size: 10))

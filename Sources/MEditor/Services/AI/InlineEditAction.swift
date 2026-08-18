@@ -86,29 +86,3 @@ enum InlineEditAction: String, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - InlineEditAgent
-
-/// Stateless service that processes a text selection via AI.
-/// Streaming chunks arrive via `onChunk`; `onComplete` fires exactly once.
-@MainActor
-final class InlineEditAgent {
-
-    func process(
-        text: String,
-        action: InlineEditAction,
-        settings: AppSettings,
-        pluginManager: PluginManager,
-        onChunk: @escaping @MainActor (String) -> Void,
-        onComplete: @escaping @MainActor (String?, Error?) -> Void
-    ) -> Task<Void, Never> {
-        guard pluginManager.isBuiltinEnabled(BuiltinSkills.ID.inlineEditor) else {
-            onComplete(nil, AIError.notConfigured)
-            return Task {}
-        }
-
-        let config   = AIConfig.current(settings, scene: .inline)
-        let messages = action.buildMessages(for: text, pluginManager: pluginManager)
-
-        return AIClient(config: config).streamTask(messages, onChunk: onChunk, onComplete: onComplete)
-    }
-}

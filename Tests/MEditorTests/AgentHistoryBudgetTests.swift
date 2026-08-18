@@ -165,6 +165,124 @@ final class AgentHistoryBudgetTests: XCTestCase {
                        "只能裁掉最老的 user，assistant/tool 配对必须整体保留")
         XCTAssertEqual(result.droppedMessages, 1)
     }
+
+    // MARK: toolCalls 参数计入预算 + 对称占位淘汰
+
+    /// assistant 的 toolCalls 参数（write_document 全量写入）必须计入 token 估算：
+    /// 以下样本 content 总量远低于预算，仅靠参数体积触发裁剪。
+    private func makeBigArgsHistory(rounds: Int = 6) -> [AgentMessage] {
+        let bigArgs = #"{"name":"doc.md","content":""# + String(repeating: "文", count: 3_000) + #""}"#
+        var history: [AgentMessage] = [AgentMessage(role: .system, content: "system prompt")]
+        for i in 0..<rounds {
+            history.append(AgentMessage(role: .user, content: "write \(i)"))
+            history.append(AgentMessage(
+                role: .assistant,
+                content: "",
+                toolCalls: [AgentToolCall(id: "tc\(i)", name: "write_document", argumentsJSON: bigArgs)]
+            ))
+            history.append(AgentMessage(role: .tool, content: "ok", toolCallID: "tc\(i)", toolName: "write_document"))
+        }
+        return history
+    }
+
+    func test_trim_toolCallArgsCountedAndEvicted() {
+        let history = makeBigArgsHistory()
+        // content 总量极小（≈几十 token），若不计参数（每轮 ≈2_000 token）永远不会超预算
+        let result = AgentHistoryBudget.trim(history, budgetTokens: 3_000, keepRecentMessages: 3)
+
+        XCTAssertTrue(result.didTrim, "参数体积应计入预算并触发裁剪")
+        XCTAssertEqual(result.evictedToolCallArgs, 5, "rounds 0..4 的大参数应被占位")
+        XCTAssertEqual(result.droppedMessages, 0, "参数占位后已低于预算，不应整轮裁剪")
+        XCTAssertEqual(result.messages.count, history.count, "占位替换不改变消息条数")
+
+        for i in 0..<5 {
+            let call = result.messages.flatMap { $0.toolCalls ?? [] }.first { $0.id == "tc\(i)" }
+            XCTAssertEqual(call?.rawArgumentsJSON, AgentHistoryBudget.toolCallArgsPlaceholder,
+                           "round\(i) 的参数 JSON 应被占位")
+            XCTAssertEqual(call?.name, "write_document", "占位不动 name/id 配对字段")
+            XCTAssertEqual(call?.id, "tc\(i)")
+        }
+        // 保护尾部的最近一轮参数原样保留
+        let lastCall = result.messages.flatMap { $0.toolCalls ?? [] }.first { $0.id == "tc5" }
+        XCTAssertTrue(lastCall?.rawArgumentsJSON?.contains("文文文") == true,
+                      "最近一轮的参数应原样保留")
+        assertToolPairing(result.messages)
+    }
+
+    func test_trim_underBudgetWithoutArgs_butOverWithArgs() {
+        // 对照：同样的消息若参数很短，content + 参数都在预算内 → 不裁剪
+        let smallArgs = #"{"name":"a.md","content":"x"}"#
+        var history: [AgentMessage] = [AgentMessage(role: .system, content: "sys")]
+        history.append(AgentMessage(role: .user, content: "write"))
+        history.append(AgentMessage(
+            role: .assistant, content: "",
+            toolCalls: [AgentToolCall(id: "tc0", name: "write_document", argumentsJSON: smallArgs)]
+        ))
+        history.append(AgentMessage(role: .tool, content: "ok", toolCallID: "tc0", toolName: "write_document"))
+
+        let result = AgentHistoryBudget.trim(history, budgetTokens: 3_000, keepRecentMessages: 8)
+        XCTAssertFalse(result.didTrim)
+        XCTAssertEqual(result.messages.flatMap { $0.toolCalls ?? [] }.first?.rawArgumentsJSON, smallArgs)
+    }
+
+    // MARK: 首条对齐：裁剪后首条（非 system）必须是 user
+
+    func test_trim_firstMessageAfterTrim_isUser() {
+        // 每条 ≈1_000 token；budget 5_500 时第二级裁掉 u1 后即达标，
+        // 起点落在 assistant 上——首条对齐应继续丢到 u2。
+        let big = String(repeating: "字", count: 1_500)
+        let history: [AgentMessage] = [
+            AgentMessage(role: .user, content: big),
+            AgentMessage(role: .assistant, content: big),
+            AgentMessage(role: .user, content: big),
+            AgentMessage(role: .assistant, content: big),
+            AgentMessage(role: .user, content: big),
+            AgentMessage(role: .assistant, content: big),
+        ]
+
+        let result = AgentHistoryBudget.trim(history, budgetTokens: 5_500, keepRecentMessages: 3)
+
+        XCTAssertEqual(result.messages.first?.role, .user,
+                       "裁剪后首条（非 system）必须是 user（Anthropic 对 assistant 开头直接 400）")
+        XCTAssertEqual(result.droppedMessages, 2, "u1 与落在起点的 assistant 应一起被丢弃")
+        XCTAssertEqual(result.messages.count, 4)
+    }
+
+    func test_trim_firstMessageAlignment_dropsToolResultsWithTheirAssistant() {
+        // 起点落在 assistant(toolCalls) 上时，其后连续的 tool 结果必须整组丢弃，
+        // 不能留下孤儿 result。
+        let big = String(repeating: "字", count: 1_500)
+        let history: [AgentMessage] = [
+            AgentMessage(role: .user, content: big),
+            AgentMessage(role: .assistant, content: big,
+                         toolCalls: [AgentToolCall(id: "tc0", name: "read_document", argumentsJSON: "{}")]),
+            AgentMessage(role: .tool, content: big, toolCallID: "tc0", toolName: "read_document"),
+            AgentMessage(role: .user, content: big),
+            AgentMessage(role: .assistant, content: big),
+        ]
+
+        // 总 ≈5_000（tool 结果先被占位 ≈-1_000），budget 3_500：裁掉 u1 后 ≈3_000 达标，
+        // 起点落在 assistant(toolCalls) 上 → 对齐把 assistant+tool 整组丢弃
+        let result = AgentHistoryBudget.trim(history, budgetTokens: 3_500, keepRecentMessages: 2)
+
+        XCTAssertEqual(result.messages.first?.role, .user)
+        XCTAssertEqual(result.droppedMessages, 3, "assistant(toolCalls) 与其 tool 结果应整组丢弃")
+        assertToolPairing(result.messages)
+    }
+
+    func test_trim_underBudget_historyStartingWithAssistant_alignedToUser() {
+        // 旧版本裁剪可能留下 assistant 开头的持久化历史：即使预算内也应先对齐再发出
+        var history: [AgentMessage] = [AgentMessage(role: .assistant, content: "stale answer")]
+        for i in 0..<9 { history.append(AgentMessage(role: .user, content: "question \(i)")) }
+
+        // keepRecent=8 → 保护区从 index 2 开始，stale assistant 落在可裁范围
+        let result = AgentHistoryBudget.trim(history, budgetTokens: 10_000, keepRecentMessages: 8)
+
+        XCTAssertEqual(result.messages.first?.role, .user, "assistant 开头的历史应被对齐到 user")
+        // 对齐是对旧数据的静默修正，不算预算裁剪——不触发「上下文超出预算」提示
+        XCTAssertFalse(result.didTrim)
+        XCTAssertEqual(result.droppedMessages, 0)
+    }
 }
 
 // MARK: - AgentRunner 预算裁剪集成测试

@@ -94,6 +94,56 @@ final class AgentRunnerStabilityTests: XCTestCase {
                       "未执行的工具调用应补合成含「中断」字样的错误结果，实际：\(synthetic?.content ?? "nil")")
     }
 
+    // MARK: - B14 工具抛 CancellationError → rethrow 走向收尾，不包装成 tool error
+
+    func test_toolThrowingCancellationError_notWrappedAsToolError() async {
+        // 取消信号若被无差别包装成 AgentToolResult(isError: true)，会变成一条误导性
+        // tool error 回灌历史并计入停滞指纹。应 rethrow：run 走向收尾，未应答的
+        // tool call 由 reconcileToolResults 补合成「中断」结果。
+        let backend = ScriptedBackend(script: [
+            .respond(AgentCompletionResponse(
+                text: "",
+                toolCalls: [AgentToolCall(id: "tc1", name: "write_document", argumentsJSON: "{}")],
+                finishReason: "tool_calls"
+            )),
+            .respond(AgentCompletionResponse(text: "不应到达", toolCalls: [], finishReason: "stop")),
+        ])
+        let runner = AgentRunner(maxSteps: 5, backendFactory: { _ in backend })
+        let tool = ThrowingTool(name: "write_document", error: CancellationError())
+
+        await runAndWait(runner, tools: [tool])
+
+        XCTAssertNil(runner.error, "取消不应被归类为 run 错误，实际：\(runner.error ?? "nil")")
+        XCTAssertEqual(backend.receivedMessages.count, 1, "取消后不应再发第二次后端请求")
+        let feedback = runner.finalMessages.first { $0.role == .tool && $0.toolCallID == "tc1" }
+        XCTAssertTrue(feedback?.content.contains("中断") == true,
+                      "未应答的 tool call 应补合成中断结果，实际：\(feedback?.content ?? "nil")")
+    }
+
+    func test_toolThrowingWrappedCancellationError_notWrappedAsToolError() async {
+        // 底层 cause 是 CancellationError 的包装错误（工具内部重新封装子任务错误）同样处理
+        let wrapped = NSError(domain: "ToolWrap", code: 1,
+                              userInfo: [NSUnderlyingErrorKey: CancellationError()])
+        let backend = ScriptedBackend(script: [
+            .respond(AgentCompletionResponse(
+                text: "",
+                toolCalls: [AgentToolCall(id: "tc1", name: "write_document", argumentsJSON: "{}")],
+                finishReason: "tool_calls"
+            )),
+            .respond(AgentCompletionResponse(text: "不应到达", toolCalls: [], finishReason: "stop")),
+        ])
+        let runner = AgentRunner(maxSteps: 5, backendFactory: { _ in backend })
+        let tool = ThrowingTool(name: "write_document", error: wrapped)
+
+        await runAndWait(runner, tools: [tool])
+
+        XCTAssertNil(runner.error, "包装后的取消也不应被归类为 run 错误，实际：\(runner.error ?? "nil")")
+        XCTAssertEqual(backend.receivedMessages.count, 1)
+        let feedback = runner.finalMessages.first { $0.role == .tool && $0.toolCallID == "tc1" }
+        XCTAssertTrue(feedback?.content.contains("中断") == true,
+                      "应补合成中断结果而非 tool error，实际：\(feedback?.content ?? "nil")")
+    }
+
     // MARK: - B9 非法参数 JSON → 短路：不执行工具、回灌解析失败
 
     func test_invalidArgumentsJSON_toolSkipped_parseErrorFedBack() async {
@@ -433,6 +483,21 @@ private final class RunnerSpyTool: AgentTool, @unchecked Sendable {
     func execute(arguments: [String: AnySendableValue], context: any AgentContextProtocol) async throws -> String {
         wasCalled = true
         return result
+    }
+}
+
+/// 执行时抛出固定错误的工具——用于验证 CancellationError 不被包装成 tool error。
+private final class ThrowingTool: AgentTool, @unchecked Sendable {
+    let spec: AgentToolSpec
+    private let error: Error
+
+    init(name: String, error: Error) {
+        self.spec  = AgentToolSpec(name: name, description: "Throwing tool: \(name)")
+        self.error = error
+    }
+
+    func execute(arguments: [String: AnySendableValue], context: any AgentContextProtocol) async throws -> String {
+        throw error
     }
 }
 

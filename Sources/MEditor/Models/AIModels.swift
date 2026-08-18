@@ -16,6 +16,9 @@ struct AISession: Identifiable, Codable, Sendable {
     var updatedAt: Date = .now
     /// 保存 AgentRunner 最终消息列表（含工具调用上下文），用于多轮对话时保留 tool context
     var agentHistory: [AgentMessage] = []
+    /// 输入框草稿（按会话独立保存，切换/新建会话不再丢失）。
+    /// 可选类型保证旧版 ai-sessions.json（无此字段）解码兼容。
+    var draft: String? = nil
 }
 
 // MARK: - Accent style

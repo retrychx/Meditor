@@ -170,7 +170,7 @@ public enum CommandSandbox {
         // 固定短语（如 "rm -rf /"、"git reset --hard"）本来假定用户/模型只用单个
         // 空格分隔参数，但 shell 允许任意数量空白（`rm  -rf  /`、用 tab 代替空格），
         // 之前逐字匹配会被这类写法绕过——这里统一规范化后再匹配，一次性覆盖。
-        let lower = normalizeWhitespace(trimmed)
+        let lower = normalizeCommand(trimmed)
 
         for rule in blockedRules where matches(rule, in: lower) {
             return .blocked(reason: "🚫 安全限制：\(rule.description)，该命令已被自动拒绝。\n命令：\(truncated(command))")
@@ -186,6 +186,25 @@ public enum CommandSandbox {
     /// 把命令中的连续空白（空格/tab/换行）压缩成单个空格，供风险规则匹配前统一处理。
     private static func normalizeWhitespace(_ s: String) -> String {
         s.replacingOccurrences(of: "[ \\t\\n]+", with: " ", options: .regularExpression)
+    }
+
+    /// 规则匹配前的命令规范化：在空白压缩之上再处理两种已知绕过写法。
+    /// 保持保守——宁可多拦（多拦只会多弹确认/多拒一条命令），不放过等价变体。
+    /// 注意：字符串匹配只是纵深防御的一层（可被 shell 语法进一步绕过），
+    /// 这里不做、也不试图做成完备的 shell 解析。
+    private static func normalizeCommand(_ s: String) -> String {
+        var out = normalizeWhitespace(s)
+        // 1) 去除反斜杠引用：shell 里 `\c` 等价于 `c`，`\curl` / `c\url` 这类
+        //    引用变体能让命令名绕过词边界匹配。直接删掉反斜杠再匹配——
+        //    只会让真实 token 更可见（保守方向），路径里的合法反斜杠（如 `\ `）
+        //    删除后不会凭空拼出新的命令 token。
+        out = out.replacingOccurrences(of: "\\", with: "")
+        // 2) 管道符后紧跟字母/数字时补空格：`echo x |bash` 与 `| bash` 等价，
+        //    无空格写法本来匹配不到规则表里的 "| bash"/"| sh"。只在 `|` 后是
+        //    字母/数字时插入，避免破坏 ":(){ :|:& };:" 这类含 `|:` 的 blocked 模式。
+        out = out.replacingOccurrences(of: #"\|(?=[a-z0-9])"#, with: "| ",
+                                       options: .regularExpression)
+        return out
     }
 
     /// 按规则的匹配方式判定是否命中。
@@ -233,6 +252,23 @@ public enum CommandSandbox {
 
     // MARK: - Cwd Validation
 
+    /// 解析路径中的符号链接，兼容目标尚不存在的场景。
+    /// `URL.resolvingSymlinksInPath()` 对不存在的路径会整体放弃解析（实测 macOS 14
+    /// 只对完整存在的路径解析中间 symlink），这里改为先向上找到最深的已存在祖先、
+    /// 解析它，再把剩余组件拼回去。校验 cwd / 写目标时 root 与 target 两侧都必须
+    /// 走这个口径，否则工作区内一个指向 ~/ 的 symlink 就能把路径引到工作区外。
+    public static func resolveSymlinks(_ url: URL) -> URL {
+        var base = url.standardizedFileURL
+        var suffix: [String] = []
+        while !FileManager.default.fileExists(atPath: base.path), base.path != "/" {
+            suffix.insert(base.lastPathComponent, at: 0)
+            base.deleteLastPathComponent()
+        }
+        var resolved = base.resolvingSymlinksInPath()
+        for component in suffix { resolved.appendPathComponent(component) }
+        return resolved
+    }
+
     /// 校验 cwd 是否在 workspaceRoot 内。
     ///
     /// - Parameters:
@@ -246,8 +282,11 @@ public enum CommandSandbox {
             return .allowed(resolved: trimmed.isEmpty ? "" : trimmed)
         }
 
-        let canonical     = URL(fileURLWithPath: trimmed).standardizedFileURL.path
-        let rootCanonical = URL(fileURLWithPath: root).standardizedFileURL.path
+        // 两侧都先解析符号链接再比较：standardizedFileURL 只规范化路径、不解析
+        // symlink，工作区内一个指向 ~/ 的 symlink 就能把 cwd 引到工作区外。
+        // （macOS 上 /tmp 本身是 /private/tmp 的 symlink，root 侧也必须解析。）
+        let canonical     = resolveSymlinks(URL(fileURLWithPath: trimmed)).path
+        let rootCanonical = resolveSymlinks(URL(fileURLWithPath: root)).path
 
         // 路径穿越检测（规范化后仍在 root 内则允许）
         if trimmed.contains("../") || trimmed.hasSuffix("/..") || trimmed == ".." {

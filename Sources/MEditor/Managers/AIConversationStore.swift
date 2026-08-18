@@ -66,8 +66,26 @@ final class AIConversation {
 
     private var sessions: [AISession] = []
     private(set) var activeID: UUID
-    var input: String = ""
+    /// 输入框草稿：按会话独立保存（写 AISession.draft），切换/新建会话不再丢失，
+    /// 并随 sessions 一起防抖持久化。空串统一存 nil，保持 json 干净。
+    var input: String {
+        get {
+            guard sessions.indices.contains(activeIndex) else { return "" }
+            return sessions[activeIndex].draft ?? ""
+        }
+        set {
+            guard sessions.indices.contains(activeIndex) else { return }
+            sessions[activeIndex].draft = newValue.isEmpty ? nil : newValue
+            persist()
+        }
+    }
     var isResponding = false
+    /// 正在响应的会话 id（nil = 无在途 run）。isResponding 是全局单 run 槽位标记；
+    /// 流式 UI（steps 面板、流式 reply、占位排除、草稿输入态）只在「发起会话」里显示，
+    /// 切到其他会话时不应把另一会话的进行态当成自己的。
+    var respondingSessionID: UUID?
+    /// 当前活跃会话是否正是发起 run 的会话。
+    var isActiveSessionResponding: Bool { isResponding && respondingSessionID == activeID }
     var showAllSuggestions = false
 
     /// Maximum messages per session. When exceeded, oldest messages are dropped
@@ -238,18 +256,25 @@ final class AIConversation {
 
     /// 廉价失效指纹：只混合条数与文本长度，不读字符内容（流式期间每条 chunk 改变
     /// 最后一条消息的长度，指纹随之变化，缓存正确失效）。
+    /// agentHistory 还要混入 toolCalls 参数 JSON 的长度——参数体积计入估算（见下），
+    /// 长度不进指纹会导致参数变化时缓存不失效。
     private func tokenCountFingerprinter() -> Int {
         var hasher = Hasher()
         hasher.combine(messages.count)
         for m in messages { hasher.combine(m.text.count) }
         hasher.combine(agentHistory.count)
-        for m in agentHistory { hasher.combine(m.content.count) }
+        for m in agentHistory {
+            hasher.combine(m.content.count)
+            for call in m.toolCalls ?? [] { hasher.combine(call.argumentsJSONForReplay.count) }
+        }
         return hasher.finalize()
     }
 
     /// Rough token estimate for the current conversation.
     /// 除 UI 消息文本外，还纳入 agentHistory（工具调用/结果的原始内容，单条可达 64KB）——
     /// 这才是真正发给模型的 agentMessages 的主要体积来源，否则触发时机会严重滞后于真实占用。
+    /// assistant 消息的 toolCalls 参数 JSON 也计入（write_document 全量写入可达数万字符），
+    /// 与 AgentHistoryBudget 的裁剪口径一致。
     /// Used to surface a context-limit warning before the API rejects the request.
     ///
     /// 结果按指纹缓存：面板 header 的 isApproachingContextLimit 每次 body 求值都会读它，
@@ -258,7 +283,7 @@ final class AIConversation {
         let fingerprint = tokenCountFingerprinter()
         if fingerprint == tokenCountFingerprint { return cachedTokenCount }
         let value = messages.reduce(0) { $0 + Self.estimateTokens($1.text) }
-            + agentHistory.reduce(0) { $0 + Self.estimateTokens($1.content) }
+            + agentHistory.reduce(0) { $0 + $1.estimatedTokensForBudget }
         tokenCountFingerprint = fingerprint
         cachedTokenCount = value
         return value
@@ -322,6 +347,12 @@ final class AIConversation {
                 // tool 结果必须跟在对应 assistant(toolCalls) 之后：起点落在 tool 消息上
                 // 则继续后移，把它连同前面的 assistant(toolCalls) 一起整轮丢弃
                 while start < tail.count, tail[start].role == .tool { start += 1 }
+                // 起点还必须落在 user 上：assistant 开头的历史会被 Anthropic 直接 400。
+                // assistant(toolCalls) 与其后连续的 tool 结果整组丢弃，保持配对完整。
+                while start < tail.count, tail[start].role != .user {
+                    start += 1
+                    while start < tail.count, tail[start].role == .tool { start += 1 }
+                }
                 tail = Array(tail[start...])
             }
             sessions[activeIndex].agentHistory = head + tail
@@ -359,13 +390,14 @@ final class AIConversation {
         pendingWrite?.reject()
         pendingWrite = nil
         isResponding = false
+        respondingSessionID = nil
         persist()
     }
 
     /// Start a fresh session. Reuses the current one if it's already empty.
+    /// 不取消进行中的 run：回调按 sessionID 定向写回，旧会话的流式在后台继续，
+    /// 用户「边等回答边开新对话」不会掐断任务。
     func newSession() {
-        cancelStreaming()
-        input = ""
         if sessions.indices.contains(activeIndex), sessions[activeIndex].messages.isEmpty {
             return
         }
@@ -375,11 +407,11 @@ final class AIConversation {
         persist()
     }
 
+    /// 切换到历史会话。草稿随 activeID 切换自动跟随（见 input 计算属性）；
+    /// 不取消进行中的 run（理由同 newSession）。
     func activate(_ id: UUID) {
         guard sessions.contains(where: { $0.id == id }) else { return }
-        cancelStreaming()
         activeID = id
-        input = ""
     }
 
     func delete(_ id: UUID) {

@@ -24,14 +24,16 @@ extension AIAssistantPanel {
                     let isStreamingReply = convo.isResponding && message.id == convo.messages.last?.id
                     Group {
                         if isStreamingReply {
-                            // 流式进行中降级为纯文本渲染：整条 Markdown 随每个 chunk
-                            // （约 50ms 一次）重解析，回复越长成本越高；纯文本近乎零成本。
-                            // 完成后 isResponding 复位，自动切回 MarkdownText 渲染。
-                            Text(message.text)
-                                .font(.system(size: 13))
-                                .foregroundStyle(theme.craftPrimary)
-                                .lineSpacing(4)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            // 流式期间也走 Markdown 渲染，但节流重解析（每 400ms），
+                            // 兼顾成本与观感：相比「流式纯文本 → 完成瞬间切 Markdown」，
+                            // 不再有整段重排的布局跳动（这是此前纯文本降级的代价）。
+                            ThrottledMarkdownText(
+                                text: message.text,
+                                textColor: theme.craftPrimary,
+                                secondaryColor: theme.craftSecondary,
+                                codeBackground: theme.isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.045),
+                                accent: Color.appAccent
+                            )
                         } else {
                             MarkdownText(
                                 markdown: message.text,
@@ -94,5 +96,42 @@ private struct AIMessageAction: View {
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
         .help(title)
+    }
+}
+
+// MARK: - Throttled markdown (streaming)
+
+/// 流式期间的节流 Markdown 渲染：chunk 以约 50ms 频率到达，全量重解析太贵，
+/// 这里每 400ms 才同步一次最新文本给 MarkdownText。流式结束后外层立刻切回
+/// 非节流渲染，最终内容无延迟。
+private struct ThrottledMarkdownText: View {
+    let text: String
+    let textColor: Color
+    let secondaryColor: Color
+    let codeBackground: Color
+    let accent: Color
+
+    private let interval: TimeInterval = 0.4
+    @State private var rendered: String = ""
+    @State private var syncTask: Task<Void, Never>?
+
+    var body: some View {
+        MarkdownText(
+            markdown: rendered,
+            textColor: textColor,
+            secondaryColor: secondaryColor,
+            codeBackground: codeBackground,
+            accent: accent
+        )
+        .onAppear { rendered = text }
+        .onChange(of: text) { _, newValue in
+            syncTask?.cancel()
+            syncTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                rendered = newValue
+            }
+        }
+        .onDisappear { syncTask?.cancel() }
     }
 }

@@ -66,9 +66,20 @@ extension AIAssistantPanel {
 
                 Spacer(minLength: 4)
 
+                // run 归属另一会话：不误显 Stop（点了会掐断别处的 run），禁用并说明
+                let respondingElsewhere = convo.isResponding && !convo.isActiveSessionResponding
+                // ⌘Return 冲突规避：确认条挂起期间把快捷键让给确认条的「允许执行」
+                let shortcutEnabled = !respondingElsewhere
+                    && convo.pendingCommand == nil && convo.pendingWrite == nil
+
                 Button(action: { convo.isResponding ? convo.cancelStreaming() : send() }) {
                     HStack(spacing: 5) {
-                        if convo.isResponding {
+                        if respondingElsewhere {
+                            Image(systemName: "hourglass")
+                                .font(.system(size: 11, weight: .bold))
+                            Text(L("ai.respondingElsewhere"))
+                                .font(.system(size: 12.5, weight: .semibold))
+                        } else if convo.isResponding {
                             Image(systemName: "stop.fill")
                                 .font(.system(size: 11, weight: .bold))
                             Text(L("ai.stop"))
@@ -80,12 +91,14 @@ extension AIAssistantPanel {
                                 .font(.system(size: 11, weight: .bold))
                         }
                     }
-                    .foregroundStyle(convo.isResponding ? Color.white : (canSend ? accent.onFill(theme) : Color.white.opacity(0.9)))
+                    .foregroundStyle(convo.isResponding && !respondingElsewhere ? Color.white : (canSend ? accent.onFill(theme) : Color.white.opacity(0.9)))
                     .padding(.horizontal, 13)
                     .padding(.vertical, 7)
                     .background(
                         Capsule(style: .continuous)
-                            .fill(convo.isResponding
+                            .fill(respondingElsewhere
+                                  ? AnyShapeStyle(Color.gray.opacity(0.32))
+                                  : convo.isResponding
                                   ? AnyShapeStyle(Color(hex: "EF4444"))
                                   : (canSend ? AnyShapeStyle(accent.fill(theme))
                                              : AnyShapeStyle(Color.gray.opacity(0.32))))
@@ -93,8 +106,8 @@ extension AIAssistantPanel {
                     .shadow(color: accent.fill(theme).opacity(canSend && !convo.isResponding ? 0.28 : 0), radius: 7, x: 0, y: 3)
                 }
                 .buttonStyle(.plain)
-                .keyboardShortcut(.return, modifiers: [.command])
-                .disabled(!canSend && !convo.isResponding)
+                .applyCommandReturnShortcut(enabled: shortcutEnabled)
+                .disabled(respondingElsewhere || (!canSend && !convo.isResponding))
                 .animation(DS.Motion.fast, value: canSend)
                 .animation(DS.Motion.fast, value: convo.isResponding)
             }
@@ -211,5 +224,19 @@ extension AIAssistantPanel {
 
     private var canSend: Bool {
         !convo.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !convo.isResponding
+    }
+}
+
+// MARK: - Conditional ⌘Return
+
+private extension View {
+    /// 条件挂载 ⌘Return 快捷键：确认条挂起 / run 归属其他会话时让给对应的界面语义。
+    @ViewBuilder
+    func applyCommandReturnShortcut(enabled: Bool) -> some View {
+        if enabled {
+            self.keyboardShortcut(.return, modifiers: [.command])
+        } else {
+            self
+        }
     }
 }

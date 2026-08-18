@@ -12,6 +12,7 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
     var lastAcknowledgedContent: String = ""
     var lastAcknowledgedRevision: Int = 0
     var lastReplaceNonce: Int = 0
+    var lastWriteBackNonce: Int = 0
 
     weak var textView: NSTextView? {
         didSet {
@@ -102,12 +103,32 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
 
     // MARK: - NSTextViewDelegate
 
+    /// AI 写回前冲刷在途击键：击键后的预览防抖 Timer 捕获的是当时的旧文本，
+    /// 若写回落在防抖窗口内，Timer 触发会把「不含写回」的旧文本回推给
+    /// updateTabContent（两边 revision 恰好相等，updateNSView 不纠正），
+    /// 导致 tab.content 回退、AI 改写静默丢失。这里作废旧 Timer 并回滚
+    /// revision 预测增量——击键内容已在 textView 里，由写回自己的
+    /// onContentChange 一并携带，不会丢。
+    func flushPendingKeystroke() {
+        debounceTimer?.invalidate()
+        debounceTimer = nil
+        if localRevisionPredictionActive {
+            localRevisionPredictionActive = false
+            lastAcknowledgedRevision &-= 1
+        }
+    }
+
     func textView(_ textView: NSTextView, shouldChangeTextIn range: NSRange, replacementString text: String?) -> Bool {
         guard !isProgrammaticChange else { return true }
         if slashHandler.isApplyingCommand { return true }
 
         if let text, (text == " " || text == "\n"), range.length == 0 {
             if slashHandler.isMenuVisible {
+                // /ask 的空格是 query 分隔符（「/ask 问题」），放行插入不提交命令；
+                // Enter 提交路径不变
+                if text == " ", slashHandler.isAskContext(in: textView, at: range.location) {
+                    return true
+                }
                 return !slashHandler.commitSelection()
             }
             if slashHandler.applyIfNeeded(in: textView, at: range.location) {

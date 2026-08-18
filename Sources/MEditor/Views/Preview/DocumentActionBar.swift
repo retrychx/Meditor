@@ -31,7 +31,7 @@ struct DocumentActionBar: View {
                 modified: formatted,
                 mode: .markdownVsMarkdown,
                 onFinalize: { merged in
-                    state.updateTabContent(tabID, content: merged)
+                    state.applyAIWriteBack(tabID, content: merged)
                 }
             )
         } else {

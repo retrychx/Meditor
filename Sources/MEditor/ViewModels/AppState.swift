@@ -119,9 +119,22 @@ final class AppState {
 
     var editorReplaceText: String { aiUI.editorReplaceText }
     var editorReplaceNonce: Int { aiUI.editorReplaceNonce }
+    var editorWriteBackContent: String { aiUI.editorWriteBackContent }
+    var editorWriteBackNonce: Int { aiUI.editorWriteBackNonce }
     var pendingReplaceRange: NSRange? {
         get { aiUI.pendingReplaceRange }
         set { aiUI.pendingReplaceRange = newValue }
+    }
+
+    /// AI 写回的统一入口：编辑器挂载且目标是当前 tab 时走编辑器可撤销写回
+    /// （最小化替换，保留滚动位置/光标/undo 链）；否则退回整体替换路径
+    /// （预览独占等场景，updateTabContent 内部已处理预览同步与防抖保存）。
+    func applyAIWriteBack(_ tabID: UUID, content: String) {
+        if tabID == selectedTab?.id, isEditorMounted {
+            aiUI.requestWriteBack(content)
+        } else {
+            updateTabContent(tabID, content: content)
+        }
     }
 
     func insertIntoEditor(_ text: String) {

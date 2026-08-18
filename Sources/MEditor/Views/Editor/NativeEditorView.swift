@@ -47,6 +47,10 @@ struct NativeEditorView: NSViewRepresentable {
     var replaceRequestID: Int = 0
     /// The saved NSRange to replace (nil = use current selection).
     var pendingReplaceRange: NSRange? = nil
+    /// AI diff 审阅接受后的整文写回内容（最小化可撤销替换，保留滚动/光标/undo）。
+    var writeBackContent: String = ""
+    /// Monotonic token so the same write-back can be requested more than once.
+    var writeBackNonce: Int = 0
     /// Theme drives the text view's background and foreground colors so the
     /// editor pane visually matches the rest of the app.
     var theme: PreviewTheme = .github
@@ -239,6 +243,87 @@ struct NativeEditorView: NSViewRepresentable {
                 }
             }
         }
+
+        // AI diff 审阅接受后的整文写回：公共前后缀最小化替换，走
+        // shouldChangeText/didChangeText 注册 undo（AI 改写可 ⌘Z 一步撤回），
+        // 并保留写回前的光标与滚动位置——不做 textView.string 整体替换。
+        if writeBackNonce != context.coordinator.lastWriteBackNonce {
+            context.coordinator.lastWriteBackNonce = writeBackNonce
+            if writeBackNonce > 0 {
+                performUndoableWriteBack(textView, scrollView: scrollView,
+                                         newContent: writeBackContent, context: context)
+            }
+        }
+    }
+
+    /// 整文写回的最小化可撤销实现：只替换公共前后缀之间的差异区间。
+    private func performUndoableWriteBack(_ textView: NSTextView, scrollView: NSScrollView,
+                                          newContent merged: String, context: Context) {
+        let current = textView.string
+        guard merged != current else { return }
+
+        let curNS = current as NSString
+        let newNS = merged as NSString
+        var prefix = 0
+        let maxPrefix = min(curNS.length, newNS.length)
+        while prefix < maxPrefix, curNS.character(at: prefix) == newNS.character(at: prefix) { prefix += 1 }
+        var suffix = 0
+        let maxSuffix = min(curNS.length - prefix, newNS.length - prefix)
+        while suffix < maxSuffix,
+              curNS.character(at: curNS.length - 1 - suffix) == newNS.character(at: newNS.length - 1 - suffix) { suffix += 1 }
+        // 边界不能劈开 surrogate pair（emoji 等），否则 replaceCharacters 会产出非法串
+        if prefix > 0, prefix < maxPrefix,
+           UTF16.isLeadSurrogate(curNS.character(at: prefix - 1)),
+           UTF16.isTrailSurrogate(curNS.character(at: prefix)) { prefix -= 1 }
+        let suffixBoundary = curNS.length - suffix
+        if suffix > 0, suffixBoundary > 0, suffixBoundary < curNS.length,
+           UTF16.isLeadSurrogate(curNS.character(at: suffixBoundary - 1)),
+           UTF16.isTrailSurrogate(curNS.character(at: suffixBoundary)) { suffix -= 1 }
+
+        let range = NSRange(location: prefix, length: curNS.length - prefix - suffix)
+        let replacement = newNS.substring(with: NSRange(location: prefix, length: newNS.length - prefix - suffix))
+
+        let oldCaret = textView.selectedRange().location
+        let savedOrigin = scrollView.contentView.bounds.origin
+
+        // 冲刷在途击键的防抖 Timer：否则它会把写回前的旧文本回推给 tab.content
+        context.coordinator.flushPendingKeystroke()
+
+        context.coordinator.isProgrammaticChange = true
+        // shouldChangeText 被拒时不消费本次写回：直接返回，不按成功路径上报
+        guard textView.shouldChangeText(in: range, replacementString: replacement) else {
+            context.coordinator.isProgrammaticChange = false
+            return
+        }
+        textView.textStorage?.replaceCharacters(in: range, with: replacement)
+        textView.didChangeText()
+        context.coordinator.isProgrammaticChange = false
+
+        let newText = textView.string
+        // 光标：替换区间之前的保持不动，之后的平移，区间内的落到替换文本末尾
+        let delta = (replacement as NSString).length - range.length
+        let caret: Int
+        if oldCaret <= range.location {
+            caret = oldCaret
+        } else if oldCaret >= NSMaxRange(range) {
+            caret = oldCaret + delta
+        } else {
+            caret = range.location + (replacement as NSString).length
+        }
+        textView.setSelectedRange(NSRange(location: min(caret, (newText as NSString).length), length: 0))
+
+        // 滚动：写回前视口原样保留（AppKit 自动夹取到有效范围）
+        textView.layoutManager?.ensureLayout(for: textView.textContainer!)
+        scrollView.contentView.scroll(to: savedOrigin)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+
+        context.coordinator.lastAcknowledgedContent = newText
+        // 与 onContentChange → updateTabContent 的 contentRevision 递增保持同步，
+        // 避免紧接着的 updateNSView 把刚写入的内容再整体替换一遍
+        context.coordinator.lastAcknowledgedRevision &+= 1
+        context.coordinator.highlighter.rebuildLineOffsets(for: newText)
+        context.coordinator.onContentChange(newText)
+        context.coordinator.highlighter.scheduleHighlight()
     }
 }
 

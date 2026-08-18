@@ -167,4 +167,46 @@ final class AIConversationTruncationTests: XCTestCase {
         XCTAssertEqual(after.map(\.content), history.map(\.content))
         XCTAssertEqual(after.compactMap { $0.toolCallID }, history.compactMap { $0.toolCallID })
     }
+
+    func test_truncateIfOverLimit_firstTailMessage_isUser() {
+        let conv = AIConversation()
+        // 11 轮工具对话 + 末尾一条 assistant 最终回复：tail = 34 条，
+        // keepRecentPairs=3（totalPairs=6）→ 朴素起点 28 落在 round9 的 assistant 上。
+        // 起点对齐应把该 assistant(toolCalls) 与其 tool 结果整组丢弃，落到 round10 的 user。
+        let bigToolContent = String(repeating: "测", count: 50_000)
+        var history: [AgentMessage] = [AgentMessage(role: .system, content: "system prompt")]
+        for i in 0..<11 { history.append(contentsOf: makeToolRound(i, toolContent: bigToolContent)) }
+        history.append(AgentMessage(role: .assistant, content: "最终回复"))
+        conv.agentHistory = history
+
+        XCTAssertTrue(conv.isApproachingContextLimit, "构造的历史必须触发超限")
+        XCTAssertTrue(conv.truncateIfOverLimit(keepRecentPairs: 3))
+
+        let tail = Array(conv.agentHistory.dropFirst())   // 去掉 system
+        XCTAssertEqual(tail.first?.role, .user,
+                       "裁剪后首条（非 system）必须是 user（Anthropic 对 assistant 开头直接 400）")
+        XCTAssertEqual(tail.count, 4, "应保留 round10 一整轮 + 末尾 assistant 回复")
+        XCTAssertEqual(tail.flatMap { $0.toolCalls ?? [] }.map(\.id), ["tc10"])
+        // 配对完整：无孤儿 tool result
+        let callIDs = tail.flatMap { $0.toolCalls ?? [] }.map(\.id)
+        let resultIDs = tail.compactMap { $0.role == .tool ? $0.toolCallID : nil }
+        XCTAssertEqual(Set(callIDs), Set(resultIDs))
+    }
+
+    func test_estimatedTokenCount_includesToolCallArguments() {
+        let conv = AIConversation()
+        // assistant 的 toolCalls 参数（write_document 全量写入）可达数万字符：
+        // 只算 content 时估算远低于真实占用，128K 横幅/截断触发时机严重滞后。
+        let bigArgs = #"{"name":"doc.md","content":""# + String(repeating: "文", count: 30_000) + #""}"#
+        conv.agentHistory = [
+            AgentMessage(role: .user, content: "write"),
+            AgentMessage(role: .assistant, content: "",
+                         toolCalls: [AgentToolCall(id: "tc0", name: "write_document", argumentsJSON: bigArgs)]),
+            AgentMessage(role: .tool, content: "ok", toolCallID: "tc0", toolName: "write_document"),
+        ]
+
+        let contentOnly = conv.agentHistory.reduce(0) { $0 + AIConversation.estimateTokens($1.content) }
+        XCTAssertGreaterThan(conv.estimatedTokenCount, contentOnly + 15_000,
+                             "toolCalls 参数 JSON 应计入 token 估算（30_000 CJK 字符 ≈ 20_000 token）")
+    }
 }

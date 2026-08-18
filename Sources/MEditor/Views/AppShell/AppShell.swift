@@ -59,8 +59,41 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                         case .document:
                             ZStack {
+                                // 编辑器/预览常驻挂载——AI diff 审阅只是盖在上层的 overlay。
+                                // 若随审阅切换卸载编辑器，NSTextView 会被销毁，
+                                // 滚动位置/光标/undo 链全部丢失（写回也没法走可撤销路径）。
+                                HStack(spacing: 0) {
+                                    if workspaceUI.showsEditor {
+                                        // 专注模式：iA Writer 风格居中窄列（仅独占编辑器时）
+                                        if workspaceUI.isFocusMode && !workspaceUI.showsPreview {
+                                            Spacer(minLength: 0)
+                                            editor().frame(maxWidth: 740)
+                                            Spacer(minLength: 0)
+                                        } else {
+                                            editor().frame(maxWidth: .infinity)
+                                        }
+                                    }
+
+                                    if workspaceUI.showsEditor && workspaceUI.showsPreview {
+                                        theme.separator
+                                            .opacity(theme.isDark ? 0.36 : 0.2)
+                                            .frame(width: 1)
+                                    }
+
+                                    if workspaceUI.showsPreview {
+                                        preview()
+                                            .frame(maxWidth: .infinity)
+                                    }
+
+                                    if !workspaceUI.hasVisibleWorkspacePane {
+                                        theme.windowBackground
+                                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
                                 if state.showingDiffReview {
-                                    // AI diff 审阅：接管整个文档区域，动画过渡
+                                    // AI diff 审阅：覆盖整个文档区域，动画过渡
                                     DiffReviewOverlay()
                                         .environment(state)
                                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -70,37 +103,9 @@ struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {
                                                 removal:   .opacity
                                             )
                                         )
-                                } else {
-                                    HStack(spacing: 0) {
-                                        if workspaceUI.showsEditor {
-                                            // 专注模式：iA Writer 风格居中窄列（仅独占编辑器时）
-                                            if workspaceUI.isFocusMode && !workspaceUI.showsPreview {
-                                                Spacer(minLength: 0)
-                                                editor().frame(maxWidth: 740)
-                                                Spacer(minLength: 0)
-                                            } else {
-                                                editor().frame(maxWidth: .infinity)
-                                            }
-                                        }
-
-                                        if workspaceUI.showsEditor && workspaceUI.showsPreview {
-                                            theme.separator
-                                                .opacity(theme.isDark ? 0.36 : 0.2)
-                                                .frame(width: 1)
-                                        }
-
-                                        if workspaceUI.showsPreview {
-                                            preview()
-                                                .frame(maxWidth: .infinity)
-                                        }
-
-                                        if !workspaceUI.hasVisibleWorkspacePane {
-                                            theme.windowBackground
-                                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                        }
-                                    }
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                    .transition(.opacity)
+                                        // 编辑器常驻挂载但审阅期间不可见：逼出键盘焦点，
+                                        // 否则击键/⌘Z 会隐形写到底层文档
+                                        .onAppear { NSApp.keyWindow?.makeFirstResponder(nil) }
                                 }
                             }
                             .animation(.spring(response: 0.35, dampingFraction: 0.88), value: state.showingDiffReview)

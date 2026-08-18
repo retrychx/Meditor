@@ -22,6 +22,7 @@ final class AIChatCoordinator {
     func runCompletion(mentionTokens: [AtMentionToken] = []) {
         guard convo.messages.last?.role == .user else { return }
         convo.isResponding = true
+        convo.respondingSessionID = convo.activeID
 
         let config  = AIConfig.current(settings, scene: .agent)
         // run 级文件快照（一键回滚）：随 run 创建，经 context 写路径填充，
@@ -118,6 +119,9 @@ final class AIChatCoordinator {
             if result.evictedToolResults > 0 {
                 parts.append("\(result.evictedToolResults) 条早期工具读取内容已省略（如仍需可用工具重新读取）")
             }
+            if result.evictedToolCallArgs > 0 {
+                parts.append("\(result.evictedToolCallArgs) 条早期工具调用参数已省略（如仍需可用工具重新读取）")
+            }
             if result.droppedMessages > 0 {
                 parts.append("最早的部分对话已裁剪")
             }
@@ -183,6 +187,7 @@ final class AIChatCoordinator {
             // 旧 run 迟到的收尾不得清掉新 run 的进行状态
             if let runner, convo.agentRunner === runner {
                 convo.isResponding = false
+                convo.respondingSessionID = nil
                 convo.agentRunner  = nil
             }
             convo.persist()

@@ -33,6 +33,8 @@ struct EditorView: View {
                         replaceText: state.editorReplaceText,
                         replaceRequestID: state.editorReplaceNonce,
                         pendingReplaceRange: state.pendingReplaceRange,
+                        writeBackContent: state.editorWriteBackContent,
+                        writeBackNonce: state.editorWriteBackNonce,
                         theme: state.themeStore.current,
                         editorFontSize: settings.editorFontSize,
                         editorFont: EditorFont(rawValue: settings.editorFontName) ?? .system
@@ -165,6 +167,8 @@ private struct EditorViewContent: View, Equatable {
     let replaceText: String
     let replaceRequestID: Int
     let pendingReplaceRange: NSRange?
+    let writeBackContent: String
+    let writeBackNonce: Int
     let theme: PreviewTheme
     let editorFontSize: Int
     let editorFont: EditorFont
@@ -180,6 +184,7 @@ private struct EditorViewContent: View, Equatable {
         lhs.scrollRequestID == rhs.scrollRequestID &&
         lhs.insertRequestID == rhs.insertRequestID &&
         lhs.replaceRequestID == rhs.replaceRequestID &&
+        lhs.writeBackNonce == rhs.writeBackNonce &&
         lhs.theme == rhs.theme &&
         lhs.language == rhs.language &&
         lhs.editorFontSize == rhs.editorFontSize &&
@@ -231,6 +236,8 @@ private struct EditorViewContent: View, Equatable {
             replaceText: replaceText,
             replaceRequestID: replaceRequestID,
             pendingReplaceRange: pendingReplaceRange,
+            writeBackContent: writeBackContent,
+            writeBackNonce: writeBackNonce,
             theme: theme,
             editorFontSize: editorFontSize,
             editorFont: editorFont

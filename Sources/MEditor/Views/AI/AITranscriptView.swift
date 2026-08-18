@@ -25,8 +25,9 @@ extension AIAssistantPanel {
                             }
                         }
 
-                    if convo.isResponding {
+                    if convo.isActiveSessionResponding {
                         // 当前轮 Agent steps —— 放在 reply 之上（过程在上、结论在下，减少抖动）
+                        //（仅发起会话显示；切到其他会话时不展示别处的进行态）
                         if let runner = convo.agentRunner, !runner.steps.isEmpty {
                             agentStepsPanel(runner)
                         }
@@ -34,7 +35,7 @@ extension AIAssistantPanel {
                         // 完成后：展示历史步骤（Runner 已 nil，但 state 保留）
                         agentStepsPanelFromState(lastState)
                     }
-                    if convo.isResponding {
+                    if convo.isActiveSessionResponding {
                         // 当前轮 reply（在 steps 之下流式增长）
                         if let last = convo.messages.last,
                            last.role == .assistant, !last.text.isEmpty {
@@ -145,8 +146,9 @@ extension AIAssistantPanel {
     }
 
     /// 响应中排除最后一条 reply 占位（交由 transcript 单独渲染，使 steps 能置于其上）。
+    /// 仅发起会话排除——切到其他会话时，那里的已完成回复不是流式占位，不能 drop。
     private var displayMessages: [AIChatMessage] {
-        if convo.isResponding, convo.messages.last?.role == .assistant {
+        if convo.isActiveSessionResponding, convo.messages.last?.role == .assistant {
             return Array(convo.messages.dropLast())
         }
         return convo.messages

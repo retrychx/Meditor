@@ -225,10 +225,10 @@ private enum PreviewInlineEditFlow {
             // token 失效（dismiss / 新一轮流式）时 commit 被丢弃，lastGeneratedText 也不写回
             let committed = state.diffReview.commitStreamWithModified(modified, generation: streamGen) { merged in
                 if let tab = state.selectedTab {
-                    // 走 updateTabContent：同步预览 + 标 isModified（否则防抖保存会漏掉），
+                    // 统一走 applyAIWriteBack：编辑器挂载时可撤销最小化替换，
+                    // 否则退回整体替换；内部已处理预览同步与防抖保存，
                     // 预览重渲染后 flashPreviewChange 的脉冲才能落到新 DOM 上。
-                    state.updateTabContent(tab.id, content: merged)
-                    state.scheduleDebounceSave()
+                    state.applyAIWriteBack(tab.id, content: merged)
                 }
                 // sourceRange 基于触发时的快照字符串；重定位合并后 merged 已是另一个
                 // 字符串，过期索引用上去是越界风险。改为在 merged 中按 AI 生成文本

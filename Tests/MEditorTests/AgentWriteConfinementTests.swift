@@ -146,6 +146,36 @@ final class AgentWriteConfinementTests: XCTestCase {
             }
         }
     }
+
+    // MARK: symlink 逃逸
+
+    func testWriteFileSymlinkEscapeRejected() throws {
+        // 工作区内的 symlink → 工作区外目录：standardizedFileURL 不解析 symlink，
+        // 修复前能把写目标引到工作区外（如指向 ~ 的 symlink）。
+        let link = rootURL.appendingPathComponent("link")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: outsideURL)
+        let target = outsideURL.appendingPathComponent("escape.md")
+
+        XCTAssertThrowsError(try ctx.writeFile(name: "link/escape.md", content: "evil")) { error in
+            guard case AgentContextError.pathOutsideWorkspace = error else {
+                return XCTFail("期望 pathOutsideWorkspace，实际 \(error)")
+            }
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target.path),
+                       "经 symlink 逃逸的写入不应落盘")
+    }
+
+    func testWriteFileSymlinkInsideWorkspaceAllowed() throws {
+        // 对照：symlink 指向工作区内部目录时仍允许
+        let inner = rootURL.appendingPathComponent("inner")
+        try FileManager.default.createDirectory(at: inner, withIntermediateDirectories: true)
+        let link = rootURL.appendingPathComponent("inner-link")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: inner)
+
+        let url = try ctx.writeFile(name: "inner-link/ok.md", content: "fine")
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "fine")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: inner.appendingPathComponent("ok.md").path))
+    }
 }
 
 // MARK: - async 断言辅助
