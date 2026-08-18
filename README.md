@@ -179,8 +179,6 @@ MEditor/
 
 ## 🗺 Roadmap
 
-Sequenced by [`plans/2026-08-18-agent-workstation-plan.md`](plans/2026-08-18-agent-workstation-plan.md).
-
 **Delivered**
 - [x] Real Agent: 14 tools, multi-turn loop, three backends (OpenAI-compatible / Anthropic / Claude CLI), BYOK
 - [x] Agent hardening: write confirmation, risk-tiered sandbox, context budget, stall detection, parallel read-only tools, usage display

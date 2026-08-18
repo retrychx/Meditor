@@ -1,4 +1,0 @@
-# metric_direction: higher_is_better
-iteration	timestamp	commit	metric	delta	guard	guard-metric	status	description
-0	2025-05-27T22:34:00	cf1e837	31	0.0	pass	-	baseline	initial state
-1	2025-05-27T22:42:00	see-below	40	+9	pass	-	keep	add protocol abstractions for services

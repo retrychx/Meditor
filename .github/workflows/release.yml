@@ -23,6 +23,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # 生成更新日志需要完整 tag 历史（git log 上一 tag..当前 tag）
+          fetch-depth: 0
 
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
@@ -60,6 +63,18 @@ jobs:
           base = os.environ['UPDATE_BASE']
           length = os.path.getsize(f'MEditor-{tag}.zip')
           pubdate = datetime.datetime.now(datetime.timezone.utc).strftime('%a, %d %b %Y %H:%M:%S +0000')
+          # 更新日志：上一个 tag 到当前 tag 的提交标题，过滤 chore/merge 噪音
+          import html as htmllib
+          prev = subprocess.run(['git', 'describe', '--tags', '--abbrev=0', f'{tag}^'],
+                                capture_output=True, text=True).stdout.strip()
+          rng = f'{prev}..{tag}' if prev else tag
+          log = subprocess.run(['git', 'log', '--pretty=%s', '--no-merges', rng],
+                               capture_output=True, text=True).stdout
+          lines = [l for l in log.splitlines()
+                   if l.strip() and not l.startswith(('chore', 'Merge'))][:20]
+          items = ''.join(f'<li>{htmllib.escape(l)}</li>' for l in lines)
+          description = f'<ul>{items}</ul>' if items else ''
+          desc_xml = f'<description><![CDATA[{description}]]></description>' if description else ''
           xml = f'''<?xml version="1.0" encoding="utf-8"?>
           <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
             <channel>
@@ -69,6 +84,7 @@ jobs:
                 <sparkle:shortVersionString>{version}</sparkle:shortVersionString>
                 <sparkle:version>{build}</sparkle:version>
                 <pubDate>{pubdate}</pubDate>
+                {desc_xml}
                 <enclosure url="{base}/update/pkg"
                            sparkle:shortVersionString="{version}"
                            sparkle:version="{build}"

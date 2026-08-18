@@ -182,8 +182,6 @@ MEditor/
 
 ## 🗺 路线图
 
-执行顺序以 [`plans/2026-08-18-agent-workstation-plan.md`](plans/2026-08-18-agent-workstation-plan.md) 为准。
-
 **已交付**
 - [x] 真 Agent：14 个工具、多轮循环、三种后端（OpenAI 兼容 / Anthropic / Claude CLI）、BYOK
 - [x] Agent 加固：写文件确认、命令沙盒风险分级、上下文预算、停滞检测、只读工具并行、用量显示
