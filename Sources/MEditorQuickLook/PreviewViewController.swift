@@ -43,6 +43,9 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     /// 系统在主线程调用一次；渲染是同步快路径（marked 同步解析），直接做完再回调。
     func preparePreviewOfFile(at url: URL, completionHandler handler: @escaping (Error?) -> Void) {
         qlLog.notice("preparePreviewOfFile: \(url.lastPathComponent, privacy: .public)")
+        // 系统可能先于视图加载回调本方法：此时 webView 还是 nil，
+        // loadHTMLString 会被静默丢弃、预览空白。先触一下 view 强制走 loadView。
+        _ = view
         do {
             let html = try Self.renderHTML(forFileAt: url)
             qlLog.notice("render ok, html bytes=\(html.utf8.count)")
