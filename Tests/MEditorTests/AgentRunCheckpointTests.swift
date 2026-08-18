@@ -322,8 +322,8 @@ final class AgentRunCheckpointTests: XCTestCase {
         XCTAssertEqual(actions, [.skip(url: fileURL("a.md").standardizedFileURL, reason: .editedAfterRun)])
         XCTAssertEqual(mockService.fileContent(at: fileURL("a.md")), "用户后续编辑",
                        "用户编辑过的文件必须保持原样，绝不覆盖")
-        XCTAssertTrue(ckpt.rollbackSummary?.contains("跳过") == true,
-                      "跳过的文件必须在摘要里点名提示")
+        XCTAssertTrue(ckpt.rollbackSummary?.contains("a.md") == true,
+                      "跳过的文件必须在摘要里点名提示（断言语种无关：只查文件名，摘要是本地化的）")
     }
 
     func testRollback_skipsFileDeletedAfterRun() {
