@@ -319,12 +319,8 @@ struct QuickOpenSheet: View {
     }
 
     private func exportPDF() {
-        let suggestedName = state.selectedTab?.url.deletingPathExtension().lastPathComponent ?? "Untitled"
-        state.previewExporter.export(format: .pdf, suggestedName: suggestedName) { result in
-            if case .failure(let error) = result {
-                state.setError(error.localizedDescription)
-            }
-        }
+        // 走统一导出入口：预检清单 + PDF 选项 sheet（与预览工具栏一致）
+        state.requestExport(.pdf)
     }
 
     @ViewBuilder

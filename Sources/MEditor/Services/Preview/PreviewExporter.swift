@@ -47,6 +47,15 @@ final class PreviewExporter: PreviewExporterProtocol {
     func export(format: ExportFormat,
                 suggestedName: String,
                 completion: @escaping (Result<URL, ExportError>) -> Void) {
+        export(format: format, suggestedName: suggestedName, pdfOptions: nil, completion: completion)
+    }
+
+    /// 带 PDF 选项的导出入口（功能9：纸张/边距/页眉页脚/封面）。
+    /// pdfOptions 仅在 format == .pdf 时生效。
+    func export(format: ExportFormat,
+                suggestedName: String,
+                pdfOptions: PDFExportOptions?,
+                completion: @escaping (Result<URL, ExportError>) -> Void) {
         guard let webView = webView else {
             completion(.failure(.noWebView))
             return
@@ -79,7 +88,8 @@ final class PreviewExporter: PreviewExporterProtocol {
             case .html:
                 Self.exportHTML(webView: webView, to: url, completion: completion)
             case .pdf:
-                Self.exportPDF(webView: webView, to: url, completion: completion)
+                Self.exportPDF(webView: webView, to: url, title: suggestedName,
+                               options: pdfOptions, completion: completion)
             case .image:
                 Self.exportImage(webView: webView, to: url, completion: completion)
             case .markdown:
@@ -270,24 +280,48 @@ final class PreviewExporter: PreviewExporterProtocol {
 
     private static func exportPDF(webView: WKWebView,
                                   to url: URL,
+                                  title: String,
+                                  options: PDFExportOptions?,
                                   completion: @escaping (Result<URL, ExportError>) -> Void) {
-        captureViaReload(webView: webView) { pdfData in
+        // 默认选项不需要后处理：不注入 @page 样式（保留 WebKit 自带分页/边距），
+        // 也跳过 decorate——重绘会丢链接 annotation（见 postProcessPDFData）。
+        let needsDecoration = options.map { !$0.isDefault } ?? false
+        captureViaReload(webView: webView, extraCSS: needsDecoration ? options?.printCSS() : nil) { pdfData in
             guard let pdfData else {
                 completion(.failure(.pdfGenerationFailed("createPDF returned no data")))
                 return
             }
-            do {
-                try pdfData.write(to: url)
-                completion(.success(url))
-            } catch {
-                completion(.failure(.pdfGenerationFailed(error.localizedDescription)))
+            // 装饰（重排/封面/页眉页脚）与写盘放后台队列：百页文档主线程同步装饰会
+            // 卡 UI，且重绘过程瞬时内存翻倍。completion 统一回主线程。
+            DispatchQueue.global(qos: .userInitiated).async {
+                let finalData = Self.postProcessPDFData(pdfData, options: options, title: title)
+                do {
+                    try finalData.write(to: url)
+                    DispatchQueue.main.async { completion(.success(url)) }
+                } catch {
+                    DispatchQueue.main.async {
+                        completion(.failure(.pdfGenerationFailed(error.localizedDescription)))
+                    }
+                }
             }
         }
     }
 
+    /// PDF 后处理决策（拆成纯函数便于单测）：
+    /// 默认选项直接返回原数据——PDFDocumentDecorator 走 drawPDFPage 重绘，
+    /// 不保留链接 annotation，默认排版没必要付出「导出 PDF 链接全灭」的代价；
+    /// 非默认选项才装饰，装饰失败回退原始数据。
+    static func postProcessPDFData(_ data: Data, options: PDFExportOptions?, title: String) -> Data {
+        guard let options, !options.isDefault else { return data }
+        return PDFDocumentDecorator.decorate(data: data, options: options, title: title) ?? data
+    }
+
     /// Reloads the webview content via loadHTMLString (bypasses file:// createPDF limitation),
     /// calls createPDF, then restores the original file URL.
-    private static func captureViaReload(webView: WKWebView, completion: @escaping (Data?) -> Void) {
+    /// - Parameter extraCSS: 追加注入 </head> 前的样式（PDF 导出用它声明 @page 纸张尺寸）。
+    private static func captureViaReload(webView: WKWebView,
+                                         extraCSS: String? = nil,
+                                         completion: @escaping (Data?) -> Void) {
         webView.evaluateJavaScript("document.documentElement.outerHTML") { result, _ in
             guard let html = result as? String else { completion(nil); return }
             let originalURL = webView.url
@@ -300,6 +334,9 @@ final class PreviewExporter: PreviewExporterProtocol {
             var processed = inlineCSS(html: html, baseDir: cacheDir)
             if isMEditorCache {
                 processed = stripScripts(processed)
+            }
+            if let extraCSS {
+                processed = injectCSS(processed, css: extraCSS)
             }
 
             let baseURL = isMEditorCache ? nil : originalURL?.deletingLastPathComponent()
@@ -341,6 +378,18 @@ final class PreviewExporter: PreviewExporterProtocol {
             }
         }
         return result
+    }
+
+    /// 在 </head> 前注入一段样式；没有 </head> 时兜底拼到文档头。
+    /// 纯字符串处理，拆出来便于单测。
+    static func injectCSS(_ html: String, css: String) -> String {
+        let style = "<style>\(css)</style>"
+        if let range = html.range(of: "</head>", options: .caseInsensitive) {
+            var result = html
+            result.insert(contentsOf: style, at: range.lowerBound)
+            return result
+        }
+        return style + html
     }
 
     private static func stripScripts(_ html: String) -> String {

@@ -49,6 +49,8 @@ final class TabManager {
     /// A tab's content was just written to disk (manual save / auto-save).
     /// Used to refresh disk-backed previews (HTML) for the same file.
     var onDidWriteToDisk: ((URL) -> Void)?
+    /// 保存成功后携带内容回调（本地历史快照用，AppState 接线）。
+    var onDidWriteContent: ((URL, String) -> Void)?
     /// Clear the preview (no active tab).
     var onClearPreview: (() -> Void)?
     /// Update the sidebar's selected file to match the given tab.
@@ -254,6 +256,7 @@ final class TabManager {
     private func didSaveTab(_ tab: EditorTab, url: URL) {
         if tab.id == selectedTabID { onSyncPreview?(tab) }
         onDidWriteToDisk?(url)
+        onDidWriteContent?(url, tab.content)
         onDidSave?()
     }
 

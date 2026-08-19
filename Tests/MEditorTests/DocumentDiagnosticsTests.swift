@@ -154,4 +154,21 @@ final class DocumentDiagnosticsTests: XCTestCase {
         XCTAssertEqual(issues[0].fileURL.lastPathComponent, "b.md", "结果应按文件路径排序")
         XCTAssertEqual(issues[1].fileURL.lastPathComponent, "a.md")
     }
+
+    // MARK: - Agent 可修复性（「让 Agent 修复」入口口径）
+
+    func testIsAgentFixable_missingImageNotFixable() {
+        // 纯缺失资源：模型变不出图片文件，不计入可修复
+        XCTAssertFalse(DocumentIssue.Kind.missingImage("a.png").isAgentFixable)
+    }
+
+    func testIsAgentFixable_textEditableKindsAreFixable() {
+        let kinds: [DocumentIssue.Kind] = [
+            .deadLink("x.md"), .duplicateHeading("T"),
+            .headingLevelSkip(from: 1, to: 3), .emptyHeading, .unclosedCodeBlock
+        ]
+        for kind in kinds {
+            XCTAssertTrue(kind.isAgentFixable, "\(kind) 应可由模型改文本修复")
+        }
+    }
 }

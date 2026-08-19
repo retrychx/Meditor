@@ -9,14 +9,9 @@ struct SlashCommandExpansion {
 // MARK: - AI 命令类型
 
 enum SlashAIAction {
-    /// 在光标处继续写作
-    case continueWriting
-    /// 改善光标所在段落
-    case improveCurrentParagraph
-    /// 总结光标以上内容
-    case summarizeAbove
-    /// 内联回答一个问题（以 /ask 命令类型）
-    case ask(String)
+    /// 执行注册表中的 AI 命令（argument 为命令后输入的参数，可为空）。
+    /// 命令的 prompt preset / 作用范围 / 输出去向全部定义在 AISlashCommandRegistry。
+    case command(AISlashCommand, argument: String)
 }
 
 struct SlashCommandItem: Identifiable, Equatable {
@@ -28,13 +23,25 @@ struct SlashCommandItem: Identifiable, Equatable {
     let keywords: [String]
     /// 普通命令：插入这段文本。AI 命令时为 nil。
     let expansion: SlashCommandExpansion?
+    /// AI 命令的注册表 id（AISlashCommandRegistry）；非 AI 命令为 nil。
+    let aiCommandID: String?
 
     static func == (lhs: SlashCommandItem, rhs: SlashCommandItem) -> Bool {
         lhs.id == rhs.id
     }
 
     /// 是否是 AI 驱动的命令
-    var isAICommand: Bool { expansion == nil }
+    var isAICommand: Bool { aiCommandID != nil }
+
+    /// 对应的注册表条目（AI 命令）。
+    var aiCommand: AISlashCommand? {
+        aiCommandID.flatMap { AISlashCommandRegistry.command(id: $0) }
+    }
+
+    /// 菜单显示标题：AI 命令走注册表本地化文案（随 UI 语言切换），普通命令用静态 title。
+    var displayTitle: String { aiCommand?.title ?? title }
+    /// 菜单显示说明（同上）。
+    var displaySubtitle: String { aiCommand?.subtitle ?? subtitle }
 
     // 普通命令便利初始化（保持展参为非可选，向后兼容）
     init(title: String, subtitle: String, icon: String,
@@ -43,14 +50,16 @@ struct SlashCommandItem: Identifiable, Equatable {
         self.title = title; self.subtitle = subtitle; self.icon = icon
         self.aliases = aliases; self.keywords = keywords
         self.expansion = expansion
+        self.aiCommandID = nil
     }
 
-    // AI 命令便利初始化（无 expansion）
-    init(title: String, subtitle: String, icon: String,
-         aliases: [String], keywords: [String]) {
-        self.title = title; self.subtitle = subtitle; self.icon = icon
-        self.aliases = aliases; self.keywords = keywords
+    // AI 命令初始化：元数据全部来自注册表
+    init(aiCommand cmd: AISlashCommand) {
+        self.title = cmd.id; self.subtitle = ""   // 仅兜底；显示走 displayTitle/displaySubtitle
+        self.icon = cmd.icon
+        self.aliases = cmd.aliases; self.keywords = cmd.keywords
         self.expansion = nil
+        self.aiCommandID = cmd.id
     }
 }
 
@@ -75,16 +84,20 @@ final class SlashCommandHandler {
         slashPopover?.isShown == true && !slashItems.isEmpty
     }
 
-    /// 当前位置是否处于「/ask」或「/ask 问题」语境。
-    /// 用于空格键放行：/ask 的空格是 query 分隔符，不能像其他命令那样触发提交。
-    func isAskContext(in textView: NSTextView, at location: Int) -> Bool {
+    /// 当前位置是否处于「带参数 AI 命令」语境（如「/ask 问题」「/polish 更正式」）。
+    /// 用于空格键放行：这类命令的空格是参数分隔符，不能像其他命令那样触发提交。
+    func isArgumentContext(in textView: NSTextView, at location: Int) -> Bool {
         guard let ctx = slashContext(in: textView, at: location) else { return false }
-        return ctx.command == "/ask" || ctx.command.hasPrefix("/ask ")
+        let word = String(ctx.command.split(separator: " ", maxSplits: 1).first ?? "")
+        return AISlashCommandRegistry.command(forAlias: word)?.takesArgument == true
     }
 
     // MARK: - Command catalogue
 
-    static let allCommands: [SlashCommandItem] = [
+    static let allCommands: [SlashCommandItem] = staticCommands + aiCommands
+
+    /// 静态插入命令（展开为固定文本）。
+    static let staticCommands: [SlashCommandItem] = [
         SlashCommandItem(
             title: "Heading 1",
             subtitle: "Large section title",
@@ -156,53 +169,14 @@ final class SlashCommandHandler {
             aliases: ["/code"],
             keywords: ["fence", "pre", "snippet"],
             expansion: SlashCommandExpansion(text: "```\n\n```", cursorOffset: 4)
-        ),
-        SlashCommandItem(
-            title: "Table",
-            subtitle: "Two-column Markdown table",
-            icon: "tablecells",
-            aliases: ["/table"],
-            keywords: ["grid", "data"],
-            expansion: SlashCommandExpansion(
-                text: "| Column | Column |\n| --- | --- |\n|  |  |",
-                cursorOffset: 36
-            )
-        ),
-
-        // MARK: - AI 类命令
-        SlashCommandItem(
-            title: "AI 继续写作",
-            subtitle: "AI 从当前光标继续展开内容",
-            icon: "arrow.right.circle.fill",
-            aliases: ["/continue", "/ai-continue"],
-            keywords: ["ai", "continue", "继续", "写作"]),
-        SlashCommandItem(
-            title: "AI 优化段落",
-            subtitle: "AI 改善当前段落的表达和逻辑",
-            icon: "wand.and.stars",
-            aliases: ["/improve", "/ai-improve"],
-            keywords: ["ai", "improve", "优化", "改善"]),
-        SlashCommandItem(
-            title: "AI 总结以上",
-            subtitle: "AI 总结光标以上的所有内容",
-            icon: "text.redaction",
-            aliases: ["/summarize", "/ai-summarize"],
-            keywords: ["ai", "summarize", "总结"]),
-        SlashCommandItem(
-            title: "AI 回答问题",
-            subtitle: "AI 在光标处内联回答问题",
-            icon: "bubble.left.and.bubble.right.fill",
-            aliases: ["/ask"],
-            keywords: ["ai", "ask", "问", "回答"])
+        )
     ]
 
-    /// AI 命令别名集合
-    static let aiAliases: Set<String> = [
-        "/continue", "/ai-continue",
-        "/improve",  "/ai-improve",
-        "/summarize","/ai-summarize",
-        "/ask"
-    ]
+    /// AI 命令：全部来自注册表（含 /ask、/polish、/outline、/translate、/summary、
+    /// /fix、/table 等），菜单只消费注册表。原静态 /table 骨架由 AI table 命令的
+    /// 空目标兜底承接（空行插入两列骨架）。
+    static let aiCommands: [SlashCommandItem] =
+        AISlashCommandRegistry.all.map { SlashCommandItem(aiCommand: $0) }
 
     // MARK: - Public interface (called by EditorCoordinator)
 
@@ -253,12 +227,13 @@ final class SlashCommandHandler {
     func filteredCommands(for command: String) -> [SlashCommandItem] {
         let query = String(command.dropFirst()).lowercased()
         guard !query.isEmpty else { return Self.allCommands }
-        // 「/ask 问题」形式：空格后的是提问内容，不参与命令匹配
+        // 「/cmd 参数」形式：空格后的是参数内容，不参与命令匹配
         let matchQuery = String(query.split(separator: " ", maxSplits: 1).first ?? "")
         return Self.allCommands.filter { item in
             if item.aliases.contains(where: { $0.dropFirst().hasPrefix(matchQuery) }) { return true }
-            if item.title.lowercased().contains(matchQuery) { return true }
-            if item.subtitle.lowercased().contains(matchQuery) { return true }
+            // AI 命令的标题/说明走注册表本地化文案（随 UI 语言切换）
+            if item.displayTitle.lowercased().contains(matchQuery) { return true }
+            if item.displaySubtitle.lowercased().contains(matchQuery) { return true }
             return item.keywords.contains { $0.lowercased().contains(matchQuery) }
         }
     }
@@ -285,10 +260,12 @@ final class SlashCommandHandler {
         let indentLength = typed.prefix { $0 == " " || $0 == "\t" }.count
         let command = String(typed.dropFirst(indentLength)).lowercased()
         guard command.hasPrefix("/") else { return nil }
-        // /ask 例外：允许「/ask 问题」带空格的形式（query 是命令的一部分）；
-        // 其他命令含空白即视为已脱离斜杠命令语境
-        if !command.hasPrefix("/ask "),
-           command.dropFirst().contains(where: { $0.isWhitespace }) { return nil }
+        // 带参数命令（/ask、/polish 等）允许「/cmd 参数」带空格的形式（参数是命令的
+        // 一部分）；其他命令含空白即视为已脱离斜杠命令语境
+        if command.dropFirst().contains(where: { $0.isWhitespace }) {
+            let word = String(command.split(separator: " ", maxSplits: 1).first ?? "")
+            guard AISlashCommandRegistry.command(forAlias: word)?.takesArgument == true else { return nil }
+        }
 
         let commandStart = lineStart + indentLength
         return (NSRange(location: commandStart, length: location - commandStart), command)
@@ -325,34 +302,29 @@ final class SlashCommandHandler {
 
         // AI 命令：删除命令文本，获取上下文，回调触发
         if item.isAICommand {
-            // 「/ask 问题」的 query 提取必须在删除命令文本之前（range 覆盖命令+query 全段）
+            guard let aiCommand = item.aiCommand else { return false }
+            // 「/cmd 参数」的参数提取必须在删除命令文本之前（range 覆盖命令+参数全段）
             let rawCommand = (textView.string as NSString).substring(with: range)
 
             isApplyingCommand = true
-            textView.insertText("", replacementRange: range)   // 删除 /command（含 /ask 的 query）
+            textView.insertText("", replacementRange: range)   // 删除 /command（含参数）
             isApplyingCommand = false
 
-            // 拖取光标前最多 2000 字作为上下文
             let insertionLoc = textView.selectedRange().location
-            let nsText = textView.string as NSString
-            let contextStart = max(0, insertionLoc - 2000)
-            let contextRange = NSRange(location: contextStart, length: insertionLoc - contextStart)
-            let contextText = nsText.substring(with: contextRange)
+            // 全文快照（删除命令后）：执行器的目标段落定位与 diff original 都以它为准，
+            // 不能读 tab.content（可能还停在含命令文本的防抖窗口里）
+            let documentText = textView.string
 
-            let action: SlashAIAction
-            switch item.aliases.first ?? "" {
-            case "/continue", "/ai-continue": action = .continueWriting
-            case "/improve",  "/ai-improve":  action = .improveCurrentParagraph
-            case "/summarize","/ai-summarize":action = .summarizeAbove
-            case "/ask":
-                // query 在 rawCommand（删除前提取，保留大小写）；无 query 回退空串
-                let query = rawCommand.count > 4
-                    ? String(rawCommand.dropFirst(4)).trimmingCharacters(in: .whitespaces)
-                    : ""
-                action = .ask(query)
-            default:                           action = .continueWriting
+            // 参数部分（删除前提取，保留大小写）；无参数回退空串
+            let argument: String
+            if let space = rawCommand.firstIndex(of: " ") {
+                argument = String(rawCommand[rawCommand.index(after: space)...])
+                    .trimmingCharacters(in: .whitespaces)
+            } else {
+                argument = ""
             }
-            onAIAction?(action, contextText, NSRange(location: insertionLoc, length: 0))
+            onAIAction?(.command(aiCommand, argument: argument), documentText,
+                        NSRange(location: insertionLoc, length: 0))
             return true
         }
 
@@ -393,12 +365,21 @@ struct SlashCommandMenuView: View {
 
             Divider().opacity(0.45)
 
-            VStack(spacing: 2) {
-                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                    SlashCommandMenuRow(item: item, isSelected: index == selectedIndex)
+            // 命令库变大后列表可滚动，键盘选择时滚动跟随选中项
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 2) {
+                        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                            SlashCommandMenuRow(item: item, isSelected: index == selectedIndex)
+                                .id(index)
+                        }
+                    }
+                    .padding(5)
+                }
+                .onChange(of: selectedIndex) { _, index in
+                    proxy.scrollTo(index, anchor: .center)
                 }
             }
-            .padding(5)
         }
         .frame(width: 260, alignment: .topLeading)
         .background(.regularMaterial)
@@ -418,10 +399,10 @@ struct SlashCommandMenuRow: View {
                 .frame(width: 18)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(item.title)
+                Text(item.displayTitle)
                     .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
                     .foregroundStyle(.primary)
-                Text(item.subtitle)
+                Text(item.displaySubtitle)
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

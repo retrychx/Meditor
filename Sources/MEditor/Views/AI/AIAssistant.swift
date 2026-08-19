@@ -10,13 +10,17 @@ struct AIAssistantPanel: View {
     @Environment(AppState.self) var state
     let onClose: () -> Void
 
-    @Environment(AppSettings.self) private var settings
+    // internal（非 private）：AIInputBar 等同类型跨文件 extension 也要读（自动附带 chip）
+    @Environment(AppSettings.self) var settings
     @State private var showHistory = false
     @State var atBottom = true
     @State var streamScrollWork: DispatchWorkItem?   // 流式滚动 debounce
     @State var mentionTokens: [AtMentionToken] = []
     @State var showMentionPicker = false
     @State var mentionQuery: String = ""
+    /// 「自动附带当前文档」chip 被移除的 tab id：仅对当次发送生效——切 tab（id 不
+    /// 匹配）或发送完成（重置 nil）后自动恢复，不影响历史消息与其他 tab。
+    @State var autoContextRemovedForTab: UUID? = nil
     @FocusState var inputFocused: Bool
 
     /// 首次使用引导：显示 @mention 能力提示。
@@ -233,8 +237,12 @@ struct AIAssistantPanel: View {
         // 保存当次 @tokens，供 runCompletion 注入上下文，然后清空
         let tokensSnapshot = mentionTokens
         mentionTokens = []
+        // 自动附带当前文档：设置总开关 + 本次未点 chip 移除
+        let includeAutoContext = settings.aiAutoAttachContext
+            && autoContextRemovedForTab != state.selectedTab?.id
+        autoContextRemovedForTab = nil
         convo.persist()
-        coordinator.runCompletion(mentionTokens: tokensSnapshot)
+        coordinator.runCompletion(mentionTokens: tokensSnapshot, includeAutoContext: includeAutoContext)
     }
 
     /// Drop the last assistant reply (if any) and re-run the request.
@@ -246,7 +254,7 @@ struct AIAssistantPanel: View {
         // 清掉当前会话上一轮的运行快照：否则新 run 完成前，旧步骤面板会一直残留在
         // transcript 里（lastRunState 是 per-session 计算属性，写 nil 即清当前会话）。
         convo.lastRunState = nil
-        coordinator.runCompletion()
+        coordinator.runCompletion(includeAutoContext: settings.aiAutoAttachContext)
     }
 }
 

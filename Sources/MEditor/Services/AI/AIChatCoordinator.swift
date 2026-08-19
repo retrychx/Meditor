@@ -19,7 +19,9 @@ final class AIChatCoordinator {
     }
 
     /// 助手面板走 AgentRunner（带工具调用能力），兼容流式文本回退。
-    func runCompletion(mentionTokens: [AtMentionToken] = []) {
+    /// - Parameter includeAutoContext: 是否自动附带当前文档（输入栏 chip 与设置总开关
+    ///   共同决定）；false 时本次发送不注入文档全文（选区注入不受影响）。
+    func runCompletion(mentionTokens: [AtMentionToken] = [], includeAutoContext: Bool = true) {
         guard convo.messages.last?.role == .user else { return }
         convo.isResponding = true
         convo.respondingSessionID = convo.activeID
@@ -38,7 +40,7 @@ final class AIChatCoordinator {
         let wsFiles    = Array(state.fileItemMap.values)
 
         let userTurnCount = convo.messages.filter { $0.role == .user }.count
-        let baseSys = systemContext(includeFullDoc: userTurnCount == 1)
+        let baseSys = systemContext(includeFullDoc: userTurnCount == 1 && includeAutoContext)
 
         Task {
             // @mention IO 在后台执行
@@ -199,10 +201,12 @@ final class AIChatCoordinator {
     /// System prompt grounding the assistant in the current document.
     ///
     /// - Parameter includeFullDoc: When `true` (first user turn), injects the
-    ///   full document body (up to 8 000 chars). On subsequent turns the model
+    ///   document body via `DocumentContextExcerpt` (budget-aware: head + paragraphs
+    ///   around the cursor + tail when over budget). On subsequent turns the model
     ///   already has the document in its conversation history, so we only remind
     ///   it of the document name to avoid re-paying the token cost every round.
-    ///   Selected text is always included because it's user-initiated and small.
+    ///   Selected text (and its containing paragraph) is always included because
+    ///   it's user-initiated and small.
     private func systemContext(includeFullDoc: Bool = true) -> String {
         var ctx = """
 You are a helpful writing assistant embedded in a native macOS Markdown editor.
@@ -235,8 +239,19 @@ Rules:
             let sel = selection.count > 4000 ? String(selection.prefix(4000)) + "…" : selection
             let name = state.selectedTab?.name ?? "document"
             ctx += "\n\nThe user selected this text in \"\(name)\":\n\n\(sel)"
+            // 选区所在段落一并带上并标注：选区只是片段时，模型需要段落语境
+            // （段落不长于选区上限才注入，避免大段落放大成本）
+            if let tab = state.selectedTab,
+               let paraRange = ParagraphTargeting.paragraphRange(
+                   containing: state.editorSelectedRange, in: tab.content) {
+                let para = String(tab.content[paraRange])
+                if para.count > selection.count, para.count <= 4000 {
+                    ctx += "\n\nThe selection is part of this paragraph in \"\(tab.name)\":\n\n\(para)"
+                }
+            }
         } else if includeFullDoc, let tab = state.selectedTab {
-            let body = tab.content.count > 8000 ? String(tab.content.prefix(8000)) + "…" : tab.content
+            // 预算感知截取：超预算时保留首部 + 光标附近段落 + 尾部，而非整篇硬截断
+            let body = DocumentContextExcerpt.excerpt(content: tab.content, cursorLine: state.cursorLine)
             ctx += "\n\nThe current document is \"\(tab.name)\":\n\n\(body)"
         } else if let tab = state.selectedTab {
             // Subsequent turns: just name — full content is already in conversation history.

@@ -271,6 +271,24 @@ final class AppState {
             }
         }
     }
+    /// 「让 Agent 修复」写回发生时记录的工作区问题基线数；诊断面板重开后
+    /// 完成首次扫描时据此生成「修了几条、剩几条」对比横幅并清零。
+    var diagnosticsFixBaseline: Int? = nil
+    /// 文件历史面板（工具菜单）：当前文件的本地保存快照列表 + diff + 恢复。
+    var showingLocalHistory = false {
+        didSet {
+            if showingLocalHistory {
+                showingQuickOpen = false
+                showingGlobalSearch = false
+            }
+        }
+    }
+    /// 导出前检查清单（功能7）：非 nil 时 ContentView 弹检查 sheet。
+    var exportPreflight: ExportPreflightContext? = nil
+    /// PDF 导出选项 sheet（功能9）：确认后以持久化选项导出。
+    var showingPDFExportOptions = false
+    /// 记住触发 PDF 导出时的建议文件名，选项 sheet 确认后使用。
+    var pdfExportSuggestedName = "Untitled"
     var showingInlineEdit = false
 
     // MARK: - Services
@@ -280,6 +298,9 @@ final class AppState {
     let themeStore: PreviewThemeStore
     let sessionStore: SessionStore
     let filePickerService: FilePickerServiceProtocol
+    /// 本地历史快照存取（保存时落快照、历史面板读取与恢复）。
+    /// 可注入：测试传临时目录的 store，避免 init 的后台清理碰到真实 ~/Library。
+    let historyStore: LocalHistoryStore
 
     // MARK: - 工作区内容索引（全局搜索 UI 与 Agent search_workspace 共用）
 
@@ -339,13 +360,15 @@ final class AppState {
         fileWatcher: any FileWatcherServiceProtocol = FileWatcherService(),
         themeStore: PreviewThemeStore = PreviewThemeStore(),
         sessionStore: SessionStore = SessionStore(),
-        filePicker: FilePickerServiceProtocol? = nil
+        filePicker: FilePickerServiceProtocol? = nil,
+        historyStore: LocalHistoryStore = LocalHistoryStore()
     ) {
         self.fileService     = fileService
         self.fileWatcher     = fileWatcher
         self.themeStore      = themeStore
         self.sessionStore    = sessionStore
         self.filePickerService = filePicker ?? MacFilePickerService()
+        self.historyStore    = historyStore
         self.tabManager      = TabManager(fileService: fileService)
         self.fileTreeManager = FileTreeManager(fileService: fileService)
         self.previewManager  = PreviewManager()
@@ -366,6 +389,7 @@ final class AppState {
             self.mentionItems = self.fileTreeManager.mentionItems
             self.mentionItemsVersion &+= 1
         }
+        scheduleHistoryPrune()
     }
 
     deinit {
@@ -469,6 +493,9 @@ final class AppState {
         tabManager.onRecordModDate           = { [weak self] url in self?.recordModDate(for: url) }
         tabManager.onReport                  = { [weak self] err in self?.report(err) }
         tabManager.onDidSave                 = { [weak self] in self?.lastSavedAt = Date() }
+        tabManager.onDidWriteContent         = { [weak self] url, content in
+            self?.recordHistorySnapshot(url: url, content: content)
+        }
         tabManager.onDidWriteToDisk          = { [weak self] url in
             self?.previewManager.reloadHTML(url: url)
             // 保存落盘后即时刷新内容索引（FSEvents diff 路径之外的就地快路径）

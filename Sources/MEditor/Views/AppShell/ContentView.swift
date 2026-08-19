@@ -242,6 +242,9 @@ struct ContentView: View {
             get: { state.claudeFilePrompt },
             set: { state.claudeFilePrompt = $0 }
         ))
+        // 挂在 mainLayout 而非顶层 body：顶层修饰链已逼近编译器类型检查时限
+        .exportSheets(state: state, settings: settings)
+        .localHistorySheet(state: state)
     }
 
     private var sidebarColumn: some View {
@@ -260,12 +263,7 @@ struct ContentView: View {
     }
 
     private func performExport(_ format: PreviewExporter.ExportFormat) {
-        let suggestedName = state.selectedTab?.url.deletingPathExtension().lastPathComponent ?? "Untitled"
-        state.previewExporter.export(format: format, suggestedName: suggestedName) { result in
-            if case .failure(let error) = result {
-                state.setError(error.localizedDescription)
-            }
-        }
+        state.requestExport(format)
     }
 
     // MARK: - Actions
@@ -313,6 +311,40 @@ private extension View {
         #else
         self
         #endif
+    }
+}
+
+private extension View {
+    /// 导出相关 sheet（功能7 检查清单 / 功能9 PDF 选项）。
+    /// 抽成修饰器：ContentView.body 已接近编译器类型检查时限，再加两个 sheet 会超时。
+    func exportSheets(state: AppState, settings: AppSettings) -> some View {
+        modifier(ExportSheetsModifier(state: state, settings: settings))
+    }
+}
+
+private struct ExportSheetsModifier: ViewModifier {
+    let state: AppState
+    let settings: AppSettings
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(item: Binding(
+                get: { state.exportPreflight },
+                set: { state.exportPreflight = $0 }
+            )) { context in
+                ExportPreflightSheet(context: context)
+                    .environment(state)
+                    .presentationBackground(.regularMaterial)
+            }
+            .sheet(isPresented: Binding(
+                get: { state.showingPDFExportOptions },
+                set: { state.showingPDFExportOptions = $0 }
+            )) {
+                PDFExportOptionsSheet()
+                    .environment(state)
+                    .environment(settings)
+                    .presentationBackground(.regularMaterial)
+            }
     }
 }
 

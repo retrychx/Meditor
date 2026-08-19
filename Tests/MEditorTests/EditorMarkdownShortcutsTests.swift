@@ -19,8 +19,8 @@ final class EditorMarkdownShortcutsTests: XCTestCase {
             ("/quote",    "> ",                                          nil),
             ("/hr",       "---\n",                                       nil),
             ("/code",     "```\n\n```",                                  4),
-            ("/table",    "| Column | Column |\n| --- | --- |\n|  |  |", 36),
         ]
+        // /table 已升级为 AI 命令（无静态展开），其骨架兜底见 SlashCommandTests.testExpansionTableText
         for row in expected {
             let item = SlashCommandHandler.allCommands.first { $0.aliases.contains(row.alias) }
             XCTAssertNotNil(item, "Missing command for alias \(row.alias)")
@@ -58,7 +58,10 @@ final class EditorMarkdownShortcutsTests: XCTestCase {
     // MARK: - allCommands catalogue completeness
 
     func testAllCommandsCount() {
-        XCTAssertEqual(SlashCommandHandler.allCommands.count, 14)
+        // 9 个静态插入命令 + 10 个注册表 AI 命令（ask/continue/improve/summarize
+        // + polish/outline/translate/summary/fix/table）
+        XCTAssertEqual(SlashCommandHandler.allCommands.count,
+                       SlashCommandHandler.staticCommands.count + AISlashCommandRegistry.all.count)
     }
 
     func testEveryCommandHasAtLeastOneAlias() {

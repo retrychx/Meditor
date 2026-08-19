@@ -101,6 +101,12 @@ extension SettingsView {
                     }
                 }
 
+                settingsGroup(title: L("settings.section.export")) {
+                    settingsRow(label: L("settings.exportPreflight"), subtitle: L("settings.desc.exportPreflight")) {
+                        Toggle("", isOn: bindableSettings.exportPreflightEnabled).labelsHidden()
+                    }
+                }
+
                 settingsGroup(title: L("settings.section.about")) {
                     settingsRow(label: "MEditor", subtitle: L("settings.version")) {
                         Text(UpdateController.shared.appVersion)

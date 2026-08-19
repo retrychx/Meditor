@@ -60,6 +60,13 @@ struct NativeEditorView: NSViewRepresentable {
     /// 编辑器正文字体（对应 AppSettings.editorFontName）。默认跟随系统字体。
     var editorFont: EditorFont = .system
 
+    /// 当前文档 URL：图片粘贴/拖拽落盘的基准目录，由 EditorView 传入。
+    var documentURL: URL? = nil
+    /// 工作区根目录：拖入的工作区内图片直接引用不复制。
+    var workspaceRoot: URL? = nil
+    /// 图片落盘失败的错误上报（toast）。
+    var onImageError: ((String) -> Void)? = nil
+
     /// 按当前设置解析正文基础字体。
     private var resolvedBaseFont: NSFont {
         editorFont.nsFont(size: CGFloat(editorFontSize))
@@ -74,8 +81,26 @@ struct NativeEditorView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSTextView.scrollablePlainDocumentContentTextView()
-        guard let textView = scrollView.documentView as? NSTextView else { return scrollView }
+        // 自建 text view（MEditorTextView 子类，拦截图片粘贴）替代
+        // NSTextView.scrollablePlainDocumentContentTextView() 工厂；
+        // 下列 min/maxSize、resizable、container 配置与工厂方法一致。
+        let textView = MEditorTextView()
+        textView.minSize = NSSize(width: 0, height: 0)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
+                                  height: CGFloat.greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width, .height]
+        // 与工厂方法一致：⌘F 走内联 find bar，而不是旧式浮动 Find Panel
+        textView.usesFindBar = true
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        let scrollView = NSScrollView()
+        scrollView.documentView = textView
+
+        textView.imagePasteHandler = { [weak coordinator = context.coordinator] pasteboard in
+            coordinator?.pasteImageFromPasteboard(pasteboard) ?? false
+        }
 
         textView.isRichText = false
         textView.allowsUndo = true
@@ -160,6 +185,9 @@ struct NativeEditorView: NSViewRepresentable {
         context.coordinator.onSelectionChange = onSelectionChange
         context.coordinator.onRangeChange = onRangeChange
         context.coordinator.onSlashAIAction = onSlashAIAction
+        context.coordinator.documentURL = documentURL
+        context.coordinator.workspaceRoot = workspaceRoot
+        context.coordinator.onImageError = onImageError
         context.coordinator.highlighter.language = language
 
         guard let textView = scrollView.documentView as? NSTextView else { return }

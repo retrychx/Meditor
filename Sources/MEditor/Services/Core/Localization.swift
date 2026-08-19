@@ -219,6 +219,7 @@ extension LocalizationManager {
         "ai.inline.addComments": ("Add comments", "加注释"),
         "ai.inline.expandSection": ("Expand section", "扩写章节"),
         "ai.inline.organizeList": ("Organize", "整理"),
+        "ai.inline.more": ("More", "更多"),
         "ai.inline.adjust": ("Adjust", "调整"),
         "ai.inline.emptyResponse": ("AI returned no content", "AI 未返回内容"),
         "ai.inline.mapFailed": ("Couldn't map the selection back to the source text — please select it in the editor instead.",
@@ -229,6 +230,45 @@ extension LocalizationManager {
         // InlineEditBar 问 AI 按钒
         "ai.askAI": ("Ask AI", "问 AI"),
         "ai.askAIHint": ("Open AI assistant with this selection pre-loaded", "将选中文本带入 AI 助手对话"),
+
+        // 自动附带当前文档（chip + 设置开关）
+        "ai.autoAttach": ("Auto-attached: %@", "自动附带：%@"),
+        "ai.autoAttach.remove": ("Skip for this message only", "仅本次发送不附带"),
+        "ai.autoAttach.toggle": ("Auto-attach current document", "自动附带当前文档"),
+        "ai.autoAttach.toggleHint": ("Inject the active tab as default context when sending; the input bar chip can skip it per message",
+                                     "发送对话时默认注入当前 tab 的文档内容；输入栏 chip 可单次移除"),
+
+        // 斜杠 AI 命令库（编辑器 / 菜单，标题与一句话说明随 UI 语言）
+        "slash.ask.title": ("AI Answer", "AI 回答问题"),
+        "slash.ask.subtitle": ("Ask a question inline at the caret", "在光标处内联回答问题"),
+        "slash.summary.title": ("AI Summary", "AI 摘要"),
+        "slash.summary.subtitle": ("Summarize the document as a chat reply", "在聊天面板生成全文摘要"),
+        "slash.continue.title": ("AI Continue Writing", "AI 继续写作"),
+        "slash.continue.subtitle": ("Continue from the caret, matching style", "从当前光标继续展开内容"),
+        "slash.improve.title": ("AI Improve Paragraph", "AI 优化段落"),
+        "slash.improve.subtitle": ("Improve the current paragraph via chat", "在聊天面板改善当前段落"),
+        "slash.summarize.title": ("AI Summarize Above", "AI 总结以上"),
+        "slash.summarize.subtitle": ("Summarize everything above the caret", "总结光标以上的所有内容"),
+        "slash.polish.title": ("AI Polish", "AI 润色"),
+        "slash.polish.subtitle": ("Polish the current paragraph (diff review)", "润色当前段落（diff 确认写回）"),
+        "slash.outline.title": ("AI Re-outline", "AI 重排结构"),
+        "slash.outline.subtitle": ("Restructure headings and sections (diff review)", "重排标题层级与章节顺序（diff 确认）"),
+        "slash.translate.title": ("AI Translate", "AI 翻译"),
+        "slash.translate.subtitle": ("Chinese ↔ English for the current paragraph (diff review)", "当前段落中英互译（diff 确认写回）"),
+        "slash.fix.title": ("AI Fix Issues", "AI 修复问题"),
+        "slash.fix.subtitle": ("Fix issues found by document diagnostics", "修复文档诊断发现的问题"),
+        "slash.table.title": ("AI To Table", "AI 转表格"),
+        "slash.table.subtitle": ("Convert the current paragraph/list into a Markdown table", "把当前段落/列表转成规范 Markdown 表格"),
+        "slash.fix.noIssues": ("No issues found by diagnostics", "诊断未发现问题"),
+        "slash.noTarget": ("No paragraph at the caret to process", "光标处没有可处理的段落"),
+        "slash.emptyDocument": ("The current document is empty", "当前文档为空"),
+        "slash.documentTooLarge": ("Document is too large for a whole-document rewrite — use the chat panel instead",
+                                   "文档过大，无法整篇改写——请改用聊天面板"),
+        "slash.noDocument": ("No document is currently open", "当前没有打开的文档"),
+        "slash.writeBack.tabChanged": ("You switched documents while the AI was working — the result wasn't applied",
+                                       "AI 运行期间切换了文档，本次结果未写回"),
+
+        "ai.inline.toTable": ("To table", "转表格"),
         "ai.previewReply": (
             "The AI service isn't connected yet — this is a UI preview. Hook up a model provider to enable real responses.",
             "AI 服务尚未连接 —— 这是界面预览。接入模型服务后即可获得真实回复。"
@@ -320,6 +360,15 @@ extension LocalizationManager {
         "diagnostics.missingImage": ("Missing image: %@", "图片缺失：%@"),
         "diagnostics.duplicateHeading": ("Duplicate heading: %@", "重复标题：%@"),
         "diagnostics.headingLevelSkip": ("Heading level skipped: H%1$d → H%2$d", "标题层级跳跃：H%1$d → H%2$d"),
+        "diagnostics.emptyHeading": ("Empty heading", "空标题"),
+        "diagnostics.unclosedCodeBlock": ("Unclosed code block", "代码块未闭合"),
+        "diagnostics.fix.agent": ("Fix with Agent", "让 Agent 修复"),
+        "diagnostics.fix.scope": ("Agent can fix %d issue(s) in the current document",
+                                  "当前文档有 %d 个问题可由 Agent 修复"),
+        "diagnostics.fix.tooLarge": ("Document is too large for Agent fix — use the chat panel instead",
+                                     "文档过大，Agent 无法整篇修复——请改用聊天面板"),
+        "diagnostics.fix.report": ("Agent fix applied: %1$d fixed, %2$d remaining",
+                                   "Agent 修复完成：已修复 %1$d 条，剩余 %2$d 条"),
     ]
 
     private static let table1: [String: (en: String, zh: String)] = [
@@ -433,6 +482,34 @@ extension LocalizationManager {
         "export.pdf": ("Export as PDF…", "导出为 PDF…"),
         "export.image": ("Export as Image…", "导出为图片…"),
         "export.html": ("Export as HTML…", "导出为 HTML…"),
+
+        // Export preflight check（导出前检查清单）
+        "export.preflight.title": ("Export Check", "导出检查"),
+        "export.preflight.summary": ("%d issue(s) found in this document", "本文档发现 %d 个问题"),
+        "export.preflight.hint": ("Fix them first, or export anyway.", "可以先修复，或直接导出。"),
+        "export.preflight.exportAnyway": ("Export Anyway", "仍然导出"),
+
+        // PDF export options（PDF 导出选项）
+        "pdf.options.title": ("PDF Options", "PDF 选项"),
+        "pdf.paperSize": ("Paper Size", "纸张大小"),
+        "pdf.paper.a4": ("A4", "A4"),
+        "pdf.paper.letter": ("Letter", "Letter"),
+        "pdf.margins": ("Margins", "页边距"),
+        "pdf.margins.narrow": ("Narrow", "窄"),
+        "pdf.margins.normal": ("Normal", "标准"),
+        "pdf.margins.wide": ("Wide", "宽"),
+        "pdf.showHeader": ("Header (document title)", "页眉（文档标题）"),
+        "pdf.showFooter": ("Footer (page numbers)", "页脚（页码）"),
+        "pdf.coverPage": ("Cover page (title + date)", "封面页（标题 + 日期）"),
+        "pdf.options.linkLossHint": (
+            "Custom layout drops clickable links in the exported PDF",
+            "自定义排版将丢失可点击链接"
+        ),
+
+        // Copy as rich text（复制为富文本）
+        "action.copyRichText": ("Copy as Rich Text", "复制为富文本"),
+        "richText.copied": ("Rich text copied", "已复制为富文本"),
+        "richText.failed": ("Copy as rich text failed", "复制为富文本失败"),
 
         // Theme
         "theme.title": ("Preview Theme", "预览主题"),
@@ -615,6 +692,9 @@ extension LocalizationManager {
         "settings.editorFontSize": ("Font Size", "字号"),
         "settings.desc.editorFontSize": ("Editor text size in points", "编辑器文字大小（磅）"),
         "settings.desc.autoSave": ("Automatically save modified documents on a timer", "按间隔自动保存已修改的文档"),
+        "settings.section.export": ("Export", "导出"),
+        "settings.exportPreflight": ("Pre-export check", "导出前检查"),
+        "settings.desc.exportPreflight": ("Scan for dead links, missing images and markup issues before exporting", "导出前扫描死链、缺失图片与格式问题"),
         "settings.desc.provider": ("Where assistant replies are generated", "助手回复的生成来源"),
         "settings.language": ("Language", "语言"),
         "lang.system": ("System", "跟随系统"),
@@ -668,6 +748,23 @@ extension LocalizationManager {
         "error.file.accessDenied": ("Access denied to the file", "无权访问该文件"),
         "error.file.readFailed": ("Failed to read file: %@", "读取文件失败：%@"),
         "error.file.writeFailed": ("Failed to write file: %@", "写入文件失败：%@"),
+
+        // Image paste / drop
+        "image.pasteFailed": ("Couldn't save the image: %@", "图片保存失败：%@"),
+        "image.dropFailed": ("Couldn't import %d image(s)", "%d 张图片导入失败"),
+
+        // Local history
+        "menu.localHistory": ("File History…", "文件历史…"),
+        "history.title": ("File History", "文件历史"),
+        "history.snapshotCount": ("%d snapshot(s)", "%d 份快照"),
+        "history.empty": ("No snapshots yet", "暂无历史快照"),
+        "history.emptyMessage": ("A snapshot is recorded each time you save this file.", "每次保存该文件时都会记录一份快照。"),
+        "history.comparePrompt": ("Select one snapshot to compare it with the current content, or two to compare them.", "选择一份快照与当前内容对比，或选两份互相对比。"),
+        "history.current": ("Current", "当前内容"),
+        "history.restore": ("Restore This Snapshot", "恢复此快照"),
+        "history.restoreHint": ("Restoring keeps the current content as a new snapshot first.", "恢复前会先把当前内容另存为新快照。"),
+        "history.restored": ("Restored from snapshot (undo with ⌘Z)", "已从快照恢复（可用 ⌘Z 撤销）"),
+        "history.readFailed": ("Couldn't read snapshot: %@", "读取快照失败：%@"),
 
         // TemplateStore errors
         "template.error.cannotDeleteBuiltin": ("Built-in templates cannot be deleted", "内置模板不可删除"),

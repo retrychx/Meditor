@@ -33,7 +33,9 @@ struct PreviewInlineEditBar: View {
 
     // MARK: - 内容感知动作列表
 
-    /// 根据选中内容类型返回最相关的 AI 操作，最多 4 个（与 InlineEditBar 一致）。
+    /// 根据选中内容类型返回最相关的 AI 操作，最多 4 个。
+    /// 分类规则与 InlineEditBarPlan 一致；预览侧圈选不支持转表格（映射回源文不可靠），
+    /// 故列表分支不含 convertToTable，也无「更多」收纳。
     private var contextualActions: [InlineEditAction] {
         let t = selectedText.trimmingCharacters(in: .whitespaces)
         if t.hasPrefix("```") || t.hasPrefix("    ") {

@@ -48,21 +48,58 @@ extension AIAssistantPanel {
 
             // Toolbar row: context chip + attach on the left, send on the right.
             HStack(spacing: 8) {
-                HStack(spacing: 5) {
-                    Image(systemName: "doc.text.fill")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(theme.craftSecondary)
-                    Text(documentName)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(theme.craftPrimary)
-                        .lineLimit(1)
+                // 自动附带只在首轮注入（第二轮起文档已在对话历史里，见
+                // AIChatCoordinator 的 userTurnCount 判断）——之后的 chip 点了
+                // 也没作用，退化为纯「当前文档」指示器
+                let isFirstTurn = convo.messages.isEmpty
+                if settings.aiAutoAttachContext, isFirstTurn, let tab = state.selectedTab {
+                    // 自动附带 chip：本次可移除（点 ×），切 tab 跟随变化
+                    let removed = autoContextRemovedForTab == tab.id
+                    HStack(spacing: 5) {
+                        Image(systemName: removed ? "doc.text" : "doc.text.fill")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(theme.craftSecondary)
+                        Text(L("ai.autoAttach", tab.name))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(removed ? theme.craftSecondary : theme.craftPrimary)
+                            .lineLimit(1)
+                        if !removed {
+                            Button {
+                                withAnimation(DS.Motion.fast) { autoContextRemovedForTab = tab.id }
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(theme.craftSecondary.opacity(0.6))
+                            }
+                            .buttonStyle(.plain)
+                            .help(L("ai.autoAttach.remove"))
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule(style: .continuous).fill(theme.craftHover))
+                    .overlay(Capsule().strokeBorder(theme.separator.opacity(0.4), lineWidth: 0.5))
+                    .opacity(removed ? 0.6 : 1)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                } else {
+                    // 总开关关闭或已过首轮：chip 退化为纯「当前文档」指示器（不涉及附带）
+                    HStack(spacing: 5) {
+                        Image(systemName: "doc.text.fill")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(theme.craftSecondary)
+                        Text(documentName)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(theme.craftPrimary)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule(style: .continuous).fill(theme.craftHover))
+                    .overlay(Capsule().strokeBorder(theme.separator.opacity(0.4), lineWidth: 0.5))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Capsule(style: .continuous).fill(theme.craftHover))
-                .overlay(Capsule().strokeBorder(theme.separator.opacity(0.4), lineWidth: 0.5))
-                .lineLimit(1)
-                .truncationMode(.middle)
 
                 Spacer(minLength: 4)
 

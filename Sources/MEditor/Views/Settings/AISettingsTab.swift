@@ -147,6 +147,18 @@ extension SettingsView {
 
                 // MARK: 个性化（对所有 provider 生效）
                 settingsGroup(title: "个性化") {
+                    settingsRow(
+                        label: L("ai.autoAttach.toggle"),
+                        subtitle: L("ai.autoAttach.toggleHint")
+                    ) {
+                        Toggle("", isOn: bindableSettings.aiAutoAttachContext)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                    }
+
+                    rowDivider
+
                     settingsStackedRow(
                         label: "自定义系统提示词",
                         subtitle: "追加到每次对话的系统提示词末尾。例如：「回答一律用中文，风格简洁直接」"

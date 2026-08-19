@@ -32,6 +32,16 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
     let scrollSync: EditorScrollSyncHandler
     let slashHandler = SlashCommandHandler()
 
+    // MARK: - Image paste / drop context
+
+    /// 当前文档 URL（图片落盘位置与相对路径的基准），由 NativeEditorView 同步。
+    var documentURL: URL?
+    /// 工作区根目录（判断拖入文件是否已在工作区内），由 NativeEditorView 同步。
+    var workspaceRoot: URL?
+    /// 图片落盘失败时上报错误（toast）。
+    var onImageError: ((String) -> Void)?
+    let imageAssetService = ImageAssetService()
+
     /// Slash AI 命令回调：由 NativeEditorView 在 makeCoordinator 后设置。
     var onSlashAIAction: ((SlashAIAction, String, NSRange) -> Void)? {
         get { slashHandler.onAIAction }
@@ -124,9 +134,9 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
 
         if let text, (text == " " || text == "\n"), range.length == 0 {
             if slashHandler.isMenuVisible {
-                // /ask 的空格是 query 分隔符（「/ask 问题」），放行插入不提交命令；
-                // Enter 提交路径不变
-                if text == " ", slashHandler.isAskContext(in: textView, at: range.location) {
+                // 带参数命令（/ask、/polish 等）的空格是参数分隔符（「/ask 问题」），
+                // 放行插入不提交命令；Enter 提交路径不变
+                if text == " ", slashHandler.isArgumentContext(in: textView, at: range.location) {
                     return true
                 }
                 return !slashHandler.commitSelection()
@@ -208,24 +218,83 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-        guard slashHandler.isMenuVisible else { return false }
-        switch commandSelector {
-        case #selector(NSResponder.moveUp(_:)):
-            slashHandler.moveSelection(-1)
-            return true
-        case #selector(NSResponder.moveDown(_:)):
-            slashHandler.moveSelection(1)
-            return true
-        case #selector(NSResponder.insertNewline(_:)),
-             #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)),
-             #selector(NSResponder.insertTab(_:)):
-            return slashHandler.commitSelection()
-        case #selector(NSResponder.cancelOperation(_:)):
-            slashHandler.closeMenu()
-            return true
-        default:
-            return false
+        if slashHandler.isMenuVisible {
+            switch commandSelector {
+            case #selector(NSResponder.moveUp(_:)):
+                slashHandler.moveSelection(-1)
+                return true
+            case #selector(NSResponder.moveDown(_:)):
+                slashHandler.moveSelection(1)
+                return true
+            case #selector(NSResponder.insertNewline(_:)),
+                 #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)),
+                 #selector(NSResponder.insertTab(_:)):
+                return slashHandler.commitSelection()
+            case #selector(NSResponder.cancelOperation(_:)):
+                slashHandler.closeMenu()
+                return true
+            default:
+                return false
+            }
         }
+        // Esc：有选区时收起选区（光标落到选区末尾），选区浮动操作条随之关闭；
+        // 焦点保持在编辑器，无需额外关条 UI。IME 组合态（hasMarkedText）放行，
+        // 让 Esc 归输入法取消候选，不收选区。
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)),
+           !textView.hasMarkedText(),
+           textView.selectedRange().length > 0 {
+            textView.setSelectedRange(NSRange(location: NSMaxRange(textView.selectedRange()), length: 0))
+            return true
+        }
+        return false
+    }
+
+    // MARK: - Image paste
+
+    /// ⌘V 入口（MEditorTextView.paste 调用）：粘贴板含图片时落盘并在光标处插入
+    /// Markdown 引用。返回 false = 未处理（无图片 / 无文档上下文 / 落盘失败），
+    /// 调用方回退系统默认粘贴。insertText 走 textView 常规编辑路径，自动注册 undo。
+    @discardableResult
+    func pasteImageFromPasteboard(_ pasteboard: NSPasteboard) -> Bool {
+        guard let textView, let documentURL else { return false }
+
+        // 1) file URL 优先（Finder ⌘C / Photos 等组合 flavor 源）：走
+        //    referenceForDroppedFile 的工作区判定——工作区内直接引用原文件，
+        //    避免把已有文件落盘重编码一份
+        let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        let images = urls.filter { ImageAssetService.imageExtensions.contains($0.pathExtension.lowercased()) }
+        if !images.isEmpty,
+           insertDroppedImages(images, in: textView, at: textView.selectedRange().location) {
+            return true
+        }
+
+        // 2) 粘贴板直接携带的图片数据兜底（截图等无文件来源的场景）
+        if let (data, ext) = Self.imageData(from: pasteboard) {
+            do {
+                let result = try imageAssetService.savePastedImage(
+                    data: data, fileExtension: ext, documentURL: documentURL
+                )
+                insertMarkdownReference(result.markdown, in: textView,
+                                        at: textView.selectedRange().location)
+                return true
+            } catch {
+                onImageError?(error.localizedDescription)
+                return false
+            }
+        }
+
+        return false
+    }
+
+    /// 从粘贴板提取图片数据：优先 PNG，其次 TIFF（统一转 PNG 落盘）。
+    static func imageData(from pasteboard: NSPasteboard) -> (Data, String)? {
+        if let data = pasteboard.data(forType: .png) { return (data, "png") }
+        if let tiff = pasteboard.data(forType: .tiff),
+           let rep = NSBitmapImageRep(data: tiff),
+           let png = rep.representation(using: .png, properties: [:]) {
+            return (png, "png")
+        }
+        return nil
     }
 
     // MARK: - Image drag & drop
@@ -235,31 +304,40 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
             forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]
         ) as? [URL] else { return false }
 
-        let images = items.filter { Self.imageExtensions.contains($0.pathExtension.lowercased()) }
+        let images = items.filter { ImageAssetService.imageExtensions.contains($0.pathExtension.lowercased()) }
         guard !images.isEmpty else { return false }
 
         let dropPoint = textView.convert(draggingInfo.draggingLocation, from: nil)
         let charIndex = textView.characterIndexForInsertion(at: dropPoint)
+        return insertDroppedImages(images, in: textView, at: charIndex)
+    }
+
+    /// 拖入/粘贴文件引用的共用路径：工作区内直接引用（不复制），否则复制进 assets/。
+    /// 部分失败时插入成功项并 toast 失败数；全部失败返回 false（回退默认行为）。
+    private func insertDroppedImages(_ images: [URL], in textView: NSTextView, at charIndex: Int) -> Bool {
+        guard let documentURL else { return false }
         var insertionText = ""
+        var failed = 0
         for url in images {
-            // 路径做百分号编码：空格/括号不处理会破坏 Markdown 链接语法
-            let encodedPath = url.path.addingPercentEncoding(
-                withAllowedCharacters: Self.markdownLinkPathAllowed
-            ) ?? url.path
-            // alt 文本里的方括号会破坏图片语法，直接剔除
-            let alt = url.lastPathComponent
-                .replacingOccurrences(of: "[", with: "")
-                .replacingOccurrences(of: "]", with: "")
-            insertionText += "![\(alt)](\(encodedPath))\n"
+            do {
+                let result = try imageAssetService.referenceForDroppedFile(
+                    url, documentURL: documentURL, workspaceRoot: workspaceRoot
+                )
+                insertionText += result.markdown + "\n"
+            } catch {
+                failed += 1
+            }
         }
-        textView.insertText(insertionText, replacementRange: NSRange(location: charIndex, length: 0))
+        if failed > 0 { onImageError?(L("image.dropFailed", failed)) }
+        guard !insertionText.isEmpty else { return false }
+        insertMarkdownReference(insertionText, in: textView, at: charIndex)
         return true
     }
 
-    private static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "tiff"]
-    /// urlPathAllowed 本身不含空格；再剔除 () 防止提前闭合 Markdown 链接。
-    private static let markdownLinkPathAllowed: CharacterSet =
-        CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "()"))
+    /// insertText 走 NSTextView 常规编辑路径：触发 delegate、注册 undo。
+    private func insertMarkdownReference(_ markdown: String, in textView: NSTextView, at charIndex: Int) {
+        textView.insertText(markdown, replacementRange: NSRange(location: charIndex, length: 0))
+    }
 
     private static func previewUpdateDebounce(for content: String) -> TimeInterval {
         let bytes = content.utf8.count

@@ -39,12 +39,20 @@ final class AppSettings {
         static let aiRequestTimeout   = "MEditor.aiRequestTimeout"
         static let aiInlineModel      = "MEditor.aiInlineModel"
         static let aiCustomSystemPrompt = "MEditor.aiCustomSystemPrompt"
+        static let aiAutoAttachContext  = "MEditor.aiAutoAttachContext"
         static let userDocPathBookmark = "MEditor.userDocPathBookmark"
         static let appDocPathBookmark  = "MEditor.appDocPathBookmark"
         // Claude Code 监听
         static let claudeMonitorEnabled   = "MEditor.claudeMonitorEnabled"
         static let claudeMonitorCustomPath = "MEditor.claudeMonitorCustomPath"
         static let claudeMonitorFileExts  = "MEditor.claudeMonitorFileExts"
+        // 导出
+        static let exportPreflightEnabled = "MEditor.exportPreflightEnabled"
+        static let pdfPaperSize  = "MEditor.pdfPaperSize"
+        static let pdfMargins    = "MEditor.pdfMargins"
+        static let pdfShowHeader = "MEditor.pdfShowHeader"
+        static let pdfShowFooter = "MEditor.pdfShowFooter"
+        static let pdfCoverPage  = "MEditor.pdfCoverPage"
     }
 
     /// LAN share server port (default 8899).
@@ -172,6 +180,12 @@ final class AppSettings {
         didSet { defaults.set(aiCustomSystemPrompt, forKey: Key.aiCustomSystemPrompt) }
     }
 
+    /// 发送聊天时自动把当前激活 tab 的文档作为默认上下文注入（默认开）。
+    /// 输入栏 chip 可针对单次发送移除；此开关为全局总开关。
+    var aiAutoAttachContext: Bool {
+        didSet { defaults.set(aiAutoAttachContext, forKey: Key.aiAutoAttachContext) }
+    }
+
     // MARK: - Claude Code 监听
 
     /// 是否启用 Claude Code 会话文件监听功能。
@@ -196,6 +210,49 @@ final class AppSettings {
             defaults.set(claudeMonitorFileExts, forKey: Key.claudeMonitorFileExts)
             NotificationCenter.default.post(name: .claudeMonitorSettingsChanged, object: nil)
         }
+    }
+
+    // MARK: - 导出
+
+    /// 导出 PDF/HTML 前是否先跑文档诊断（死链/缺图/标题/代码块）。
+    var exportPreflightEnabled: Bool {
+        didSet { defaults.set(exportPreflightEnabled, forKey: Key.exportPreflightEnabled) }
+    }
+
+    /// PDF 纸张大小（PDFExportOptions.PaperSize.rawValue，默认 a4）。
+    var pdfPaperSize: String {
+        didSet { defaults.set(pdfPaperSize, forKey: Key.pdfPaperSize) }
+    }
+
+    /// PDF 页边距档位（PDFExportOptions.MarginPreset.rawValue，默认 normal）。
+    var pdfMargins: String {
+        didSet { defaults.set(pdfMargins, forKey: Key.pdfMargins) }
+    }
+
+    /// PDF 页眉（文档标题）。
+    var pdfShowHeader: Bool {
+        didSet { defaults.set(pdfShowHeader, forKey: Key.pdfShowHeader) }
+    }
+
+    /// PDF 页脚（页码）。
+    var pdfShowFooter: Bool {
+        didSet { defaults.set(pdfShowFooter, forKey: Key.pdfShowFooter) }
+    }
+
+    /// PDF 封面页（标题 + 日期）。
+    var pdfCoverPage: Bool {
+        didSet { defaults.set(pdfCoverPage, forKey: Key.pdfCoverPage) }
+    }
+
+    /// 当前持久化值聚合成的 PDF 导出选项（非法 rawValue 回退默认）。
+    var pdfExportOptions: PDFExportOptions {
+        PDFExportOptions(
+            paperSize: PDFExportOptions.PaperSize(rawValue: pdfPaperSize) ?? .a4,
+            margins: PDFExportOptions.MarginPreset(rawValue: pdfMargins) ?? .normal,
+            showHeader: pdfShowHeader,
+            showFooter: pdfShowFooter,
+            coverPage: pdfCoverPage
+        )
     }
 
     /// 解析 `claudeMonitorFileExts` 为扩展名数组（小写无点）。
@@ -321,10 +378,19 @@ final class AppSettings {
         aiRequestTimeout = rawTimeout >= 30 ? rawTimeout : 300   // 默认 300s
         aiInlineModel = d.string(forKey: Key.aiInlineModel) ?? ""
         aiCustomSystemPrompt = d.string(forKey: Key.aiCustomSystemPrompt) ?? ""
+        aiAutoAttachContext = d.object(forKey: Key.aiAutoAttachContext) != nil
+            ? d.bool(forKey: Key.aiAutoAttachContext) : true
         // Claude Code 监听
         claudeMonitorEnabled    = d.object(forKey: Key.claudeMonitorEnabled) != nil ? d.bool(forKey: Key.claudeMonitorEnabled) : false
         claudeMonitorCustomPath = d.string(forKey: Key.claudeMonitorCustomPath) ?? ""
         claudeMonitorFileExts   = d.string(forKey: Key.claudeMonitorFileExts) ?? "md,txt"
+        // 导出
+        exportPreflightEnabled = d.object(forKey: Key.exportPreflightEnabled) != nil ? d.bool(forKey: Key.exportPreflightEnabled) : true
+        pdfPaperSize  = d.string(forKey: Key.pdfPaperSize) ?? PDFExportOptions.PaperSize.a4.rawValue
+        pdfMargins    = d.string(forKey: Key.pdfMargins) ?? PDFExportOptions.MarginPreset.normal.rawValue
+        pdfShowHeader = d.object(forKey: Key.pdfShowHeader) != nil ? d.bool(forKey: Key.pdfShowHeader) : false
+        pdfShowFooter = d.object(forKey: Key.pdfShowFooter) != nil ? d.bool(forKey: Key.pdfShowFooter) : false
+        pdfCoverPage  = d.bool(forKey: Key.pdfCoverPage)   // default false
     }
 }
 

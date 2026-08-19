@@ -44,9 +44,14 @@ struct InlineEditBar: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
             } else {
-                // 快速内联操作（根据内容类型动态调整）
-                ForEach(contextualActions) { action in
+                // 快速内联操作（根据内容类型动态调整，主行最多 4 个）
+                ForEach(primaryActions) { action in
                     actionButton(action)
+                }
+
+                // 放不下的动作收进「更多」
+                if !overflowActions.isEmpty {
+                    moreMenu
                 }
 
                 // Plugin command buttons (from enabled Skill.md with commands:)
@@ -88,32 +93,40 @@ struct InlineEditBar: View {
 
     // MARK: - 内容感知动作列表
 
-    /// 根据选中内容类型返回最相关的 AI 操作，最多 4 个。
-    private var contextualActions: [InlineEditAction] {
-        let t = selectedText.trimmingCharacters(in: .whitespaces)
+    /// 主行动作（最多 4 个），规则见 InlineEditBarPlan。
+    private var primaryActions: [InlineEditAction] {
+        InlineEditBarPlan.actions(for: selectedText).primary
+    }
 
-        // 代码块：显示解释 + 注释 + 精简
-        if t.hasPrefix("```") || t.hasPrefix("    ") {
-            return [.explainCode, .addComments, .condense]
-        }
+    /// 「更多」收纳的次优先动作。
+    private var overflowActions: [InlineEditAction] {
+        InlineEditBarPlan.actions(for: selectedText).overflow
+    }
 
-        // 标题：显示扩写章节 + 改写
-        if t.hasPrefix("#") {
-            return [.expandSection, .rewrite]
+    /// 「更多」下拉：放不下主行的动作，触发链路与主行按钮一致。
+    private var moreMenu: some View {
+        Menu {
+            ForEach(overflowActions) { action in
+                Button { triggerAction(action) } label: {
+                    Label(action.displayName, systemImage: action.icon)
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text(L("ai.inline.more"))
+                    .font(.system(size: 12, weight: .medium))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+            }
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(Color.primary.opacity(0.05), in: Capsule())
         }
-
-        // 列表：显示整理 + 扩写
-        let lines = t.components(separatedBy: "\n").filter { !$0.isEmpty }
-        let isListLike = lines.count >= 2 && lines.prefix(3).allSatisfy {
-            $0.hasPrefix("- ") || $0.hasPrefix("* ") || $0.hasPrefix("+ ") ||
-            $0.range(of: #"^\d+\. "#, options: .regularExpression) != nil
-        }
-        if isListLike {
-            return [.organizeList, .expand, .condense]
-        }
-
-        // 默认：标准四个操作
-        return [.rewrite, .expand, .condense, .translate]
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(L("ai.inline.more"))
     }
 
     // MARK: - Ask AI button

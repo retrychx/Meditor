@@ -37,7 +37,9 @@ struct EditorView: View {
                         writeBackNonce: state.editorWriteBackNonce,
                         theme: state.themeStore.current,
                         editorFontSize: settings.editorFontSize,
-                        editorFont: EditorFont(rawValue: settings.editorFontName) ?? .system
+                        editorFont: EditorFont(rawValue: settings.editorFontName) ?? .system,
+                        documentURL: tab.url,
+                        workspaceRoot: state.rootURL
                     )
                     .equatable()
                     .onAppear  { state.isEditorMounted = true  }
@@ -54,7 +56,8 @@ struct EditorView: View {
                     }
                     }
 
-                    if !state.editorSelectedText.isEmpty {
+                    // 选区浮动操作条：过短（<2 字符）或纯空行选区不出条
+                    if InlineEditBarPlan.shouldShow(for: state.editorSelectedText) {
                         InlineEditBar(selectedText: state.editorSelectedText)
                             .environment(state)
                             .padding(.bottom, 14)
@@ -172,8 +175,11 @@ private struct EditorViewContent: View, Equatable {
     let theme: PreviewTheme
     let editorFontSize: Int
     let editorFont: EditorFont
+    let documentURL: URL?
+    let workspaceRoot: URL?
 
     @Environment(AppState.self) private var state
+    @Environment(AppSettings.self) private var settings
 
     static func == (lhs: EditorViewContent, rhs: EditorViewContent) -> Bool {
         // Skip content string comparison — O(1) instead of O(n).
@@ -188,7 +194,9 @@ private struct EditorViewContent: View, Equatable {
         lhs.theme == rhs.theme &&
         lhs.language == rhs.language &&
         lhs.editorFontSize == rhs.editorFontSize &&
-        lhs.editorFont == rhs.editorFont
+        lhs.editorFont == rhs.editorFont &&
+        lhs.documentURL == rhs.documentURL &&
+        lhs.workspaceRoot == rhs.workspaceRoot
     }
 
     var body: some View {
@@ -214,22 +222,16 @@ private struct EditorViewContent: View, Equatable {
             onRangeChange: { range in
                 state.editorSelectedRange = range
             },
-            onSlashAIAction: { action, context, _ in
-                let prompt: String
-                switch action {
-                case .continueWriting:
-                    prompt = "请根据以下已有内容，继续写作（保持风格和语气一致，无缝衔接）：\n\n" + String(context.suffix(800))
-                case .improveCurrentParagraph:
-                    let para = (context.components(separatedBy: "\n\n").last ?? context)
-                               .trimmingCharacters(in: .whitespaces)
-                    prompt = "请改善以下段落的表达、逻辑和流畅度（保持核心意思不变）：\n\n" + para
-                case .summarizeAbove:
-                    prompt = "请总结以下内容，输出 3-5 条简洁要点：\n\n" + String(context.suffix(2000))
-                case .ask(let q):
-                    prompt = q.isEmpty ? "请回答一个问题（在此输入）：" : q
-                }
-                state.aiUI.pendingSelectionPrompt = prompt
-                withAnimation(DS.Motion.spring) { state.showingAIAssistant = true }
+            onSlashAIAction: { action, documentText, insertionRange in
+                guard case .command(let command, let argument) = action else { return }
+                SlashAICommandExecutor.run(
+                    command: command,
+                    argument: argument,
+                    documentText: documentText,
+                    insertionLocation: insertionRange.location,
+                    state: state,
+                    settings: settings
+                )
             },
             insertText: insertText,
             insertRequestID: insertRequestID,
@@ -240,7 +242,12 @@ private struct EditorViewContent: View, Equatable {
             writeBackNonce: writeBackNonce,
             theme: theme,
             editorFontSize: editorFontSize,
-            editorFont: editorFont
+            editorFont: editorFont,
+            documentURL: documentURL,
+            workspaceRoot: workspaceRoot,
+            onImageError: { message in
+                state.showToast(message, icon: "exclamationmark.triangle")
+            }
         )
     }
 }

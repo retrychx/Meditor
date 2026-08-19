@@ -15,6 +15,8 @@ enum InlineEditAction: String, CaseIterable, Identifiable {
     case expandSection = "扩写章节"
     // 列表类内容
     case organizeList  = "整理"
+    // 结构化内容
+    case convertToTable = "转表格"
 
     var id: String { rawValue }
 
@@ -30,6 +32,7 @@ enum InlineEditAction: String, CaseIterable, Identifiable {
         case .addComments:   return L("ai.inline.addComments")
         case .expandSection: return L("ai.inline.expandSection")
         case .organizeList:  return L("ai.inline.organizeList")
+        case .convertToTable: return L("ai.inline.toTable")
         }
     }
 
@@ -43,6 +46,7 @@ enum InlineEditAction: String, CaseIterable, Identifiable {
         case .addComments:   return "text.bubble"
         case .expandSection: return "doc.text.below.ecg"
         case .organizeList:  return "list.bullet.indent"
+        case .convertToTable: return "tablecells"
         }
     }
 
@@ -73,6 +77,7 @@ enum InlineEditAction: String, CaseIterable, Identifiable {
         case .addComments:   prefix = "为以下代码添加详尽的内联注释，注释用相应语言（中文中文注释）："
         case .expandSection: prefix = "以下标题为开头，展开内容并写出该章节的完整内容："
         case .organizeList:  prefix = "整理以下列表，排除重复、按逻辑顺序重新排列、补充遗漏项："
+        case .convertToTable: prefix = "将以下内容转换为规范的 Markdown 表格（合理设计列头，每行一条记录，不遗漏信息），只输出表格："
         }
         var msg = "\(prefix)\n\n\(text)"
         if let doc = document, !doc.isEmpty, doc != text {
@@ -83,6 +88,45 @@ enum InlineEditAction: String, CaseIterable, Identifiable {
             msg += "\n\n---\n以下是完整文档上下文（仅供参考，只输出处理后的选中部分）：\n\n\(capped)"
         }
         return msg
+    }
+}
+
+// MARK: - InlineEditBarPlan
+
+/// 选区浮动操作条（InlineEditBar）的展示规则：出条门控 + 按内容类型的动作分组。
+/// 纯函数，供 InlineEditBar / EditorView 与单元测试复用。
+enum InlineEditBarPlan {
+    /// 选区是否值得出条：去首尾空白/换行后不足 2 字符（含纯空行选区）不出条。
+    static func shouldShow(for selection: String) -> Bool {
+        selection.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2
+    }
+
+    /// 按选中内容类型返回（主行动作, 「更多」收纳动作）。主行最多 4 个，超出进「更多」。
+    static func actions(for selection: String) -> (primary: [InlineEditAction], overflow: [InlineEditAction]) {
+        let t = selection.trimmingCharacters(in: .whitespaces)
+
+        // 代码块：解释 + 注释 + 精简；改写/翻译进「更多」
+        if t.hasPrefix("```") || t.hasPrefix("    ") {
+            return ([.explainCode, .addComments, .condense], [.rewrite, .translate])
+        }
+
+        // 标题：扩写章节 + 改写；其余进「更多」
+        if t.hasPrefix("#") {
+            return ([.expandSection, .rewrite], [.expand, .condense, .translate])
+        }
+
+        // 列表：转表格优先，整理 + 扩写 + 精简随行；改写/翻译进「更多」
+        let lines = t.components(separatedBy: "\n").filter { !$0.isEmpty }
+        let isListLike = lines.count >= 2 && lines.prefix(3).allSatisfy {
+            $0.hasPrefix("- ") || $0.hasPrefix("* ") || $0.hasPrefix("+ ") ||
+            $0.range(of: #"^\d+\. "#, options: .regularExpression) != nil
+        }
+        if isListLike {
+            return ([.convertToTable, .organizeList, .expand, .condense], [.rewrite, .translate])
+        }
+
+        // 默认：核心四动作全部放得下，无需「更多」
+        return ([.rewrite, .expand, .condense, .translate], [])
     }
 }
 

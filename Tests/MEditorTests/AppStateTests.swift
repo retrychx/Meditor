@@ -56,6 +56,20 @@ final class AppStateTests: XCTestCase {
         super.tearDown()
     }
 
+    // MARK: - historyStore 注入
+
+    func test_historyStore_injectableWithTempDir() {
+        // 注入临时目录的 store：init 的后台清理不碰真实 ~/Library
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MEditorTests_\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let store = LocalHistoryStore(baseDir: tmp)
+        let s = AppState(fileService: mockService, fileWatcher: mockWatcher,
+                         historyStore: store)
+        let bucket = s.historyStore.bucketURL(for: URL(fileURLWithPath: "/tmp/x.md"))
+        XCTAssertTrue(bucket.path.hasPrefix(tmp.path))
+    }
+
     // MARK: - Helpers
 
     func makeItem(_ name: String, isDir: Bool = false) -> FileItem {

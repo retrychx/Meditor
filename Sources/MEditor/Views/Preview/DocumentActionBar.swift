@@ -197,6 +197,8 @@ struct DocumentActionBar: View {
             : [(L("export.html"), .html), (L("export.pdf"), .pdf), (L("export.image"), .image)]
 
         Menu {
+            Button(L("action.copyRichText")) { state.copyRichTextToPasteboard() }
+            Divider()
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 Button(item.title) { performExport(item.format) }
             }
@@ -228,12 +230,7 @@ struct DocumentActionBar: View {
     }
 
     private func performExport(_ format: PreviewExporter.ExportFormat) {
-        let suggestedName = state.selectedTab?.url.deletingPathExtension().lastPathComponent ?? "Untitled"
-        state.previewExporter.export(format: format, suggestedName: suggestedName) { result in
-            if case .failure(let error) = result {
-                state.setError(error.localizedDescription)
-            }
-        }
+        state.requestExport(format)
     }
 
     // MARK: - 分享菜单

@@ -81,6 +81,14 @@ struct MEditorApp: App {
                 .keyboardShortcut("s", modifiers: .command)
             }
 
+            CommandGroup(after: .pasteboard) {
+                Button(L("action.copyRichText")) {
+                    appState.copyRichTextToPasteboard()
+                }
+                .keyboardShortcut("c", modifiers: [.command, .option])
+                .disabled(!appState.previewExporter.isExportAvailable)
+            }
+
             CommandGroup(replacing: .textFormatting) {
                 Button(L("menu.find")) {
                     performFindCommand(tag: 1)
@@ -209,6 +217,13 @@ struct MEditorApp: App {
                 }
                 .keyboardShortcut("d", modifiers: [.command, .option])
                 .disabled(appState.rootURL == nil)
+
+                Button(L("menu.localHistory")) {
+                    appState.showingLocalHistory = true
+                }
+                // ⌃⌘H：⌥⌘H 与系统「隐藏其他」冲突
+                .keyboardShortcut("h", modifiers: [.command, .control])
+                .disabled(appState.selectedTab == nil)
             }
             CommandGroup(after: .appVisibility) {
                 Button("Install CLI Tool…") {

@@ -7,12 +7,35 @@ struct DocumentIssue: Identifiable, Equatable, Sendable {
         case missingImage(String)             // 图片引用指向不存在的本地文件
         case duplicateHeading(String)         // 同文档内重复出现的标题文本
         case headingLevelSkip(from: Int, to: Int)  // 标题层级跳跃（如 H1 → H3）
+        case emptyHeading                     // 只有 # 没有文字的标题
+        case unclosedCodeBlock                // 围栏代码块没有收尾（报在开栏行）
+
+        /// 模型能否通过改文本修复（「让 Agent 修复」入口的可用性口径）。
+        /// missingImage 是纯缺失资源——模型变不出图片文件，改文本只能删引用，
+        /// 不算可修复；死链模型可以改路径/去掉链接，算可修复。
+        var isAgentFixable: Bool {
+            if case .missingImage = self { return false }
+            return true
+        }
+    }
+
+    /// 严重度：error 会让导出产物明显缺内容，warning 只是质量提醒。
+    enum Severity: Equatable, Sendable {
+        case error
+        case warning
     }
 
     let kind: Kind
     let fileURL: URL
     /// 0-based 行号（与 requestEditorScroll / TOC 的约定一致）
     let line: Int
+
+    var severity: Severity {
+        switch kind {
+        case .missingImage, .unclosedCodeBlock: return .error
+        case .deadLink, .duplicateHeading, .headingLevelSkip, .emptyHeading: return .warning
+        }
+    }
 
     var id: String { "\(fileURL.path):\(line):\(kind)" }
 }
@@ -38,6 +61,7 @@ enum DocumentDiagnostics {
         var issues: [DocumentIssue] = []
         var inFence = false
         var fenceMarker: Character = "`"
+        var fenceOpenLine = 0
         var seenHeadings: Set<String> = []
         var previousHeadingLevel = 0
 
@@ -51,6 +75,7 @@ enum DocumentDiagnostics {
                 if !inFence {
                     inFence = true
                     fenceMarker = marker
+                    fenceOpenLine = lineIndex
                 } else if marker == fenceMarker {
                     inFence = false
                 }
@@ -60,7 +85,11 @@ enum DocumentDiagnostics {
 
             // 标题规则
             if let heading = MarkdownText.headingPrefix(line) {
-                if seenHeadings.contains(heading.text) {
+                if heading.text.isEmpty {
+                    issues.append(DocumentIssue(
+                        kind: .emptyHeading,
+                        fileURL: fileURL, line: lineIndex))
+                } else if seenHeadings.contains(heading.text) {
                     issues.append(DocumentIssue(
                         kind: .duplicateHeading(heading.text),
                         fileURL: fileURL, line: lineIndex))
@@ -89,6 +118,13 @@ enum DocumentDiagnostics {
                     kind: isImage ? .missingImage(target) : .deadLink(target),
                     fileURL: fileURL, line: lineIndex))
             }
+        }
+
+        // 扫描结束仍在围栏内 → 代码块未闭合，报在开栏行
+        if inFence {
+            issues.append(DocumentIssue(
+                kind: .unclosedCodeBlock,
+                fileURL: fileURL, line: fenceOpenLine))
         }
         return issues
     }

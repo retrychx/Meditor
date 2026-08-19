@@ -80,8 +80,12 @@ final class SlashCommandTests: XCTestCase {
     }
 
     func testExpansionTableText() {
+        // /table 已升级为 AI 命令（模型转表格，diff 确认写回）；静态两列骨架
+        // 作为空目标兜底保留在注册表条目的 emptyFallbackInsertion。
         let item = SlashCommandHandler.allCommands.first { $0.aliases.contains("/table") }
-        XCTAssertEqual(item?.expansion?.text, "| Column | Column |\n| --- | --- |\n|  |  |")
-        XCTAssertEqual(item?.expansion?.cursorOffset, 36)
+        XCTAssertNil(item?.expansion)
+        XCTAssertEqual(item?.aiCommandID, "table")
+        XCTAssertEqual(item?.aiCommand?.emptyFallbackInsertion,
+                       "| Column | Column |\n| --- | --- |\n|  |  |")
     }
 }
