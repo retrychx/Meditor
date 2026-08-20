@@ -15,6 +15,9 @@ private let fileWatcherCallback: FSEventStreamCallback = { _, info, _, _, _, _ i
 
 final class FileWatcherService: FileWatcherServiceProtocol {
     private var streamRef: FSEventStreamRef?
+    /// 与 stream context 的 `passRetained` 配对，stopWatching 里对称 release。
+    /// 流存活期间回调随时可能触发，retain 保证 deinit 与回调竞态窗口内 self 不悬垂。
+    private var retainedSelf: Unmanaged<FileWatcherService>?
     private let queue = DispatchQueue(label: "com.meditor.filewatcher")
     /// Protected by `lock` — accessed from both `queue` (callback) and main thread.
     private var _onChange: (() -> Void)?
@@ -36,9 +39,12 @@ final class FileWatcherService: FileWatcherServiceProtocol {
 
         let paths = urls.map { $0.path } as CFArray
 
+        // passRetained：在 stopWatching（deinit 亦走此路径）中对称 release，
+        // 覆盖 deinit 与回调的竞态窗口。若流创建失败，立即归还这次 retain。
+        let retained = Unmanaged.passRetained(self)
         var context = FSEventStreamContext(
             version: 0,
-            info: Unmanaged.passUnretained(self).toOpaque(),
+            info: retained.toOpaque(),
             retain: nil,
             release: nil,
             copyDescription: nil
@@ -52,9 +58,13 @@ final class FileWatcherService: FileWatcherServiceProtocol {
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
             1.0,
             FSEventStreamCreateFlags(kFSEventStreamCreateFlagWatchRoot | kFSEventStreamCreateFlagFileEvents)
-        ) else { return }
+        ) else {
+            retained.release()
+            return
+        }
 
         streamRef = stream
+        retainedSelf = retained
         FSEventStreamSetDispatchQueue(stream, queue)
         FSEventStreamStart(stream)
     }
@@ -71,6 +81,11 @@ final class FileWatcherService: FileWatcherServiceProtocol {
         // dispatched blocks may still be in the queue. This sync barrier ensures
         // they complete before we nil out the handler.
         queue.sync {}
+
+        // 与 startWatching 的 passRetained 对称释放。此时队列已排空，
+        // 不会再有回调经 takeUnretainedValue 访问该指针，无悬垂/双释放。
+        retainedSelf?.release()
+        retainedSelf = nil
 
         lock.lock()
         _onChange = nil

@@ -32,6 +32,8 @@ struct EditorTabBar: View {
                     }
                     .onDrop(of: [UTType.text],
                             delegate: TabDropDelegate(tab: tab, draggedTabID: $draggedTabID, state: state))
+                    // 锚点视图：右键拦截器靠它把点击位置映射回 tab（见文件底部）
+                    .background(TabAnchorView(tabID: tab.id))
                     .contextMenu {
                         Button(L("tab.close")) { state.closeTab(tab.id) }
                         Button(L("tab.closeOthers")) {
@@ -64,6 +66,8 @@ struct EditorTabBar: View {
         .disableScrollEdgeEffectsIfAvailable()
         // macOS 26 的 NSToolbar 还会给每个 item 套 Liquid Glass 胶囊——拆掉
         .background(ToolbarItemGlassDisabler())
+        // 右键落进 toolbar 区域会被 NSToolbar 抢走弹系统显示模式菜单——拦截自处理
+        .background(TabBarRightClickGuard(state: state))
         // item 尺寸大于内容尺寸时，即便拆了胶囊描边，NSToolbarItem 自身默认的
         // 浅色圆角容器背景仍会在未被内容覆盖的尾部露出一块——垫一层与 toolbar
         // 同色的实底盖住它（比 .scrollContentBackground(.hidden) 更彻底）。
@@ -290,5 +294,210 @@ private extension View {
         #else
         self
         #endif
+    }
+}
+
+// MARK: - Right-click guard
+
+/// 右键落在 toolbar 的 tab 条区域时，NSToolbar 会抢在 SwiftUI .contextMenu 之前
+/// 弹出系统显示模式菜单（Icon and Text / Icon Only / Text Only）。
+/// 这里用本地事件监视器在事件派发给视图层之前拦截：命中 tab 时弹我们自己的
+/// NSMenu（内容与 SwiftUI contextMenu 一致），命中空白区直接吞掉——两种情况
+/// 系统菜单都不再出现。
+struct TabBarRightClickGuard: NSViewRepresentable {
+    let state: AppState
+
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView()
+        context.coordinator.state = state
+        DispatchQueue.main.async { context.coordinator.arm(marker: v) }
+        return v
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.state = state
+        DispatchQueue.main.async { context.coordinator.arm(marker: nsView) }
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.disarm()
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        weak var marker: NSView?
+        var state: AppState?
+        private var monitor: Any?
+
+        func arm(marker: NSView) {
+            self.marker = marker
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
+                // 本地监视器在事件派发前、主线程上回调——直接 assume，模式同
+                // ToolbarItemGlassDisabler 的 didUpdate 闭包
+                MainActor.assumeIsolated {
+                    guard let self, self.handleRightClick(event) else { return event }
+                    return nil
+                }
+            }
+        }
+
+        func disarm() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
+
+        /// 返回 true 表示事件已消费（不再传给 toolbar/其他视图）。
+        func handleRightClick(_ event: NSEvent) -> Bool {
+            guard let marker, let window = marker.window, event.window === window,
+                  let toolbar = window.toolbar,
+                  let itemView = toolbar.items.first(where: {
+                      $0.view.map { marker.isDescendant(of: $0) } ?? false
+                  })?.view
+            else { return false }
+            let loc = itemView.convert(event.locationInWindow, from: nil)
+            guard itemView.bounds.contains(loc) else { return false }
+            if let state,
+               let tabID = TabAnchorRegistry.shared.tabID(at: loc, in: itemView, window: window),
+               let tab = state.openTabs.first(where: { $0.id == tabID }) {
+                state.selectTab(tabID)   // Safari 习惯：右键先选中再弹菜单
+                let menu = TabContextMenu.make(tab: tab, state: state, target: self)
+                NSMenu.popUpContextMenu(menu, with: event, for: itemView.hitTest(loc) ?? itemView)
+            }
+            // 空白区：什么都不弹，但也吞掉，挡住系统显示模式菜单
+            return true
+        }
+
+        // MARK: - Menu actions
+
+        @objc func closeTabAction(_ sender: NSMenuItem) {
+            withTab(sender) { state, tab in state.closeTab(tab.id) }
+        }
+
+        @objc func closeOthersAction(_ sender: NSMenuItem) {
+            withTab(sender) { state, tab in
+                state.openTabs.filter { $0.id != tab.id }.forEach { state.closeTab($0.id) }
+            }
+        }
+
+        @objc func closeAllAction(_ sender: NSMenuItem) {
+            withTab(sender) { state, _ in state.openTabs.forEach { state.closeTab($0.id) } }
+        }
+
+        @objc func showInFinderAction(_ sender: NSMenuItem) {
+            withTab(sender) { _, tab in NSWorkspace.shared.activateFileViewerSelecting([tab.url]) }
+        }
+
+        @objc func saveAsTemplateAction(_ sender: NSMenuItem) {
+            withTab(sender) { state, _ in state.showingSaveTemplate = true }
+        }
+
+        private func withTab(_ sender: NSMenuItem, _ body: (AppState, EditorTab) -> Void) {
+            guard let state,
+                  let id = sender.representedObject as? UUID,
+                  let tab = state.openTabs.first(where: { $0.id == id }) else { return }
+            body(state, tab)
+        }
+    }
+}
+
+// MARK: - Tab context menu builder
+
+/// 与 TabItem 上 SwiftUI .contextMenu 同款的 AppKit 版菜单（右键走事件监视器，
+/// SwiftUI 菜单实际到不了用户面前，但保留无害——万一 Apple 修复了路由即自动恢复）。
+@MainActor
+enum TabContextMenu {
+    typealias ActionTarget = TabBarRightClickGuard.Coordinator
+
+    static func make(tab: EditorTab, state: AppState, target: ActionTarget) -> NSMenu {
+        let menu = NSMenu()
+        func add(_ key: String, _ action: Selector, enabled: Bool = true) {
+            let item = NSMenuItem(title: L(key), action: action, keyEquivalent: "")
+            item.target = target
+            item.representedObject = tab.id
+            item.isEnabled = enabled
+            menu.addItem(item)
+        }
+        add("tab.close", #selector(ActionTarget.closeTabAction(_:)))
+        add("tab.closeOthers", #selector(ActionTarget.closeOthersAction(_:)))
+        add("tab.closeAll", #selector(ActionTarget.closeAllAction(_:)))
+        menu.addItem(.separator())
+        add("tab.showInFinder", #selector(ActionTarget.showInFinderAction(_:)))
+        menu.addItem(.separator())
+        // 与 SwiftUI 版一致：没有选中 tab 时禁用（右键已先 selectTab，实际总可用）
+        add("menu.saveAsTemplate", #selector(ActionTarget.saveAsTemplateAction(_:)),
+            enabled: state.selectedTab != nil)
+        return menu
+    }
+}
+
+// MARK: - Tab anchor registry
+
+/// tabID → 锚点视图 的弱引用注册表。锚点以 .background 挂在每个 tab 上，
+/// 尺寸跟随 tab 内容。右键命中判定走纯几何：把每个锚点的 frame 换算到
+/// tab 条（toolbar item）坐标系，点击落在哪个锚点矩形里就属于哪个 tab——
+/// 不假设 SwiftUI 视图树的嵌套方式（实测层级比「兄弟节点」模型深，沿
+/// superview 链找锚点不可靠）。
+@MainActor
+final class TabAnchorRegistry {
+    static let shared = TabAnchorRegistry()
+
+    private var table = NSMapTable<NSView, NSString>(keyOptions: .weakMemory, valueOptions: .strongMemory)
+
+    func register(_ view: NSView, tabID: UUID) {
+        table.setObject(tabID.uuidString as NSString, forKey: view)
+    }
+
+    func unregister(_ view: NSView) {
+        table.removeObject(forKey: view)
+    }
+
+    /// 点击点（window 坐标系）是否落在任一注册锚点的矩形内。
+    /// 供窗口级右键监视器区分「tab 条区域（放行给 TabBarRightClickGuard 弹菜单）」
+    /// 和「toolbar 其余区域（吞掉，挡系统显示模式菜单）」。
+    func isPointInTabStrip(_ windowPoint: NSPoint, window: NSWindow) -> Bool {
+        for case let anchor as NSView in table.keyEnumerator() where anchor.window === window {
+            let rect = anchor.convert(anchor.bounds, to: nil)
+            if rect.insetBy(dx: -2, dy: -2).contains(windowPoint) { return true }
+        }
+        return false
+    }
+
+    /// 点击点（coordinateSpace 坐标系）落在哪个注册锚点的矩形内；多个重叠时取面积最小者。
+    func tabID(at point: NSPoint, in coordinateSpace: NSView, window: NSWindow) -> UUID? {
+        var best: (id: UUID, area: CGFloat)?
+        for case let anchor as NSView in table.keyEnumerator() {
+            guard anchor.window === window,
+                  let raw = table.object(forKey: anchor) as String?,
+                  let id = UUID(uuidString: raw) else { continue }
+            let rect = anchor.convert(anchor.bounds, to: coordinateSpace)
+            guard rect.contains(point) else { continue }
+            let area = rect.width * rect.height
+            if area < (best?.area ?? .greatestFiniteMagnitude) {
+                best = (id, area)
+            }
+        }
+        return best?.id
+    }
+}
+
+/// 每个 tab 的锚点标记视图（不可见、不响应事件——纯身份标记）。
+private struct TabAnchorView: NSViewRepresentable {
+    let tabID: UUID
+
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView()
+        TabAnchorRegistry.shared.register(v, tabID: tabID)
+        return v
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        TabAnchorRegistry.shared.register(nsView, tabID: tabID)
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: ()) {
+        TabAnchorRegistry.shared.unregister(nsView)
     }
 }

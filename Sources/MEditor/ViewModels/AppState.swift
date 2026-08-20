@@ -604,7 +604,7 @@ final class AppState {
         } else if let root = rootURL {
             targetURL = root.appendingPathComponent("inbox.md")
         } else {
-            showToast("请先打开一个工作区", icon: "exclamationmark.triangle")
+            showToast(L("toast.noWorkspace"), icon: "exclamationmark.triangle")
             return
         }
         Task {
@@ -615,7 +615,7 @@ final class AppState {
                     tab.content = newContent
                     tab.contentRevision &+= 1
                 }
-                showToast("已新增待办到 \(targetURL.lastPathComponent)", icon: "checkmark.circle")
+                showToast(L("toast.todoAdded", targetURL.lastPathComponent), icon: "checkmark.circle")
             } catch {
                 setError(error.localizedDescription)
             }

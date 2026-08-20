@@ -247,4 +247,31 @@ final class TabManagerTests: XCTestCase {
 
         XCTAssertFalse(tab.isModified, "saveTab should clear isModified after a successful write")
     }
+
+    /// M1 回归：同一 URL 的两次快速保存必须按触发顺序落盘。
+    /// 第一次写盘被人为放慢；若没有 per-URL 串行化，第二次（新内容）会先写完，
+    /// 随后被第一次的旧内容覆盖。
+    func testSaveTabSerializesConcurrentWritesForSameURL() async throws {
+        let item = makeFile("race.md")
+        tabManager.openFileUnchecked(item)
+        let tab = tabManager.openTabs[0]
+
+        mockService.writeDelay = 0.3
+        tabManager.updateTabContent(tab.id, content: "old content")
+        tabManager.saveTab(tab)
+
+        mockService.writeDelay = 0
+        tabManager.updateTabContent(tab.id, content: "new content")
+        tabManager.saveTab(tab)
+
+        let deadline = Date().addingTimeInterval(5)
+        while mockService.writeCount < 2 && Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(mockService.writeCount, 2, "both saves should complete")
+        XCTAssertEqual(
+            mockService.fileContent(at: item.url), "new content",
+            "the newer save must land last; the slower older write must not overwrite it"
+        )
+    }
 }

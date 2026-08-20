@@ -18,6 +18,7 @@ struct WindowConfigurator: NSViewRepresentable {
     class Coordinator: NSObject {
         private var observation: NSKeyValueObservation?
         private var titleObservation: NSKeyValueObservation?
+        private var rightClickMonitor: Any?
         private weak var window: NSWindow?
 
         /// makeNSView 时窗口可能尚未挂链（不同启动路径时序不同）——
@@ -36,6 +37,7 @@ struct WindowConfigurator: NSViewRepresentable {
         func attach(to window: NSWindow) {
             self.window = window
             configure(window)
+            installToolbarRightClickSwallow()
             // SwiftUI 安装/更新 toolbar（包括后续增删 toolbar item）时会把
             // titleVisibility 重置回 visible，「MEditor」标题因此反复冒出来。
             // didUpdate 每次窗口事件后触发——幂等重放隐藏，成本可忽略。
@@ -60,6 +62,31 @@ struct WindowConfigurator: NSViewRepresentable {
             w.titleVisibility = .hidden
             DispatchQueue.main.async {
                 self.installDoubleClickZoom(w)
+            }
+        }
+
+        // MARK: - Toolbar right-click swallow
+
+        /// 右键落在 toolbar 横带的任何空白处（含侧栏上方的左半段），NSToolbar 都会
+        /// 弹系统显示模式菜单（Icon and Text / Icon Only / Text Only）——对文档
+        /// 工作台毫无意义的设置入口，吞掉。tab 条区域的右键放行：注册顺序上本监视器
+        /// 先于 TabBarRightClickGuard 的监视器，返回 event 让它继续走到 tab 守卫弹菜单。
+        private func installToolbarRightClickSwallow() {
+            guard rightClickMonitor == nil else { return }
+            rightClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
+                MainActor.assumeIsolated {
+                    guard let self, let window = self.window, event.window === window,
+                          let root = window.contentView?.superview
+                    else { return event }
+                    // tab 条区域放行给 tab 守卫
+                    if TabAnchorRegistry.shared.isPointInTabStrip(event.locationInWindow, window: window) {
+                        return event
+                    }
+                    // 顶部 chrome 带（与 ChromeDoubleClickZoom 同一 52pt 启发式）内的右键吞掉
+                    let loc = root.convert(event.locationInWindow, from: nil)
+                    if loc.y >= root.bounds.height - 52 { return nil }
+                    return event
+                }
             }
         }
 

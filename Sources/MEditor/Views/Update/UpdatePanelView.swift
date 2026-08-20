@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Sparkle 更新面板（中文、DS 样式）：承载检查/发现/下载/解压/安装/就绪全流程。
+/// Sparkle 更新面板（双语 L()、DS 样式）：承载检查/发现/下载/解压/安装/就绪全流程。
 /// 状态与按钮回调见 UpdatePanelState / SparkleUserDriver。
 struct UpdatePanelView: View {
     let state: UpdatePanelState
@@ -43,15 +43,15 @@ struct UpdatePanelView: View {
 
     private var headerTitle: String {
         switch state.phase {
-        case .checking: return "检查更新"
-        case .permission: return "自动检查更新"
-        case .found: return "发现新版本"
-        case .downloading: return "正在下载更新"
-        case .extracting: return "正在准备更新"
-        case .installing: return "正在安装更新"
-        case .ready: return "更新已就绪"
-        case .notFound: return "已是最新版本"
-        case .failed: return "更新失败"
+        case .checking: return L("update.title.checking")
+        case .permission: return L("update.title.permission")
+        case .found: return L("update.title.found")
+        case .downloading: return L("update.title.downloading")
+        case .extracting: return L("update.title.extracting")
+        case .installing: return L("update.title.installing")
+        case .ready: return L("update.title.ready")
+        case .notFound: return L("update.title.notFound")
+        case .failed: return L("update.title.failed")
         }
     }
 
@@ -63,13 +63,13 @@ struct UpdatePanelView: View {
         case .checking:
             HStack(spacing: DS.Space.sm) {
                 ProgressView().controlSize(.small)
-                Text("正在检查更新…")
+                Text(L("update.checking"))
                     .font(DS.Font.label())
                     .foregroundStyle(.secondary)
             }
 
         case .permission:
-            Text("允许 MEditor 每天自动检查一次新版本吗？检查结果仅包含版本号，不会发送任何个人信息。")
+            Text(L("update.permissionPrompt"))
                 .font(DS.Font.label())
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -86,7 +86,7 @@ struct UpdatePanelView: View {
                 .background(DS.Color.pillBg)
                 .clipShape(RoundedRectangle(cornerRadius: DS.Radius.md))
             } else {
-                Text("新版本已发布，建议更新。")
+                Text(L("update.foundNoNotes"))
                     .font(DS.Font.label())
                     .foregroundStyle(.secondary)
             }
@@ -100,7 +100,7 @@ struct UpdatePanelView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ProgressView()
-                    Text("正在下载…")
+                    Text(L("update.downloading"))
                         .font(DS.Font.label())
                         .foregroundStyle(.secondary)
                 }
@@ -109,7 +109,7 @@ struct UpdatePanelView: View {
         case .extracting:
             VStack(alignment: .leading, spacing: DS.Space.xs) {
                 ProgressView(value: state.extractionProgress)
-                Text("正在解压安装包…")
+                Text(L("update.extracting"))
                     .font(DS.Font.label())
                     .foregroundStyle(.secondary)
             }
@@ -117,18 +117,18 @@ struct UpdatePanelView: View {
         case .installing:
             HStack(spacing: DS.Space.sm) {
                 ProgressView().controlSize(.small)
-                Text("正在安装，应用将自动重启…")
+                Text(L("update.installing"))
                     .font(DS.Font.label())
                     .foregroundStyle(.secondary)
             }
 
         case .ready:
-            Text("下载完成，重启后生效。")
+            Text(L("update.readyMessage"))
                 .font(DS.Font.label())
                 .foregroundStyle(.secondary)
 
         case .notFound:
-            Text("当前版本 \(state.currentVersion) 已是最新。")
+            Text(L("update.notFoundMessage", state.currentVersion))
                 .font(DS.Font.label())
                 .foregroundStyle(.secondary)
 
@@ -148,19 +148,19 @@ struct UpdatePanelView: View {
             Spacer()
             switch state.phase {
             case .checking, .downloading:
-                panelButton("取消", role: .secondary) { state.cancelAction?() }
+                panelButton(L("common.cancel"), role: .secondary) { state.cancelAction?() }
             case .permission:
-                panelButton("不允许", role: .secondary) { state.secondaryAction?() }
-                panelButton("允许自动检查", role: .primary) { state.primaryAction?() }
+                panelButton(L("update.disallow"), role: .secondary) { state.secondaryAction?() }
+                panelButton(L("update.allowAutoCheck"), role: .primary) { state.primaryAction?() }
             case .found:
-                panelButton("跳过此版本", role: .plain) { state.tertiaryAction?() }
-                panelButton("稍后提醒", role: .secondary) { state.secondaryAction?() }
-                panelButton("立即更新", role: .primary) { state.primaryAction?() }
+                panelButton(L("update.skipVersion"), role: .plain) { state.tertiaryAction?() }
+                panelButton(L("update.remindLater"), role: .secondary) { state.secondaryAction?() }
+                panelButton(L("update.updateNow"), role: .primary) { state.primaryAction?() }
             case .ready:
-                panelButton("稍后", role: .secondary) { state.secondaryAction?() }
-                panelButton("立即重启", role: .primary) { state.primaryAction?() }
+                panelButton(L("update.later"), role: .secondary) { state.secondaryAction?() }
+                panelButton(L("update.restartNow"), role: .primary) { state.primaryAction?() }
             case .notFound, .failed:
-                panelButton("好", role: .primary) { state.primaryAction?() }
+                panelButton(L("common.ok"), role: .primary) { state.primaryAction?() }
             case .extracting, .installing:
                 EmptyView()
             }

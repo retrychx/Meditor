@@ -234,14 +234,36 @@ final class TabManager {
         if selectedTabID == tabID { onSyncPreview?(tab) }
     }
 
+    /// 一次进行中的写盘：task 用于串联同 URL 的保存顺序，id 用于完成后的安全清理。
+    private struct PendingSave {
+        let id: UUID
+        let task: Task<Void, Never>
+    }
+
+    /// 每个 URL 最近一次写盘的记录，用于把同一文件的并发保存串成链：
+    /// 自动保存 / 2s 防抖 / 手动 ⌘S 三条路径可能对同一 URL 并发触发写盘，
+    /// 若不串行化，先发的旧内容可能后完成 rename、覆盖新内容（评审 M1）。
+    @ObservationIgnored private var pendingSaves: [URL: PendingSave] = [:]
+
     func saveTab(_ tab: EditorTab) {
         guard tab.isModified else { return }
         // 乐观更新 UI：先清除修改标记，避免用户连续触发多次写入
         tab.isModified = false
-        let content = tab.content
-        let url     = tab.url
-        let svc     = fileService
-        Task.detached(priority: .userInitiated) { [weak self] in
+        let content  = tab.content
+        let url      = tab.url
+        let svc      = fileService
+        let previous = pendingSaves[url]?.task
+        let saveID   = UUID()
+        let task = Task.detached(priority: .userInitiated) { [weak self] in
+            // 等同一 URL 的上一次写盘完成，保证落盘顺序与保存触发顺序一致
+            _ = await previous?.value
+            defer {
+                // 清理链条尾部条目（仅当仍是自己，避免误删更新的任务），防止字典无限增长
+                Task { @MainActor [weak self] in
+                    guard let self, self.pendingSaves[url]?.id == saveID else { return }
+                    self.pendingSaves[url] = nil
+                }
+            }
             do {
                 try svc.writeFile(at: url, content: content)
                 await self?.didSaveTab(tab, url: url)
@@ -250,6 +272,7 @@ final class TabManager {
                 await self?.didFailSaveTab(tab, url: url, error: error)
             }
         }
+        pendingSaves[url] = PendingSave(id: saveID, task: task)
     }
 
     @MainActor

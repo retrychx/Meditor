@@ -46,17 +46,30 @@ MEditor 是 **macOS 上给技术人写文档的 Agent 工作台**。核心闭环
 - **运行可观测** — 每次运行展示 token 用量与耗时
 - **行内 diff 审阅** — Agent 的修改以可审阅的 diff 落地，绝不覆盖你正在输入的内容；`@mention` 把文件拉进上下文；多会话历史保留每段对话
 
+### ⚡ AI 织进写作流
+
+- **斜杠命令库** — 编辑器里输入 `/` 唤出 `/ask` `/polish` `/outline` `/translate` `/summary` `/fix` `/table` 等命令；改文档的命令以流式 diff 呈现，确认后才写回
+- **选区浮动操作条** — 选中文字浮出 改写 / 精简 / 扩写 / 翻译（选中列表还能转表格）；Esc 关闭
+- **上下文自动化** — 对话自动附带当前文档（输入栏 chip 可移除、设置可关）；超预算时智能截取光标附近内容加首尾
+- **诊断 → 一键修复** — 诊断面板和导出预检里点「让 Agent 修复」，模型修完自动重扫对比
+
 ### 🔄 闭环：改 → 渲染 → 迭代
 
 - **实时预览** — 基于 marked.js 的 Markdown 渲染、highlight.js 代码高亮、Mermaid.js 图表
 - **跟得上的编辑器** — 原生 `NSTextView` 编辑，40+ 语言高亮，双向滚动同步，查找替换，快速打开（⌘P），标签页，FSEvents 驱动的文件浏览器
+- **图片自动落盘** — 截图 ⌘V 或拖入图片，自动存入 `assets/` 并插入相对路径
+- **本地历史快照** — 每次保存落快照（时间分层保留）；「文件历史」（⌃⌘H）面板 diff 对比、一键恢复，恢复本身也可撤销
+- **全局搜索（⌘⇧F）**、TOC 大纲、标签页右键菜单（关闭其他 / Finder 显示 / 存为模板），以及 Finder 里的 Quick Look 空格预览
 
 ### 🚀 交付与分享
 
-- **局域网分享** — 内置 HTTP 服务，一次性令牌鉴权
+- **局域网分享** — 内置 HTTP 服务，一次性令牌鉴权；也支持一键发布 **Gist**
 - **在线发布** — 经 Cloudflare 一键发布到公网
 - **iOS 伴侣** — 在手机上通过 iCloud 编辑、聊天、发布
 - **放映模式与专注模式**，HTML / PDF / 2× PNG 导出，预览主题（GitHub / Nord / Dracula）
+- **导出前检查** — 导出 PDF/HTML 前自动诊断死链、缺图、标题问题（设置可关）
+- **PDF 导出主题** — 纸张、边距、页眉页脚、封面页可选；默认导出的 PDF 保留可点击链接
+- **复制为富文本** — ⌥⌘C 复制渲染后的格式，贴到飞书 / 邮件保留排版
 - **Sparkle 自动更新** — 安装包见 [meditorapp.pages.dev](https://meditorapp.pages.dev)
 
 ---
@@ -186,19 +199,21 @@ MEditor/
 - [x] 真 Agent：14 个工具、多轮循环、三种后端（OpenAI 兼容 / Anthropic / Claude CLI）、BYOK
 - [x] Agent 加固：写文件确认、命令沙盒风险分级、上下文预算、停滞检测、只读工具并行、用量显示
 - [x] 行内编辑 diff 审阅、`@mention` 上下文、多会话历史
+- [x] 斜杠命令库、选区浮动操作条、文档上下文自动附带
+- [x] 图片粘贴/拖拽自动落盘、本地历史快照、标签页右键菜单
+- [x] 导出预检 + 一键 Agent 修复、PDF 导出主题、复制为富文本
+- [x] 全局搜索（⌘⇧F）、Quick Look 插件
 - [x] 局域网分享 + Cloudflare 在线发布
 - [x] iOS 伴侣（iCloud 编辑 / 聊天 / 发布）
 - [x] 放映与专注模式、HTML 导出、预览主题、Sparkle 自动更新
 
 **下一步**（Phase 1–3）
 - [ ] Onboarding —— 首启引导、零配置 Claude CLI 默认后端、脚本化演示
-- [ ] 全局搜索（⌘⇧F）—— 建在共享工作区索引上，同时供 Agent 搜索与快速打开使用
 - [ ] Agent 运行一键回滚（run 级检查点）
 
 **后续**（Phase 4–6）
-- [ ] Spotlight 索引与 Quick Look 插件、Shortcuts intents
+- [ ] Spotlight 索引与 Shortcuts intents
 - [ ] MCP Server —— 把 Agent 工具暴露给 Claude Desktop / Cursor
-- [ ] 诊断中心 —— 死链、缺图、标题层级检查
 
 ---
 

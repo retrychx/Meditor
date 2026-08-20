@@ -46,17 +46,30 @@ Pure SwiftUI + AppKit — **no Electron**. Bring-your-own-key — **your documen
 - **Observable runs** — Token usage and elapsed time shown per run
 - **Inline diff review** — Agent edits land as reviewable diffs that never clobber your own typing; `@mention` pulls files into context; multi-session history keeps every conversation
 
+### ⚡ AI woven into the writing flow
+
+- **Slash commands** — Type `/` in the editor to pull up `/ask` `/polish` `/outline` `/translate` `/summary` `/fix` `/table` and more; commands that rewrite your document stream their changes as a diff you confirm before anything lands
+- **Selection action bar** — Select text and a floating bar offers rewrite / tighten / expand / translate (select a list and it can become a table); Esc dismisses
+- **Context automation** — Conversations auto-attach the current document (removable chip in the composer, can be disabled in Settings); when over budget it's smartly trimmed to the cursor's neighborhood plus head and tail
+- **Diagnostics → one-click fix** — The diagnostics panel and pre-export checks offer "Let Agent fix it"; the model repairs, then re-scans so you can compare
+
 ### 🔄 The loop: edit → render → iterate
 
 - **Live preview** — Real-time Markdown rendering (marked.js), code highlighting (highlight.js), diagrams (Mermaid.js)
 - **Editor that keeps up** — Native `NSTextView` editing with 40+ language highlighting, bidirectional scroll sync, find & replace, Quick Open (⌘P), tabs, and an FSEvents-driven file browser
+- **Images land on disk by themselves** — ⌘V a screenshot or drag an image in; it's saved to `assets/` and inserted as a relative path
+- **Local history snapshots** — Every save keeps a snapshot with tiered retention; File History (⌃⌘H) diffs any two versions and restores in one click — and the restore itself is undoable
+- **Global search (⌘⇧F)**, TOC outline, tab context menus (close others / reveal in Finder / save as template), and Quick Look previews from Finder
 
 ### 🚀 Deliver & share
 
-- **LAN share** — Built-in HTTP server with one-time token auth
+- **LAN share** — Built-in HTTP server with one-time token auth; one-click **Gist** publishing too
 - **Online publish** — One-click publish via Cloudflare
 - **iOS companion** — Edit, chat, and publish over iCloud from your phone
 - **Presentation & focus modes**, HTML / PDF / 2× PNG export, preview themes (GitHub / Nord / Dracula)
+- **Pre-flight export checks** — PDF/HTML export first diagnoses dead links, missing images, and heading problems (can be turned off in Settings)
+- **PDF export themes** — Paper size, margins, header/footer, and an optional cover page; the default export keeps links clickable
+- **Copy as rich text** — ⌥⌘C copies rendered formatting, ready to paste into Feishu or email
 - **Auto-update** via Sparkle — grab builds from [meditorapp.pages.dev](https://meditorapp.pages.dev)
 
 ---
@@ -183,19 +196,21 @@ MEditor/
 - [x] Real Agent: 14 tools, multi-turn loop, three backends (OpenAI-compatible / Anthropic / Claude CLI), BYOK
 - [x] Agent hardening: write confirmation, risk-tiered sandbox, context budget, stall detection, parallel read-only tools, usage display
 - [x] Inline edit diff review, `@mention` context, multi-session history
+- [x] Slash command library, selection action bar, auto-attached document context
+- [x] Image paste/drag auto-save, local history snapshots, tab context menu
+- [x] Pre-export diagnostics with one-click Agent fix, PDF export themes, copy as rich text
+- [x] Global search (⌘⇧F), Quick Look plugin
 - [x] LAN share + Cloudflare online publish
 - [x] iOS companion (iCloud edit / chat / publish)
 - [x] Presentation & focus modes, HTML export, preview themes, Sparkle auto-update
 
 **Next** (Phase 1–3)
 - [ ] Onboarding — first-launch guide, zero-config Claude CLI default, scripted demo
-- [ ] Global search (⌘⇧F) on a shared workspace index — also powers Agent search and Quick Open
 - [ ] One-click rollback of an Agent run (run-level checkpoints)
 
 **Later** (Phase 4–6)
-- [ ] Spotlight indexing & Quick Look plugin, Shortcuts intents
+- [ ] Spotlight indexing & Shortcuts intents
 - [ ] MCP server — expose the Agent's tools to Claude Desktop / Cursor
-- [ ] Diagnostics center — dead links, missing images, heading-structure checks
 
 ---
 

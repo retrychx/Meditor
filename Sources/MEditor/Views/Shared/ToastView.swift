@@ -76,7 +76,7 @@ struct ClaudeFilePromptToast: View {
 
             // 文字
             VStack(alignment: .leading, spacing: 2) {
-                Text("Claude 生成了文件")
+                Text(L("toast.claudeFileCreated"))
                     .font(.system(size: 12, weight: .semibold))
                 Text(prompt.fileName)
                     .font(.system(size: 12))
@@ -88,13 +88,13 @@ struct ClaudeFilePromptToast: View {
 
             // 按钮
             HStack(spacing: 6) {
-                Button("打开") {
+                Button(L("toast.open")) {
                     withAnimation(DS.Motion.fast) { prompt.onAccept() }
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
 
-                Button("忽略") {
+                Button(L("toast.ignore")) {
                     withAnimation(DS.Motion.fast) { prompt.onDismiss() }
                 }
                 .buttonStyle(.bordered)

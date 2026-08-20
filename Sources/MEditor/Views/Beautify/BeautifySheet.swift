@@ -86,7 +86,7 @@ struct BeautifySheet: View {
             Image(systemName: "wand.and.stars")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Color.appAccent)
-            Text("HTML 美化")
+            Text(L("beautify.title"))
                 .font(.system(size: 15, weight: .semibold))
             Spacer()
             Button { dismiss() } label: {
@@ -123,22 +123,22 @@ struct BeautifySheet: View {
             Divider()
             DisclosureGroup(isExpanded: $showCustomize) {
                 VStack(spacing: 0) {
-                    tokenColorRow(label: "强调色", key: "accent")
+                    tokenColorRow(label: L("beautify.token.accent"), key: "accent")
                     Divider().padding(.leading, 16)
-                    tokenColorRow(label: "背景色", key: "bg")
+                    tokenColorRow(label: L("beautify.token.bg"), key: "bg")
                     Divider().padding(.leading, 16)
-                    tokenColorRow(label: "文字色", key: "text")
+                    tokenColorRow(label: L("beautify.token.text"), key: "text")
                     Divider().padding(.leading, 16)
-                    tokenTextRow(label: "字体", key: "font")
+                    tokenTextRow(label: L("beautify.token.font"), key: "font")
                     Divider().padding(.leading, 16)
-                    tokenTextRow(label: "内容宽度", key: "width")
+                    tokenTextRow(label: L("beautify.token.width"), key: "width")
                     Divider().padding(.leading, 16)
-                    tokenTextRow(label: "代码字体", key: "font-mono")
+                    tokenTextRow(label: L("beautify.token.fontMono"), key: "font-mono")
                     Divider().padding(.leading, 16)
 
                     HStack {
                         Spacer()
-                        Button("恢复默认") { resetTokens() }
+                        Button(L("beautify.resetTokens")) { resetTokens() }
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
@@ -147,11 +147,11 @@ struct BeautifySheet: View {
                 }
             } label: {
                 HStack {
-                    Text("自定义样式")
+                    Text(L("beautify.customize"))
                         .font(.system(size: 12.5, weight: .medium))
                         .foregroundStyle(.secondary)
                     if !tokenOverrides.isEmpty {
-                        Text("\(tokenOverrides.count) 项已修改")
+                        Text(L("beautify.tokensModified", tokenOverrides.count))
                             .font(.system(size: 11))
                             .foregroundStyle(.tertiary)
                     }
@@ -207,7 +207,7 @@ struct BeautifySheet: View {
             VStack(spacing: 14) {
                 ProgressView()
                     .scaleEffect(0.9)
-                Text("正在生成 HTML…")
+                Text(L("beautify.generating"))
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
@@ -217,7 +217,7 @@ struct BeautifySheet: View {
                 Image(systemName: "wand.and.stars")
                     .font(.system(size: 32))
                     .foregroundStyle(Color.appAccent.opacity(0.45))
-                Text("选择主题后点击「生成」")
+                Text(L("beautify.emptyHint"))
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
@@ -246,7 +246,7 @@ struct BeautifySheet: View {
                 if isGenerating {
                     HStack(spacing: 6) {
                         ProgressView().scaleEffect(0.7)
-                        Text("生成中…")
+                        Text(L("beautify.streaming"))
                             .font(.system(size: 11))
                     }
                     .padding(.horizontal, 10)
@@ -259,8 +259,8 @@ struct BeautifySheet: View {
     }
 
     private var generateButtonLabel: String {
-        if isGenerating { return "停止" }
-        return generatedHTML.isEmpty ? "生成" : "重新生成"
+        if isGenerating { return L("beautify.stop") }
+        return generatedHTML.isEmpty ? L("beautify.generate") : L("beautify.regenerate")
     }
 
     // MARK: Bottom bar
@@ -276,7 +276,7 @@ struct BeautifySheet: View {
                     .lineLimit(1)
             }
             Spacer()
-            Button("取消") { dismiss() }
+            Button(L("common.cancel")) { dismiss() }
                 .keyboardShortcut(.escape, modifiers: [])
 
             Button(generateButtonLabel) {
@@ -286,7 +286,7 @@ struct BeautifySheet: View {
             .buttonStyle(.borderedProminent)
 
             if !generatedHTML.isEmpty && !isGenerating {
-                Button("保存 HTML") { handleSave() }
+                Button(L("beautify.save")) { handleSave() }
                     .keyboardShortcut("s", modifiers: [.command])
             }
         }
@@ -302,9 +302,9 @@ struct BeautifySheet: View {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
             if let url = targetHTMLURL {
-                Text("已保存 \(url.lastPathComponent)")
+                Text(L("beautify.saved", url.lastPathComponent))
             } else {
-                Text("已保存")
+                Text(L("beautify.savedGeneric"))
             }
         }
         .font(.system(size: 12.5, weight: .medium))

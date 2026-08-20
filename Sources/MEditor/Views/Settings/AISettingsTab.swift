@@ -99,7 +99,7 @@ extension SettingsView {
                                 .settingsField()
                         }
                         rowDivider
-                        settingsStackedRow(label: L("ai.apiKey")) { aiKeyField }
+                        settingsStackedRow(label: L("ai.apiKey"), subtitle: L("ai.apiKey.localOnly")) { aiKeyField }
                         rowDivider
                         settingsStackedRow(label: "连接测试") {
                             HStack(spacing: 10) {

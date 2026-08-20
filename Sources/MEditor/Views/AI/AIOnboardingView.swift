@@ -83,12 +83,12 @@ struct AIOnboardingView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 AIAssistantOrb(size: 36, glow: true)
-                Text(isConfigured && configuredInSession ? "AI 已就绪" : "先配置 AI，30 秒搞定")
+                Text(isConfigured && configuredInSession ? L("onboarding.title.ready") : L("onboarding.title.setup"))
                     .font(.system(size: 17, weight: .bold, design: .rounded))
                     .foregroundStyle(theme.craftPrimary)
             }
             if !(isConfigured && configuredInSession) {
-                Text("MEditor 的 AI 助手可以帮你整理、改写、生成文档。选择一种方式开始：")
+                Text(L("onboarding.subtitle"))
                     .font(.system(size: 12))
                     .foregroundStyle(theme.craftSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -112,10 +112,10 @@ struct AIOnboardingView: View {
                         .foregroundStyle(AIBrand.orange)
                         .background(AIBrand.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("配置其他 AI 服务")
+                        Text(L("onboarding.otherProvider"))
                             .font(.system(size: 12.5, weight: .medium))
                             .foregroundStyle(theme.craftPrimary)
-                        Text("OpenAI / DeepSeek / Kimi / GLM… 填 API Key")
+                        Text(L("onboarding.otherProviderSub"))
                             .font(.system(size: 11))
                             .foregroundStyle(theme.craftSecondary)
                     }
@@ -133,7 +133,7 @@ struct AIOnboardingView: View {
                     .fill(theme.craftHover.opacity(0.5))
             )
 
-            Button("暂时跳过", action: onDismiss)
+            Button(L("onboarding.skip"), action: onDismiss)
                 .buttonStyle(.plain)
                 .font(.system(size: 11.5))
                 .foregroundStyle(theme.craftSecondary)
@@ -152,10 +152,10 @@ struct AIOnboardingView: View {
                     .background(AIBrand.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
-                        Text("使用 Claude Code")
+                        Text(L("onboarding.useClaudeCode"))
                             .font(.system(size: 12.5, weight: .semibold))
                             .foregroundStyle(theme.craftPrimary)
-                        Text("推荐")
+                        Text(L("onboarding.recommended"))
                             .font(.system(size: 9.5, weight: .semibold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 5)
@@ -164,17 +164,17 @@ struct AIOnboardingView: View {
                     }
                     switch detection {
                     case .probing:
-                        Text("正在检测本机 Claude Code…")
+                        Text(L("onboarding.detecting"))
                             .font(.system(size: 11))
                             .foregroundStyle(theme.craftSecondary)
                     case .found(let path):
-                        Text("已检测到：\(path)")
+                        Text(L("onboarding.detected", path))
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundStyle(theme.craftSecondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                     case .notFound:
-                        Text("未检测到。已安装 Claude Code 可免 Key 零配置使用")
+                        Text(L("onboarding.notDetected"))
                             .font(.system(size: 11))
                             .foregroundStyle(theme.craftSecondary)
                     }
@@ -186,7 +186,7 @@ struct AIOnboardingView: View {
                 Button {
                     onUseClaudeCLI(path)
                 } label: {
-                    Text("直接使用（免 API Key）")
+                    Text(L("onboarding.useDirectly"))
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
@@ -216,14 +216,14 @@ struct AIOnboardingView: View {
                 HStack(spacing: 6) {
                     if cliTesting {
                         ProgressView().controlSize(.small)
-                        Text("正在验证连接…")
+                        Text(L("onboarding.verifying"))
                     } else if let result = cliTestError {
                         if let error = result {
                             Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
-                            Text("连接失败：\(error)")
+                            Text(L("onboarding.connectFailed", error))
                         } else {
                             Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                            Text("连接正常，可以开始对话")
+                            Text(L("onboarding.connectOK"))
                         }
                     }
                 }
@@ -240,10 +240,10 @@ struct AIOnboardingView: View {
                         .foregroundStyle(.white)
                         .background(AIBrand.violet, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("看一个 30 秒演示")
+                        Text(L("onboarding.demoTitle"))
                             .font(.system(size: 12.5, weight: .semibold))
                             .foregroundStyle(theme.craftPrimary)
-                        Text("Agent 自动整理一篇示例会议记录（写在临时目录，不动你的文件）")
+                        Text(L("onboarding.demoSub"))
                             .font(.system(size: 11))
                             .foregroundStyle(theme.craftSecondary)
                     }
@@ -262,7 +262,7 @@ struct AIOnboardingView: View {
                     .strokeBorder(AIBrand.violet.opacity(0.25), lineWidth: 1)
             )
 
-            Button("直接开始对话", action: onDismiss)
+            Button(L("onboarding.startChat"), action: onDismiss)
                 .buttonStyle(.plain)
                 .font(.system(size: 11.5))
                 .foregroundStyle(theme.craftSecondary)

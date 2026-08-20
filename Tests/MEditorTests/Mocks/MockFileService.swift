@@ -6,6 +6,11 @@ class MockFileService: FileServiceProtocol {
     var readResult: String = "# Test"
     var readError: Error? = nil
     var writtenContent: String? = nil
+    /// 测试用：写盘前人为延迟，模拟慢速写盘造成的乱序窗口。
+    var writeDelay: TimeInterval = 0
+    private var _writeCount = 0
+    /// 已完成的写盘次数（线程安全）。
+    var writeCount: Int { lock.lock(); defer { lock.unlock() }; return _writeCount }
     var createdFiles: [URL] = []
     var createdDirectories: [URL] = []
     var mockAttributes: [URL: [FileAttributeKey: Any]] = [:]
@@ -64,8 +69,12 @@ class MockFileService: FileServiceProtocol {
     }
 
     func writeFile(at url: URL, content: String) throws {
+        if writeDelay > 0 { Thread.sleep(forTimeInterval: writeDelay) }
         writtenContent = content
         setFile(url, content: content)
+        lock.lock()
+        _writeCount += 1
+        lock.unlock()
     }
 
     func createFile(at url: URL, content: String) throws {

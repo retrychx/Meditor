@@ -72,7 +72,7 @@ extension AppState {
                     self.syncPreviewContent(from: t)
                     self.previewManager.reloadHTML(url: url)
                 }
-                self.showToast("已从磁盘更新：\(url.lastPathComponent)", icon: "arrow.triangle.2.circlepath")
+                self.showToast(L("toast.reloadedFromDisk", url.lastPathComponent), icon: "arrow.triangle.2.circlepath")
             }
         }
     }

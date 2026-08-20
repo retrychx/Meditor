@@ -134,7 +134,7 @@ struct FileSidebar: View {
                             .onTapGesture { state.openFile(FileItem(url: url, isDirectory: false)) }
                     }
                 } header: {
-                    Text("用户文档")
+                    Text(L("sidebar.userDocs"))
                 }
             }
 
@@ -146,7 +146,7 @@ struct FileSidebar: View {
                             .onTapGesture { state.openFile(FileItem(url: url, isDirectory: false)) }
                     }
                 } header: {
-                    Text("App 文档")
+                    Text(L("sidebar.appDocs"))
                 }
             }
 
@@ -160,21 +160,21 @@ struct FileSidebar: View {
                         )
                         .onTapGesture { state.openLooseFile(file.url) }
                         .contextMenu {
-                            Button("在 Finder 中显示") {
+                            Button(L("menu.revealInFinder")) {
                                 NSWorkspace.shared.activateFileViewerSelecting([file.url])
                             }
-                            Button("复制路径") {
+                            Button(L("sidebar.copyPath")) {
                                 NSPasteboard.general.clearContents()
                                 NSPasteboard.general.setString(file.url.path, forType: .string)
                             }
                             Divider()
-                            Button("从列表移除", role: .destructive) {
+                            Button(L("sidebar.removeFromList"), role: .destructive) {
                                 state.looseFiles.remove(file.id)
                             }
                         }
                     }
                 } header: {
-                    Text("散文件")
+                    Text(L("sidebar.looseFiles"))
                 }
             }
 

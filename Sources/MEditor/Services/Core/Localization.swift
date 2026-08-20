@@ -44,6 +44,10 @@ final class LocalizationManager {
 }
 
 /// Look up a localized string by key.
+///
+/// 防回归（评审 M2）：所有面向用户的 UI 文案必须走 `L(key)` 并在下方翻译表登记中英双语，
+/// 禁止在视图/ViewModel 里直接写中文字符串字面量。新增 key 按 `模块.语义` 命名，
+/// 追加到 `tableN` 对应分组；存量硬编码缺口分批治理，见各批提交记录。
 func L(_ key: String) -> String { LocalizationManager.shared.localized(key) }
 
 /// Look up a localized format string and interpolate arguments.
@@ -770,6 +774,98 @@ extension LocalizationManager {
         "template.error.cannotDeleteBuiltin": ("Built-in templates cannot be deleted", "内置模板不可删除"),
         "template.error.invalidName": ("Template name is invalid", "模板名称无效"),
         "template.error.writeFailed": ("Failed to save template: %@", "保存模板失败：%@"),
+
+        // Software update panel
+        "update.title.checking": ("Checking for Updates", "检查更新"),
+        "update.title.permission": ("Automatically Check for Updates", "自动检查更新"),
+        "update.title.found": ("New Version Available", "发现新版本"),
+        "update.title.downloading": ("Downloading Update", "正在下载更新"),
+        "update.title.extracting": ("Preparing Update", "正在准备更新"),
+        "update.title.installing": ("Installing Update", "正在安装更新"),
+        "update.title.ready": ("Update Ready", "更新已就绪"),
+        "update.title.notFound": ("You're Up to Date", "已是最新版本"),
+        "update.title.failed": ("Update Failed", "更新失败"),
+        "update.checking": ("Checking for updates…", "正在检查更新…"),
+        "update.permissionPrompt": ("Allow MEditor to check for new versions once a day? The check only reads the version number and sends no personal information.",
+                                    "允许 MEditor 每天自动检查一次新版本吗？检查结果仅包含版本号，不会发送任何个人信息。"),
+        "update.foundNoNotes": ("A new version is available.", "新版本已发布，建议更新。"),
+        "update.downloading": ("Downloading…", "正在下载…"),
+        "update.extracting": ("Extracting the package…", "正在解压安装包…"),
+        "update.installing": ("Installing — the app will relaunch automatically…", "正在安装，应用将自动重启…"),
+        "update.readyMessage": ("Download complete. Relaunch to apply.", "下载完成，重启后生效。"),
+        "update.notFoundMessage": ("Version %@ is up to date.", "当前版本 %@ 已是最新。"),
+        "update.disallow": ("Don't Allow", "不允许"),
+        "update.allowAutoCheck": ("Allow Automatic Checks", "允许自动检查"),
+        "update.skipVersion": ("Skip This Version", "跳过此版本"),
+        "update.remindLater": ("Remind Me Later", "稍后提醒"),
+        "update.updateNow": ("Update Now", "立即更新"),
+        "update.later": ("Later", "稍后"),
+        "update.restartNow": ("Restart Now", "立即重启"),
+
+        // AI onboarding
+        "onboarding.title.ready": ("AI Is Ready", "AI 已就绪"),
+        "onboarding.title.setup": ("Set Up AI in 30 Seconds", "先配置 AI，30 秒搞定"),
+        "onboarding.subtitle": ("MEditor's AI assistant can organize, rewrite, and draft documents for you. Pick a way to get started:",
+                                "MEditor 的 AI 助手可以帮你整理、改写、生成文档。选择一种方式开始："),
+        "onboarding.otherProvider": ("Set Up Another AI Provider", "配置其他 AI 服务"),
+        "onboarding.otherProviderSub": ("OpenAI / DeepSeek / Kimi / GLM… bring your own API key",
+                                        "OpenAI / DeepSeek / Kimi / GLM… 填 API Key"),
+        "onboarding.skip": ("Skip for Now", "暂时跳过"),
+        "onboarding.useClaudeCode": ("Use Claude Code", "使用 Claude Code"),
+        "onboarding.recommended": ("Recommended", "推荐"),
+        "onboarding.detecting": ("Looking for Claude Code on this Mac…", "正在检测本机 Claude Code…"),
+        "onboarding.detected": ("Found: %@", "已检测到：%@"),
+        "onboarding.notDetected": ("Not found. If Claude Code is installed, you can use it with no API key.",
+                                   "未检测到。已安装 Claude Code 可免 Key 零配置使用"),
+        "onboarding.useDirectly": ("Use It Now (No API Key Needed)", "直接使用（免 API Key）"),
+        "onboarding.verifying": ("Verifying connection…", "正在验证连接…"),
+        "onboarding.connectFailed": ("Connection failed: %@", "连接失败：%@"),
+        "onboarding.connectOK": ("Connected — you're good to go", "连接正常，可以开始对话"),
+        "onboarding.demoTitle": ("Watch a 30-Second Demo", "看一个 30 秒演示"),
+        "onboarding.demoSub": ("The agent tidies up a sample meeting note (written to a temp folder — your files stay untouched)",
+                               "Agent 自动整理一篇示例会议记录（写在临时目录，不动你的文件）"),
+        "onboarding.startChat": ("Start Chatting", "直接开始对话"),
+
+        // Beautify sheet
+        "beautify.title": ("Beautify HTML", "HTML 美化"),
+        "beautify.token.accent": ("Accent", "强调色"),
+        "beautify.token.bg": ("Background", "背景色"),
+        "beautify.token.text": ("Text", "文字色"),
+        "beautify.token.font": ("Font", "字体"),
+        "beautify.token.width": ("Content Width", "内容宽度"),
+        "beautify.token.fontMono": ("Code Font", "代码字体"),
+        "beautify.resetTokens": ("Reset to Defaults", "恢复默认"),
+        "beautify.customize": ("Customize Style", "自定义样式"),
+        "beautify.tokensModified": ("%d modified", "%d 项已修改"),
+        "beautify.generating": ("Generating HTML…", "正在生成 HTML…"),
+        "beautify.emptyHint": ("Pick a theme, then hit Generate", "选择主题后点击「生成」"),
+        "beautify.streaming": ("Generating…", "生成中…"),
+        "beautify.stop": ("Stop", "停止"),
+        "beautify.generate": ("Generate", "生成"),
+        "beautify.regenerate": ("Regenerate", "重新生成"),
+        "beautify.save": ("Save HTML", "保存 HTML"),
+        "beautify.saved": ("Saved %@", "已保存 %@"),
+        "beautify.savedGeneric": ("Saved", "已保存"),
+
+        // Claude file prompt toast
+        "toast.claudeFileCreated": ("Claude created a file", "Claude 生成了文件"),
+        "toast.open": ("Open", "打开"),
+        "toast.ignore": ("Ignore", "忽略"),
+
+        // Sidebar sections / loose-file context menu
+        "sidebar.userDocs": ("User Documents", "用户文档"),
+        "sidebar.appDocs": ("App Documents", "App 文档"),
+        "sidebar.looseFiles": ("Loose Files", "散文件"),
+        "sidebar.copyPath": ("Copy Path", "复制路径"),
+        "sidebar.removeFromList": ("Remove from List", "从列表移除"),
+
+        // AppState toasts
+        "toast.noWorkspace": ("Open a workspace first", "请先打开一个工作区"),
+        "toast.todoAdded": ("To-do added to %@", "已新增待办到 %@"),
+        "toast.reloadedFromDisk": ("Reloaded from disk: %@", "已从磁盘更新：%@"),
+
+        // AI settings
+        "ai.apiKey.localOnly": ("Stored only on this Mac", "仅存储在本机"),
     ]
 
     static let table: [String: (en: String, zh: String)] = {
