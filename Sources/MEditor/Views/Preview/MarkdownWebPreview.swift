@@ -390,7 +390,7 @@ extension MarkdownWebView {
         private var pendingContentUpdate: DispatchWorkItem?
 
         let previewDir: URL = {
-            let cachesDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+            let cachesDir = FileManager.default.firstURL(for: .cachesDirectory)
             return cachesDir.appendingPathComponent("com.meditor.preview", isDirectory: true)
         }()
 
