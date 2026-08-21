@@ -43,7 +43,7 @@ final class ImageAssetService {
 
     init(fallbackBaseDir: URL? = nil) {
         let base = fallbackBaseDir
-            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            ?? FileManager.default.firstURL(for: .applicationSupportDirectory)
         self.fallbackDir = base.appendingPathComponent("MEditor/PastedImages", isDirectory: true)
     }
 

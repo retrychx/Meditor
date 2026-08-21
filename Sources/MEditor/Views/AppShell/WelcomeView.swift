@@ -305,12 +305,12 @@ struct WelcomeView: View {
     }
 
     private func startCycle() {
-        displayedChars = Self.title.map { _ in Self.charset.randomElement()! }
+        displayedChars = Self.title.map { _ in Self.charset.randomElement() ?? " " }
         locked = Array(repeating: false, count: 7)
 
         let shuffleTimer = Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { _ in
             for i in 0..<7 where !locked[i] {
-                displayedChars[i] = Self.charset.randomElement()!
+                displayedChars[i] = Self.charset.randomElement() ?? " "
             }
         }
         animationTimers.append(shuffleTimer)

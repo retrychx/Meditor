@@ -277,7 +277,12 @@ struct LocalHistorySheet: View {
         let newSnapshot = pair.new
         Task.detached(priority: .userInitiated) {
             let old = try? store.readSnapshot(pair.old)
-            let new: String? = newSnapshot != nil ? (try? store.readSnapshot(newSnapshot!)) : current
+            let new: String?
+            if let newSnapshot {
+                new = try? store.readSnapshot(newSnapshot)
+            } else {
+                new = current
+            }
             await MainActor.run {
                 guard generation == loadGeneration else { return }
                 guard let old, let new else {

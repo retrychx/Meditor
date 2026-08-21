@@ -420,7 +420,7 @@ final class PreviewExporter: PreviewExporterProtocol {
                     return
                 }
                 let dims = result as? [CGFloat] ?? []
-                let contentW = max(dims.count > 0 ? dims[0] : webView.bounds.width, 100)
+                let contentW = max(!dims.isEmpty ? dims[0] : webView.bounds.width, 100)
                 let contentH = max(dims.count > 1 ? dims[1] : webView.bounds.height, 100)
 
                 captureViaReload(webView: webView) { pdfData in

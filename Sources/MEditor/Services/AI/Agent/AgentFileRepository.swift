@@ -331,10 +331,11 @@ final class DefaultAgentFileRepository: AgentFileRepository {
             let proc = Process()
             proc.executableURL  = URL(fileURLWithPath: "/usr/bin/grep")
             proc.arguments      = args
-            proc.standardOutput = Pipe()
+            let outPipe = Pipe()
+            proc.standardOutput = outPipe
             proc.standardError  = Pipe()
             guard (try? proc.run()) != nil else { return nil }
-            let data = (proc.standardOutput as! Pipe).fileHandleForReading.readDataToEndOfFile()
+            let data = outPipe.fileHandleForReading.readDataToEndOfFile()
             proc.waitUntilExit()
             guard proc.terminationStatus <= 1,
                   let raw = String(data: data, encoding: .utf8) else { return nil }

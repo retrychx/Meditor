@@ -81,7 +81,12 @@ struct RunCommandTool: AgentTool {
         let resolvedCwd: String
 
         // 2. 工作目录校验
-        let cwdToValidate = (rawCwd?.isEmpty == false) ? rawCwd! : (workspaceRoot ?? "")
+        let cwdToValidate: String
+        if let rawCwd, !rawCwd.isEmpty {
+            cwdToValidate = rawCwd
+        } else {
+            cwdToValidate = workspaceRoot ?? ""
+        }
         let cwdValidation = CommandSandbox.validateCwd(cwdToValidate, workspaceRoot: workspaceRoot)
         switch cwdValidation {
         case .allowed(let resolved):

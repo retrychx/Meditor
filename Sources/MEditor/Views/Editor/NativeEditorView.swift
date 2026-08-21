@@ -341,7 +341,9 @@ struct NativeEditorView: NSViewRepresentable {
         textView.setSelectedRange(NSRange(location: min(caret, (newText as NSString).length), length: 0))
 
         // 滚动：写回前视口原样保留（AppKit 自动夹取到有效范围）
-        textView.layoutManager?.ensureLayout(for: textView.textContainer!)
+        if let textContainer = textView.textContainer {
+            textView.layoutManager?.ensureLayout(for: textContainer)
+        }
         scrollView.contentView.scroll(to: savedOrigin)
         scrollView.reflectScrolledClipView(scrollView.contentView)
 

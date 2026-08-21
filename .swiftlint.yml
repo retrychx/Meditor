@@ -1,0 +1,50 @@
+# MEditor SwiftLint 配置
+#
+# 策略：安全相关规则（force_cast / force_try / force_unwrapping）作为硬性 error，
+# 风格噪音规则整体禁用（历史代码风格与默认规则冲突，不强行重构）。
+# CI 中 swiftlint lint 只对 error 级违规失败；warning 可见但不阻塞。
+
+# 禁用规则：与项目既有风格冲突的纯样式噪音
+disabled_rules:
+  - comma                    # 参数换行风格（逗号在行尾）
+  - colon                     # 字典/类型冒号空格风格
+  - opening_brace             # 大括号换行风格
+  - trailing_comma            # 尾随逗号风格
+  - vertical_whitespace       # 空行数量风格
+  - trailing_newline          # 文件末尾空行风格
+  - statement_position        # 语句起始缩进风格
+  - multiple_closures_with_trailing_closure
+  - vertical_parameter_alignment
+  - implicit_getter
+  - for_where
+  - control_statement
+  - comment_spacing
+  - unused_optional_binding
+  - type_name
+  - nesting
+  - file_length               # 大文件允许（如 Localization.swift 879 行）
+  - function_parameter_count  # 参数数量不做硬限制
+  - implicit_optional_initialization
+  - identifier_name           # 允许 i/url/idx 等短名（352 处历史违规）
+  - line_length               # 行宽不做硬限制（258 处历史违规）
+  - function_body_length
+  - type_body_length
+  - cyclomatic_complexity
+
+# 主动开启的额外规则（安全/正确性相关）
+opt_in_rules:
+  - force_unwrapping          # 禁止强制解包（error，见下方 severity）
+  - empty_count               # 优先 isEmpty
+
+# force_unwrapping 提升为硬性 error（CI 门槛）
+force_unwrapping:
+  severity: error
+
+# 目录排除
+excluded:
+  - .build
+  - Vendor
+  - Mobile
+  - Tests
+  - Sources/MEditor/Debug
+  - Sources/MEditorQuickLook

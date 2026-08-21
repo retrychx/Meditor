@@ -69,7 +69,7 @@ final class TemplateStore: TemplateStoreProtocol {
     private var cachedUserTemplates: [DocumentTemplate]?
 
     init(baseDir: URL? = nil) {
-        let base = baseDir ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let base = baseDir ?? FileManager.default.firstURL(for: .applicationSupportDirectory)
         self.userDir = base.appendingPathComponent("MEditor/templates", isDirectory: true)
         ensureDirectory()
     }

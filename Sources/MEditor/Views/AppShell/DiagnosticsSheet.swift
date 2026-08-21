@@ -21,7 +21,7 @@ struct DiagnosticsSheet: View {
     /// 按文件分组（相对路径排序），组内保持行号顺序（scan 已排序）。
     private var groups: [(path: String, issues: [DocumentIssue])] {
         let grouped = Dictionary(grouping: issues) { relativePath($0.fileURL) }
-        return grouped.keys.sorted().map { ($0, grouped[$0]!) }
+        return grouped.keys.sorted().map { ($0, grouped[$0] ?? []) }
     }
 
     /// 当前文档内模型可修复的问题（missingImage 是纯缺失资源，模型修不了，不计入）。

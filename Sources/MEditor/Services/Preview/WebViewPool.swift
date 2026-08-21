@@ -14,7 +14,7 @@ final class WebViewPool {
     private(set) var isReady = false
 
     let cacheDir: URL = {
-        let cachesDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let cachesDir = FileManager.default.firstURL(for: .cachesDirectory)
         return cachesDir.appendingPathComponent("com.meditor.preview", isDirectory: true)
     }()
 

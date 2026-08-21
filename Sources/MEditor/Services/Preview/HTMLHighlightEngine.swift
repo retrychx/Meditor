@@ -21,7 +21,7 @@ final class HTMLHighlightEngine: SyntaxHighlightEngine {
 
     func highlight(text: String, into storage: NSTextStorage, range fullRange: NSRange, baseFont: PlatformFont) {
         let isDark: Bool = {
-            let appearance = NSApp.keyWindow?.effectiveAppearance ?? NSAppearance(named: .aqua)!
+            let appearance = NSApp.keyWindow?.effectiveAppearance ?? NSAppearance(named: .aqua) ?? NSAppearance()
             return appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         }()
 

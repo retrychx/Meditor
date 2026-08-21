@@ -68,7 +68,7 @@ struct CalendarEventItem: Identifiable {
     var colorHex: String {
         let c = event.calendar.cgColor
         let comps = c?.components ?? [0.4, 0.6, 1.0, 1.0]
-        let r = Int((comps.count > 0 ? comps[0] : 0) * 255)
+        let r = Int((!comps.isEmpty ? comps[0] : 0) * 255)
         let g = Int((comps.count > 1 ? comps[1] : 0) * 255)
         let b = Int((comps.count > 2 ? comps[2] : 0) * 255)
         return String(format: "%02X%02X%02X", r, g, b)

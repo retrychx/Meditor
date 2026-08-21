@@ -44,7 +44,7 @@ final class LocalHistoryStore {
 
     init(baseDir: URL? = nil) {
         let base = baseDir
-            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            ?? FileManager.default.firstURL(for: .applicationSupportDirectory)
         self.baseDir = base.appendingPathComponent("MEditor/History", isDirectory: true)
     }
 

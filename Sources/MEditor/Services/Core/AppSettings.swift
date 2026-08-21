@@ -331,7 +331,7 @@ final class AppSettings {
     }
 
     var defaultAppDocPath: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let base = FileManager.default.firstURL(for: .applicationSupportDirectory)
         let dir = base.appendingPathComponent("MEditor/Documents", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir

@@ -62,3 +62,42 @@ jobs:
           -destination 'generic/platform=iOS Simulator'
           build
           CODE_SIGNING_ALLOWED=NO
+
+  lint:
+    name: SwiftLint
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # portable 版是 universal 二进制（x86_64 + arm64），比 brew 更稳、更快
+      - name: Install SwiftLint (portable)
+        run: |
+          curl -sL -o /tmp/swiftlint.zip             https://github.com/realm/SwiftLint/releases/latest/download/portable_swiftlint.zip
+          unzip -o -q /tmp/swiftlint.zip -d /tmp/swiftlint
+
+      - name: Lint
+        run: /tmp/swiftlint/swiftlint lint --config .swiftlint.yml Sources
+
+  coverage:
+    name: Coverage Gate
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Test with coverage
+        run: swift test --enable-code-coverage
+
+      - name: Export lcov
+        run: |
+          xcrun llvm-profdata merge -o default.profdata .build/**/codecov/*.profraw
+          xcrun llvm-cov export             .build/**/MEditorPackageTests.xctest/Contents/MacOS/MEditorPackageTests             -instr-profile default.profdata --format=lcov > coverage.lcov
+
+      - name: Enforce coverage gate
+        run: python3 scripts/coverage_gate.py coverage.lcov

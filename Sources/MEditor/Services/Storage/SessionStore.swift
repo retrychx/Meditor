@@ -100,17 +100,25 @@ final class SessionStore: SessionStoreProtocol {
     /// `isStale` indicates the bookmark should be re-created on next save.
     static func resolveBookmark(_ data: Data) -> (url: URL, isStale: Bool)? {
         var isStale = false
-        do {
-            let url = try URL(
-                resolvingBookmarkData: data,
-                options: [.withSecurityScope],
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale
-            )
+        if let url = try? URL(
+            resolvingBookmarkData: data,
+            options: [.withSecurityScope],
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        ) {
             return (url, isStale)
-        } catch {
-            return nil
         }
+        // Fallback：bookmarkData(for:) 在非沙箱构建里会降级存普通 bookmark
+        //（无 app-scope entitlement 时 .withSecurityScope 创建失败）。这里对称降级：
+        // 普通 bookmark 用无选项解析，否则非沙箱构建（swift test / dev 构建）
+        // 的会话恢复会静默丢掉全部 tab。
+        guard let url = try? URL(
+            resolvingBookmarkData: data,
+            options: [],
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        ) else { return nil }
+        return (url, isStale)
     }
 
     // MARK: - Clear

@@ -54,6 +54,8 @@ enum TodoScanner {
         }.value
     }
 
+    private static let cbRegex: NSRegularExpression? = try? NSRegularExpression(pattern: #"-\s*\[(x|X| )\]"#)
+
     /// 在文件的指定行切换 checkbox 状态（`- [ ]` ↔ `- [x]`），然后写回文件。
     /// 用正则 range 定位 checkbox 内容，只替换第一个匹配项，避免全行字符串替换的潜在误伤。
     static func toggle(item: TodoItem) throws {
@@ -62,7 +64,7 @@ enum TodoScanner {
         guard item.lineIndex < lines.count else { return }
 
         let original   = lines[item.lineIndex]
-        let cbRegex    = try! NSRegularExpression(pattern: #"-\s*\[(x|X| )\]"#)
+        guard let cbRegex = Self.cbRegex else { return }
         let nsOriginal = original as NSString
         guard let match = cbRegex.firstMatch(
             in: original, range: NSRange(location: 0, length: nsOriginal.length)

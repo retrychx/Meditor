@@ -21,14 +21,14 @@ enum ShareImageInliner {
     /// 全部图片内联总量上限（3MB，给正文与 CSS 留出 4MB 内的余量）。
     static let maxTotalInlineBytes = 3_000_000
 
-    private static let imgSrcPattern = try! NSRegularExpression(
+    private static let imgSrcPattern: NSRegularExpression? = try? NSRegularExpression(
         pattern: #"<img\b[^>]*?\bsrc="([^"]*)""#, options: .caseInsensitive)
 
     /// 把 html 中可内联的本地图片改写为 data URI，返回改写后的 HTML。
     /// - Parameter baseDirectory: 相对路径图片的解析基准（通常是文档所在目录）。
     static func inlineImages(in html: String, baseDirectory: URL) -> String {
         let nsHTML = html as NSString
-        let matches = imgSrcPattern.matches(in: html, range: NSRange(location: 0, length: nsHTML.length))
+        let matches = imgSrcPattern?.matches(in: html, range: NSRange(location: 0, length: nsHTML.length)) ?? []
         guard !matches.isEmpty else { return html }
 
         // 第一遍（正序）：决定每张图是否内联——预算从文档头部开始分配，
