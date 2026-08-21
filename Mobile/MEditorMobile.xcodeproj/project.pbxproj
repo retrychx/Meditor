@@ -50,6 +50,7 @@
 		2600000000000000000003F4 /* ../Sources/MEditor/Resources/Preview/scripts/bridge.js in Resources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000004F4 /* ../Sources/MEditor/Resources/Preview/scripts/bridge.js */; };
 		2600000000000000000003F5 /* ../Sources/MEditor/Resources/Preview/marked.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000004F5 /* ../Sources/MEditor/Resources/Preview/marked.min.js */; };
 		2600000000000000000003F6 /* ../Sources/MEditor/Resources/Preview/highlight.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000004F6 /* ../Sources/MEditor/Resources/Preview/highlight.min.js */; };
+		2600000000000000000002FA /* ../Sources/MEditor/Extensions/FileManager+Directories.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001FA /* ../Sources/MEditor/Extensions/FileManager+Directories.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -98,6 +99,7 @@
 		2600000000000000000004F4 /* ../Sources/MEditor/Resources/Preview/scripts/bridge.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ../Sources/MEditor/Resources/Preview/scripts/bridge.js; sourceTree = "<group>"; };
 		2600000000000000000004F5 /* ../Sources/MEditor/Resources/Preview/marked.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ../Sources/MEditor/Resources/Preview/marked.min.js; sourceTree = "<group>"; };
 		2600000000000000000004F6 /* ../Sources/MEditor/Resources/Preview/highlight.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ../Sources/MEditor/Resources/Preview/highlight.min.js; sourceTree = "<group>"; };
+		2600000000000000000001FA /* ../Sources/MEditor/Extensions/FileManager+Directories.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/MEditor/Extensions/FileManager+Directories.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -183,6 +185,7 @@
 				2600000000000000000004F4 /* ../Sources/MEditor/Resources/Preview/scripts/bridge.js */,
 				2600000000000000000004F5 /* ../Sources/MEditor/Resources/Preview/marked.min.js */,
 				2600000000000000000004F6 /* ../Sources/MEditor/Resources/Preview/highlight.min.js */,
+				2600000000000000000001FA /* ../Sources/MEditor/Extensions/FileManager+Directories.swift */,
 			);
 			name = Shared;
 			sourceTree = "<group>";
@@ -311,6 +314,7 @@
 				2600000000000000000002F7 /* ../Sources/MEditor/Services/Network/ShareLinkService.swift in Sources */,
 				2600000000000000000002F8 /* ../Sources/MEditor/Services/Network/ShareImageInliner.swift in Sources */,
 				2600000000000000000002F9 /* ../Sources/MEditor/Utils/UbiquitousFileHelper.swift in Sources */,
+				2600000000000000000002FA /* ../Sources/MEditor/Extensions/FileManager+Directories.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
