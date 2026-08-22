@@ -4,8 +4,15 @@ import SwiftUI
 // MARK: - View Mode
 
 private enum CalendarViewMode: String, CaseIterable {
-    case month = "月"
-    case week  = "周"
+    case month
+    case week
+
+    var displayName: String {
+        switch self {
+        case .month: return L("calendar.mode.month")
+        case .week:  return L("calendar.mode.week")
+        }
+    }
 }
 
 // MARK: - CalendarMainView
@@ -95,7 +102,7 @@ struct CalendarMainView: View {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) { referenceDate = Date() }
             } label: {
-                Text("今天")
+                Text(L("calendar.today"))
                     .font(.system(size: 12, weight: .medium))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
@@ -126,7 +133,7 @@ struct CalendarMainView: View {
             // 视图切换
             Picker("", selection: $viewMode) {
                 ForEach(CalendarViewMode.allCases, id: \.self) { mode in
-                    Text(mode.rawValue).tag(mode)
+                    Text(mode.displayName).tag(mode)
                 }
             }
             .pickerStyle(.segmented)
@@ -142,7 +149,7 @@ struct CalendarMainView: View {
                     .foregroundStyle(Color.appAccent)
             }
             .buttonStyle(.plain)
-            .help("新建事件")
+            .help(L("calendar.newEvent"))
 
             if isLoading {
                 ProgressView().controlSize(.small)
@@ -153,7 +160,7 @@ struct CalendarMainView: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .help("刷新")
+                .help(L("calendar.refresh"))
             }
         }
         .padding(.horizontal, 20)
@@ -182,7 +189,7 @@ struct CalendarMainView: View {
         return VStack(spacing: 0) {
             // 星期标题行
             HStack(spacing: 0) {
-                ForEach(["日","一","二","三","四","五","六"], id: \.self) { d in
+                ForEach(Array(CalendarFmt.veryShortWeekdaySymbols.enumerated()), id: \.offset) { _, d in
                     Text(d)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
@@ -207,7 +214,7 @@ struct CalendarMainView: View {
                         .frame(height: rowHeight)   // 精确等分，不留白
                         .onTapGesture { selectedDate = day }
                         .contextMenu {
-                            Button("新建事件") {
+                            Button(L("calendar.newEvent")) {
                                 createForDate = day
                                 showCreateSheet = true
                             }
@@ -242,7 +249,7 @@ struct CalendarMainView: View {
                     createForDate = date
                     showCreateSheet = true
                 } label: {
-                    Label("新建", systemImage: "plus")
+                    Label(L("calendar.new"), systemImage: "plus")
                         .font(.system(size: 11))
                 }
                 .buttonStyle(.plain)
@@ -251,7 +258,7 @@ struct CalendarMainView: View {
                 .padding(.top, 10)
             }
             if dayEvents.isEmpty {
-                Text("无事件")
+                Text(L("calendar.noEvents"))
                     .font(.system(size: 12))
                     .foregroundStyle(.tertiary)
                     .padding(.horizontal, 16)

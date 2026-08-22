@@ -32,7 +32,7 @@ struct DiffReviewOverlay: View {
 
     private var leftPane: some View {
         VStack(spacing: 0) {
-            paneHeader("原文", icon: "text.alignleft", accent: Color(hex: "EF4444"))
+            paneHeader(L("diff.original"), icon: "text.alignleft", accent: Color(hex: "EF4444"))
             Divider()
             if state.diffReview.isStreaming {
                 // During streaming: show original paragraphs as-is (no diff markers)
@@ -60,7 +60,7 @@ struct DiffReviewOverlay: View {
         VStack(spacing: 0) {
             if state.diffReview.isStreaming {
                 paneHeader(
-                    "AI \(state.diffReview.streamingAction)中…",
+                    L("ai.inline.working", state.diffReview.streamingAction),
                     icon: "sparkles",
                     accent: Color.appAccent,
                     showSpinner: true
@@ -69,7 +69,10 @@ struct DiffReviewOverlay: View {
                 StreamingTextView(text: state.diffReview.streamedContent)
             } else {
                 paneHeader(
-                    state.diffReview.mode == .markdownVsHTML ? "AI 生成 HTML" : "AI \(state.diffReview.streamingAction.isEmpty ? "改写" : state.diffReview.streamingAction)",
+                    state.diffReview.mode == .markdownVsHTML
+                        ? L("diff.aiGeneratedHTML")
+                        : L("diff.aiAction", state.diffReview.streamingAction.isEmpty
+                            ? L("ai.inline.rewrite") : state.diffReview.streamingAction),
                     icon: "sparkles",
                     accent: Color(hex: "22C55E")
                 )
@@ -209,11 +212,11 @@ private struct DiffModeBar: View {
                     .contentTransition(.symbolEffect(.replace))
 
                 if state.diffReview.isStreaming {
-                    Text("AI \(state.diffReview.streamingAction)中…")
+                    Text(L("ai.inline.working", state.diffReview.streamingAction))
                         .font(.system(size: 13, weight: .semibold))
                     ProgressView().scaleEffect(0.65)
                 } else {
-                    Text("对比审阅")
+                    Text(L("diff.review"))
                         .font(.system(size: 13, weight: .semibold))
                 }
             }
@@ -227,7 +230,7 @@ private struct DiffModeBar: View {
                         Image(systemName: "wand.and.stars")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(Color.appAccent)
-                        TextField("继续调整，如：再短一点", text: refineInputBinding)
+                        TextField(L("diff.refinePlaceholder"), text: refineInputBinding)
                             .textFieldStyle(.plain)
                             .font(.system(size: 12))
                             .frame(width: 170)
@@ -241,7 +244,7 @@ private struct DiffModeBar: View {
                         }
                         .buttonStyle(.plain)
                         .disabled(state.diffReview.refineInput.isEmpty)
-                        .help("按此指令对 AI 结果再改一轮")
+                        .help(L("diff.refineHelp"))
                     }
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
@@ -252,7 +255,7 @@ private struct DiffModeBar: View {
 
                 // Pending count badge
                 if state.diffReview.pendingCount > 0 {
-                    Text("\(state.diffReview.pendingCount) 处待处理")
+                    Text(L("diff.pendingCount", state.diffReview.pendingCount))
                         .contentTransition(.numericText())
                         .animation(.default, value: state.diffReview.pendingCount)
                         .font(.system(size: 11, weight: .medium))
@@ -261,7 +264,7 @@ private struct DiffModeBar: View {
                         .padding(.vertical, 3)
                         .background(Color.primary.opacity(0.07), in: Capsule())
                 } else if !state.diffReview.diffs.isEmpty {
-                    Text("全部已处理")
+                    Text(L("diff.allHandled"))
                         .font(.system(size: 11))
                         .foregroundStyle(Color(hex: "22C55E"))
                 }
@@ -273,7 +276,7 @@ private struct DiffModeBar: View {
                     Button {
                         state.diffReview.acceptAll()
                     } label: {
-                        Label("保存 HTML", systemImage: "checkmark.circle.fill")
+                        Label(L("beautify.save"), systemImage: "checkmark.circle.fill")
                             .font(.system(size: 12, weight: .semibold))
                     }
                     .buttonStyle(.borderedProminent)
@@ -282,7 +285,7 @@ private struct DiffModeBar: View {
                     Button {
                         state.diffReview.acceptAll()
                     } label: {
-                        Label("全部接受", systemImage: "checkmark.circle.fill")
+                        Label(L("diff.acceptAll"), systemImage: "checkmark.circle.fill")
                             .font(.system(size: 12, weight: .semibold))
                     }
                     .buttonStyle(.borderedProminent)
@@ -292,7 +295,7 @@ private struct DiffModeBar: View {
                     Button {
                         state.diffReview.skipAll()
                     } label: {
-                        Text("全部跳过")
+                        Text(L("diff.skipAll"))
                             .font(.system(size: 12))
                     }
                     .buttonStyle(.bordered)
@@ -314,7 +317,7 @@ private struct DiffModeBar: View {
                     .background(Circle().fill(.quaternary))
             }
             .buttonStyle(.plain)
-            .help("关闭 (Esc)")
+            .help(L("diff.closeHelp"))
             .keyboardShortcut(.escape, modifiers: [])
         }
         .padding(.horizontal, 16)
@@ -544,9 +547,9 @@ img{max-width:100%}
       if(isRight&&p.status==='pending'&&p.diffId){
         var acts=document.createElement('div');
         acts.className='diff-actions';
-        var bA=document.createElement('button');bA.className='btn-accept';bA.textContent='✓ 接受';
+        var bA=document.createElement('button');bA.className='btn-accept';bA.textContent='\(L("diff.accept"))';
         (function(id){bA.addEventListener('click',function(){postAction('accept',id);});})(p.diffId);
-        var bS=document.createElement('button');bS.className='btn-skip';bS.textContent='✗ 跳过';
+        var bS=document.createElement('button');bS.className='btn-skip';bS.textContent='\(L("diff.skip"))';
         (function(id){bS.addEventListener('click',function(){postAction('skip',id);});})(p.diffId);
         acts.appendChild(bA);acts.appendChild(bS);block.appendChild(acts);
       }

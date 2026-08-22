@@ -12,9 +12,9 @@ struct DocStats {
     /// Short label for the status bar chip.
     var chipLabel: String {
         switch (cjkCount > 0, latinWords > 0) {
-        case (true, true):  return "\(cjkCount.formatted())字"
-        case (true, false): return "\(cjkCount.formatted())字"
-        default:            return "\(latinWords)w"
+        case (true, true):  return L("stats.chipChars", cjkCount.formatted())
+        case (true, false): return L("stats.chipChars", cjkCount.formatted())
+        default:            return L("stats.chipWords", latinWords)
         }
     }
 
@@ -70,7 +70,7 @@ struct StatsPopover: View {
                 Image(systemName: "doc.text.magnifyingglass")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Color.appAccent)
-                Text("文档统计")
+                Text(L("stats.title"))
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.primary)
             }
@@ -83,14 +83,14 @@ struct StatsPopover: View {
             // Stats rows
             VStack(spacing: 0) {
                 if stats.cjkCount > 0 {
-                    statsRow(label: "汉字", value: stats.cjkCount.formatted(), icon: "character")
+                    statsRow(label: L("stats.cjk"), value: stats.cjkCount.formatted(), icon: "character")
                 }
                 if stats.latinWords > 0 {
-                    statsRow(label: "英文词", value: "\(stats.latinWords)", icon: "textformat.abc")
+                    statsRow(label: L("stats.words"), value: "\(stats.latinWords)", icon: "textformat.abc")
                 }
-                statsRow(label: "字符", value: stats.totalChars.formatted(), icon: "character.cursor.ibeam")
-                statsRow(label: "行数", value: "\(stats.lineCount)", icon: "list.bullet")
-                statsRow(label: "阅读时间", value: "约 \(stats.readingMinutes) 分钟", icon: "clock")
+                statsRow(label: L("stats.chars"), value: stats.totalChars.formatted(), icon: "character.cursor.ibeam")
+                statsRow(label: L("stats.lines"), value: "\(stats.lineCount)", icon: "list.bullet")
+                statsRow(label: L("stats.readingTime"), value: L("stats.readingMinutes", stats.readingMinutes), icon: "clock")
             }
             .padding(.vertical, 4)
         }

@@ -96,7 +96,7 @@ final class AIChatCoordinator {
         // 截断提示追加在最新用户消息之后（占位 bubble 之前）——时序上提示是对最新
         // 提问的说明；且不能插到用户消息之前，那会顶掉上面「最后一条是 user」的配对判断
         if didTruncate {
-            let notice = AIChatMessage(role: .assistant, text: "⚠️ 对话历史过长，已自动保留最近 10 轮对话。")
+            let notice = AIChatMessage(role: .assistant, text: L("ai.notice.truncatedHistory"))
             convo.messages.append(notice)
         }
 
@@ -119,16 +119,19 @@ final class AIChatCoordinator {
             guard let convo else { return }
             var parts: [String] = []
             if result.evictedToolResults > 0 {
-                parts.append("\(result.evictedToolResults) 条早期工具读取内容已省略（如仍需可用工具重新读取）")
+                parts.append(L("ai.notice.evictedToolResults", result.evictedToolResults))
             }
             if result.evictedToolCallArgs > 0 {
-                parts.append("\(result.evictedToolCallArgs) 条早期工具调用参数已省略（如仍需可用工具重新读取）")
+                parts.append(L("ai.notice.evictedToolArgs", result.evictedToolCallArgs))
             }
             if result.droppedMessages > 0 {
-                parts.append("最早的部分对话已裁剪")
+                parts.append(L("ai.notice.droppedMessages"))
             }
             guard !parts.isEmpty else { return }
-            let notice = AIChatMessage(role: .assistant, text: "ℹ️ 上下文超出预算：" + parts.joined(separator: "；") + "。")
+            let notice = AIChatMessage(
+                role: .assistant,
+                text: L("ai.notice.contextBudget", parts.joined(separator: L("ai.notice.separator")))
+            )
             convo.insertTranscriptNotice(notice, sessionID: sessionID)
         }
 
@@ -145,12 +148,12 @@ final class AIChatCoordinator {
             let errText   = runner?.error
 
             if let err = errText, !err.isEmpty {
-                convo.updateMessageText("错误：\(err)", messageID: replyID, sessionID: sessionID)
+                convo.updateMessageText(L("ai.notice.error", err), messageID: replyID, sessionID: sessionID)
             } else if !finalText.isEmpty {
                 var text = finalText
                 // 输出达到 max_tokens 上限被截断时，在答案下方追加一行提示
                 if runner?.state.wasTruncated == true {
-                    text += "\n\n⚠️ 输出达到长度上限，内容可能被截断。"
+                    text += "\n\n" + L("ai.notice.outputTruncated")
                 }
                 convo.updateMessageText(text, messageID: replyID, sessionID: sessionID)
             } else {
@@ -165,7 +168,7 @@ final class AIChatCoordinator {
                         }
                         return nil
                     }
-                    let summary = "⚠️ 部分操作未能完成：\n" + lines.joined(separator: "\n")
+                    let summary = L("ai.notice.partialFailure") + lines.joined(separator: "\n")
                     convo.updateMessageText(summary, messageID: replyID, sessionID: sessionID)
                 } else {
                     // 工具全部成功，结果已体现在文档里，删掉空占位

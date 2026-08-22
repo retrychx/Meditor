@@ -63,7 +63,7 @@ struct TodoSidebarView: View {
             let done    = store.todos.filter { $0.isChecked }
 
             if !pending.isEmpty {
-                Section(header: CraftSectionLabel(title: "待办 (\(pending.count))")) {
+                Section(header: CraftSectionLabel(title: L("todo.sectionPending", pending.count))) {
                     ForEach(pending) { item in
                         TodoRow(item: item, theme: theme, onTap: { jumpTo(item) }, onToggle: { toggle(item) })
                     }
@@ -74,7 +74,7 @@ struct TodoSidebarView: View {
             }
 
             if !done.isEmpty {
-                Section(header: CraftSectionLabel(title: "已完成 (\(done.count))")) {
+                Section(header: CraftSectionLabel(title: L("todo.sectionDone", done.count))) {
                     ForEach(done) { item in
                         TodoRow(item: item, theme: theme, onTap: { jumpTo(item) }, onToggle: { toggle(item) })
                     }

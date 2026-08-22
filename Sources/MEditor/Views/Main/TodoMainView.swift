@@ -53,7 +53,7 @@ struct TodoMainView: View {
                         .foregroundStyle(theme.craftSecondary)
                 }
                 .buttonStyle(.plain)
-                .help("新增待办")
+                .help(L("todo.add"))
 
                 Button {
                     Task { await store.reload(rootURL: state.rootURL) }
@@ -89,7 +89,7 @@ struct TodoMainView: View {
             let done    = store.todos.filter { $0.isChecked }
 
             if !pending.isEmpty {
-                Section(header: sectionHeader("待办 (\(pending.count))")) {
+                Section(header: sectionHeader(L("todo.sectionPending", pending.count))) {
                     ForEach(pending) { item in
                         TodoMainRow(item: item, theme: theme,
                                     onTap: { jumpTo(item) }, onToggle: { toggle(item) })
@@ -101,7 +101,7 @@ struct TodoMainView: View {
             }
 
             if !done.isEmpty {
-                Section(header: sectionHeader("已完成 (\(done.count))")) {
+                Section(header: sectionHeader(L("todo.sectionDone", done.count))) {
                     ForEach(done) { item in
                         TodoMainRow(item: item, theme: theme,
                                     onTap: { jumpTo(item) }, onToggle: { toggle(item) })
@@ -177,7 +177,7 @@ struct TodoMainView: View {
                     tab.content = newContent
                     tab.contentRevision &+= 1
                 }
-                state.showToast("已新增待办", icon: "checkmark.circle")
+                state.showToast(L("todo.addedToast"), icon: "checkmark.circle")
             } catch {
                 state.setError(error.localizedDescription)
             }
@@ -254,7 +254,7 @@ struct AddTodoSheet: View {
     }
 
     private var targetFileName: String {
-        targetFileURL?.lastPathComponent ?? "未知文件"
+        targetFileURL?.lastPathComponent ?? L("todo.unknownFile")
     }
 
     var body: some View {
@@ -264,7 +264,7 @@ struct AddTodoSheet: View {
                 Image(systemName: "plus.circle.fill")
                     .font(.system(size: 18))
                     .foregroundStyle(Color.appAccent)
-                Text("新增待办")
+                Text(L("todo.add"))
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(theme.craftPrimary)
                 Spacer()
@@ -280,10 +280,10 @@ struct AddTodoSheet: View {
 
             // 输入框
             VStack(alignment: .leading, spacing: 6) {
-                Text("待办内容")
+                Text(L("todo.contentLabel"))
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(theme.craftSecondary)
-                TextField("输入待办事项…", text: $todoText)
+                TextField(L("todo.inputPlaceholder"), text: $todoText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .foregroundStyle(theme.craftPrimary)
@@ -299,7 +299,7 @@ struct AddTodoSheet: View {
                 Image(systemName: "doc.text")
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
-                Text("将写入：")
+                Text(L("todo.willWrite"))
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
                 Text(targetFileName)
@@ -310,7 +310,7 @@ struct AddTodoSheet: View {
             // 按钮区
             HStack {
                 Spacer()
-                Button("取消") {
+                Button(L("common.cancel")) {
                     dismiss()
                 }
                 .buttonStyle(.plain)
@@ -319,7 +319,7 @@ struct AddTodoSheet: View {
                 .padding(.vertical, 7)
                 .background(Color.primary.opacity(0.06), in: Capsule())
 
-                Button("添加") {
+                Button(L("common.add")) {
                     confirmAdd()
                 }
                 .buttonStyle(.plain)

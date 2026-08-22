@@ -204,11 +204,20 @@ struct FileSidebar: View {
     }
 
     private func refreshDocFiles() {
-        userDocFiles = listDocFiles(at: AppSettings.shared.userDocPath)
-        appDocFiles  = listDocFiles(at: AppSettings.shared.appDocPath)
+        let userPath = AppSettings.shared.userDocPath
+        let appPath  = AppSettings.shared.appDocPath
+        // 目录枚举放后台线程，避免 onAppear / docPathChanged 时阻塞主线程。
+        DispatchQueue.global(qos: .userInitiated).async {
+            let userFiles = Self.listDocFiles(at: userPath)
+            let appFiles  = Self.listDocFiles(at: appPath)
+            DispatchQueue.main.async {
+                userDocFiles = userFiles
+                appDocFiles  = appFiles
+            }
+        }
     }
 
-    private func listDocFiles(at url: URL?) -> [URL] {
+    private static func listDocFiles(at url: URL?) -> [URL] {
         guard let url else { return [] }
         guard let contents = try? FileManager.default.contentsOfDirectory(
             at: url,

@@ -98,7 +98,7 @@ final class AgentDemoFlowTests: XCTestCase {
         guard case .failed(let message) = flow.phase else {
             return XCTFail("未配置 AI 时演示必须进入 failed，实际 \(flow.phase)")
         }
-        XCTAssertTrue(message.contains("配置"))
+        XCTAssertEqual(message, L("demo.notConfigured"))
         XCTAssertFalse(FileManager.default.fileExists(atPath: AgentDemoFlow.demoDirectory.path),
                        "失败快路径不得写演示文件")
     }

@@ -26,7 +26,7 @@ struct UnifiedCalendarEvent: Identifiable, Sendable {
     }()
 
     var formattedTime: String {
-        if isAllDay { return "全天" }
+        if isAllDay { return L("calendar.allDay") }
         return "\(Self.timeFormatter.string(from: startDate)) – \(Self.timeFormatter.string(from: endDate))"
     }
 }

@@ -6,9 +6,6 @@ private enum SidebarFmt {
     static let dayKey: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f
     }()
-    static let sectionDisplay: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "M月d日 EEEE"; f.locale = .current; return f
-    }()
     static let timeShort: DateFormatter = {
         let f = DateFormatter(); f.timeStyle = .short; f.dateStyle = .none; return f
     }()
@@ -53,7 +50,7 @@ struct CalendarSidebarView: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .help("刷新日历")
+                .help(L("calendar.refreshHint"))
             }
         }
         .padding(.horizontal, 14)
@@ -157,7 +154,7 @@ struct CalendarSidebarView: View {
         let cal = Calendar.current
         if cal.isDateInToday(date) { return L("calendar.today") }
         if cal.isDateInTomorrow(date) { return L("calendar.tomorrow") }
-        return SidebarFmt.sectionDisplay.string(from: date)
+        return CalendarFmt.dayHeader.string(from: date)
     }
 
     private func loadIfAuthorized() async {
@@ -188,7 +185,7 @@ private struct CalendarEventRow: View {
                 .frame(width: 7, height: 7)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(event.title ?? "（无标题）")
+                Text(event.title ?? L("event.untitled"))
                     .font(.system(size: 12.5))
                     .foregroundStyle(.primary)
                     .lineLimit(1)

@@ -59,7 +59,7 @@ struct CalendarEventItem: Identifiable {
     init(_ event: EKEvent) { self.event = event }
 
     var id: String { event.eventIdentifier ?? UUID().uuidString }
-    var title: String { event.title ?? "（无标题）" }
+    var title: String { event.title ?? L("event.untitled") }
     var startDate: Date { event.startDate }
     var endDate: Date { event.endDate }
     var isAllDay: Bool { event.isAllDay }
@@ -134,17 +134,17 @@ struct EventDetailPopoverItem: View {
                     Button(role: .destructive) {
                         showDeleteConfirm = true
                     } label: {
-                        Label("删除", systemImage: "trash")
+                        Label(L("common.delete"), systemImage: "trash")
                             .font(.system(size: 12))
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.red)
-                    .confirmationDialog("确认删除此事件？", isPresented: $showDeleteConfirm) {
-                        Button("删除", role: .destructive) {
+                    .confirmationDialog(L("event.deleteConfirm"), isPresented: $showDeleteConfirm) {
+                        Button(L("common.delete"), role: .destructive) {
                             service.deleteEvent(item.event)
                             onDismiss()
                         }
-                        Button("取消", role: .cancel) {}
+                        Button(L("common.cancel"), role: .cancel) {}
                     }
                     Spacer()
                 }

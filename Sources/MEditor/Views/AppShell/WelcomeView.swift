@@ -209,7 +209,7 @@ struct WelcomeView: View {
 
     private var recentPanel: some View {
         VStack(alignment: .leading, spacing: DS.Space.sm) {
-            Text("最近打开")
+            Text(L("welcome.recent"))
                 .font(.system(size: 10.5, weight: .semibold))
                 .foregroundStyle(.tertiary)
                 .padding(.leading, DS.Space.md)

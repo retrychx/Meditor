@@ -33,7 +33,7 @@ struct CreateEventSheet: View {
         VStack(spacing: 0) {
             // Header
             HStack {
-                Text("新建事件")
+                Text(L("calendar.newEvent"))
                     .font(.system(size: 15, weight: .semibold))
                 Spacer()
                 Button { dismiss() } label: {
@@ -51,20 +51,20 @@ struct CreateEventSheet: View {
 
             // Form
             Form {
-                TextField("标题", text: $title)
+                TextField(L("event.title"), text: $title)
                     .font(.system(size: 14))
 
-                Toggle("全天", isOn: $isAllDay)
+                Toggle(L("calendar.allDay"), isOn: $isAllDay)
 
                 if !isAllDay {
-                    DatePicker("开始", selection: $startDate, displayedComponents: [.date, .hourAndMinute])
-                    DatePicker("结束", selection: $endDate,   displayedComponents: [.date, .hourAndMinute])
+                    DatePicker(L("event.start"), selection: $startDate, displayedComponents: [.date, .hourAndMinute])
+                    DatePicker(L("event.end"), selection: $endDate,   displayedComponents: [.date, .hourAndMinute])
                 } else {
-                    DatePicker("日期", selection: $startDate, displayedComponents: [.date])
+                    DatePicker(L("event.date"), selection: $startDate, displayedComponents: [.date])
                 }
 
                 if !calendars.isEmpty {
-                    Picker("日历", selection: $selectedCalendar) {
+                    Picker(L("event.calendar"), selection: $selectedCalendar) {
                         ForEach(calendars.filter { $0.allowsContentModifications }, id: \.calendarIdentifier) { cal in
                             HStack {
                                 Circle().fill(Color(cgColor: cal.cgColor)).frame(width: 8, height: 8)
@@ -75,7 +75,7 @@ struct CreateEventSheet: View {
                     }
                 }
 
-                TextField("备注", text: $notes, axis: .vertical)
+                TextField(L("event.notes"), text: $notes, axis: .vertical)
                     .lineLimit(3...6)
                     .font(.system(size: 13))
             }
@@ -93,9 +93,9 @@ struct CreateEventSheet: View {
             // Footer
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }
+                Button(L("common.cancel")) { dismiss() }
                     .keyboardShortcut(.escape, modifiers: [])
-                Button("添加") { save() }
+                Button(L("common.add")) { save() }
                     .buttonStyle(.borderedProminent)
                     .tint(Color.appAccent)
                     .keyboardShortcut(.return, modifiers: [.command])
@@ -122,7 +122,7 @@ struct CreateEventSheet: View {
         if success {
             dismiss()
         } else {
-            errorMessage = "保存失败，请检查日历权限"
+            errorMessage = L("event.saveFailed")
             isSaving = false
         }
     }

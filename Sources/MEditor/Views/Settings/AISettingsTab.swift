@@ -37,19 +37,19 @@ extension SettingsView {
                             }
                         }
                         rowDivider
-                        settingsStackedRow(label: "模型", subtitle: "留空则使用 CLI 默认模型") {
+                        settingsStackedRow(label: L("ai.model"), subtitle: L("settings.ai.cliModelHint")) {
                             SettingsMenu(
                                 selection: bindableSettings.aiCLIModel,
                                 options: [
-                                    ("",                  "CLI 默认"),
-                                    ("claude-opus-4-5",   "Claude Opus 4.5（最强）"),
-                                    ("claude-sonnet-4-5", "Claude Sonnet 4.5（均衡）"),
-                                    ("claude-haiku-4-5",  "Claude Haiku 4.5（最快）"),
+                                    ("",                  L("settings.ai.cliModelDefault")),
+                                    ("claude-opus-4-5",   L("settings.ai.cliModelOpus")),
+                                    ("claude-sonnet-4-5", L("settings.ai.cliModelSonnet")),
+                                    ("claude-haiku-4-5",  L("settings.ai.cliModelHaiku")),
                                 ]
                             )
                         }
                         rowDivider
-                        settingsStackedRow(label: "连接测试", subtitle: "真实发送一条消息，验证 CLI 与登录态可用") {
+                        settingsStackedRow(label: L("settings.ai.connectionTest"), subtitle: L("settings.ai.connectionTestHint")) {
                             HStack(spacing: 10) {
                                 Button {
                                     Task { await runCLITest() }
@@ -57,10 +57,10 @@ extension SettingsView {
                                     if connectionTesting {
                                         HStack(spacing: 6) {
                                             ProgressView().controlSize(.small)
-                                            Text("测试中…")
+                                            Text(L("settings.ai.testing"))
                                         }
                                     } else {
-                                        Text("测试连接")
+                                        Text(L("settings.ai.testConnection"))
                                     }
                                 }
                                 .disabled(connectionTesting || settings.aiCLIPath.isEmpty)
@@ -101,7 +101,7 @@ extension SettingsView {
                         rowDivider
                         settingsStackedRow(label: L("ai.apiKey"), subtitle: L("ai.apiKey.localOnly")) { aiKeyField }
                         rowDivider
-                        settingsStackedRow(label: "连接测试") {
+                        settingsStackedRow(label: L("settings.ai.connectionTest")) {
                             HStack(spacing: 10) {
                                 Button {
                                     Task { await runConnectionTest() }
@@ -109,10 +109,10 @@ extension SettingsView {
                                     if connectionTesting {
                                         HStack(spacing: 6) {
                                             ProgressView().controlSize(.small)
-                                            Text("测试中…")
+                                            Text(L("settings.ai.testing"))
                                         }
                                     } else {
-                                        Text("测试连接")
+                                        Text(L("settings.ai.testConnection"))
                                     }
                                 }
                                 .disabled(connectionTesting)
@@ -128,25 +128,25 @@ extension SettingsView {
                         rowDivider
                         settingsStackedRow(label: L("ai.model")) { aiModelField }
                         rowDivider
-                        settingsStackedRow(label: "Agent 模型", subtitle: "工具调用专用，留空则使用上方模型") {
-                            modelPickerField(binding: bindableSettings.aiAgentModel, placeholder: "留空则回退到上方模型")
+                        settingsStackedRow(label: L("settings.ai.agentModel"), subtitle: L("settings.ai.agentModelHint")) {
+                            modelPickerField(binding: bindableSettings.aiAgentModel, placeholder: L("settings.ai.modelFallback"))
                         }
                         rowDivider
-                        settingsStackedRow(label: "Agent 最大步数", subtitle: "每次对话最多工具调用轮次（5~100，默认 30）") {
+                        settingsStackedRow(label: L("settings.ai.agentMaxSteps"), subtitle: L("settings.ai.agentMaxStepsHint")) {
                             TextField("30", value: bindableSettings.aiAgentMaxSteps, format: .number)
                                 .textFieldStyle(.plain)
                                 .settingsField()
                                 .frame(width: 60)
                         }
                         rowDivider
-                        settingsStackedRow(label: "内联编辑模型", subtitle: "改写/扩写/精简/翻译，留空则使用上方模型") {
-                            modelPickerField(binding: bindableSettings.aiInlineModel, placeholder: "留空则回退到上方模型")
+                        settingsStackedRow(label: L("settings.ai.inlineModel"), subtitle: L("settings.ai.inlineModelHint")) {
+                            modelPickerField(binding: bindableSettings.aiInlineModel, placeholder: L("settings.ai.modelFallback"))
                         }
                     }
                 }
 
                 // MARK: 个性化（对所有 provider 生效）
-                settingsGroup(title: "个性化") {
+                settingsGroup(title: L("settings.ai.sectionPersonal")) {
                     settingsRow(
                         label: L("ai.autoAttach.toggle"),
                         subtitle: L("ai.autoAttach.toggleHint")
@@ -160,8 +160,8 @@ extension SettingsView {
                     rowDivider
 
                     settingsStackedRow(
-                        label: "自定义系统提示词",
-                        subtitle: "追加到每次对话的系统提示词末尾。例如：「回答一律用中文，风格简洁直接」"
+                        label: L("settings.ai.customPrompt"),
+                        subtitle: L("settings.ai.customPromptHint")
                     ) {
                         TextEditor(text: bindableSettings.aiCustomSystemPrompt)
                             .font(.system(size: 12))
@@ -182,8 +182,8 @@ extension SettingsView {
     // MARK: - Claude Code 监听
 
     var claudeMonitorSection: some View {
-        settingsGroup(title: "Claude Code 集成") {
-            settingsRow(label: "监听会话文件", subtitle: "Claude Code 生成文件时自动提示开启") {
+        settingsGroup(title: L("settings.ai.claudeIntegration")) {
+            settingsRow(label: L("settings.ai.monitorFiles"), subtitle: L("settings.ai.monitorFilesHint")) {
                 Toggle("", isOn: bindableSettings.claudeMonitorEnabled)
                     .labelsHidden()
                     .toggleStyle(.switch)
@@ -194,22 +194,22 @@ extension SettingsView {
                 rowDivider
 
                 settingsStackedRow(
-                    label: "监听目录",
-                    subtitle: "空则使用默认的 ~/.claude/projects/"
+                    label: L("settings.ai.monitorDir"),
+                    subtitle: L("settings.ai.monitorDirHint")
                 ) {
                     HStack(spacing: 8) {
                         TextField("~/.claude/projects/", text: bindableSettings.claudeMonitorCustomPath)
                             .textFieldStyle(.plain)
                             .settingsField()
-                        Button("选择…") { selectClaudeMonitorDir() }
+                        Button(L("settings.ai.choose")) { selectClaudeMonitorDir() }
                     }
                 }
 
                 rowDivider
 
                 settingsStackedRow(
-                    label: "文件类型",
-                    subtitle: "逗号分隔，如 md,txt"
+                    label: L("settings.ai.fileTypes"),
+                    subtitle: L("settings.ai.fileTypesHint")
                 ) {
                     TextField("md,txt", text: bindableSettings.claudeMonitorFileExts)
                         .textFieldStyle(.plain)
@@ -222,7 +222,7 @@ extension SettingsView {
                     Image(systemName: "info.circle")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
-                    Text("监听目录：\"\(settings.claudeMonitorDirectory.path)\"")
+                    Text(L("settings.ai.monitorDirInfo", settings.claudeMonitorDirectory.path))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -237,7 +237,7 @@ extension SettingsView {
 
     func selectClaudeMonitorDir() {
         Task {
-            if let url = await state.filePickerService.pickFolder(message: "选择 Claude Code 输出文件目录") {
+            if let url = await state.filePickerService.pickFolder(message: L("settings.ai.pickClaudeDir")) {
                 settings.claudeMonitorCustomPath = url.path
             }
         }
@@ -359,7 +359,7 @@ extension SettingsView {
                 .textFieldStyle(.plain)
                 .settingsField()
             Menu {
-                Button("（清空/自定义）") { binding.wrappedValue = "" }
+                Button(L("settings.ai.clearCustom")) { binding.wrappedValue = "" }
                 Divider()
                 ForEach(presetModelsForCurrentProvider, id: \.self) { model in
                     Button(model) { binding.wrappedValue = model }
@@ -371,7 +371,7 @@ extension SettingsView {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .help("选择预设模型")
+            .help(L("settings.ai.pickPresetModel"))
         }
     }
 }

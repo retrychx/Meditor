@@ -174,9 +174,9 @@ struct TemplatePickerSheet: View {
         let user = store.userTemplates()
 
         var result: [PickerSection] = []
-        if !md.isEmpty   { result.append(PickerSection(id: "markdown",  title: "文档模板",  items: md)) }
-        if !html.isEmpty { result.append(PickerSection(id: "htmlTheme", title: "HTML 主题", items: html)) }
-        if !user.isEmpty { result.append(PickerSection(id: "mine",      title: "我的模板",  items: user)) }
+        if !md.isEmpty   { result.append(PickerSection(id: "markdown",  title: L("templates.sectionMarkdown"),  items: md)) }
+        if !html.isEmpty { result.append(PickerSection(id: "htmlTheme", title: L("templates.sectionHTML"), items: html)) }
+        if !user.isEmpty { result.append(PickerSection(id: "mine",      title: L("templates.sectionMine"),  items: user)) }
         return result
     }
 

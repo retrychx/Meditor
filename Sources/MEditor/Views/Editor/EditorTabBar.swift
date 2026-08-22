@@ -11,16 +11,22 @@ struct EditorTabBar: View {
     private var theme: PreviewTheme { state.themeStore.current }
 
     var body: some View {
+        // 在 body 里先把「每个 tab 左侧是否画细分隔线」一次性算好，ForEach 内容
+        // 闭包只查字典、不再按下标回读 state.openTabs。崩溃根因：SwiftUI 做
+        // ForEach diff（尤其右键菜单「关闭其他/关闭全部」一次关多个 tab）时会用
+        // 旧下标重算内容闭包，而 state.openTabs 已变短，openTabs[idx - 1] 越界
+        // 触发 Swift 运行时 trap（SIGILL，EXC_BAD_INSTRUCTION）。
+        let selectedID = state.selectedTabID
+        let separatorBefore = separatorBeforeTabs
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 2) {
-                ForEach(Array(state.openTabs.enumerated()), id: \.element.id) { idx, tab in
-                    let isSelected = tab.id == state.selectedTabID
-                    let prevSelected = idx > 0 && state.openTabs[idx - 1].id == state.selectedTabID
+                ForEach(state.openTabs) { tab in
+                    let isSelected = tab.id == selectedID
                     TabItem(
                         tab: tab,
                         isSelected: isSelected,
                         isDark: theme.isDark,
-                        showLeadingSeparator: idx > 0 && !isSelected && !prevSelected,
+                        showLeadingSeparator: (separatorBefore[tab.id] ?? false) && !isSelected,
                         onSelect: { state.selectTab(tab.id) },
                         onClose: { state.closeTab(tab.id) }
                     )
@@ -92,6 +98,25 @@ struct EditorTabBar: View {
         if state.aiUI.overlayShown { return 0.30 }
         if state.settingsOverlayShown { return 0.28 }
         return 0
+    }
+
+    /// tabID → 该 tab 左侧是否需要细分隔线（有前驱且前驱未被选中）。
+    /// 由当前 openTabs 一次性计算（与 ForEach 同一份快照），内容闭包只查表，
+    /// 杜绝按下标回读 state.openTabs 的越界 trap。首 tab 无前驱，不在表里。
+    private var separatorBeforeTabs: [UUID: Bool] {
+        Self.separatorBefore(tabs: state.openTabs, selectedID: state.selectedTabID)
+    }
+
+    /// 纯函数版细分隔线判定，供测试直接验证（见 TabSeparatorLogicTests）。
+    /// 返回表里只有「有前驱」的 tab；值 = 前驱是否未被选中。
+    static func separatorBefore(tabs: [EditorTab], selectedID: UUID?) -> [UUID: Bool] {
+        guard tabs.count > 1 else { return [:] }
+        var result: [UUID: Bool] = [:]
+        result.reserveCapacity(tabs.count)
+        for i in tabs.indices where i > 0 {
+            result[tabs[i].id] = tabs[i - 1].id != selectedID
+        }
+        return result
     }
 }
 
@@ -320,6 +345,10 @@ struct TabBarRightClickGuard: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        // 若菜单还在追踪（例如关闭最后一个 tab 触发 toolbar item 拆除），先让
+        // 追踪会话干净退出——否则会话持有的视图引用可能在 Coordinator 销毁后
+        // 悬垂，objc_release 在错误对象上触发 EXC_BAD_ACCESS。
+        coordinator.cancelActiveMenu()
         coordinator.disarm()
     }
 
@@ -330,6 +359,8 @@ struct TabBarRightClickGuard: NSViewRepresentable {
         weak var marker: NSView?
         var state: AppState?
         private var monitor: Any?
+        /// 当前正在追踪的右键菜单（仅同步弹出期间非 nil）。
+        private var activeMenu: NSMenu?
 
         func arm(marker: NSView) {
             self.marker = marker
@@ -349,8 +380,18 @@ struct TabBarRightClickGuard: NSViewRepresentable {
             monitor = nil
         }
 
+        /// 关闭正在追踪的菜单（若存在）。dismantle 时调用，保证 Coordinator 销毁
+        /// 前追踪会话已退出，菜单 item 的 target（本对象）不会悬垂。
+        func cancelActiveMenu() {
+            activeMenu?.cancelTracking()
+            activeMenu = nil
+        }
+
         /// 返回 true 表示事件已消费（不再传给 toolbar/其他视图）。
         func handleRightClick(_ event: NSEvent) -> Bool {
+            // 已有菜单在追踪（用户又点了一次右键）：吞掉事件，绝不重入
+            // popUpContextMenu——AppKit 不允许同时追踪两个菜单，重入会抛异常。
+            guard activeMenu == nil else { return true }
             guard let marker, let window = marker.window, event.window === window,
                   let toolbar = window.toolbar,
                   let itemView = toolbar.items.first(where: {
@@ -364,7 +405,14 @@ struct TabBarRightClickGuard: NSViewRepresentable {
                let tab = state.openTabs.first(where: { $0.id == tabID }) {
                 state.selectTab(tabID)   // Safari 习惯：右键先选中再弹菜单
                 let menu = TabContextMenu.make(tab: tab, state: state, target: self)
-                NSMenu.popUpContextMenu(menu, with: event, for: itemView.hitTest(loc) ?? itemView)
+                activeMenu = menu
+                // 弹出视图用稳定的 toolbar item 容器，而不是 hitTest 出来的 tab
+                // 内部视图——后者在菜单里点「关闭」会被 SwiftUI 立刻拆掉，而菜单
+                // 追踪会话仍持有它（弱/autorelease 语义），会话结束释放时就会
+                // 命中已释放对象 → objc_release EXC_BAD_ACCESS。itemView 与 tab
+                // 条同寿命，追踪期间不会提前销毁。
+                NSMenu.popUpContextMenu(menu, with: event, for: itemView)
+                activeMenu = nil
             }
             // 空白区：什么都不弹，但也吞掉，挡住系统显示模式菜单
             return true
@@ -378,12 +426,18 @@ struct TabBarRightClickGuard: NSViewRepresentable {
 
         @objc func closeOthersAction(_ sender: NSMenuItem) {
             withTab(sender) { state, tab in
-                state.openTabs.filter { $0.id != tab.id }.forEach { state.closeTab($0.id) }
+                // 先取快照再逐个关：closeTab 会改 openTabs，遍历原数组属于
+                // 迭代中改存储，语义上不安全，统一走快照拷贝。
+                let others = state.openTabs.filter { $0.id != tab.id }
+                for t in others { state.closeTab(t.id) }
             }
         }
 
         @objc func closeAllAction(_ sender: NSMenuItem) {
-            withTab(sender) { state, _ in state.openTabs.forEach { state.closeTab($0.id) } }
+            withTab(sender) { state, _ in
+                let all = state.openTabs
+                for t in all { state.closeTab(t.id) }
+            }
         }
 
         @objc func showInFinderAction(_ sender: NSMenuItem) {
@@ -412,7 +466,12 @@ enum TabContextMenu {
     typealias ActionTarget = TabBarRightClickGuard.Coordinator
 
     static func make(tab: EditorTab, state: AppState, target: ActionTarget) -> NSMenu {
-        let menu = NSMenu()
+        // RetainedContextMenu 在追踪期间强持有 target：NSMenuItem.target 是
+        // unsafe_unretained，若关闭 tab 触发 SwiftUI 拆 toolbar item、Coordinator
+        // 先行销毁，追踪会话再向悬垂 target 派发 action 就会崩。菜单由追踪会话
+        // 强持有，用它替 target 续命，会话结束自然释放。
+        let menu = RetainedContextMenu()
+        menu.retainedTarget = target
         func add(_ key: String, _ action: Selector, enabled: Bool = true) {
             let item = NSMenuItem(title: L(key), action: action, keyEquivalent: "")
             item.target = target
@@ -431,6 +490,12 @@ enum TabContextMenu {
             enabled: state.selectedTab != nil)
         return menu
     }
+}
+
+/// 菜单追踪期间强持有 action target 的 NSMenu 子类。
+/// 追踪会话持有菜单（强），菜单持有 target → 追踪期间 target 必然存活。
+private final class RetainedContextMenu: NSMenu {
+    var retainedTarget: AnyObject?
 }
 
 // MARK: - Tab anchor registry

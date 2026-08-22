@@ -14,7 +14,7 @@ extension SettingsView {
                 // ── SKILL.md 解析错误警告条 ──
                 if !plugins.loadErrors.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
-                        Label("部分技能加载失败", systemImage: "exclamationmark.triangle.fill")
+                        Label(L("plugin.loadFailed"), systemImage: "exclamationmark.triangle.fill")
                             .font(.system(size: 12.5, weight: .semibold))
                             .foregroundStyle(.orange)
                         ForEach(plugins.loadErrors, id: \.self) { err in
@@ -36,7 +36,7 @@ extension SettingsView {
                 }
 
                 // ── 内置技能 ──
-                settingsGroup(title: "内置技能 (\(builtins.filter(\.isEnabled).count)/\(builtins.count) 已启用)") {
+                settingsGroup(title: L("plugin.builtinGroup", builtins.filter(\.isEnabled).count, builtins.count)) {
                     ForEach(builtins) { skill in
                         builtinSkillRow(skill)
                         if skill.id != builtins.last?.id { rowDivider }
@@ -44,16 +44,16 @@ extension SettingsView {
                 }
 
                 // ── 我的技能 ──
-                settingsGroup(title: "我的技能 (\(manuals.filter(\.isEnabled).count) 个已启用)") {
+                settingsGroup(title: L("plugin.myGroup", manuals.filter(\.isEnabled).count)) {
                     if manuals.isEmpty {
                         VStack(spacing: 8) {
                             Image(systemName: "puzzlepiece.extension")
                                 .font(.system(size: 24, weight: .light))
                                 .foregroundStyle(.tertiary)
-                            Text("还没有自定义技能")
+                            Text(L("plugin.emptyTitle"))
                                 .font(.system(size: 12.5))
                                 .foregroundStyle(.secondary)
-                            Text("点击下方按钮添加 SKILL.md 文件")
+                            Text(L("plugin.emptyHint"))
                                 .font(.system(size: 11))
                                 .foregroundStyle(.tertiary)
                         }
@@ -71,16 +71,16 @@ extension SettingsView {
                     Button {
                         openSkillFilePicker()
                     } label: {
-                        Label("添加技能", systemImage: "plus")
+                        Label(L("plugin.add"), systemImage: "plus")
                             .font(.system(size: 13))
                     }
                     Button {
                         Task { await state.pluginManager.reloadAll() }
                     } label: {
-                        Label("重新加载", systemImage: "arrow.clockwise")
+                        Label(L("plugin.reload"), systemImage: "arrow.clockwise")
                             .font(.system(size: 13))
                     }
-                    .help("重新扫描全部技能文件（改了 SKILL.md 后点这里）")
+                    .help(L("plugin.reloadHint"))
                     Spacer()
                 }
                 .padding(.top, 4)
@@ -121,10 +121,10 @@ extension SettingsView {
                 Image(systemName: "sparkles")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Color.appAccent)
-                Text("技能库")
+                Text(L("plugin.gallery"))
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.secondary)
-                Text("— 一键安装到「我的技能」")
+                Text(L("plugin.galleryHint"))
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
                 Spacer()
@@ -197,7 +197,7 @@ extension SettingsView {
                     case .installed, .alreadyInstalled:
                         installedSkillIDs.insert(skill.id)
                     case .failed(let err):
-                        skillAddMessage = "安装失败：\(err.localizedDescription)"
+                        skillAddMessage = L("plugin.installFailed", err.localizedDescription)
                     }
                     installingSkillID = nil
                 }
@@ -212,7 +212,7 @@ extension SettingsView {
                         Image(systemName: "plus")
                             .font(.system(size: 10, weight: .medium))
                     }
-                    Text(isInstalling ? "安装中…" : isInstalled ? "已安装" : "安装")
+                    Text(isInstalling ? L("plugin.installing") : isInstalled ? L("plugin.installed") : L("plugin.install"))
                         .font(.system(size: 11, weight: .medium))
                 }
                 .padding(.horizontal, 10)
@@ -264,7 +264,7 @@ extension SettingsView {
 
             Spacer()
 
-            Text("内置")
+            Text(L("plugin.builtinBadge"))
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 7)
@@ -314,7 +314,7 @@ extension SettingsView {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .help("在 MEditor 中打开编辑")
+                .help(L("plugin.openInApp"))
 
                 Button {
                     NSWorkspace.shared.activateFileViewerSelecting([skill.skillPath])
@@ -324,7 +324,7 @@ extension SettingsView {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .help("在 Finder 中显示")
+                .help(L("plugin.showInFinder"))
             }
 
             Button {
@@ -335,7 +335,7 @@ extension SettingsView {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .help("移除此 Skill")
+            .help(L("plugin.removeSkill"))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -343,13 +343,13 @@ extension SettingsView {
 
     func openSkillFilePicker() {
         Task {
-            if let url = await state.filePickerService.pickFileOrFolder(title: "选择 SKILL.md / 技能目录 / 插件目录", allowedExtensions: ["md", "txt"]) {
+            if let url = await state.filePickerService.pickFileOrFolder(title: L("plugin.pickTitle"), allowedExtensions: ["md", "txt"]) {
                 let count = state.pluginManager.addSkills(from: url)
                 if count > 0 {
                     await state.pluginManager.reloadAll()
-                    skillAddMessage = count > 1 ? "已添加 \(count) 个技能" : nil
+                    skillAddMessage = count > 1 ? L("plugin.added", count) : nil
                 } else {
-                    skillAddMessage = "未找到 SKILL.md：可选 SKILL.md 文件、含 SKILL.md 的技能目录，或包含 skills/*/SKILL.md 的插件目录"
+                    skillAddMessage = L("plugin.noSkillFound")
                 }
             }
         }
