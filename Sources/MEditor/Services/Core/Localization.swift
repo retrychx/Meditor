@@ -868,12 +868,250 @@ extension LocalizationManager {
         "ai.apiKey.localOnly": ("Stored only on this Mac", "仅存储在本机"),
     ]
 
+    // MARK: table5 — 本地化收尾批（diff 审阅 / 日历 / 待办 / 设置 / 模板 / 统计 / toast）
+    private static let table5: [String: (en: String, zh: String)] = [
+        // Common additions
+        "common.add": ("Add", "添加"),
+
+        // Diff review overlay
+        "diff.original": ("Original", "原文"),
+        "diff.aiGeneratedHTML": ("AI-Generated HTML", "AI 生成 HTML"),
+        "diff.aiAction": ("AI %@", "AI %@"),
+        "diff.review": ("Review Changes", "对比审阅"),
+        "diff.refinePlaceholder": ("Keep refining, e.g. \"shorter\"", "继续调整，如：再短一点"),
+        "diff.refineHelp": ("Run another AI pass on the result with this instruction", "按此指令对 AI 结果再改一轮"),
+        "diff.pendingCount": ("%d pending", "%d 处待处理"),
+        "diff.allHandled": ("All handled", "全部已处理"),
+        "diff.acceptAll": ("Accept All", "全部接受"),
+        "diff.skipAll": ("Skip All", "全部跳过"),
+        "diff.closeHelp": ("Close (Esc)", "关闭 (Esc)"),
+        "diff.accept": ("✓ Accept", "✓ 接受"),
+        "diff.skip": ("✗ Skip", "✗ 跳过"),
+
+        // Calendar main view / sidebar
+        "calendar.mode.month": ("Month", "月"),
+        "calendar.mode.week": ("Week", "周"),
+        "calendar.fmt.monthTitle": ("MMMM yyyy", "yyyy年M月"),
+        "calendar.fmt.weekStart": ("MMM d", "M月d日"),
+        "calendar.fmt.weekEnd": ("MMM d", "M月d日"),
+        "calendar.fmt.dayHeader": ("EEEE, MMM d", "M月d日 EEEE"),
+        "calendar.newEvent": ("New Event", "新建事件"),
+        "calendar.new": ("New", "新建"),
+        "calendar.refresh": ("Refresh", "刷新"),
+        "calendar.refreshHint": ("Refresh Calendars", "刷新日历"),
+        "calendar.noEvents": ("No events", "无事件"),
+        "calendar.moreEvents": ("+%d more", "+%d 个"),
+        "calendar.serviceName": ("System Calendar", "系统日历"),
+
+        // Calendar events
+        "event.untitled": ("(No title)", "（无标题）"),
+        "event.title": ("Title", "标题"),
+        "event.start": ("Start", "开始"),
+        "event.end": ("End", "结束"),
+        "event.date": ("Date", "日期"),
+        "event.calendar": ("Calendar", "日历"),
+        "event.notes": ("Notes", "备注"),
+        "event.saveFailed": ("Couldn't save the event — check calendar access", "保存失败，请检查日历权限"),
+        "event.deleteConfirm": ("Delete this event?", "确认删除此事件？"),
+
+        // To-do main view / sidebar / context menu
+        "todo.add": ("Add To-do", "新增待办"),
+        "todo.addFromSelection": ("Add as To-do", "新增为待办"),
+        "todo.sectionPending": ("To-do (%d)", "待办 (%d)"),
+        "todo.sectionDone": ("Done (%d)", "已完成 (%d)"),
+        "todo.addedToast": ("To-do added", "已新增待办"),
+        "todo.unknownFile": ("Unknown file", "未知文件"),
+        "todo.contentLabel": ("Task", "待办内容"),
+        "todo.inputPlaceholder": ("What needs to be done?", "输入待办事项…"),
+        "todo.willWrite": ("Will be saved to:", "将写入："),
+
+        // Document stats popover / status bar chip
+        "stats.chipChars": ("%@ chars", "%@字"),
+        "stats.chipWords": ("%dw", "%dw"),
+        "stats.title": ("Document Stats", "文档统计"),
+        "stats.cjk": ("CJK Characters", "汉字"),
+        "stats.words": ("Words", "英文词"),
+        "stats.chars": ("Characters", "字符"),
+        "stats.lines": ("Lines", "行数"),
+        "stats.readingTime": ("Reading Time", "阅读时间"),
+        "stats.readingMinutes": ("~%d min", "约 %d 分钟"),
+
+        // Beautify
+        "beautify.disabledToast": ("Beautify is turned off in Settings", "「美化」功能已在设置中关闭"),
+        "beautify.alreadyClean": ("Markdown is already tidy", "Markdown 已经很规整了"),
+        "beautify.label": ("Beautify", "美化"),
+        "beautify.overwriteTitle": ("File exists — overwrite?", "文件已存在，确认覆盖？"),
+        "beautify.existingFile": ("Existing File", "现有文件"),
+        "beautify.newFile": ("New File", "新文件"),
+        "beautify.sizeDelta": ("Size change: %@", "大小变化：%@"),
+        "beautify.overwrite": ("Overwrite", "覆盖保存"),
+
+        // Preview action bar
+        "actionbar.expand": ("Expand action bar", "展开操作栏"),
+        "actionbar.collapse": ("Collapse action bar", "收起操作栏"),
+
+        // LAN share toasts
+        "share.stopped": ("Sharing stopped", "已停止分享"),
+        "share.startedCopied": ("Sharing on · link copied", "已开启分享 · 链接已复制"),
+        "share.started": ("LAN sharing on", "已开启局域网分享"),
+
+        // Settings
+        "settings.tab.plugins": ("Plugins", "插件"),
+        "settings.tab.paths": ("Paths", "路径"),
+        "settings.test.okModel": ("✓ Connected (model: %@)", "✓ 连接成功（model: %@）"),
+        "settings.test.failed": ("✗ Connection failed: %@", "✗ 连接失败：%@"),
+        "settings.test.okCLI": ("✓ Connected (CLI available)", "✓ 连接成功（CLI 可用）"),
+
+        // Paths settings
+        "paths.group": ("Document Paths", "文档路径"),
+        "paths.userDocs": ("User Documents", "用户文档"),
+        "paths.userDocsHint": ("Files under this folder appear in the sidebar", "侧边栏显示此目录下的文件"),
+        "paths.appDocs": ("App Documents (output)", "App 文档（输出目录）"),
+        "paths.appDocsHint": ("Default save location for Beautify HTML and similar features", "HTML 美化等功能的默认保存位置"),
+        "paths.choose": ("Choose Folder", "选择文件夹"),
+        "paths.clear": ("Clear", "清除"),
+
+        // Template picker sections
+        "templates.sectionMarkdown": ("Document Templates", "文档模板"),
+        "templates.sectionHTML": ("HTML Themes", "HTML 主题"),
+        "templates.sectionMine": ("My Templates", "我的模板"),
+
+        // Built-in template names / descriptions (user-visible in the picker)
+        "template.prd": ("Product PRD", "产品需求 PRD"),
+        "template.prdDesc": ("Background · user stories · feature list", "背景・用户故事・功能清单"),
+        "template.bugReport": ("Bug Report", "Bug 报告"),
+        "template.bugReportDesc": ("Symptoms · repro steps · analysis", "现象・复现步骤・分析结论"),
+        "template.readingNotes": ("Reading Notes", "读书笔记"),
+        "template.readingNotesDesc": ("Ideas · quotes · thoughts · actions", "观点・摘抄・想法・行动"),
+        "template.releaseNotes": ("Release Notes", "发布说明"),
+        "template.releaseNotesDesc": ("Features · improvements · fixes · upgrade guide", "新功能・改进・修复・升级指引"),
+        "template.retrospective": ("Retrospective", "项目复盘"),
+        "template.retrospectiveDesc": ("Data review · root causes · action items", "数据回顾・根因分析・行动项"),
+        "template.htmlTufte": ("Tufte Academic", "Tufte 学术风"),
+        "template.htmlTufteDesc": ("Serif · academic style", "衬线字体・学术风格"),
+        "template.htmlCraft": ("Craft Modern", "Craft 现代风"),
+        "template.htmlCraftDesc": ("Card layout · clean and modern", "卡片布局・现代简洁"),
+        "template.htmlDark": ("Dark Code", "Dark 代码风"),
+        "template.htmlDarkDesc": ("Dark theme · tech style", "深色主题・技术风格"),
+        "template.htmlLanding": ("Landing Page", "产品落地页"),
+        "template.htmlLandingDesc": ("Hero · feature cards · CTA", "Hero・特性卡片・CTA"),
+        "template.htmlReport": ("Data Report", "数据报告页"),
+        "template.htmlReportDesc": ("KPI cards · detail tables · conclusions", "KPI 卡片・明细表・结论"),
+        "template.htmlResume": ("Resume", "个人简历"),
+        "template.htmlResumeDesc": ("Print-friendly · clean professional layout", "打印友好・简洁专业版式"),
+
+        // Plugin manager (load errors surface in Settings → Plugins)
+        "plugin.error.parse": ("%@: couldn't parse SKILL.md (%@)", "%@：无法解析 SKILL.md（%@）"),
+        "plugin.error.bookmark": ("ID %@: stale bookmark — re-add the skill", "ID %@：书签失效，请重新添加技能"),
+        "plugin.defaultTrigger": ("Action", "操作"),
+
+        // AI chat transcript notices
+        "ai.notice.truncatedHistory": ("⚠️ Conversation history was too long — kept only the last 10 turns.",
+                                       "⚠️ 对话历史过长，已自动保留最近 10 轮对话。"),
+        "ai.notice.evictedToolResults": ("%d earlier tool result(s) omitted (re-read with a tool if needed)",
+                                         "%d 条早期工具读取内容已省略（如仍需可用工具重新读取）"),
+        "ai.notice.evictedToolArgs": ("%d earlier tool call argument(s) omitted (re-read with a tool if needed)",
+                                      "%d 条早期工具调用参数已省略（如仍需可用工具重新读取）"),
+        "ai.notice.droppedMessages": ("earliest messages trimmed", "最早的部分对话已裁剪"),
+        "ai.notice.contextBudget": ("ℹ️ Context over budget: %@.", "ℹ️ 上下文超出预算：%@。"),
+        "ai.notice.separator": ("; ", "；"),
+        "ai.notice.error": ("Error: %@", "错误：%@"),
+        "ai.notice.outputTruncated": ("⚠️ Output hit the length limit and may be truncated.",
+                                      "⚠️ 输出达到长度上限，内容可能被截断。"),
+        "ai.notice.partialFailure": ("⚠️ Some actions didn't complete:\n", "⚠️ 部分操作未能完成：\n"),
+
+        // AI provider presets / CLI errors
+        "ai.preset.ollama": ("Ollama · Local", "Ollama · 本地"),
+        "ai.error.cliGeneric": ("Claude CLI failed", "Claude CLI 执行失败"),
+        "ai.error.cliTimeout": ("CLI request timed out (%ds) — process terminated", "CLI 请求超时（%ds），进程已终止"),
+        "ai.error.cliMacOnly": ("Claude CLI is only supported on macOS", "Claude CLI 仅支持 macOS"),
+
+        // Agent errors
+        "agentErr.argsNotObject": ("Arguments aren't a JSON object", "参数不是 JSON 对象"),
+        "agentErr.argsNotUTF8": ("Arguments aren't valid UTF-8 text", "参数不是有效的 UTF-8 文本"),
+        "agentErr.noDocument": ("No document open", "没有打开的文档"),
+        "agentErr.noWorkspace": ("No workspace open", "没有打开工作区"),
+        "agentErr.toolNotFound": ("Tool not found: %@", "工具未找到：%@"),
+        "agentErr.maxSteps": ("Agent exceeded the step limit", "Agent 执行步数超限"),
+        "agentErr.parse": ("Parse error: %@", "解析错误：%@"),
+        "agentErr.execution": ("Execution error: %@", "执行错误：%@"),
+
+        // Agent demo flow (onboarding)
+        "demo.notConfigured": ("AI isn't configured yet — finish the setup above first", "尚未配置 AI，请先完成上方配置"),
+        "demo.createFailed": ("Couldn't create the demo file: %@", "演示文件创建失败：%@"),
+
+        // Welcome / misc toasts
+        "welcome.recent": ("Recent", "最近打开"),
+        "toast.presentationResourcesMissing": ("Presentation resources missing — can't export", "演讲模式资源缺失，无法导出"),
+
+        // Plugin settings tab（补齐 WIP 中已引用未登记的 key）
+        "plugin.loadFailed": ("Some skills failed to load", "部分技能加载失败"),
+        "plugin.builtinGroup": ("Built-in Skills (%d/%d on)", "内置技能（%d/%d 已启用）"),
+        "plugin.myGroup": ("My Skills (%d on)", "我的技能（%d 已启用）"),
+        "plugin.emptyTitle": ("No custom skills yet", "还没有自定义技能"),
+        "plugin.emptyHint": ("Add a SKILL.md file or a skills folder", "添加 SKILL.md 文件或技能目录"),
+        "plugin.add": ("Add Skill", "添加技能"),
+        "plugin.reload": ("Reload", "重新加载"),
+        "plugin.reloadHint": ("Re-scan all skill files", "重新扫描全部技能文件"),
+        "plugin.gallery": ("Skill Gallery", "技能库"),
+        "plugin.galleryHint": ("Curated picks", "精选推荐"),
+        "plugin.install": ("Install", "安装"),
+        "plugin.installing": ("Installing…", "安装中…"),
+        "plugin.installed": ("Installed", "已安装"),
+        "plugin.installFailed": ("Install failed: %@", "安装失败：%@"),
+        "plugin.builtinBadge": ("Built-in", "内置"),
+        "plugin.openInApp": ("Open in MEditor", "在 App 内打开"),
+        "plugin.showInFinder": ("Show in Finder", "在 Finder 中显示"),
+        "plugin.removeSkill": ("Remove skill", "移除技能"),
+        "plugin.pickTitle": ("Choose a SKILL.md file or a skills folder", "选择 SKILL.md 文件或技能目录"),
+        "plugin.added": ("Added %d skills", "已添加 %d 个技能"),
+        "plugin.noSkillFound": ("No SKILL.md found in the selection", "所选内容中没有找到 SKILL.md"),
+
+        // AI settings tab（补齐 WIP 中已引用未登记的 key）
+        "settings.ai.cliModelHint": ("Model used by the local Claude CLI", "本地 Claude CLI 使用的模型"),
+        "settings.ai.cliModelDefault": ("Default", "默认"),
+        "settings.ai.cliModelOpus": ("Opus 4.5", "Opus 4.5"),
+        "settings.ai.cliModelSonnet": ("Sonnet 4.5", "Sonnet 4.5"),
+        "settings.ai.cliModelHaiku": ("Haiku 4.5", "Haiku 4.5"),
+        "settings.ai.connectionTest": ("Connection Test", "连接测试"),
+        "settings.ai.connectionTestHint": ("Send a test request to verify the configuration", "发送一条测试请求验证配置是否可用"),
+        "settings.ai.testing": ("Testing…", "测试中…"),
+        "settings.ai.testConnection": ("Test Connection", "测试连接"),
+        "settings.ai.agentModel": ("Agent Model", "Agent 模型"),
+        "settings.ai.agentModelHint": ("Model for agent runs; falls back to the chat model when empty",
+                                       "Agent 执行使用的模型，留空则跟随聊天模型"),
+        "settings.ai.agentMaxSteps": ("Agent Max Steps", "Agent 最大步数"),
+        "settings.ai.agentMaxStepsHint": ("Maximum tool-call rounds per agent run", "单次 Agent 运行允许的最大工具调用轮数"),
+        "settings.ai.inlineModel": ("Inline Edit Model", "行内编辑模型"),
+        "settings.ai.inlineModelHint": ("Model for selection-based inline edits; falls back to the chat model when empty",
+                                        "圈选行内编辑使用的模型，留空则跟随聊天模型"),
+        "settings.ai.modelFallback": ("Follow chat model", "跟随聊天模型"),
+        "settings.ai.sectionPersonal": ("Personalization", "个性化"),
+        "settings.ai.customPrompt": ("Custom System Prompt", "自定义系统提示词"),
+        "settings.ai.customPromptHint": ("Injected into every conversation — your personal preferences",
+                                         "每次对话都会注入，用于表达你的个人偏好"),
+        "settings.ai.claudeIntegration": ("Claude Code Integration", "Claude Code 集成"),
+        "settings.ai.monitorFiles": ("Watch Claude Code Sessions", "监听 Claude Code 会话"),
+        "settings.ai.monitorFilesHint": ("Detect files created by Claude Code and offer to open them",
+                                         "发现 Claude Code 生成的文件并提示打开"),
+        "settings.ai.monitorDir": ("Session Directory", "会话目录"),
+        "settings.ai.monitorDirHint": ("Directory where Claude Code stores session transcripts", "Claude Code 存放会话记录的目录"),
+        "settings.ai.choose": ("Choose…", "选择…"),
+        "settings.ai.fileTypes": ("File Types", "文件类型"),
+        "settings.ai.fileTypesHint": ("Comma-separated extensions to watch, e.g. md,txt", "要监听的扩展名，逗号分隔，如 md,txt"),
+        "settings.ai.monitorDirInfo": ("Watching: %@", "正在监听：%@"),
+        "settings.ai.pickClaudeDir": ("Choose the Claude session directory", "选择 Claude 会话目录"),
+        "settings.ai.clearCustom": ("Clear", "清除"),
+        "settings.ai.pickPresetModel": ("Pick from preset models", "从预设模型中选择"),
+    ]
+
     static let table: [String: (en: String, zh: String)] = {
         var t = table0
         t.merge(table1) { _, new in new }
         t.merge(table2) { _, new in new }
         t.merge(table3) { _, new in new }
         t.merge(table4) { _, new in new }
+        t.merge(table5) { _, new in new }
         return t
     }()
 }

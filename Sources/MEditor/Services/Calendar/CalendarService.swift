@@ -98,7 +98,7 @@ final class CalendarService: CalendarServiceProtocol {
 
 extension CalendarService {
 
-    var serviceName: String { "系统日历" }
+    var serviceName: String { L("calendar.serviceName") }
 
     var isAvailable: Bool {
         get async {
@@ -116,7 +116,7 @@ extension CalendarService {
         return ekEvents.map { ev in
             UnifiedCalendarEvent(
                 id:        ev.eventIdentifier ?? UUID().uuidString,
-                title:     ev.title ?? "无标题",
+                title:     ev.title ?? L("event.untitled"),
                 startDate: ev.startDate,
                 endDate:   ev.endDate,
                 isAllDay:  ev.isAllDay,

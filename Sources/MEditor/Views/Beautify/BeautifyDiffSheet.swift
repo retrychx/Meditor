@@ -32,7 +32,7 @@ struct BeautifyDiffSheet: View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
-            Text("文件已存在，确认覆盖？")
+            Text(L("beautify.overwriteTitle"))
                 .font(.system(size: 14, weight: .semibold))
             Spacer()
         }
@@ -49,19 +49,19 @@ struct BeautifyDiffSheet: View {
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 0) {
-                statCard(label: "现有文件", bytes: existingSize, color: .secondary)
+                statCard(label: L("beautify.existingFile"), bytes: existingSize, color: .secondary)
                 Spacer()
                 Image(systemName: "arrow.right")
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
                 Spacer()
-                statCard(label: "新文件", bytes: newSize, color: .purple)
+                statCard(label: L("beautify.newFile"), bytes: newSize, color: .purple)
             }
 
             if let existing = existingSize {
                 let delta = newSize - existing
                 let sign  = delta >= 0 ? "+" : ""
-                Text("大小变化：\(sign)\(formatBytes(delta))")
+                Text(L("beautify.sizeDelta", "\(sign)\(formatBytes(delta))"))
                     .font(.system(size: 12))
                     .foregroundStyle(delta > 0 ? .blue : delta < 0 ? .orange : .secondary)
             }
@@ -74,9 +74,9 @@ struct BeautifyDiffSheet: View {
     private var footer: some View {
         HStack {
             Spacer()
-            Button("取消", role: .cancel, action: onCancel)
+            Button(L("common.cancel"), role: .cancel, action: onCancel)
                 .keyboardShortcut(.escape, modifiers: [])
-            Button("覆盖保存", role: .destructive, action: onConfirm)
+            Button(L("beautify.overwrite"), role: .destructive, action: onConfirm)
                 .keyboardShortcut(.return, modifiers: [])
                 .buttonStyle(.borderedProminent)
                 .tint(.orange)

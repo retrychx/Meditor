@@ -6,11 +6,11 @@ extension SettingsView {
     var pathsContent: some View {
         ScrollView {
             VStack(spacing: 0) {
-                settingsGroup(title: "文档路径") {
+                settingsGroup(title: L("paths.group")) {
                     PathRow(
                         icon: "folder.fill",
-                        title: "用户文档",
-                        subtitle: "侧边栏显示此目录下的文件",
+                        title: L("paths.userDocs"),
+                        subtitle: L("paths.userDocsHint"),
                         iconColor: .blue,
                         currentPath: AppSettings.shared.userDocPath,
                         onChoose: { chooseUserDocPath() },
@@ -21,8 +21,8 @@ extension SettingsView {
 
                     PathRow(
                         icon: "shippingbox.fill",
-                        title: "App 文档（输出目录）",
-                        subtitle: "HTML 美化等功能的默认保存位置",
+                        title: L("paths.appDocs"),
+                        subtitle: L("paths.appDocsHint"),
                         iconColor: .orange,
                         currentPath: AppSettings.shared.appDocPath,
                         onChoose: { chooseAppDocPath() },
@@ -90,10 +90,10 @@ private struct PathRow: View {
             Spacer(minLength: 8)
 
             HStack(spacing: 6) {
-                Button("选择文件夹", action: onChoose)
+                Button(L("paths.choose"), action: onChoose)
                     .controlSize(.small)
                 if currentPath != nil {
-                    Button(currentPath == nil ? "" : "清除", action: onClear)
+                    Button(L("paths.clear"), action: onClear)
                         .controlSize(.small)
                         .foregroundStyle(.secondary)
                 }

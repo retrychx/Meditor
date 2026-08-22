@@ -39,7 +39,7 @@ struct MonthDayCell: View {
                     EventPill(event: event, compact: true)
                 }
                 if events.count > 3 {
-                    Text("+\(events.count - 3) 个")
+                    Text(L("calendar.moreEvents", events.count - 3))
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 4)

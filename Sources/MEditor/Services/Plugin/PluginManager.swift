@@ -212,10 +212,10 @@ final class PluginManager {
                     found.append(skill)
                 } else {
                     let path = skillMD.path
-                    errors.append("\(skillMD.deletingLastPathComponent().lastPathComponent): 无法解析 SKILL.md（\(path)）")
+                    errors.append(L("plugin.error.parse", skillMD.deletingLastPathComponent().lastPathComponent, path))
                 }
             } else {
-                errors.append("ID \(entry.id): 书签失效，请重新添加技能")
+                errors.append(L("plugin.error.bookmark", entry.id))
             }
         }
         skills     = found
@@ -320,7 +320,7 @@ final class PluginManager {
                               allowedCommands: [String]) -> SkillCommand {
         SkillCommand(
             name:            dict["name"]    ?? "command",
-            trigger:         dict["trigger"] ?? dict["name"] ?? "操作",
+            trigger:         dict["trigger"] ?? dict["name"] ?? L("plugin.defaultTrigger"),
             icon:            dict["icon"]    ?? "sparkles",
             description:     dict["description"] ?? "",
             allowedTools:    tools,

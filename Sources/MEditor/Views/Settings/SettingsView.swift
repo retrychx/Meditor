@@ -47,8 +47,8 @@ struct SettingsView: View {
             case .general: return L("settings.tab.general")
             case .ai:      return L("settings.tab.ai")
             case .sharing: return L("settings.tab.sharing")
-            case .plugins: return "插件"
-            case .paths:   return "路径"
+            case .plugins: return L("settings.tab.plugins")
+            case .paths:   return L("settings.tab.paths")
             }
         }
 

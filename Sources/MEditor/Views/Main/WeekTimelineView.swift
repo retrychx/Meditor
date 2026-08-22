@@ -81,7 +81,7 @@ struct WeekTimelineView: View {
     private var allDayRow: some View {
         HStack(spacing: 0) {
             // Time axis placeholder
-            Text("全天")
+            Text(L("calendar.allDay"))
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(width: timeAxisWidth)

@@ -17,10 +17,10 @@ extension SettingsView {
                 baseURL: baseURL, apiKey: apiKey, model: model, isAnthropic: isAnthropic
             )
             connectionTestOK = true
-            connectionTestResult = "✓ 连接成功（model: \(resultModel)）"
+            connectionTestResult = L("settings.test.okModel", resultModel)
         } catch {
             connectionTestOK = false
-            connectionTestResult = "✗ 连接失败：\(error.localizedDescription)"
+            connectionTestResult = L("settings.test.failed", error.localizedDescription)
         }
         connectionTesting = false
     }
@@ -56,10 +56,10 @@ extension SettingsView {
         connectionTestResult = nil
         if let error = await AIClient.testClaudeCLI(cliPath: settings.aiCLIPath, cliModel: settings.aiCLIModel) {
             connectionTestOK = false
-            connectionTestResult = "✗ 连接失败：\(error)"
+            connectionTestResult = L("settings.test.failed", error)
         } else {
             connectionTestOK = true
-            connectionTestResult = "✓ 连接成功（CLI 可用）"
+            connectionTestResult = L("settings.test.okCLI")
         }
         connectionTesting = false
     }

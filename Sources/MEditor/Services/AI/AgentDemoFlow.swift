@@ -80,7 +80,7 @@ final class AgentDemoFlow {
         // 未配置 AI 时演示跑不起来，直接失败提示（引导 UI 正常不会走到这）
         let config = AIConfig.current(settings, scene: .agent)
         guard config.isConfigured else {
-            phase = .failed("尚未配置 AI，请先完成上方配置")
+            phase = .failed(L("demo.notConfigured"))
             return
         }
 
@@ -88,7 +88,7 @@ final class AgentDemoFlow {
         do {
             fileURL = try prepareWorkspace()
         } catch {
-            phase = .failed("演示文件创建失败：\(error.localizedDescription)")
+            phase = .failed(L("demo.createFailed", error.localizedDescription))
             return
         }
         registerCleanupOnTerminate()

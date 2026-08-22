@@ -235,105 +235,36 @@ private struct MarkdownWebView: NSViewRepresentable {
     // MARK: - Template loading
 
     /// Render `template.html` with substituted values and load it into the webview.
+    ///
+    /// The file management (template read, cache-dir setup, asset mirroring,
+    /// preview.html write) is delegated to `PreviewAssetMirror` and runs off
+    /// the main thread. Until preparation completes, the webview simply hasn't
+    /// loaded anything yet (drawsBackground = false, so no white flash); JS
+    /// updates arriving in the meantime are queued by `evaluateWhenReady`
+    /// because `isReady` stays false until `didFinish`.
     private func loadTemplate(into webView: WKWebView,
                               initialContent: String,
                               theme: PreviewTheme,
                               coordinator: Coordinator) {
         let sid = PerformanceTracer.begin("LoadPreviewTemplate", log: PerformanceTracer.preview)
-        guard let resourcesRoot = PreviewResourceLocator.resourcesRoot(),
-              let templateURL = PreviewResourceLocator.templateURL(),
-              let template = try? String(contentsOf: templateURL, encoding: .utf8) else {
-            // Fallback: blank page with an error message.
-            webView.loadHTMLString(
-                "<html><body><pre>MEditor: preview template not found.</pre></body></html>",
-                baseURL: nil
-            )
-            PerformanceTracer.end("LoadPreviewTemplate", log: PerformanceTracer.preview, id: sid)
-            return
-        }
-
-        let contentJSON = jsonEncode(string: initialContent) ?? "\"\""
-        let html = template
-            .replacingOccurrences(of: "{{INITIAL_THEME}}", with: theme.rawValue)
-            .replacingOccurrences(of: "{{INITIAL_CONTENT_JSON}}", with: contentJSON)
-
-        // Write to caches so loadFileURL can grant readAccessTo a stable directory.
-        // 文件名固定为 preview.html，每次初始化重写覆盖；force-reload 通过
-        // 重新 loadFileURL 加载同一 URL 来绕过 WKWebView 的缓存。
         let cacheDir = coordinator.previewDir
-        try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
-        // Best-effort: prune if the cache has grown unreasonably large.
-        Coordinator.pruneCacheIfNeeded(at: cacheDir)
-        // Symlink (or copy) the resources into cache dir so relative paths work.
-        ensurePreviewAssets(at: cacheDir, copyingFrom: resourcesRoot)
-
-        let fileURL = cacheDir.appendingPathComponent("preview.html")
-        try? html.write(to: fileURL, atomically: true, encoding: .utf8)
-
-        // Provision mermaid.min.js only if initial content needs it.
-        if initialContent.contains("```mermaid") {
-            Coordinator.ensureMermaidProvisioned(at: cacheDir)
-        }
-
         coordinator.isReady = false
-        webView.loadFileURL(fileURL, allowingReadAccessTo: cacheDir)
-        PerformanceTracer.end("LoadPreviewTemplate", log: PerformanceTracer.preview, id: sid)
-    }
-
-    /// Mirror the bundle's Preview directory into `cacheDir` so the loaded
-    /// `preview.html` can resolve `css/themes/*.css`, `scripts/*.js`,
-    /// `marked.min.js` etc. with relative URLs.
-    private func ensurePreviewAssets(at cacheDir: URL, copyingFrom source: URL) {
-        let fm = FileManager.default
-        // mermaid.min.js (3.3 MB) is excluded here — it's copied on-demand
-        // the first time a document contains a ```mermaid block. This saves
-        // ~50-100ms of file I/O on every preview initialization for the 95%+
-        // of documents that don't use mermaid diagrams.
-        let items = ["css", "scripts", "marked.min.js", "highlight.min.js"]
-        for item in items {
-            let src = source.appendingPathComponent(item)
-            let dst = cacheDir.appendingPathComponent(item)
-            guard fm.fileExists(atPath: src.path) else { continue }
-            let isDirectory = (try? src.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
-            // If destination exists and the source is newer (or sizes differ for files), refresh.
-            if fm.fileExists(atPath: dst.path) {
-                if shouldRefresh(src: src, dst: dst) {
-                    try? fm.removeItem(at: dst)
-                    mirrorAsset(src: src, dst: dst, isDirectory: isDirectory)
-                }
-            } else {
-                mirrorAsset(src: src, dst: dst, isDirectory: isDirectory)
+        PreviewAssetMirror.prepareHTMLAsync(initialContent: initialContent,
+                                            theme: theme,
+                                            cacheDir: cacheDir) { [weak webView, weak coordinator] fileURL in
+            PerformanceTracer.end("LoadPreviewTemplate", log: PerformanceTracer.preview, id: sid)
+            // Dismantled (or webview swapped) while preparing — drop the result.
+            guard let webView, let coordinator, coordinator.webView === webView else { return }
+            guard let fileURL else {
+                // Fallback: blank page with an error message.
+                webView.loadHTMLString(
+                    "<html><body><pre>MEditor: preview template not found.</pre></body></html>",
+                    baseURL: nil
+                )
+                return
             }
+            webView.loadFileURL(fileURL, allowingReadAccessTo: cacheDir)
         }
-    }
-
-    private func mirrorAsset(src: URL, dst: URL, isDirectory: Bool) {
-        let fm = FileManager.default
-        if isDirectory {
-            try? fm.copyItem(at: src, to: dst)
-            return
-        }
-        do {
-            try fm.linkItem(at: src, to: dst)
-        } catch {
-            try? fm.copyItem(at: src, to: dst)
-        }
-    }
-
-    private func shouldRefresh(src: URL, dst: URL) -> Bool {
-        let fm = FileManager.default
-        guard let srcAttrs = try? fm.attributesOfItem(atPath: src.path),
-              let dstAttrs = try? fm.attributesOfItem(atPath: dst.path) else {
-            return true
-        }
-        let srcDate = srcAttrs[.modificationDate] as? Date ?? .distantPast
-        let dstDate = dstAttrs[.modificationDate] as? Date ?? .distantPast
-        return srcDate > dstDate
-    }
-
-    private func jsonEncode(string: String) -> String? {
-        guard let data = try? JSONEncoder().encode(string) else { return nil }
-        return String(data: data, encoding: .utf8)
     }
 }
 
@@ -394,11 +325,6 @@ extension MarkdownWebView {
             return cachesDir.appendingPathComponent("com.meditor.preview", isDirectory: true)
         }()
 
-        /// Hard cap on preview cache size. Beyond this we wipe the directory
-        /// and let it rebuild on next render. mermaid.min.js (~3.3 MB) and
-        /// the preview HTML are the only persistent artefacts.
-        private static let cacheSizeLimit: Int64 = 50 * 1024 * 1024  // 50 MB
-
         private static func contentUpdateDebounce(for content: String) -> TimeInterval {
             let bytes = content.utf8.count
             switch bytes {
@@ -410,30 +336,6 @@ extension MarkdownWebView {
                 return 0.05
             default:
                 return 0.08
-            }
-        }
-
-        /// Inspect the preview cache directory and wipe it if it has grown
-        /// beyond `cacheSizeLimit`. Cheap to call: only walks immediate
-        /// children, no deep recursion.
-        static func pruneCacheIfNeeded(at dir: URL) {
-            let fm = FileManager.default
-            guard let contents = try? fm.contentsOfDirectory(
-                at: dir,
-                includingPropertiesForKeys: [.totalFileAllocatedSizeKey],
-                options: [.skipsSubdirectoryDescendants]
-            ) else { return }
-            var total: Int64 = 0
-            for url in contents {
-                if let size = (try? url.resourceValues(forKeys: [.totalFileAllocatedSizeKey]))?
-                    .totalFileAllocatedSize {
-                    total += Int64(size)
-                }
-            }
-            if total > cacheSizeLimit {
-                // Removing the whole directory is safe — it will be re-created
-                // and resources re-copied on the next preview load.
-                try? fm.removeItem(at: dir)
             }
         }
 
@@ -521,7 +423,7 @@ extension MarkdownWebView {
             pendingContentUpdate = nil
             // Lazily provision mermaid.min.js only when content contains a mermaid block.
             if content.contains("```mermaid") {
-                Self.ensureMermaidProvisioned(at: previewDir)
+                PreviewAssetMirror.ensureMermaidProvisioned(at: previewDir)
             }
             let sid = PerformanceTracer.begin("PreviewContentUpdate", log: PerformanceTracer.preview)
             let escaped = Self.jsonEncode(string: content) ?? "\"\""
@@ -538,21 +440,6 @@ extension MarkdownWebView {
                 pendingContentScript = js
             }
             PerformanceTracer.end("PreviewContentUpdate", log: PerformanceTracer.preview, id: sid)
-        }
-
-        /// Copy mermaid.min.js into the preview cache dir on first need.
-        private static var mermaidProvisioned = false
-        static func ensureMermaidProvisioned(at cacheDir: URL, onReady: (() -> Void)? = nil) {
-            guard !mermaidProvisioned else { return }
-            let dst = cacheDir.appendingPathComponent("mermaid.min.js")
-            let fm = FileManager.default
-            if fm.fileExists(atPath: dst.path) { mermaidProvisioned = true; return }
-            guard let root = PreviewResourceLocator.resourcesRoot() else { return }
-            let src = root.appendingPathComponent("mermaid.min.js")
-            if fm.fileExists(atPath: src.path) {
-                try? fm.copyItem(at: src, to: dst)
-            }
-            mermaidProvisioned = true
         }
 
         private static func jsonEncode(string: String) -> String? {
@@ -715,7 +602,7 @@ extension MarkdownWebView.Coordinator: WKUIDelegate {
             DispatchQueue.main.async {
                 menu.addItem(.separator())
                 let addItem = NSMenuItem(
-                    title: "新增为待办",
+                    title: L("todo.addFromSelection"),
                     action: #selector(MarkdownWebView.Coordinator.handleAddTodo(_:)),
                     keyEquivalent: ""
                 )

@@ -517,7 +517,12 @@ final class AppState {
         }
     }
 
-    func setError(_ message: String) { errorMessage = message }
+    /// 所有经 setError 的错误统一落一条日志——此前大量调用点只把
+    /// localizedDescription 糊给用户，出错后无任何可观测记录。
+    func setError(_ message: String) {
+        AppLog.app.error("setError: \(message, privacy: .public)")
+        errorMessage = message
+    }
 
     func report(_ error: AppError, logger: Logger = AppLog.app) {
         AppLog.error(error, in: logger)
@@ -617,7 +622,7 @@ final class AppState {
                 }
                 showToast(L("toast.todoAdded", targetURL.lastPathComponent), icon: "checkmark.circle")
             } catch {
-                setError(error.localizedDescription)
+                report(.fileWrite(targetURL, underlying: error), logger: AppLog.file)
             }
         }
     }
@@ -647,7 +652,7 @@ final class AppState {
         // file:// 形式的 <base href>，使导出的 HTML 在浏览器中能加载相对路径图片
         let baseHref = tab.url.deletingLastPathComponent().absoluteString
         guard let html = PresentationExporter.makeHTML(slides: slides, theme: themeStore.current, baseHref: baseHref) else {
-            showToast("演讲模式资源缺失，无法导出", icon: "exclamationmark.triangle")
+            showToast(L("toast.presentationResourcesMissing"), icon: "exclamationmark.triangle")
             return
         }
 
@@ -661,7 +666,7 @@ final class AppState {
             do {
                 try html.write(to: url, atomically: true, encoding: .utf8)
             } catch {
-                self.setError(error.localizedDescription)
+                self.report(.exportFailed(format: "HTML", underlying: error), logger: AppLog.exporter)
             }
         }
     }

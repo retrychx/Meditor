@@ -37,7 +37,7 @@ struct AIProviderPreset: Identifiable {
 }
 
 enum AIPresets {
-    static let all: [AIProviderPreset] = [
+    static var all: [AIProviderPreset] { [
         .init(id: "anthropic", name: "Anthropic Claude", kind: .anthropic,
               baseURL: "https://api.anthropic.com/v1",
               models: ["claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-3-5"]),
@@ -55,9 +55,9 @@ enum AIPresets {
               models: ["openai/gpt-4o", "anthropic/claude-3.7-sonnet", "google/gemini-2.0-flash-001", "deepseek/deepseek-v4-flash"]),
         .init(id: "groq", name: "Groq", baseURL: "https://api.groq.com/openai/v1",
               models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]),
-        .init(id: "ollama", name: "Ollama · 本地", baseURL: "http://localhost:11434/v1",
+        .init(id: "ollama", name: L("ai.preset.ollama"), baseURL: "http://localhost:11434/v1",
               models: ["llama3.1", "qwen2.5", "mistral", "gemma2", "phi3"])
-    ]
+    ] }
 
     /// Preset whose base URL matches the given one, if any.
     static func match(_ baseURL: String) -> AIProviderPreset? {
@@ -228,7 +228,7 @@ struct ClaudeStreamJSONParser: Sendable {
             let isError = (obj["is_error"] as? Bool) ?? false
             let subtype = obj["subtype"] as? String ?? ""
             guard !isError, subtype == "success" else {
-                resultError = (obj["result"] as? String) ?? "Claude CLI 执行失败"
+                resultError = (obj["result"] as? String) ?? L("ai.error.cliGeneric")
                 return nil
             }
             guard let text = obj["result"] as? String else { return nil }
@@ -477,7 +477,7 @@ struct AIClient {
                     if Task.isCancelled { continuation.finish(); return }
 
                     if box.timedOut {
-                        throw AIError.cliFailed("CLI 请求超时（\(Int(config.cliTimeoutSeconds))s），进程已终止")
+                        throw AIError.cliFailed(L("ai.error.cliTimeout", Int(config.cliTimeoutSeconds)))
                     }
 
                     if process.terminationStatus != 0 {
@@ -503,7 +503,7 @@ struct AIClient {
 #else
         // iOS 无 Process 子进程能力：claude CLI 流式路径在移动端不可用
         AsyncThrowingStream { continuation in
-            continuation.finish(throwing: AIError.cliFailed("Claude CLI 仅支持 macOS"))
+            continuation.finish(throwing: AIError.cliFailed(L("ai.error.cliMacOnly")))
         }
 #endif
     }

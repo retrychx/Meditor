@@ -15,14 +15,14 @@ struct DocumentActionBar: View {
     private func beautifyCurrent() {
         guard let tab = state.selectedTab else { return }
         guard state.pluginManager.isBuiltinEnabled(BuiltinSkills.ID.htmlBeautifier) else {
-            state.showToast("「美化」功能已在设置中关闭", icon: "wand.and.stars")
+            state.showToast(L("beautify.disabledToast"), icon: "wand.and.stars")
             return
         }
         if tab.language == .markdown {
             let original  = tab.content
             let formatted = MarkdownFormatter.format(original)
             guard formatted != original else {
-                state.showToast("Markdown 已经很规整了", icon: "checkmark.circle")
+                state.showToast(L("beautify.alreadyClean"), icon: "checkmark.circle")
                 return
             }
             let tabID = tab.id
@@ -78,7 +78,7 @@ struct DocumentActionBar: View {
             actionButton(
                 id: "beautify",
                 icon: "wand.and.stars",
-                label: "美化",
+                label: L("beautify.label"),
                 isDisabled: state.selectedTab == nil
             ) {
                 beautifyCurrent()
@@ -116,7 +116,7 @@ struct DocumentActionBar: View {
         }
         .buttonStyle(.plain)
         .fixedSize()
-        .help("展开操作栏")
+        .help(L("actionbar.expand"))
         .onHover { hoveredAction = $0 ? "expand" : nil }
         .animation(DS.Motion.micro, value: hoveredAction)
     }
@@ -139,7 +139,7 @@ struct DocumentActionBar: View {
         }
         .buttonStyle(.plain)
         .fixedSize()
-        .help("收起操作栏")
+        .help(L("actionbar.collapse"))
         .onHover { hoveredAction = $0 ? "collapse" : nil }
         .animation(DS.Motion.micro, value: hoveredAction)
     }
@@ -253,7 +253,7 @@ struct DocumentActionBar: View {
                 }
                 Button(L("tab.stopSharing"), role: .destructive) {
                     state.shareServer.stop()
-                    state.showToast("已停止分享", icon: "wifi.slash")
+                    state.showToast(L("share.stopped"), icon: "wifi.slash")
                 }
             } else {
                 Button(L("tab.shareViaLAN")) {
@@ -268,9 +268,9 @@ struct DocumentActionBar: View {
                            let url = state.shareServer.shareURLForFile(tab.url) {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(url, forType: .string)
-                            state.showToast("已开启分享 · 链接已复制", icon: "wifi")
+                            state.showToast(L("share.startedCopied"), icon: "wifi")
                         } else {
-                            state.showToast("已开启局域网分享", icon: "wifi")
+                            state.showToast(L("share.started"), icon: "wifi")
                         }
                     }
                 }

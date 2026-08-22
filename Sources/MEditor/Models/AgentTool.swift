@@ -194,7 +194,7 @@ struct AgentToolCall: Sendable {
                     self.arguments = Self.convert(obj)
                 } else {
                     self.arguments = [:]
-                    self.argumentsParseError = "参数不是 JSON 对象"
+                    self.argumentsParseError = L("agentErr.argsNotObject")
                 }
             } catch {
                 self.arguments = [:]
@@ -202,7 +202,7 @@ struct AgentToolCall: Sendable {
             }
         } else {
             self.arguments = [:]
-            self.argumentsParseError = "参数不是有效的 UTF-8 文本"
+            self.argumentsParseError = L("agentErr.argsNotUTF8")
         }
     }
 
@@ -316,12 +316,12 @@ enum AgentError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .noDocument:            return "没有打开的文档"
-        case .noWorkspace:           return "没有打开工作区"
-        case .toolNotFound(let n):   return "工具未找到：\(n)"
-        case .maxStepsExceeded:      return "Agent 执行步数超限"
-        case .parseError(let m):     return "解析错误：\(m)"
-        case .executionError(let m): return "执行错误：\(m)"
+        case .noDocument:            return L("agentErr.noDocument")
+        case .noWorkspace:           return L("agentErr.noWorkspace")
+        case .toolNotFound(let n):   return L("agentErr.toolNotFound", n)
+        case .maxStepsExceeded:      return L("agentErr.maxSteps")
+        case .parseError(let m):     return L("agentErr.parse", m)
+        case .executionError(let m): return L("agentErr.execution", m)
         }
     }
 }
