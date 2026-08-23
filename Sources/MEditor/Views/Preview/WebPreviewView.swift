@@ -1,21 +1,17 @@
 import SwiftUI
 import WebKit
 
-/// Renders an HTML file in a long-lived `WKWebView` via `loadFileURL`.
+/// Renders an HTML file in a long-lived `WKWebView`.
 ///
-/// Why URL instead of a content string:
-///  - `loadFileURL` lets the WebContent process mmap the file directly,
-///    bypassing IPC transfer of large strings.
-///  - Loading proceeds in parallel with the Swift-side file read; for HTML
-///    files we don't need Swift to wait on disk before the preview updates.
-///  - Relative resources in the HTML (`<img src="./pic.png">`,
-///    `<link href="./style.css">`) resolve correctly against the file's
-///    parent directory.
-///  - Reload is triggered by an external token, not by content diffing,
-///    avoiding any string equality checks on large documents.
+/// Content comes from memory (`content`, 即 tab.content），不是磁盘文件：
+/// 渲染用 `loadHTMLString` + 合成 https base URL（CDN 脚本可用），因此
+/// AI 写回/编辑后预览立即刷新，不需要先保存。`reloadToken` 在内容或文件
+/// 变化时递增，是重新加载的唯一信号（避免对大文档做字符串 diff 驱动刷新）。
 struct WebPreviewView: NSViewRepresentable {
     let fileURL: URL?
     let reloadToken: Int
+    /// 内存中的文档内容；为 nil 时回退到读磁盘文件（兼容旧路径）。
+    var content: String? = nil
     var exporter: PreviewExporter? = nil
     var rootURL: URL? = nil
     var findController: PreviewFindController? = nil
@@ -45,7 +41,7 @@ struct WebPreviewView: NSViewRepresentable {
         context.coordinator.webView = webView
         context.coordinator.rootURL = rootURL
         findController?.register(webView: webView, for: .html)
-        context.coordinator.applyLoad(fileURL: fileURL, reloadToken: reloadToken)
+        context.coordinator.applyLoad(fileURL: fileURL, reloadToken: reloadToken, content: content)
         return webView
     }
 
@@ -59,7 +55,7 @@ struct WebPreviewView: NSViewRepresentable {
         context.coordinator.onSelectionChange = onSelectionChange
         context.coordinator.onAddTodo = onAddTodo
         findController?.register(webView: webView, for: .html)
-        context.coordinator.applyLoad(fileURL: fileURL, reloadToken: reloadToken)
+        context.coordinator.applyLoad(fileURL: fileURL, reloadToken: reloadToken, content: content)
     }
 
     static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
@@ -92,7 +88,7 @@ extension WebPreviewView {
 
         /// Load the file only when something actually changed.
         /// SwiftUI calls `updateNSView` for many unrelated reasons, so dedup here.
-        func applyLoad(fileURL: URL?, reloadToken: Int) {
+        func applyLoad(fileURL: URL?, reloadToken: Int, content: String?) {
             let urlChanged = fileURL?.absoluteURL != lastFileURL?.absoluteURL
             let tokenChanged = reloadToken != lastReloadToken
 
@@ -107,12 +103,14 @@ extension WebPreviewView {
                 return
             }
 
-            // For HTML files: read content and load via loadHTMLString with a
-            // synthetic https base URL. This allows external CDN scripts (echarts,
-            // etc.) to load — WKWebView blocks external network requests from
-            // file:// pages due to sandbox restrictions, but not from https:// pages.
-            // Relative local resources won't resolve this way, but HTML report files
-            // that embed CDN dependencies need network access to render correctly.
+            // 渲染优先用内存内容（AI 写回/编辑未落盘也能立即预览）。
+            // 合成 https base URL：CDN 脚本（echarts 等）可加载——WKWebView 会拦
+            // file:// 页面的外部网络请求，https:// 页面不拦。相对本地资源这种
+            // 方式解析不了，但内嵌 CDN 依赖的 HTML 报告文件需要网络才能正确渲染。
+            if let content {
+                webView.loadHTMLString(content, baseURL: URL(string: "https://localhost/"))
+                return
+            }
             if let htmlString = try? String(contentsOf: fileURL, encoding: .utf8) {
                 let baseURL = URL(string: "https://localhost/")
                 webView.loadHTMLString(htmlString, baseURL: baseURL)

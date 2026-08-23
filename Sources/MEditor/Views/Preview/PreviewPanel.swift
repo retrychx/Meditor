@@ -83,6 +83,7 @@ struct PreviewPanel: View {
                     WebPreviewView(
                         fileURL: state.previewHTMLFileURL,
                         reloadToken: state.previewReloadToken,
+                        content: state.previewContent,
                         exporter: state.previewExporter,
                         rootURL: state.rootURL,
                         findController: state.previewFindController,

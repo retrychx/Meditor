@@ -19,9 +19,6 @@ extension AppState {
     @discardableResult
     func showMarkdownPreview(content: String) -> Bool { previewManager.showMarkdown(content: content) }
 
-    @discardableResult
-    func showHTMLPreview(fileURL: URL) -> Bool { previewManager.showHTML(fileURL: fileURL) }
-
     func syncPreviewContent(from tab: EditorTab) { previewManager.sync(from: tab) }
 
     /// 指定文件落盘后，若正在 HTML 预览该文件则强制重新加载（方案 A）。
