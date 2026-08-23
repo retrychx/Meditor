@@ -54,22 +54,27 @@ final class PreviewManager {
     }
 
     /// Show an HTML file preview. Returns true if any state changed.
+    ///
+    /// 内容走内存（tab.content）：HTML 预览实际用 loadHTMLString + 合成 https
+    /// base URL 渲染（CDN 脚本可用），不依赖磁盘文件——AI 写回/编辑后内容变化
+    /// 立即反映在预览里，不用等保存落盘。reloadToken 兼作内容变化信号，
+    /// WebPreviewView 按 (fileURL, reloadToken) 去重。
     @discardableResult
-    func showHTML(fileURL: URL) -> Bool {
+    func showHTML(fileURL: URL, content newContent: String) -> Bool {
         let normalized = fileURL.standardizedFileURL
         let current    = htmlFileURL?.standardizedFileURL
         var changed = false
-        if !content.isEmpty        { content = "";              changed = true }
         if language != .html       { language = .html }
         if mode != .html           { mode = .html;              changed = true }
-        if current != normalized   { htmlFileURL = fileURL; reloadToken &+= 1; changed = true }
+        if current != normalized   { htmlFileURL = fileURL;     changed = true }
+        if content != newContent   { content = newContent;      changed = true }
+        if changed { reloadToken &+= 1 }
         return changed
     }
 
-    /// 当前正在预览的 HTML 文件在磁盘上被更新后，强制 WebView 重新加载。
-    /// HTML 预览读的是磁盘文件（保留相对资源的目录读权限），所以"内容变化"
-    /// 不会自动反映——必须在文件落盘（手动保存 / 自动保存 / AI 写盘 / 外部修改）
-    /// 后显式 bump reloadToken。仅当确实在显示该文件时才触发，避免无谓刷新。
+    /// 正在预览的 HTML 文件在磁盘上被更新后的强制刷新（外部修改/回滚等路径）。
+    /// 常规内容变化已由 sync(from:) 通过 tab.content 驱动 reloadToken，无需落盘。
+    /// 仅当确实在显示该文件时才触发，避免无谓刷新。
     func reloadHTML(url: URL) {
         guard mode == .html,
               htmlFileURL?.standardizedFileURL == url.standardizedFileURL else { return }
@@ -81,7 +86,7 @@ final class PreviewManager {
         let sid = PerformanceTracer.begin("SyncPreviewContent", log: PerformanceTracer.preview)
         defer { PerformanceTracer.end("SyncPreviewContent", log: PerformanceTracer.preview, id: sid) }
         if tab.language == .html {
-            showHTML(fileURL: tab.url)
+            showHTML(fileURL: tab.url, content: tab.content)
         } else {
             showMarkdown(content: tab.content)
         }
