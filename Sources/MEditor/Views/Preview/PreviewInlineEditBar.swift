@@ -34,25 +34,10 @@ struct PreviewInlineEditBar: View {
     // MARK: - 内容感知动作列表
 
     /// 根据选中内容类型返回最相关的 AI 操作，最多 4 个。
-    /// 分类规则与 InlineEditBarPlan 一致；预览侧圈选不支持转表格（映射回源文不可靠），
-    /// 故列表分支不含 convertToTable，也无「更多」收纳。
+    /// 分类规则收敛在 InlineEditBarPlan（surface: .preview）：预览圈选不支持
+    /// 转表格（映射回源文不可靠），也无「更多」收纳。
     private var contextualActions: [InlineEditAction] {
-        let t = selectedText.trimmingCharacters(in: .whitespaces)
-        if t.hasPrefix("```") || t.hasPrefix("    ") {
-            return [.explainCode, .addComments, .condense]
-        }
-        if t.hasPrefix("#") {
-            return [.expandSection, .rewrite]
-        }
-        let lines = t.components(separatedBy: "\n").filter { !$0.isEmpty }
-        let isListLike = lines.count >= 2 && lines.prefix(3).allSatisfy {
-            $0.hasPrefix("- ") || $0.hasPrefix("* ") || $0.hasPrefix("+ ") ||
-            $0.range(of: #"^\d+\. "#, options: .regularExpression) != nil
-        }
-        if isListLike {
-            return [.organizeList, .expand, .condense]
-        }
-        return [.rewrite, .expand, .condense, .translate]
+        InlineEditBarPlan.actions(for: selectedText, surface: .preview).primary
     }
 
     private func actionButton(_ action: InlineEditAction) -> some View {
@@ -113,28 +98,48 @@ struct PreviewInlineEditBar: View {
             return
         }
 
-        // 流式落笔：立即打开 diff 视图，AI 边生成边流入右栏
-        state.diffReview.beginStreaming(original: fullContent, actionLabel: action.displayName)
-
-        // 连续微调入口：对最近一次生成结果按自由指令迭代（"再短一点"…）
-        state.diffReview.onRefine = { [weak state] instruction in
-            guard let state else { return }
-            Self.runRefinement(state: state, settings: settings, instruction: instruction,
-                               fullContent: fullContent, sourceRange: sourceRange)
-        }
-
         // 系统 prompt = 内置 inlineEditor skill + 用户插件附加（与编辑器链路一致）
         var systemPrompt = BuiltinSkills.inlineEditor.content
         let extra = state.pluginManager.userSkillsPrompt()
         if !extra.isEmpty { systemPrompt += "\n\n---\n\n# 附加技能\n\n" + extra }
         let userMsg = action.userInstruction(for: selectedText, document: fullContent)
 
-        PreviewInlineEditFlow.runEdit(
+        // 流式执行管线与编辑器侧共享（InlineEditSession）；写回后闪示改动位置
+        InlineEditSession.run(
             state: state, settings: settings,
             systemPrompt: systemPrompt, userMessage: userMsg,
-            fullContent: fullContent, sourceRange: sourceRange, useTools: true
+            fullContent: fullContent, actionLabel: action.displayName,
+            splice: { fullContent.replacingCharacters(in: sourceRange, with: $0) },
+            onFinalize: Self.flashChange(state: state, fullContent: fullContent, sourceRange: sourceRange)
         )
+
+        // 连续微调入口：对最近一次生成结果按自由指令迭代（"再短一点"…）。
+        // beginStreaming（在 InlineEditSession.run 内）会清空该入口，故在调用后重新注入。
+        state.diffReview.onRefine = { [weak state] instruction in
+            guard let state else { return }
+            Self.runRefinement(state: state, settings: settings, instruction: instruction,
+                               fullContent: fullContent, sourceRange: sourceRange)
+        }
         onDismiss?()
+    }
+
+    /// 写回后闪示改动位置（改哪亮哪）。首轮编辑与连续微调共用。
+    private static func flashChange(
+        state: AppState,
+        fullContent: String,
+        sourceRange: Range<String.Index>
+    ) -> (String, String) -> Void {
+        // sourceRange 基于触发时的快照字符串；重定位合并后 merged 已是另一个
+        // 字符串，过期索引用上去是越界风险。改为在 merged 中按 AI 生成文本
+        // 重新定位闪示锚点：优先取离原选区起点最近的一处匹配（文档里存在
+        // 相同段落时避免闪错位置），找不到则放弃本次闪示。
+        let anchorOffset = fullContent.distance(from: fullContent.startIndex, to: sourceRange.lowerBound)
+        return { merged, finalText in
+            let anchor = merged.index(merged.startIndex, offsetBy: min(anchorOffset, merged.count))
+            if let flashRange = merged.literalRange(of: finalText, nearestTo: anchor) {
+                state.flashPreviewChange(sourceRange: flashRange, in: merged)
+            }
+        }
     }
 
     /// 连续微调：以上一次生成结果为输入，按自由指令再跑一轮，流式更新 diff。
@@ -149,106 +154,26 @@ struct PreviewInlineEditBar: View {
         let previous = state.diffReview.lastGeneratedText
         guard !trimmed.isEmpty, !previous.isEmpty else { return }
 
-        state.diffReview.beginStreaming(original: fullContent, actionLabel: L("ai.inline.adjust"))
-        // beginStreaming 会清空微调入口，重新注入以便继续迭代
-        state.diffReview.onRefine = { [weak state] next in
-            guard let state else { return }
-            Self.runRefinement(state: state, settings: settings, instruction: next,
-                               fullContent: fullContent, sourceRange: sourceRange)
-        }
-
         let systemPrompt = """
         你是文本优化助手。严格按照用户的修改指令改写给定文本，只输出改写后的文本本身，\
         不要输出解释、前言或引号。保持原文的 Markdown 格式约定。
         """
         let userMsg = "待修改文本：\n\n\(previous)\n\n修改指令：\(trimmed)"
 
-        PreviewInlineEditFlow.runEdit(
+        InlineEditSession.run(
             state: state, settings: settings,
             systemPrompt: systemPrompt, userMessage: userMsg,
-            fullContent: fullContent, sourceRange: sourceRange, useTools: false
+            fullContent: fullContent, actionLabel: L("ai.inline.adjust"),
+            splice: { fullContent.replacingCharacters(in: sourceRange, with: $0) },
+            useTools: false,
+            onFinalize: flashChange(state: state, fullContent: fullContent, sourceRange: sourceRange)
         )
-    }
-}
 
-
-// MARK: - 流式执行器（首轮与微调共用）
-
-/// 预览圈选 → AI 编辑的执行管线：AgentRunner 流式输出实时写入 diff 右栏
-/// （流式落笔），完成后进入段落审阅；接受后写回文档并闪示改动位置（改哪亮哪）。
-@MainActor
-private enum PreviewInlineEditFlow {
-    static func runEdit(
-        state: AppState,
-        settings: AppSettings,
-        systemPrompt: String,
-        userMessage: String,
-        fullContent: String,
-        sourceRange: Range<String.Index>,
-        useTools: Bool
-    ) {
-        let r = AgentRunner()
-        state.diffReview.activeRunner = r
-        // 快照过期防护：AI 运行期间用户可能继续编辑——写回时以当前文档为起点
-        // 重定位合并；目标段落已被改动则拒绝覆盖并提示，由用户放弃本次结果
-        state.diffReview.currentContentProvider = { [weak state] in state?.selectedTab?.content }
-        state.diffReview.onRebaseConflict = { [weak state] in
-            state?.showToast(L("ai.inline.targetLost"),
-                             icon: "exclamationmark.triangle")
-        }
-        // 捕获 generation token：dismiss / 新一轮流式后在途回调写入被丢弃
-        let streamGen = state.diffReview.streamGeneration
-
-        r.onChunk = { [weak state] fullText in
-            guard let state, !fullText.isEmpty else { return }
-            state.diffReview.writeStreamedContent(
-                fullContent.replacingCharacters(in: sourceRange, with: fullText),
-                generation: streamGen
-            )
-        }
-        r.onComplete = { [weak state, weak r] in
+        // beginStreaming 会清空微调入口，重新注入以便继续迭代
+        state.diffReview.onRefine = { [weak state] next in
             guard let state else { return }
-            // 只在自己的 runner 仍注册时释放引用（避免清掉后一轮运行的注册）
-            if let runner = r, state.diffReview.activeRunner === runner {
-                state.diffReview.activeRunner = nil
-            }
-            if let err = r?.error {
-                state.diffReview.dismiss()
-                state.showToast(err, icon: "exclamationmark.triangle")
-                return
-            }
-            let finalText = r?.finalText ?? ""
-            guard !finalText.isEmpty else {
-                state.diffReview.dismiss()
-                state.showToast(L("ai.inline.emptyResponse"), icon: "exclamationmark.triangle")
-                return
-            }
-            let modified = fullContent.replacingCharacters(in: sourceRange, with: finalText)
-            // token 失效（dismiss / 新一轮流式）时 commit 被丢弃，lastGeneratedText 也不写回
-            let committed = state.diffReview.commitStreamWithModified(modified, generation: streamGen) { merged in
-                if let tab = state.selectedTab {
-                    // 统一走 applyAIWriteBack：编辑器挂载时可撤销最小化替换，
-                    // 否则退回整体替换；内部已处理预览同步与防抖保存，
-                    // 预览重渲染后 flashPreviewChange 的脉冲才能落到新 DOM 上。
-                    state.applyAIWriteBack(tab.id, content: merged)
-                }
-                // sourceRange 基于触发时的快照字符串；重定位合并后 merged 已是另一个
-                // 字符串，过期索引用上去是越界风险。改为在 merged 中按 AI 生成文本
-                // 重新定位闪示锚点，找不到则放弃本次闪示。
-                if let flashRange = merged.range(of: finalText, options: .literal) {
-                    state.flashPreviewChange(sourceRange: flashRange, in: merged)
-                }
-            }
-            if committed {
-                state.diffReview.lastGeneratedText = finalText
-            }
+            Self.runRefinement(state: state, settings: settings, instruction: next,
+                               fullContent: fullContent, sourceRange: sourceRange)
         }
-        r.run(
-            systemPrompt: systemPrompt,
-            userMessage: userMessage,
-            tools: useTools ? BuiltinAgentTools.all : [],
-            config: AIConfig.current(settings, scene: .inline),
-            context: AgentContext.make(appState: state)
-        )
     }
 }

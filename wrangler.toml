@@ -7,6 +7,7 @@ main = "worker/index.js"
 directory = "./website"
 
 # 分享文档存储（GET /d/:id）
+# 免费档按月计量也复用本 namespace（key 前缀 quota:<token哈希>:<YYYY-MM>），无需新建 KV。
 [[kv_namespaces]]
 binding = "SHARES"
 id = "5347b6339e844206963de1732708d375"
@@ -15,3 +16,8 @@ id = "5347b6339e844206963de1732708d375"
 [[kv_namespaces]]
 binding = "UPDATES"
 id = "3f5d703eda614a0aaaf17f7998000364"
+
+# 发布鉴权（均为 wrangler secret，勿写进本文件）：
+#   SHARE_TOKEN  —— 免费档发布 token（20 篇/月、30 天过期、带品牌页脚）
+#   PRO_TOKENS   —— Pro token 列表，逗号分隔（不限量、不过期、无页脚）
+#   UPDATE_TOKEN —— CI 发布更新包用

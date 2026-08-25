@@ -156,27 +156,49 @@ struct AIConfig: Sendable {
 
 // MARK: - API key store
 
-/// API Key 存储。
-/// 使用 UserDefaults 而非 Keychain，原因：
-///   - Keychain ACL 绑定 code signature，每次 cp 替换二进制都会弹授权窗口
-///   - API Key 已通过 HTTPS 传输，本地明文存储与 Keychain 安全级别差异可接受
-///   - 彻底消除开发期反复弹窗的摩擦
-/// 注意：类型名如实反映存储介质（UserDefaults 明文），勿改回 "Keychain" 命名。
+/// API Key 存储：macOS Keychain（generic password，复用 Keychain 封装，
+/// 与 Gist token / 分享 token 一致）。Keychain 的宽松 ACL（trustedList: nil）
+/// 已解决开发期替换二进制反复弹授权窗的问题，因此不再用 UserDefaults 明文。
+///
+/// 迁移：首次 load 时若发现 UserDefaults 旧明文（"meditor.ai.apiKey"），
+/// 写入 Keychain 并删除明文。Keychain 写入失败时降级为进程内内存值并记日志，
+/// 保证当前会话可用，不 crash。
 enum AIAPIKeyStore {
-    private static let key = "meditor.ai.apiKey"
+    private static let legacyDefaultsKey = "meditor.ai.apiKey"
+    private static let keychain = Keychain(service: "com.meditor.app.ai", account: "api-key")
+
+    /// Keychain 写入失败时的进程内降级值（不落盘，进程退出即失效）。
+    nonisolated(unsafe) private static var memoryFallback: String?
 
     static func save(_ value: String) {
         let v = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if v.isEmpty { UserDefaults.standard.removeObject(forKey: key) }
-        else { UserDefaults.standard.set(v, forKey: key) }
+        guard !v.isEmpty else { clear(); return }
+        // 写路径只写 Keychain；顺手清掉可能残留的旧明文
+        UserDefaults.standard.removeObject(forKey: legacyDefaultsKey)
+        if keychain.save(v) {
+            memoryFallback = nil
+        } else {
+            memoryFallback = v
+            AppLog.ai.error("AIAPIKeyStore: Keychain 写入失败，本次会话仅保留内存值")
+        }
     }
 
     static func load() -> String? {
-        let v = UserDefaults.standard.string(forKey: key) ?? ""
-        return v.isEmpty ? nil : v
+        if let v = keychain.load(), !v.isEmpty { return v }
+        if let v = memoryFallback, !v.isEmpty { return v }
+        // 兼容已装用户：读取旧 UserDefaults 明文并迁移到 Keychain
+        guard let legacy = UserDefaults.standard.string(forKey: legacyDefaultsKey),
+              !legacy.isEmpty else { return nil }
+        save(legacy)   // save 内部会删除 legacyDefaultsKey
+        return legacy
     }
 
-    static func clear() { UserDefaults.standard.removeObject(forKey: key) }
+    static func clear() {
+        keychain.clear()
+        memoryFallback = nil
+        UserDefaults.standard.removeObject(forKey: legacyDefaultsKey)
+    }
+
     static var hasKey: Bool { load() != nil }
 }
 

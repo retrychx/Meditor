@@ -17,6 +17,9 @@ struct SettingsView: View {
     @State var skillAddMessage: String? = nil
     @State var installingSkillID: String? = nil
     @State var installedSkillIDs: Set<String> = []
+    // 技能 URL 导入
+    @State var showingSkillURLImport = false
+    @State var skillURLImportText = ""
     // AI 连通性测试
     @State var connectionTestResult: String? = nil
     @State var connectionTestOK: Bool = false

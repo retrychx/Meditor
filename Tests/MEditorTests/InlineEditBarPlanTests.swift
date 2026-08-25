@@ -92,4 +92,42 @@ final class InlineEditBarPlanTests: XCTestCase {
         XCTAssertFalse(InlineEditBarPlan.actions(for: "plain prose here").overflow.contains(.convertToTable))
         XCTAssertTrue(InlineEditBarPlan.actions(for: "- a\n- b").primary.contains(.convertToTable))
     }
+
+    // MARK: - 预览侧（surface: .preview）
+
+    func testPreviewListSelectionDropsConvertToTable() {
+        // 预览圈选映射回源文不可靠，不支持转表格；其余主行动作保持与编辑器一致
+        let plan = InlineEditBarPlan.actions(for: "- alpha\n- beta\n- gamma", surface: .preview)
+        XCTAssertEqual(plan.primary, [.organizeList, .expand, .condense])
+        XCTAssertTrue(plan.overflow.isEmpty)
+    }
+
+    func testPreviewNeverOffersConvertToTable() {
+        let samples = [
+            "plain prose here",
+            "# heading",
+            "```\ncode\n```",
+            "- a\n- b\n- c",
+            "1. a\n2. b",
+        ]
+        for sample in samples {
+            let plan = InlineEditBarPlan.actions(for: sample, surface: .preview)
+            XCTAssertFalse(plan.primary.contains(.convertToTable), "预览侧不应出现转表格：\(sample)")
+            XCTAssertTrue(plan.overflow.isEmpty, "预览侧无「更多」收纳：\(sample)")
+        }
+    }
+
+    func testPreviewMatchesEditorPrimaryExceptConvertToTable() {
+        // 除转表格外，预览主行应与编辑器主行一致（分类规则单一来源，防两侧漂移）
+        let samples: [(String, [InlineEditAction])] = [
+            ("plain prose here", [.rewrite, .expand, .condense, .translate]),
+            ("# heading", [.expandSection, .rewrite]),
+            ("```\ncode\n```", [.explainCode, .addComments, .condense]),
+            ("- a\n- b\n- c", [.organizeList, .expand, .condense]),
+        ]
+        for (sample, expected) in samples {
+            let plan = InlineEditBarPlan.actions(for: sample, surface: .preview)
+            XCTAssertEqual(plan.primary, expected, sample)
+        }
+    }
 }

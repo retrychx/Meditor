@@ -103,6 +103,9 @@ struct AIOnboardingView: View {
             // 首选：Claude Code 零配置
             claudeCLICard
 
+            // 30 秒演示：无 key 时自动降级为离线预演（runAuto 决定）
+            demoCard(offline: true)
+
             // 次选：预设 provider 填 key（跳设置页 AI tab）
             Button(action: onOpenSettings) {
                 HStack(spacing: 10) {
@@ -232,35 +235,7 @@ struct AIOnboardingView: View {
                 .lineLimit(2)
             }
 
-            Button(action: onRunDemo) {
-                HStack(spacing: 10) {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(width: 26, height: 26)
-                        .foregroundStyle(.white)
-                        .background(AIBrand.violet, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(L("onboarding.demoTitle"))
-                            .font(.system(size: 12.5, weight: .semibold))
-                            .foregroundStyle(theme.craftPrimary)
-                        Text(L("onboarding.demoSub"))
-                            .font(.system(size: 11))
-                            .foregroundStyle(theme.craftSecondary)
-                    }
-                    Spacer()
-                }
-                .padding(10)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .background(
-                RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
-                    .fill(AIBrand.violet.opacity(theme.isDark ? 0.12 : 0.06))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
-                    .strokeBorder(AIBrand.violet.opacity(0.25), lineWidth: 1)
-            )
+            demoCard(offline: false)
 
             Button(L("onboarding.startChat"), action: onDismiss)
                 .buttonStyle(.plain)
@@ -269,6 +244,42 @@ struct AIOnboardingView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.top, 2)
         }
+    }
+
+    // MARK: - 30 秒演示卡片（setup / ready 两阶段共用）
+
+    /// offline = true 时提示「无需配置」的离线预演（实际模式由 AgentDemoFlow.runAuto 按配置状态决定）
+    private func demoCard(offline: Bool) -> some View {
+        Button(action: onRunDemo) {
+            HStack(spacing: 10) {
+                Image(systemName: "play.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 26, height: 26)
+                    .foregroundStyle(.white)
+                    .background(AIBrand.violet, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(L("onboarding.demoTitle"))
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(theme.craftPrimary)
+                    Text(L(offline ? "onboarding.demoSubOffline" : "onboarding.demoSub"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(theme.craftSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+            }
+            .padding(10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                .fill(AIBrand.violet.opacity(theme.isDark ? 0.12 : 0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                .strokeBorder(AIBrand.violet.opacity(0.25), lineWidth: 1)
+        )
     }
 
     // MARK: - Logic

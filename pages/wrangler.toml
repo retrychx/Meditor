@@ -16,3 +16,8 @@ id = "5347b6339e844206963de1732708d375"
 [[kv_namespaces]]
 binding = "UPDATES"
 id = "3f5d703eda614a0aaaf17f7998000364"
+
+# 发布鉴权（Pages 的 secret 用 `wrangler pages secret put` 或后台设置，勿写进本文件）：
+#   SHARE_TOKEN  —— 免费档发布 token（20 篇/月、30 天过期、带品牌页脚）
+#   PRO_TOKENS   —— Pro token 列表，逗号分隔（不限量、不过期、无页脚）
+#   UPDATE_TOKEN —— CI 发布更新包用

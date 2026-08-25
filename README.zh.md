@@ -34,8 +34,8 @@ MEditor 是 **macOS 上给技术人写文档的 Agent 工作台**。核心闭环
 ### 🤖 真 Agent，不是聊天框
 
 - **14 个工具，多轮循环** — Agent 读写、补丁式修改、搜索文档，操作工作区文件，驱动编辑器，执行沙盒 Shell 命令 —— 在多轮工具调用中持续推理，直到把活干完
-- **三种后端** — OpenAI 兼容（内置 8 家预设：OpenAI、DeepSeek、Kimi、GLM、通义千问、OpenRouter、Groq、Ollama）、Anthropic，以及复用本机 Claude Code 登录态的 Claude CLI 后端
-- **自带密钥（BYOK）** — 兼容任何 OpenAI 格式端点，密钥只存在本地设置里
+- **三种后端** — OpenAI 兼容与 Anthropic（内置 9 家预设：Anthropic、OpenAI、DeepSeek、Kimi、GLM、通义千问、OpenRouter、Groq、Ollama），外加复用本机 Claude Code 登录态的 Claude CLI 后端
+- **自带密钥（BYOK）** — 兼容任何 OpenAI 格式端点，密钥只存在本机 Keychain 里
 - **全程流式** — 回复逐字流出；工具步骤内联展示，支持展开/折叠查看详情
 
 ### 🛡 敢让它动你的文件
@@ -60,11 +60,12 @@ MEditor 是 **macOS 上给技术人写文档的 Agent 工作台**。核心闭环
 - **图片自动落盘** — 截图 ⌘V 或拖入图片，自动存入 `assets/` 并插入相对路径
 - **本地历史快照** — 每次保存落快照（时间分层保留）；「文件历史」（⌃⌘H）面板 diff 对比、一键恢复，恢复本身也可撤销
 - **全局搜索（⌘⇧F）**、TOC 大纲、标签页右键菜单（关闭其他 / Finder 显示 / 存为模板），以及 Finder 里的 Quick Look 空格预览
+- **Todo 收件箱** — 侧栏收集任务，支持日历与周日程视图（EventKit）
 
 ### 🚀 交付与分享
 
 - **局域网分享** — 内置 HTTP 服务，一次性令牌鉴权；也支持一键发布 **Gist**
-- **在线发布** — 经 Cloudflare 一键发布到公网
+- **在线发布** — 经 Cloudflare 一键发布到公网。托管免费档：每个 token 每月 20 篇、链接保留 30 天；Pro（Early access）不限量、永不过期
 - **iOS 伴侣** — 在手机上通过 iCloud 编辑、聊天、发布
 - **放映模式与专注模式**，HTML / PDF / 2× PNG 导出，预览主题（GitHub / Nord / Dracula）
 - **导出前检查** — 导出 PDF/HTML 前自动诊断死链、缺图、标题问题（设置可关）
@@ -142,12 +143,30 @@ open Package.swift
 
 | 后端 | 需要什么 |
 |------|----------|
-| OpenAI 兼容预设 | 从 8 家预设（OpenAI、DeepSeek、Kimi、GLM、通义千问、OpenRouter、Groq、Ollama）中选一个，填入 API Key，选模型 |
-| Anthropic | API Key + 模型（如 `claude-opus-4-5`） |
+| 内置预设 | 从 9 家预设（Anthropic、OpenAI、DeepSeek、Kimi、GLM、通义千问、OpenRouter、Groq、Ollama）中选一个，填入 API Key，选模型 |
 | Claude CLI | 什么都不用 —— 直接复用本机 Claude Code 登录态 |
 | 自定义端点 | 任何 OpenAI 兼容的 Base URL + Key + 模型 |
 
 没有 key？选 Claude CLI 后端，零配置跑起来。
+
+### MCP Server（Claude Desktop、Cursor 等）
+
+MEditor 内置基于 stdio 的 [MCP](https://modelcontextprotocol.io) Server，外部 agent 可以借此操作工作区——复用的正是应用内 Agent 的同一套工具层（文件读写/补丁、列目录、全局搜索、沙箱 shell 命令，共 12 个；`open_file` / `insert_at_cursor` 等依赖 UI 的工具不在无头模式暴露）。
+
+Claude Desktop 配置（`~/Library/Application Support/Claude/claude_desktop_config.json`）：
+
+```json
+{
+  "mcpServers": {
+    "meditor": {
+      "command": "/Applications/MEditor.app/Contents/MacOS/MEditor",
+      "args": ["mcp", "--workspace", "/path/to/your/workspace"]
+    }
+  }
+}
+```
+
+不传 `--workspace` 时默认使用当前目录。shell 命令走与应用内 Agent 相同的风险分级沙箱：blocked 级一律拒绝；warn 级（如 `git push`、`mv`）在无头模式下默认拒绝，可加 `--allow-warn-commands` 显式放开。
 
 ---
 
@@ -160,7 +179,6 @@ MEditor/
 │   ├── bundle.sh          # .app 包组装脚本
 │   └── test.sh            # Xcode toolchain 测试脚本
 ├── docs/                  # 设计文档与历史分析
-├── plans/                 # 进行中的开发计划
 └── Sources/MEditor/
     ├── Models/            # EditorTab、FileItem、AgentTool、PluginSkill…
     ├── Protocols/         # FileService、SyntaxHighlight、AgentContext…
@@ -175,9 +193,10 @@ MEditor/
     │   │   │   │   ├── RestAgentBackend.swift # OpenAI 与 Anthropic SSE
     │   │   │   │   └── ClaudeCLIBackend.swift # claude CLI 子进程
     │   │   │   └── Tools/                     # 文档、编辑器、工作区、Shell 工具
-    │   │   ├── InlineEditAgent.swift          # 选区级修改 + diff 审阅
+    │   │   ├── InlineEditAction.swift         # 选区级修改 + diff 审阅（UI：Views/Editor/InlineEditBar、Views/Preview/PreviewInlineEditBar）
     │   │   ├── AIService.swift                # 对话补全与 provider 预设
     │   │   └── BeautifyAgent.swift            # 单发文档润色
+    │   ├── MCP/           # MCP Server（stdio）：JSON-RPC、工具桥接、无头上下文
     │   ├── Core/          # AppSettings、Localization、MarkdownFormatter
     │   ├── File/          # FileService、FileWatcher、文件类型配置
     │   └── Calendar/      # CalendarService（EventKit）

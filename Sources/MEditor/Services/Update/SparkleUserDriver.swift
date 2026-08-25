@@ -13,9 +13,17 @@ final class SparkleUserDriver: NSObject, SPUUserDriver {
     let state = UpdatePanelState()
     private var window: NSWindow?
 
+    /// 测试注入点：非 nil 时代替真实窗口展示/关闭（true=展示，false=关闭）。
+    /// 生产代码恒为 nil；测试环境没有可激活的 NSApp，真实窗口路径会崩。
+    var panelPresenter: ((Bool) -> Void)?
+
     // MARK: - 面板生命周期
 
     private func showPanel() {
+        if let panelPresenter {
+            panelPresenter(true)
+            return
+        }
         if window == nil {
             let rootView = UpdatePanelView(state: state)
             let hosting = NSHostingController(rootView: rootView)
@@ -49,6 +57,10 @@ final class SparkleUserDriver: NSObject, SPUUserDriver {
 
     private func closePanel() {
         state.clearActions()
+        if let panelPresenter {
+            panelPresenter(false)
+            return
+        }
         window?.close()
         window = nil
     }
@@ -88,10 +100,20 @@ final class SparkleUserDriver: NSObject, SPUUserDriver {
     func showUpdateFound(with appcastItem: SUAppcastItem,
                          state userState: SPUUserUpdateState,
                          reply: @escaping (SPUUserUpdateChoice) -> Void) {
+        applyFoundUpdate(displayVersion: appcastItem.displayVersionString,
+                         releaseNotesHTML: appcastItem.itemDescription,
+                         reply: reply)
+    }
+
+    /// 「发现新版本」的状态装配。抽出为独立方法：SPUUserUpdateState 无法在测试里构造，
+    /// 而 appcastItem 只有这两个字段参与状态，抽出来后整个分支可单测。
+    func applyFoundUpdate(displayVersion: String,
+                          releaseNotesHTML: String?,
+                          reply: @escaping (SPUUserUpdateChoice) -> Void) {
         state.clearActions()
-        state.newVersion = appcastItem.displayVersionString
+        state.newVersion = displayVersion
         state.currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
-        state.releaseNotesHTML = appcastItem.itemDescription
+        state.releaseNotesHTML = releaseNotesHTML
         state.phase = .found
         state.primaryAction = { reply(.install) }  // 面板继续走下载进度，不关
         state.tertiaryAction = { [weak self] in

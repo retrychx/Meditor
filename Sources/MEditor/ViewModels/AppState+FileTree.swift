@@ -47,6 +47,8 @@ extension AppState {
             self.fileTreeManager.scheduleWatchedReload(rootURL: url)
             self.checkExternalModifications()
             self.scheduleWorkspaceIndexRefresh(root: url)
+            let spotlight = SpotlightIndexManager.shared
+            Task { await spotlight.scheduleRefresh(root: url) }
             self.gitStatusService.scheduleRefresh(rootURL: url)
         }
     }
@@ -102,6 +104,10 @@ extension AppState {
             fileTreeManager.replacingDescendantURL($0, from: old, to: new)
         }
         if let tab = selectedTab { syncPreviewContent(from: tab) }
+        // Spotlight 即时路径：删旧 id；新路径 upsert（目录重命名的子项由 FSEvents diff 兜底）
+        let spotlight = SpotlightIndexManager.shared
+        Task { await spotlight.removeFile(at: oldURL) }
+        Task { await spotlight.updateFile(at: newURL) }
     }
 
     func handleItemDeleted(at deletedURL: URL) {
@@ -121,5 +127,9 @@ extension AppState {
 
         if let tab = selectedTab { syncSidebarSelectionToTab(tab); syncPreviewContent(from: tab) }
         else                     { tabManager.selectedTabID = nil; previewManager.clear() }
+
+        // Spotlight 即时路径：文件删精确 id，目录删前缀下所有 id
+        let spotlight = SpotlightIndexManager.shared
+        Task { await spotlight.removeFile(at: deletedURL) }
     }
 }

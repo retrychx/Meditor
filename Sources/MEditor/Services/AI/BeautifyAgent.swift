@@ -30,7 +30,8 @@ final class BeautifyAgent {
         return AIClient(config: config).streamTask(messages, onChunk: onChunk, onComplete: onComplete)
     }
 
-    private func buildMessages(
+    // internal（非 private）以便单测直接断言消息构造；外部仍应走 generate。
+    func buildMessages(
         markdown: String,
         template: DocumentTemplate,
         tokenOverrides: [String: String],
@@ -79,7 +80,8 @@ final class BeautifyAgent {
     }
 
     /// 把自定义样式 token 转成可追加的 `:root { … }` 覆盖块。
-    private static func makeOverrideBlock(_ tokenOverrides: [String: String]) -> String {
+    /// internal（非 private）以便单测直接断言；key 排序保证输出确定。
+    static func makeOverrideBlock(_ tokenOverrides: [String: String]) -> String {
         guard !tokenOverrides.isEmpty else { return "" }
         let props = tokenOverrides
             .sorted { $0.key < $1.key }

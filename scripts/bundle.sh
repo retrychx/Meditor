@@ -19,12 +19,34 @@ ARCHES=(arm64 x86_64)
 
 echo "🔨 Building $APP_NAME ($CONFIG) for: ${ARCHES[*]}..."
 
+# App Intents const-values 提取：Xcode 26 起 appintentsmetadataprocessor 只认
+# swiftc 静态提取的 const values（SWIFT_ENABLE_EMIT_CONST_VALUES 对应的两个 flag）。
+# SPM 默认不带这两个 flag，这里显式加上。两个 flag 缺一不可：
+#   -const-gather-protocols-file（frontend flag，需 -Xfrontend 透传）决定提取哪些协议的实现；
+#   -emit-const-values-path（driver flag）让 driver 把 per-primary 的
+#     .swiftconstvalues 写进 supplementary output map——缺了它 frontend 根本不会产出文件。
+# batch 模式下 driver 级的路径本身不落文件，实际产物在
+# .build/<triple>/<config>/<Target>.build/*.swiftconstvalues；WMO（release）下
+# driver 级路径才会作为聚合文件真正写出，两种形态下面的收集逻辑都覆盖。
+APPINTENTS_PROTOCOLS="$PROJECT_DIR/scripts/appintents-protocols.json"
+if [ ! -s "$APPINTENTS_PROTOCOLS" ]; then
+  echo "error: 未找到 App Intents 协议清单: $APPINTENTS_PROTOCOLS" >&2
+  exit 1
+fi
+# driver 级输出路径（WMO 下是聚合文件本身；batch 下仅作开关，不真正写入）
+APPINTENTS_CONST_OUT="$BUILD_DIR/MEditor.swiftconstvalues"
+CONST_GATHER_FLAGS=(
+  -Xswiftc -emit-const-values-path -Xswiftc "$APPINTENTS_CONST_OUT"
+  -Xswiftc -Xfrontend -Xswiftc -const-gather-protocols-file
+  -Xswiftc -Xfrontend -Xswiftc "$APPINTENTS_PROTOCOLS"
+)
+
 BINARIES=()
 QL_BINARIES=()
 RESOURCE_DIR=""
 QL_RESOURCE_FILE=""
 for ARCH in "${ARCHES[@]}"; do
-  swift build -c "$CONFIG" --arch "$ARCH" --package-path "$PROJECT_DIR"
+  swift build -c "$CONFIG" --arch "$ARCH" --package-path "$PROJECT_DIR" "${CONST_GATHER_FLAGS[@]}"
   TRIPLE_DIR="$PROJECT_DIR/.build/${ARCH}-apple-macosx/$CONFIG"
   BINARIES+=("$TRIPLE_DIR/$APP_NAME")
   QL_BINARIES+=("$TRIPLE_DIR/MEditorQuickLook")
@@ -153,6 +175,49 @@ else
   exit 1
 fi
 plutil -lint "$QL_APPEX/Contents/Info.plist" > /dev/null
+
+# ---- App Intents metadata（Shortcuts/Siri 发现的唯一入口）----
+# SPM 不走 Xcode 的 ExtractAppIntentsMetadata 构建步，这里手工调
+# appintentsmetadataprocessor 生成 Metadata.appintents 塞进 Resources。
+# 缺 metadata 时 Shortcuts 会静默看不到任何 action——与 Sparkle 框架同策略：失败即中止。
+APPINTENTS_PROCESSOR="$(xcrun -f appintentsmetadataprocessor 2>/dev/null || true)"
+if [ -z "$APPINTENTS_PROCESSOR" ]; then
+  echo "error: 未找到 appintentsmetadataprocessor（需要完整 Xcode 工具链）" >&2
+  exit 1
+fi
+METADATA_SDK="$(xcrun --sdk macosx --show-sdk-path)"
+METADATA_XCODE_BUILD="$(xcodebuild -version | tail -1 | awk '{print $3}')"
+# const values 与架构无关，取第一个架构的构建产物即可
+METADATA_TRIPLE_DIR="$PROJECT_DIR/.build/${ARCHES[0]}-apple-macosx/$CONFIG"
+APPINTENTS_SRC_LIST="$(mktemp)"
+APPINTENTS_CONST_LIST="$(mktemp)"
+find "$PROJECT_DIR/Sources/$APP_NAME" -name "*.swift" | sort > "$APPINTENTS_SRC_LIST"
+find "$METADATA_TRIPLE_DIR/$APP_NAME.build" -name "*.swiftconstvalues" | sort > "$APPINTENTS_CONST_LIST"
+# WMO（release）下 const values 是 driver 级聚合文件而非 per-primary 产物
+if [ -f "$APPINTENTS_CONST_OUT" ]; then
+  echo "$APPINTENTS_CONST_OUT" >> "$APPINTENTS_CONST_LIST"
+fi
+if [ ! -s "$APPINTENTS_CONST_LIST" ]; then
+  echo "error: 未找到 .swiftconstvalues（const-values 提取未生效）" >&2
+  exit 1
+fi
+"$APPINTENTS_PROCESSOR" \
+  --output "$APP_BUNDLE/Contents/Resources" \
+  --toolchain-dir "$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain" \
+  --module-name "$APP_NAME" \
+  --sdk-root "$METADATA_SDK" \
+  --xcode-version "$METADATA_XCODE_BUILD" \
+  --platform-family macOS \
+  --deployment-target 14.0 \
+  --target-triple "${ARCHES[0]}-apple-macosx14.0" \
+  --source-file-list "$APPINTENTS_SRC_LIST" \
+  --swift-const-vals-list "$APPINTENTS_CONST_LIST" \
+  --no-app-shortcuts-localization
+rm -f "$APPINTENTS_SRC_LIST" "$APPINTENTS_CONST_LIST"
+if [ ! -f "$APP_BUNDLE/Contents/Resources/Metadata.appintents/extract.actionsdata" ]; then
+  echo "error: App Intents metadata 未生成（extract.actionsdata 缺失）" >&2
+  exit 1
+fi
 
 # Validate Info.plist
 plutil -lint "$APP_BUNDLE/Contents/Info.plist" > /dev/null
