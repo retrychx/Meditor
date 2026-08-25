@@ -60,6 +60,17 @@ for ARCH in "${ARCHES[@]}"; do
   fi
 done
 
+# const-values 自愈：SwiftPM 对「先无 flag 构建、后带 flag 构建」的增量序列
+# 可能跳过 const values 生成（CI release 流水线预编译污染的实测场景）。
+# 缺失时 touch Intents 源文件，强制重编第一个架构（metadata 与架构无关，只需一份）。
+HEAL_TRIPLE_DIR="$PROJECT_DIR/.build/${ARCHES[0]}-apple-macosx/$CONFIG"
+if [ ! -f "$APPINTENTS_CONST_OUT" ] && \
+   ! find "$HEAL_TRIPLE_DIR/$APP_NAME.build" -name "*.swiftconstvalues" -print -quit 2>/dev/null | grep -q .; then
+  echo "♻️  const values 缺失，强制重编 ${ARCHES[0]} 以重新提取..."
+  touch "$PROJECT_DIR/Sources/$APP_NAME/Intents/"*.swift
+  swift build -c "$CONFIG" --arch "${ARCHES[0]}" --package-path "$PROJECT_DIR" "${CONST_GATHER_FLAGS[@]}"
+fi
+
 echo "📦 Creating $APP_NAME.app bundle ($CONFIG, universal)..."
 
 # Create bundle structure
