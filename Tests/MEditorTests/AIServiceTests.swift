@@ -243,7 +243,9 @@ final class AIServiceTests: XCTestCase {
         XCTAssertTrue(desc.contains("connection lost"), "实际：\(desc)")
     }
 
-    // MARK: - AIAPIKeyStore（UserDefaults 明文存储，save/load/clear 闭环）
+    // MARK: - AIAPIKeyStore（Keychain 存储 + UserDefaults 旧值迁移，save/load/clear 闭环）
+
+    private static let legacyDefaultsKey = "meditor.ai.apiKey"
 
     func testAPIKeyStore_saveLoadClearRoundtrip() {
         let original = AIAPIKeyStore.load()
@@ -254,6 +256,8 @@ final class AIServiceTests: XCTestCase {
         AIAPIKeyStore.save("sk-test-123")
         XCTAssertEqual(AIAPIKeyStore.load(), "sk-test-123")
         XCTAssertTrue(AIAPIKeyStore.hasKey)
+        XCTAssertNil(UserDefaults.standard.string(forKey: Self.legacyDefaultsKey),
+                     "写入后不应再残留 UserDefaults 明文")
 
         AIAPIKeyStore.clear()
         XCTAssertNil(AIAPIKeyStore.load())
@@ -279,6 +283,49 @@ final class AIServiceTests: XCTestCase {
         AIAPIKeyStore.save("sk-temp")
         AIAPIKeyStore.save("   ")
         XCTAssertNil(AIAPIKeyStore.load(), "保存空白应清除已存的 key")
+    }
+
+    func testAPIKeyStore_migratesLegacyUserDefaultsValue() {
+        let original = AIAPIKeyStore.load()
+        defer {
+            UserDefaults.standard.removeObject(forKey: Self.legacyDefaultsKey)
+            if let original { AIAPIKeyStore.save(original) } else { AIAPIKeyStore.clear() }
+        }
+
+        AIAPIKeyStore.clear()
+        UserDefaults.standard.set("sk-legacy-1", forKey: Self.legacyDefaultsKey)
+
+        XCTAssertEqual(AIAPIKeyStore.load(), "sk-legacy-1", "旧明文应能被读回")
+        XCTAssertNil(UserDefaults.standard.string(forKey: Self.legacyDefaultsKey),
+                     "迁移后应删除 UserDefaults 明文")
+        XCTAssertEqual(AIAPIKeyStore.load(), "sk-legacy-1",
+                       "迁移后应能从 Keychain（或降级内存）读回")
+    }
+
+    // MARK: - Keychain 封装（真 Keychain 往返；无访问权限的环境跳过）
+
+    func testKeychain_roundtrip() throws {
+        let kc = Keychain(service: "com.meditor.app.test", account: "unit-test")
+        kc.clear()
+        defer { kc.clear() }
+
+        guard kc.save("secret-1") else {
+            throw XCTSkip("当前环境无 Keychain 访问权限（如 CI）")
+        }
+        XCTAssertEqual(kc.load(), "secret-1")
+        XCTAssertTrue(kc.hasValue)
+
+        // 覆盖写
+        XCTAssertTrue(kc.save("secret-2"))
+        XCTAssertEqual(kc.load(), "secret-2")
+
+        // 空字符串等同于清除
+        XCTAssertFalse(kc.save("   "))
+        XCTAssertNil(kc.load())
+
+        XCTAssertTrue(kc.save("secret-3"))
+        kc.clear()
+        XCTAssertNil(kc.load())
     }
 
     // MARK: - AIMessage

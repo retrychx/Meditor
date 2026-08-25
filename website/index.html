@@ -560,6 +560,141 @@
       background: rgba(244,245,242,0.06);
     }
 
+    /* ─── PRICING ────────────────────────────────────── */
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      max-width: 880px;
+      margin: 0 auto;
+    }
+    .price-card {
+      border-radius: 20px;
+      padding: 36px;
+      display: flex;
+      flex-direction: column;
+      background: linear-gradient(150deg, #22304A 0%, #141C2C 60%, #1B2434 100%);
+      border: 1px solid rgba(244,245,242,0.08);
+      color: #F4F5F2;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.3s, box-shadow 0.3s;
+    }
+    .price-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 18px 50px -16px rgba(27,36,52,0.45);
+    }
+    .price-card.pro { border-color: rgba(192,57,43,0.55); }
+    .price-card.pro::before {
+      content: '';
+      position: absolute;
+      top: -50px; right: -40px;
+      width: 220px; height: 160px;
+      background: var(--accent);
+      opacity: 0.16;
+      filter: blur(60px);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+    .price-plan {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: rgba(244,245,242,0.65);
+      margin-bottom: 14px;
+    }
+    .price-badge {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: none;
+      color: #F4F5F2;
+      background: rgba(192,57,43,0.85);
+      border-radius: 100px;
+      padding: 3px 10px;
+    }
+    .price-amount {
+      font-family: var(--font-serif);
+      font-size: 44px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin-bottom: 4px;
+    }
+    .price-amount span {
+      font-family: var(--font);
+      font-size: 15px;
+      font-weight: 400;
+      color: rgba(244,245,242,0.55);
+      letter-spacing: 0;
+    }
+    .price-tagline {
+      font-size: 14px;
+      color: rgba(244,245,242,0.55);
+      margin-bottom: 26px;
+    }
+    .price-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 11px;
+      margin-bottom: 32px;
+      flex: 1;
+    }
+    .price-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 14px;
+      color: rgba(244,245,242,0.75);
+      line-height: 1.5;
+    }
+    .price-list li::before {
+      content: '✓';
+      flex-shrink: 0;
+      width: 18px; height: 18px;
+      background: rgba(244,245,242,0.1);
+      color: rgba(244,245,242,0.85);
+      border-radius: 5px;
+      font-size: 11px;
+      font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      margin-top: 1px;
+    }
+    .price-list li.soon { color: rgba(244,245,242,0.45); }
+    .price-list li.soon em {
+      font-style: normal;
+      font-size: 11px;
+      border: 1px solid rgba(244,245,242,0.25);
+      border-radius: 100px;
+      padding: 1px 8px;
+      margin-left: 2px;
+    }
+    .price-card .btn-primary {
+      background: #F4F5F2;
+      color: #1B2434;
+      box-shadow: none;
+      justify-content: center;
+    }
+    .price-card .btn-ghost {
+      color: #F4F5F2;
+      border-color: rgba(244,245,242,0.25);
+      justify-content: center;
+    }
+    .price-card .btn-ghost:hover {
+      border-color: rgba(244,245,242,0.5);
+      background: rgba(244,245,242,0.06);
+    }
+    .pricing-note {
+      text-align: center;
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 24px;
+    }
+
     /* ─── FOOTER ────────────────────────────────────────── */
     footer {
       border-top: 1px solid var(--border);
@@ -582,6 +717,7 @@
       .bc-1,.bc-2,.bc-3,.bc-4,.bc-5,.bc-6,.bc-7 { grid-column: span 1; }
       .feature-split { grid-template-columns: 1fr; gap: 36px; }
       .feature-split.reverse { direction: ltr; }
+      .pricing-grid { grid-template-columns: 1fr; }
       .stats-grid { grid-template-columns: repeat(2, 1fr); }
       footer { flex-direction: column; gap: 16px; }
       .btn-primary { padding: 14px 24px; font-size: 15px; }
@@ -601,6 +737,7 @@
     <li><a href="#features">Features</a></li>
     <li><a href="#ai">AI Agent</a></li>
     <li><a href="#editor">Editor</a></li>
+    <li><a href="#pricing">Pricing</a></li>
   </ul>
   <a href="#download" class="nav-cta">Download Free →</a>
 </nav>
@@ -808,14 +945,54 @@
 
 <div class="divider"></div>
 
+<!-- ───── PRICING ──────────────────────────────────────── -->
+<section id="pricing">
+  <div class="section-header reveal">
+    <div class="section-label">Pricing</div>
+    <h2 class="section-title">Free to write.<br />Pro to publish.</h2>
+    <p class="section-sub">MEditor itself is free and open source — every local feature included. Pro unlocks unlimited hosted publishing.</p>
+  </div>
+
+  <div class="pricing-grid stagger-children">
+    <div class="price-card">
+      <div class="price-plan">Free</div>
+      <div class="price-amount">$0<span> / forever</span></div>
+      <div class="price-tagline">The full editor, yours to keep.</div>
+      <ul class="price-list">
+        <li>Every local feature — editor, AI Agent (BYOK), LAN share, Gist, exports</li>
+        <li>Hosted publishing: 20 documents / month</li>
+        <li>Links kept for 30 days</li>
+        <li>"Published with MEditor" footer on published pages</li>
+      </ul>
+      <a href="#download" class="btn-ghost">Download Free</a>
+    </div>
+
+    <div class="price-card pro">
+      <div class="price-plan">Pro <span class="price-badge">Early access</span></div>
+      <div class="price-amount">$4<span> / month</span></div>
+      <div class="price-tagline">For writers who publish every day.</div>
+      <ul class="price-list">
+        <li>Everything in Free</li>
+        <li>Unlimited hosted publishing</li>
+        <li>Links never expire</li>
+        <li>No branding footer</li>
+        <li class="soon">Custom domain <em>coming soon</em></li>
+      </ul>
+      <a href="https://github.com/sponsors/retrychx" class="btn-primary">Get Pro — Early Access</a>
+    </div>
+  </div>
+
+  <p class="pricing-note">Early access: pricing may change before the public launch. Self-hosting stays free forever.</p>
+</section>
+
 <!-- ───── CTA BANNER ───────────────────────────────────── -->
 <div class="cta-banner reveal" id="download">
   <h2>Start writing smarter today.</h2>
-  <p>MEditor is free. No subscription, no Electron, no cloud — just your words and a capable AI Agent.</p>
+  <p>The editor is free and open source — no Electron, no cloud lock-in. Pro is optional, for unlimited hosted publishing.</p>
   <div class="hero-actions" style="margin-bottom:0">
     <a href="/update/pkg" class="btn-primary">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1v9M8 10l-3-3M8 10l3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 13h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-      Download for macOS 14+<span class="dl-version"> · v0.8.0</span>
+      Download for macOS 14+<span class="dl-version"> · v0.8.3</span>
     </a>
   </div>
 </div>
@@ -827,6 +1004,7 @@
     <a href="#features">Features</a>
     <a href="#ai">AI Agent</a>
     <a href="#editor">Editor</a>
+    <a href="#pricing">Pricing</a>
     <a href="#download">Download</a>
   </div>
 </footer>

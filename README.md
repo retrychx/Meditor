@@ -34,8 +34,8 @@ Pure SwiftUI + AppKit — **no Electron**. Bring-your-own-key — **your documen
 ### 🤖 A real Agent, not a chat box
 
 - **14 tools, multi-turn loop** — The Agent reads, writes, patches, and searches documents; operates workspace files; drives the editor; and runs sandboxed shell commands — reasoning across tool calls until the job is done
-- **Three backends** — OpenAI-compatible (8 built-in presets: OpenAI, DeepSeek, Kimi, GLM, Qwen, OpenRouter, Groq, Ollama), Anthropic, and a local Claude CLI backend that reuses your Claude Code login
-- **BYOK** — Any OpenAI-compatible endpoint works; keys stay in your local settings
+- **Three backends** — OpenAI-compatible and Anthropic (9 built-in presets: Anthropic, OpenAI, DeepSeek, Kimi, GLM, Qwen, OpenRouter, Groq, Ollama), plus a local Claude CLI backend that reuses your Claude Code login
+- **BYOK** — Any OpenAI-compatible endpoint works; keys stay in your local Keychain
 - **Streaming everywhere** — Responses stream token-by-token; tool steps render inline with expand/collapse detail
 
 ### 🛡 Built to be trusted with your files
@@ -60,11 +60,12 @@ Pure SwiftUI + AppKit — **no Electron**. Bring-your-own-key — **your documen
 - **Images land on disk by themselves** — ⌘V a screenshot or drag an image in; it's saved to `assets/` and inserted as a relative path
 - **Local history snapshots** — Every save keeps a snapshot with tiered retention; File History (⌃⌘H) diffs any two versions and restores in one click — and the restore itself is undoable
 - **Global search (⌘⇧F)**, TOC outline, tab context menus (close others / reveal in Finder / save as template), and Quick Look previews from Finder
+- **Todo inbox** — Collect tasks in a sidebar with calendar & week timeline views (EventKit-backed)
 
 ### 🚀 Deliver & share
 
 - **LAN share** — Built-in HTTP server with one-time token auth; one-click **Gist** publishing too
-- **Online publish** — One-click publish via Cloudflare
+- **Online publish** — One-click publish via Cloudflare. Hosted free tier: 20 docs/month per token, links expire after 30 days; Pro (early access) removes both limits
 - **iOS companion** — Edit, chat, and publish over iCloud from your phone
 - **Presentation & focus modes**, HTML / PDF / 2× PNG export, preview themes (GitHub / Nord / Dracula)
 - **Pre-flight export checks** — PDF/HTML export first diagnoses dead links, missing images, and heading problems (can be turned off in Settings)
@@ -76,7 +77,16 @@ Pure SwiftUI + AppKit — **no Electron**. Bring-your-own-key — **your documen
 
 ## 📸 Screenshots
 
-> *Coming soon — contributions welcome!*
+<p align="center">
+  <img src="website/images/hero.png" alt="MEditor — workspace, outline and live preview" />
+</p>
+
+<p align="center">
+  <img src="website/images/ai-panel.png" width="49%" alt="AI Agent panel with @mention references" />
+  <img src="website/images/editor.png" width="49%" alt="Editor with rendered Markdown, table and code block" />
+</p>
+
+More on the [website](https://meditorapp.pages.dev).
 
 ---
 
@@ -139,12 +149,30 @@ Open **Settings (⌘,) → AI** and pick a backend:
 
 | Backend | What you need |
 |---------|---------------|
-| OpenAI-compatible preset | Pick one of the 8 presets (OpenAI, DeepSeek, Kimi, GLM, Qwen, OpenRouter, Groq, Ollama), paste your API key, pick a model |
-| Anthropic | API key + model (e.g. `claude-opus-4-5`) |
+| Built-in preset | Pick one of the 9 presets (Anthropic, OpenAI, DeepSeek, Kimi, GLM, Qwen, OpenRouter, Groq, Ollama), paste your API key, pick a model |
 | Claude CLI | Nothing — reuses your local Claude Code login |
 | Custom endpoint | Any OpenAI-compatible Base URL + key + model |
 
 No key? The Claude CLI backend gets you running with zero configuration.
+
+### MCP server (Claude Desktop, Cursor, …)
+
+MEditor ships a built-in [MCP](https://modelcontextprotocol.io) server over stdio, so external agents can operate on a workspace through the same tool layer the in-app Agent uses (file read/write/patch, directory listing, workspace search, sandboxed shell commands — 12 tools; UI-dependent tools like `open_file` / `insert_at_cursor` are not exposed headlessly).
+
+Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "meditor": {
+      "command": "/Applications/MEditor.app/Contents/MacOS/MEditor",
+      "args": ["mcp", "--workspace", "/path/to/your/workspace"]
+    }
+  }
+}
+```
+
+`--workspace` defaults to the current directory if omitted. Shell commands go through the same risk-tiered sandbox as the in-app Agent: BLOCKED commands are always rejected; WARN-level commands (e.g. `git push`, `mv`) are rejected by default in headless mode — add `--allow-warn-commands` to opt in.
 
 ---
 
@@ -157,7 +185,6 @@ MEditor/
 │   ├── bundle.sh          # .app assembler
 │   └── test.sh            # Xcode-toolchain test runner
 ├── docs/                  # Design specs & historical analyses
-├── plans/                 # Active development plans
 └── Sources/MEditor/
     ├── Models/            # EditorTab, FileItem, AgentTool, PluginSkill…
     ├── Protocols/         # FileService, SyntaxHighlight, AgentContext…
@@ -172,9 +199,10 @@ MEditor/
     │   │   │   │   ├── RestAgentBackend.swift # OpenAI & Anthropic SSE
     │   │   │   │   └── ClaudeCLIBackend.swift # claude CLI subprocess
     │   │   │   └── Tools/                     # Document, editor, workspace, shell tools
-    │   │   ├── InlineEditAgent.swift          # Selection-scoped edits with diff review
+    │   │   ├── InlineEditAction.swift         # Selection-scoped edits with diff review (UI: Views/Editor/InlineEditBar, Views/Preview/PreviewInlineEditBar)
     │   │   ├── AIService.swift                # Chat completions & provider presets
     │   │   └── BeautifyAgent.swift            # Single-shot document polish
+    │   ├── MCP/           # MCP server (stdio): JSON-RPC, tool bridging, headless context
     │   ├── Core/          # AppSettings, Localization, MarkdownFormatter
     │   ├── File/          # FileService, FileWatcher, FileType config
     │   └── Calendar/      # CalendarService (EventKit)

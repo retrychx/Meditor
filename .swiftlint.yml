@@ -22,7 +22,6 @@ disabled_rules:
   - unused_optional_binding
   - type_name
   - nesting
-  - file_length               # 大文件允许（如 Localization.swift 879 行）
   - function_parameter_count  # 参数数量不做硬限制
   - implicit_optional_initialization
   - identifier_name           # 允许 i/url/idx 等短名（352 处历史违规）
@@ -39,6 +38,12 @@ opt_in_rules:
 # force_unwrapping 提升为硬性 error（CI 门槛）
 force_unwrapping:
   severity: error
+
+# file_length 软闸门：warning 不阻塞 CI，仅提示文件过大。
+# 阈值设在当前最大文件（Localization.swift 1117 行）之上。
+file_length:
+  warning: 1500
+  error: 2000
 
 # 目录排除
 excluded:

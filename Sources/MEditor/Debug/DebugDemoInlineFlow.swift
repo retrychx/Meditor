@@ -1,7 +1,7 @@
+#if DEBUG
 import Foundation
 import AppKit
 
-#if DEBUG
 /// DEBUG 专用演示流：不依赖真实 AI，脚本化走一遍
 /// 「流式落笔 → 审阅 → 微调入口 → 接受 → 改哪亮哪」全链路，
 /// 供界面走查（launch argument `-debugDemoInlineFlow YES` 触发）。

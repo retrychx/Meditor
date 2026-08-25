@@ -315,14 +315,19 @@ final class AppState {
     private func rebuildWorkspaceIndex(root: URL?) {
         workspaceIndexReady = false
         let index = workspaceIndex
+        let spotlight = SpotlightIndexManager.shared
         guard let root else {
             Task { await index.clear() }
+            // 关闭工作区：按 domain 清理 Spotlight 索引项
+            Task { await spotlight.clearWorkspace() }
             return
         }
         Task {
             await index.buildIndex(root: root)
             workspaceIndexReady = true
         }
+        // 系统 Spotlight 全量索引（批量后台写入；切换工作区时旧 domain 由 reindex 内部清理）
+        Task { await spotlight.reindex(root: root) }
     }
 
     /// FSEvents 变化后的索引增量刷新（服务内部防抖；首次构建未完成时由 buildIndex 全量兜底）。
@@ -502,6 +507,8 @@ final class AppState {
             guard let self else { return }
             let index = self.workspaceIndex
             Task { await index.updateFile(at: url) }
+            let spotlight = SpotlightIndexManager.shared
+            Task { await spotlight.updateFile(at: url) }
         }
     }
 

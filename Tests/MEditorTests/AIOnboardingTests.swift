@@ -53,7 +53,9 @@ final class AgentDemoFlowTests: XCTestCase {
 
         let content = try String(contentsOf: fileURL, encoding: .utf8)
         XCTAssertEqual(content, AgentDemoFlow.sampleMarkdown)
-        XCTAssertTrue(content.contains("周会"), "示例内容应是一篇会议记录")
+        XCTAssertFalse(content.isEmpty, "示例内容必须非空")
+        XCTAssertNotEqual(content, AgentDemoFlow.tidyMarkdown(for: LocalizationManager.shared.resolved),
+                          "示例（凌乱版）必须与整理稿不同")
     }
 
     // MARK: - 重跑：先清旧目录再写（幂等）
@@ -101,5 +103,66 @@ final class AgentDemoFlowTests: XCTestCase {
         XCTAssertEqual(message, L("demo.notConfigured"))
         XCTAssertFalse(FileManager.default.fileExists(atPath: AgentDemoFlow.demoDirectory.path),
                        "失败快路径不得写演示文件")
+    }
+
+    // MARK: - 演示模式选择：有配置 → 真实 Agent；无配置 → 离线预演
+
+    func test_mode_liveWhenConfigured_simulatedOtherwise() {
+        XCTAssertEqual(AgentDemoFlow.mode(isConfigured: true), .live)
+        XCTAssertEqual(AgentDemoFlow.mode(isConfigured: false), .simulated)
+    }
+
+    // MARK: - 示例文案按界面语言二选一（CI 英文 locale，不写死中文）
+
+    func test_sampleContent_localizedPerLanguage() {
+        let zh = AgentDemoFlow.sampleMarkdown(for: .chinese)
+        let en = AgentDemoFlow.sampleMarkdown(for: .english)
+        XCTAssertFalse(zh.isEmpty)
+        XCTAssertFalse(en.isEmpty)
+        XCTAssertNotEqual(zh, en, "中英示例必须是两份不同文案")
+        // 整理稿与原始记录必须不同且非空（演示的「整理」效果才有对比）
+        XCTAssertNotEqual(zh, AgentDemoFlow.tidyMarkdown(for: .chinese))
+        XCTAssertNotEqual(en, AgentDemoFlow.tidyMarkdown(for: .english))
+        XCTAssertFalse(AgentDemoFlow.demoPrompt(for: .chinese).isEmpty)
+        XCTAssertFalse(AgentDemoFlow.demoPrompt(for: .english).isEmpty)
+    }
+
+    func test_prepareWorkspace_writesLocalizedSample() throws {
+        let flow = AgentDemoFlow()
+        let zhFile = try flow.prepareWorkspace(language: .chinese)
+        XCTAssertEqual(try String(contentsOf: zhFile, encoding: .utf8),
+                       AgentDemoFlow.sampleMarkdown(for: .chinese))
+        let enFile = try flow.prepareWorkspace(language: .english)
+        XCTAssertEqual(try String(contentsOf: enFile, encoding: .utf8),
+                       AgentDemoFlow.sampleMarkdown(for: .english))
+    }
+
+    // MARK: - 离线预演打字机帧序列
+
+    func test_simulatedFrames_buildsUpToFullTidyText() {
+        let tidy = AgentDemoFlow.tidyMarkdown(for: LocalizationManager.shared.resolved)
+        let frames = AgentDemoFlow.simulatedFrames(to: tidy)
+        XCTAssertEqual(frames.last, tidy, "最后一帧必须是整理稿全文")
+        XCTAssertTrue(frames.first?.isEmpty == true, "从空文档起步")
+        for (a, b) in zip(frames, frames.dropFirst()) {
+            XCTAssertTrue(b.hasPrefix(a), "每帧必须是下一帧的前缀")
+            XCTAssertGreaterThan(b.count, a.count, "帧序列必须单调增长")
+        }
+        XCTAssertEqual(AgentDemoFlow.simulatedFrames(to: ""), [])
+    }
+
+    // MARK: - 离线预演端到端：无 key 也能把示例文档改写成整理稿
+
+    func test_runSimulated_rewritesDemoDocumentOffline() async {
+        let flow = AgentDemoFlow()
+        flow.frameDelay = .zero
+        let appState = AppState()
+        await flow.runSimulated(appState: appState)
+
+        XCTAssertEqual(flow.phase, .idle, "离线预演结束后回到 idle，允许反复重看")
+        let tab = appState.selectedTab
+        XCTAssertEqual(tab?.url.lastPathComponent, AgentDemoFlow.demoFileName)
+        XCTAssertEqual(tab?.content, AgentDemoFlow.tidyMarkdown(for: LocalizationManager.shared.resolved),
+                       "演示结束时文档应被改写为整理稿")
     }
 }

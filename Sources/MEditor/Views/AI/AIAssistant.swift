@@ -193,7 +193,8 @@ struct AIAssistantPanel: View {
             },
             onRunDemo: {
                 let flow = state.agentDemoFlow
-                Task { await flow.run(appState: state, settings: settings) }
+                // 已配置 → 真实 Agent；未配置 → 离线预演（runAuto 内部决定）
+                Task { await flow.runAuto(appState: state, settings: settings) }
             },
             onDismiss: {
                 onboardingDismissed = true

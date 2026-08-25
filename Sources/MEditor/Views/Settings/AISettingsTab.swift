@@ -174,6 +174,17 @@ extension SettingsView {
 
                 // MARK: Claude Code 集成
                 claudeMonitorSection
+
+                // MARK: 入门演示（可随时重看；未配置 AI 时离线预演）
+                settingsGroup(title: L("settings.ai.replayDemo")) {
+                    settingsRow(label: L("settings.ai.replayDemoLabel"), subtitle: L("settings.ai.replayDemoHint")) {
+                        Button(L("settings.ai.replayDemoAction")) {
+                            state.showingSettings = false
+                            state.showingAIAssistant = true
+                            Task { await state.agentDemoFlow.runAuto(appState: state, settings: settings) }
+                        }
+                    }
+                }
             }
             .padding(DS.Space.lg)
         }

@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 // MARK: - Plugins tab
 
@@ -74,6 +75,24 @@ extension SettingsView {
                         Label(L("plugin.add"), systemImage: "plus")
                             .font(.system(size: 13))
                     }
+                    Menu {
+                        Button {
+                            importSkillFromFile()
+                        } label: {
+                            Label(L("plugin.importFromFile"), systemImage: "doc")
+                        }
+                        Button {
+                            skillURLImportText = ""
+                            showingSkillURLImport = true
+                        } label: {
+                            Label(L("plugin.importFromURL"), systemImage: "link")
+                        }
+                    } label: {
+                        Label(L("plugin.import"), systemImage: "square.and.arrow.down")
+                            .font(.system(size: 13))
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
                     Button {
                         Task { await state.pluginManager.reloadAll() }
                     } label: {
@@ -109,6 +128,15 @@ extension SettingsView {
                     .filter { SkillInstaller.isInstalled($0, in: state.pluginManager) }
                     .map(\.id)
             )
+        }
+        .alert(L("plugin.importFromURL"), isPresented: $showingSkillURLImport) {
+            TextField("https://example.com/SKILL.md", text: $skillURLImportText)
+            Button(L("common.cancel"), role: .cancel) {}
+            Button(L("plugin.import")) {
+                Task { await importSkillFromURL() }
+            }
+        } message: {
+            Text(L("plugin.importURLHint"))
         }
     }
 
@@ -304,7 +332,7 @@ extension SettingsView {
 
             Spacer()
 
-            // 技能文件操作：在 App 内打开编辑 / Finder 显示 / 移除
+            // 技能文件操作：在 App 内打开编辑 / Finder 显示 / 导出分享 / 移除
             if FileManager.default.fileExists(atPath: skill.skillPath.path) {
                 Button {
                     state.openFile(FileItem(url: skill.skillPath, isDirectory: false))
@@ -325,6 +353,16 @@ extension SettingsView {
                 }
                 .buttonStyle(.plain)
                 .help(L("plugin.showInFinder"))
+
+                Button {
+                    exportSkill(skill)
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help(L("plugin.exportSkill"))
             }
 
             Button {
@@ -351,6 +389,60 @@ extension SettingsView {
                 } else {
                     skillAddMessage = L("plugin.noSkillFound")
                 }
+            }
+        }
+    }
+
+    // MARK: - Skill 导入 / 导出（分享）
+
+    /// 从 URL 导入技能：下载校验 → 安装到本地技能目录。
+    func importSkillFromURL() async {
+        do {
+            let document = try await SkillTransfer.fetchDocument(urlString: skillURLImportText)
+            let outcome = try SkillTransfer.install(document: document, pluginManager: state.pluginManager)
+            await state.pluginManager.reloadAll()
+            skillAddMessage = outcome.renamed ? L("skill.import.doneRenamed", outcome.name) : nil
+        } catch {
+            skillAddMessage = error.localizedDescription
+        }
+    }
+
+    /// 从本地 .md 文件导入技能（拷贝进技能目录，与原"添加"的就地书签路径不同）。
+    func importSkillFromFile() {
+        Task {
+            guard let url = await state.filePickerService.pickFile(
+                title: L("plugin.importPickTitle"), allowedExtensions: ["md"]
+            ) else { return }
+            do {
+                let data = try Data(contentsOf: url)
+                let parsed = try SkillTransfer.parse(data: data)
+                let outcome = try SkillTransfer.install(document: parsed.document, pluginManager: state.pluginManager)
+                await state.pluginManager.reloadAll()
+                skillAddMessage = outcome.renamed ? L("skill.import.doneRenamed", outcome.name) : nil
+            } catch {
+                skillAddMessage = error.localizedDescription
+            }
+        }
+    }
+
+    /// 导出技能为单个 .md 文件（NSSavePanel 选位置），成功后在 Finder 中显示。
+    func exportSkill(_ skill: PluginSkill) {
+        guard let document = SkillTransfer.exportDocument(for: skill) else {
+            skillAddMessage = L("skill.export.failed", skill.name)
+            return
+        }
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.title = L("plugin.exportSkill")
+        panel.nameFieldStringValue = SkillTransfer.suggestedFileName(for: skill.name)
+        panel.allowedContentTypes = [UTType(filenameExtension: "md")].compactMap { $0 }
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                try document.write(to: url, atomically: true, encoding: .utf8)
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            } catch {
+                skillAddMessage = L("skill.export.failed", error.localizedDescription)
             }
         }
     }

@@ -90,6 +90,12 @@
 		</dict>
 	</array>
 
+	<!-- Spotlight（CoreSpotlight）结果点击通过 NSUserActivity 路由回 app -->
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>com.apple.corespotlightitem</string>
+	</array>
+
 	<!-- Calendar access for the sidebar calendar view -->
 	<key>NSCalendarsUsageDescription</key>
 	<string>MEditor needs calendar access to display upcoming events in the sidebar.</string>

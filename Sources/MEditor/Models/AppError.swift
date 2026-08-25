@@ -65,6 +65,7 @@ enum AppLog {
     static let editor   = Logger(subsystem: subsystem, category: "editor")
     static let session  = Logger(subsystem: subsystem, category: "session")
     static let exporter = Logger(subsystem: subsystem, category: "exporter")
+    static let ai       = Logger(subsystem: subsystem, category: "ai")
 
     /// Log an `AppError` with its details. Always at .error level.
     static func error(_ error: AppError, in logger: Logger = app) {

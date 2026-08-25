@@ -3,7 +3,23 @@ import SwiftUI
 @main
 @MainActor
 struct MEditorApp: App {
-    @State private var appState = AppState()
+    @NSApplicationDelegateAdaptor(MEditorAppDelegate.self) private var appDelegate
+    @State private var appState: AppState
+
+    init() {
+        // MCP 子命令（MEditor mcp [--workspace <path>]）：在启动最早期接管进程，
+        // 走纯 CLI 的 stdio 会话循环，不初始化 AppKit / SwiftUI。
+        // dispatchMain() 泵主队列（@MainActor 工具上下文依赖它）且永不返回；
+        // 会话在 stdin EOF 后 exit() 结束进程。
+        if MCPCommand.shouldRun(arguments: CommandLine.arguments) {
+            Task {
+                let code = await MCPCommand.run(arguments: CommandLine.arguments)
+                exit(code)
+            }
+            dispatchMain()
+        }
+        _appState = State(initialValue: AppState())
+    }
 
     var body: some Scene {
         Window("MEditor", id: "main") {
@@ -25,6 +41,9 @@ struct MEditorApp: App {
                     // Restore previous session (root folder + open tabs + selection).
                     // No-op on first launch or if every bookmark has gone stale.
                     appState.restoreSession()
+                    // 注入 AppState 并补开冷启动时到达的 Spotlight 点击（须在 restoreSession 之后）。
+                    appDelegate.appState = appState
+                    appDelegate.consumePendingOpens()
                 }
                 .onOpenURL { url in
                     handleOpenURL(url)

@@ -70,6 +70,20 @@ final class ShareLinkServiceTests: XCTestCase {
         }
     }
 
+    func testQuotaExceededResponseMaps() async {
+        let service = makeService(status: 429, body: Data(#"{"error":"monthly quota exceeded","limit":20,"resetsAt":"2026-09-01T00:00:00.000Z"}"#.utf8))
+        await assertThrows(ShareLinkError.quotaExceeded(20)) {
+            _ = try await service.publish(baseURL: baseURL, token: token, title: title, html: html)
+        }
+    }
+
+    func testQuotaExceededWithoutLimitDefaultsTo20() async {
+        let service = makeService(status: 429, body: Data(#"{"error":"monthly quota exceeded"}"#.utf8))
+        await assertThrows(ShareLinkError.quotaExceeded(20)) {
+            _ = try await service.publish(baseURL: baseURL, token: token, title: title, html: html)
+        }
+    }
+
     func testServerErrorCarriesMessage() async {
         let service = makeService(status: 500, body: Data(#"{"error":"boom"}"#.utf8))
         await assertThrows(ShareLinkError.server(500, "boom")) {
@@ -125,6 +139,7 @@ extension ShareLinkError: Equatable {
              (.noWebView, .noWebView):
             return true
         case let (.server(a1, b1), .server(a2, b2)): return a1 == a2 && b1 == b2
+        case let (.quotaExceeded(a), .quotaExceeded(b)): return a == b
         case let (.renderFailed(a), .renderFailed(b)): return a == b
         default: return false
         }

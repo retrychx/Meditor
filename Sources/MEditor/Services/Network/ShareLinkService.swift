@@ -5,6 +5,7 @@ enum ShareLinkError: LocalizedError {
     case notConfigured
     case invalidToken
     case tooLarge
+    case quotaExceeded(Int)
     case network
     case server(Int, String)
     case badResponse
@@ -16,6 +17,8 @@ enum ShareLinkError: LocalizedError {
         case .notConfigured:        return L("sharelink.error.notConfigured")
         case .invalidToken:         return L("sharelink.error.invalidToken")
         case .tooLarge:             return L("sharelink.error.tooLarge")
+        case .quotaExceeded(let limit):
+            return L("sharelink.error.quotaExceeded", limit)
         case .network:              return L("sharelink.error.network")
         case .server(let code, let msg):
             return L("sharelink.error.server", code, msg)
@@ -81,6 +84,10 @@ struct ShareLinkService {
             return resp.url
         case 401: throw ShareLinkError.invalidToken
         case 413: throw ShareLinkError.tooLarge
+        case 429:
+            // 免费档月度配额超限：服务端返回 {error, limit, resetsAt}
+            let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            throw ShareLinkError.quotaExceeded(body?["limit"] as? Int ?? 20)
         default:
             let msg = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
             throw ShareLinkError.server(http.statusCode, msg ?? "")

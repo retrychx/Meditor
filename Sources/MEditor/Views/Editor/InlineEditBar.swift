@@ -233,38 +233,27 @@ struct InlineEditBar: View {
             return
         }
 
-        isLoading    = true
-        loadingLabel = action.displayName
-
         // 保留选区位置
         let savedRange  = state.editorSelectedRange
         state.pendingReplaceRange = savedRange
 
         let fullContent = state.selectedTab?.content ?? selectedText
 
-        func spliced(_ replacement: String) -> String {
-            guard let swiftRange = Range(savedRange, in: fullContent) else {
-                return fullContent.replacingOccurrences(of: selectedText, with: replacement, options: .literal)
-            }
-            return fullContent.replacingCharacters(in: swiftRange, with: replacement)
+        // 定位选区：优先精确的 NSRange → String.Index 转换；失败（选区与文档内容
+        // 已不同步）时仅当选中文本在全文唯一出现才按该位置替换；否则无法安全定位——
+        // 绝不做全局替换（会把文档里所有相同文本都改掉），提示用户重新圈选。
+        let targetRange: Range<String.Index>
+        if let swiftRange = Range(savedRange, in: fullContent) {
+            targetRange = swiftRange
+        } else if let unique = fullContent.uniqueLiteralRange(of: selectedText) {
+            targetRange = unique
+        } else {
+            state.showToast(L("ai.inline.selectionLost"), icon: "exclamationmark.triangle")
+            return
         }
 
-        // 进入 diff 流式模式
-        state.diffReview.beginStreaming(original: fullContent, actionLabel: action.displayName)
-        // 快照过期防护：AI 运行期间用户可能继续编辑——写回时以当前文档为起点
-        // 重定位合并；目标段落已被改动则拒绝覆盖并提示，由用户放弃本次结果
-        state.diffReview.currentContentProvider = { [weak state] in state?.selectedTab?.content }
-        state.diffReview.onRebaseConflict = { [weak state] in
-            state?.showToast(L("ai.inline.targetLost"),
-                             icon: "exclamationmark.triangle")
-        }
-        // 捕获 generation token：dismiss / 新一轮流式后在途回调写入被丢弃
-        let streamGen = state.diffReview.streamGeneration
-
-        // 用 AgentRunner 执行（可访问 read_document / search_document 等工具）
-        let config  = AIConfig.current(settings, scene: .inline)   // 内联编辑专用模型
-        let context = AgentContext.make(appState: state)
-        let tools   = BuiltinAgentTools.all
+        isLoading    = true
+        loadingLabel = action.displayName
 
         // 系统 prompt = 内置 inlineEditor skill + 用户插件附加
         var systemPrompt = BuiltinSkills.inlineEditor.content
@@ -274,59 +263,18 @@ struct InlineEditBar: View {
         let userMsg = action.userInstruction(for: selectedText,
                                               document: state.selectedTab?.content)
 
-        agentRunner = AgentRunner()
-        // 注册到 diffReview（与预览流一致）：dismiss（取消按钮 / 关闭 diff 视图）才能
-        // 取消到这次运行；且 bar 销毁后 runner 由 diffReview 强持有，run 不会在途中被释放
-        state.diffReview.activeRunner = agentRunner
-
-        // 监听流式 streaming chunks → diff preview
-        agentRunner.onChunk = { [weak state] chunk in
-            guard let state else { return }
-            // 仅当 chunk 是最终文本时替换（AgentRunner 目前一次性输出）；
-            // generation 校验：dismiss 后迟到的 chunk 不得写回
-            state.diffReview.writeStreamedContent(spliced(chunk), generation: streamGen)
-        }
-
-        agentRunner.onComplete = { [weak state, weak agentRunner] in
-            guard let state else { return }
-            let runner = agentRunner
-            // 只在自己的 runner 仍注册时释放引用（避免清掉后一轮运行的注册）
-            if let runner, state.diffReview.activeRunner === runner {
-                state.diffReview.activeRunner = nil
+        // 流式执行管线与预览侧共享（InlineEditSession）
+        InlineEditSession.run(
+            state: state, settings: settings,
+            systemPrompt: systemPrompt, userMessage: userMsg,
+            fullContent: fullContent, actionLabel: action.displayName,
+            splice: { replacement in
+                fullContent.replacingCharacters(in: targetRange, with: replacement)
+            },
+            onSettled: {
+                isLoading    = false
+                loadingLabel = ""
             }
-            isLoading    = false
-            loadingLabel = ""
-
-            if let err = runner?.error {
-                state.diffReview.dismiss()
-                state.showToast(err, icon: "exclamationmark.triangle")
-                return
-            }
-
-            let finalText = runner?.finalText ?? ""
-            guard !finalText.isEmpty else {
-                state.diffReview.dismiss()
-                state.showToast(L("ai.inline.emptyResponse"), icon: "exclamationmark.triangle")
-                return
-            }
-
-            let modified = spliced(finalText)
-            state.diffReview.commitStreamWithModified(modified, generation: streamGen) { merged in
-                if let tab = state.selectedTab {
-                    // 统一走 applyAIWriteBack：编辑器挂载时可撤销最小化替换
-                    // （保留滚动/光标/undo），否则退回整体替换；内部已处理
-                    // 预览同步、isModified 与防抖保存
-                    state.applyAIWriteBack(tab.id, content: merged)
-                }
-            }
-        }
-
-        agentRunner.run(
-            systemPrompt: systemPrompt,
-            userMessage: userMsg,
-            tools: tools,
-            config: config,
-            context: context
         )
     }
 }
