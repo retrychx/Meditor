@@ -1,0 +1,27 @@
+diff --git a/Sources/MEditor/Protocols/FilePickerServiceProtocol.swift b/Sources/MEditor/Protocols/FilePickerServiceProtocol.swift
+index 1c4d5e6..2a9b7f0 100644
+--- a/Sources/MEditor/Protocols/FilePickerServiceProtocol.swift
++++ b/Sources/MEditor/Protocols/FilePickerServiceProtocol.swift
+@@ -10,9 +10,8 @@ import Foundation
+ protocol FilePickerServiceProtocol {
+     /// 弹出打开面板，返回用户选择的文件 URL。
+-    /// - Parameter allowMultiple: 是否允许多选。
+-    func pickFiles(allowMultiple: Bool) -> [URL]
++    /// 多选行为改由 `options` 控制。
++    func pickFiles(options: FilePickerOptions) -> [URL]
+ 
+-    func pickFolder() -> URL?
++    func pickFolder(message: String?) -> URL?
+ }
+diff --git a/Sources/MEditor/Services/File/MacFilePickerService.swift b/Sources/MEditor/Services/File/MacFilePickerService.swift
+index 77aa01c..55de3a2 100644
+--- a/Sources/MEditor/Services/File/MacFilePickerService.swift
++++ b/Sources/MEditor/Services/File/MacFilePickerService.swift
+@@ -14,11 +14,11 @@ final class MacFilePickerService: FilePickerServiceProtocol {
+-    func pickFiles(allowMultiple: Bool) -> [URL] {
++    func pickFiles(options: FilePickerOptions) -> [URL] {
+         let panel = NSOpenPanel()
+-        panel.allowsMultipleSelection = allowMultiple
++        panel.allowsMultipleSelection = options.contains(.multipleSelection)
+         return panel.runModal() == .OK ? panel.urls : []
+     }

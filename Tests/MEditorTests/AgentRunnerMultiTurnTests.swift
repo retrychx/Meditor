@@ -310,8 +310,10 @@ final class AgentRunnerMultiTurnTests: XCTestCase {
 
         await runAndWait(runner, tools: tools)
 
-        // 执行顺序：只读（保持原相对顺序）先于写
-        XCTAssertEqual(log.startOrder, ["read_document", "read_file", "write_document"])
+        // 执行顺序：只读并行先于写（只读之间是并行启动，相对顺序不保证）
+        XCTAssertEqual(Set(log.startOrder.prefix(2)), ["read_document", "read_file"],
+                       "两个只读调用应先于写执行")
+        XCTAssertEqual(log.startOrder.last, "write_document", "写调用必须最后执行")
         // 回灌顺序：按 response.toolCalls 原顺序
         let toolMessages = runner.finalMessages.filter { $0.role == .tool }
         XCTAssertEqual(toolMessages.map(\.toolCallID), ["w1", "r1", "r2"])

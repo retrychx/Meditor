@@ -79,6 +79,9 @@ final class AppState {
     // MARK: - Diff Review State
 
     let diffReview = DiffReviewState()
+
+    /// Agent 写后自检：写工具内容生效后防抖合并跑本地诊断，有问题在 AI 面板报告。
+    let agentWriteSelfCheck = AgentWriteSelfCheck()
     /// 多一层直接属性，避免嵌套 @Observable 被 SwiftUI 漏追踪的问题
     var showingDiffReview: Bool {
         get { diffReview.isPresented }
@@ -395,6 +398,14 @@ final class AppState {
             self.mentionItemsVersion &+= 1
         }
         scheduleHistoryPrune()
+        // 写后自检接线：Agent run 进行时顺延防抖窗口（不拿中途态误报）；
+        // 发现问题时 toast 通知（AI 面板内的报告条由 UI 直接读 pendingReport）。
+        agentWriteSelfCheck.shouldDefer = { [weak self] in
+            self?.aiConversation.isResponding ?? false
+        }
+        agentWriteSelfCheck.onReport = { [weak self] report in
+            self?.showToast(L("ai.selfcheck.toast", report.totalCount), icon: "stethoscope")
+        }
     }
 
     deinit {

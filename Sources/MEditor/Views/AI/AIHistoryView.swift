@@ -30,6 +30,7 @@ struct AIHistoryView: View {
                         ForEach(items) { session in
                             AIHistoryRow(
                                 title: session.title.isEmpty ? L("ai.session.untitled") : session.title,
+                                usageSummary: usageSummary(for: session),
                                 isActive: session.id == convo.activeID,
                                 theme: theme,
                                 onSelect: { convo.activate(session.id); onPick() },
@@ -46,12 +47,26 @@ struct AIHistoryView: View {
         .frame(width: 280)
         .background(theme.editorBackground)
     }
+
+    /// 会话累计用量摘要：「累计 12.3K tokens ≈ $0.04」。
+    /// 无 usage 数据（ClaudeCLI / 旧会话）返回 nil；价格表查不到时只省略成本。
+    private func usageSummary(for session: AISession) -> String? {
+        guard let usage = session.cumulativeUsage else { return nil }
+        let total = ModelPricing.compactTokens(usage.promptTokens + usage.completionTokens)
+        var summary = L("ai.usage.sessionTotal", total)
+        if let cost = ModelPricing.estimateCost(usage: usage, model: session.lastModel) {
+            summary += " ≈ " + ModelPricing.formatUSD(cost)
+        }
+        return summary
+    }
 }
 
 // MARK: - History row
 
 private struct AIHistoryRow: View {
     let title: String
+    /// 会话累计用量摘要（「累计 12.3K tokens ≈ $0.04」）；无 usage 数据时为 nil，不显示
+    let usageSummary: String?
     let isActive: Bool
     let theme: PreviewTheme
     let onSelect: () -> Void
@@ -63,10 +78,18 @@ private struct AIHistoryRow: View {
             Image(systemName: "bubble.left")
                 .font(.system(size: 11))
                 .foregroundStyle(isActive ? Color.appAccent : theme.craftSecondary)
-            Text(title)
-                .font(.system(size: 12.5))
-                .foregroundStyle(theme.craftPrimary)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(theme.craftPrimary)
+                    .lineLimit(1)
+                if let usageSummary {
+                    Text(usageSummary)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
             Spacer(minLength: 4)
             if hovered {
                 Button(action: onDelete) {

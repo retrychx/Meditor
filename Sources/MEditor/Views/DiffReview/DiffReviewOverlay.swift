@@ -269,6 +269,13 @@ private struct DiffModeBar: View {
                         .foregroundStyle(Color(hex: "22C55E"))
                 }
 
+                // 本次审阅的总改动数（全部接受/逐块接受的粒度参照）
+                if !state.diffReview.diffs.isEmpty {
+                    Text(L("diff.totalCount", state.diffReview.diffs.count))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+
                 Divider().frame(height: 18)
 
                 // Accept all

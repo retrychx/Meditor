@@ -66,7 +66,9 @@ final class FileWriteConfirmationTests: XCTestCase {
         )
         XCTAssertEqual(ctx.confirmedWrites.count, 1, "patch 前应挂起一次确认")
         XCTAssertEqual(ctx.confirmedWrites[0].path, "doc.md", "当前文档 patch 的 path 应为文档名")
-        XCTAssertEqual(ctx.patchCalls.count, 1)
+        // 确认（审阅）通过后写合并后的完整内容，不重放 patchDocument
+        XCTAssertEqual(ctx.writtenContents.count, 1)
+        XCTAssertEqual(ctx.writtenContents[0], "Hi there\nSecond line\nThird line")
     }
 
     func testCreateFile_asksConfirmation() async throws {

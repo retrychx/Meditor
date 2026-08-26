@@ -116,7 +116,9 @@ struct WriteDocumentTool: AgentTool {
             // found 则用其绝对路径覆盖（避免裸文件名在根目录误建新文件）；notFound 则按给定路径新建
             let target: String
             if case .found(let foundURL) = resolved { target = foundURL.path } else { target = filename }
-            // 写入前确认：本 run 已「全部允许」则直接放行，否则挂起等用户在确认条上决定
+            var finalContent = content
+            // 写入前审阅：本 run 已「全部允许」则直接放行；否则是否进 diff 审阅态
+            // 由 context 决定（GUI 默认逐块审阅，headless / mock 直通或走确认条）
             if !(await context.isFileWriteAllowedForRun) {
                 // diff 预览：已存在文件取写前内容（fileContentFull = tab 内存优先，与
                 // AgentRunCheckpoint.captureBeforeWrite 的取舍一致）；新文件按纯新增
@@ -129,30 +131,35 @@ struct WriteDocumentTool: AgentTool {
                 let preview = WriteDiffPreviewBuilder.make(
                     path: target, summary: "写入 \(target)（约 \(lines) 行）",
                     base: base, newContent: content)
-                let approved = await context.confirmFileWrite(preview)
-                guard approved else { return "[!] 用户已拒绝写入：\(target)" }
+                guard let approved = await context.reviewFileWrite(preview, base: base, newContent: content) else {
+                    return "[!] 用户已拒绝写入：\(target)（未落盘）"
+                }
+                finalContent = approved   // 逐块审阅后的合并结果，可能与原内容不同
             }
             do {
-                let url = try await context.writeFile(name: target, content: content)
-                return "[OK] 已写入文件：\(url.lastPathComponent)（\(content.count) 字符）"
+                let url = try await context.writeFile(name: target, content: finalContent)
+                return "[OK] 已写入文件：\(url.lastPathComponent)（\(finalContent.count) 字符）"
             } catch {
                 return "[!] 写入失败：\(error.localizedDescription)"
             }
         }
         let docName = await context.currentDocumentName ?? "当前文档"
-        // 写入前确认（当前文档全量重写）；写前内容 = 当前 tab 内存内容
+        var finalContent = content
+        // 写入前审阅（当前文档全量重写）；写前内容 = 当前 tab 内存内容
         if !(await context.isFileWriteAllowedForRun) {
             let base: WriteBaseContent =
                 (await context.currentDocument).map { .existing($0) } ?? .newFile
             let preview = WriteDiffPreviewBuilder.make(
                 path: docName, summary: "全量重写 \(docName)（约 \(lines) 行）",
                 base: base, newContent: content)
-            let approved = await context.confirmFileWrite(preview)
-            guard approved else { return "[!] 用户已拒绝写入：\(docName)" }
+            guard let approved = await context.reviewFileWrite(preview, base: base, newContent: content) else {
+                return "[!] 用户已拒绝写入：\(docName)（未落盘）"
+            }
+            finalContent = approved
         }
         do {
-            try await context.writeDocument(content)
-            return "[OK] 文档已全量更新（\(content.count) 字符）"
+            try await context.writeDocument(finalContent)
+            return "[OK] 文档已全量更新（\(finalContent.count) 字符）"
         } catch {
             return "[!] 写入失败：\(error.localizedDescription)"
         }
@@ -199,7 +206,8 @@ struct PatchDocumentTool: AgentTool {
         let matchDesc = replaceAll ? "全部匹配" : "首个匹配"
 
         if let filename = arguments["filename"]?.stringValue, !filename.isEmpty {
-            // 写入前确认：本 run 已「全部允许」则直接放行，否则挂起等用户在确认条上决定
+            // 写入前审阅：本 run 已「全部允许」则直接放行；否则是否进 diff 审阅态
+            // 由 context 决定（GUI 默认逐块审阅，headless / mock 直通或走确认条）
             if !(await context.isFileWriteAllowedForRun) {
                 // diff 预览：解析目标取写前内容（fileContentFull = tab 内存优先），
                 // 找不到 / 读失败时降级为只显示 summary
@@ -207,9 +215,37 @@ struct PatchDocumentTool: AgentTool {
                 if case .found(let url) = await context.resolveFile(filename) {
                     oldContent = try? await context.fileContentFull(at: url)
                 }
+                if let old = oldContent {
+                    // 预演与实际写入走同一引擎；预演阶段就发现无匹配则直接报错，
+                    // 不把「找不到 find」带进审阅态
+                    let applied = PatchEngine.apply(to: old, find: find, replace: replace, all: replaceAll)
+                    let appliedCount = applied.count
+                    guard appliedCount > 0 else {
+                        return PatchNotFoundError(
+                            find: find,
+                            nearbyContext: PatchEngine.nearbyContext(in: old, around: find)
+                        ).errorDescription ?? "[!] 未找到匹配文本"
+                    }
+                    let base = WriteBaseContent.existing(old)
+                    let preview = WriteDiffPreviewBuilder.make(
+                        path: filename, summary: "在 \(filename) 中替换\(matchDesc)",
+                        base: base, newContent: applied.updated)
+                    guard let merged = await context.reviewFileWrite(
+                        preview, base: base, newContent: applied.updated)
+                    else { return "[!] 用户已拒绝写入：\(filename)（未落盘）" }
+                    // 审阅通过：写合并后的完整内容（逐块接受时 ≠ 原始 patch 结果，
+                    // 不能再走 patchFile 重放 find/replace）
+                    do {
+                        let url = try await context.writeFile(name: filename, content: merged)
+                        return "[OK] 已在 \(url.lastPathComponent) 写入审阅后的改动（\(merged.count) 字符）"
+                    } catch {
+                        return "[!] 写入失败：\(error.localizedDescription)"
+                    }
+                }
+                // 写前内容不可得：退化确认条，通过后仍走精准 patch
                 let preview = Self.patchPreview(
                     path: filename, summary: "在 \(filename) 中替换\(matchDesc)",
-                    oldContent: oldContent, find: find, replace: replace, all: replaceAll)
+                    oldContent: nil, find: find, replace: replace, all: replaceAll)
                 let approved = await context.confirmFileWrite(preview)
                 guard approved else { return "[!] 用户已拒绝写入：\(filename)" }
             }
@@ -224,12 +260,35 @@ struct PatchDocumentTool: AgentTool {
         }
 
         let docName = await context.currentDocumentName ?? "当前文档"
-        // 写入前确认（当前文档局部替换）；写前内容 = 当前 tab 内存内容
+        // 写入前审阅（当前文档局部替换）；写前内容 = 当前 tab 内存内容
         if !(await context.isFileWriteAllowedForRun) {
+            if let old = await context.currentDocument {
+                let applied = PatchEngine.apply(to: old, find: find, replace: replace, all: replaceAll)
+                let appliedCount = applied.count
+                guard appliedCount > 0 else {
+                    return PatchNotFoundError(
+                        find: find,
+                        nearbyContext: PatchEngine.nearbyContext(in: old, around: find)
+                    ).errorDescription ?? "[!] 未找到匹配文本"
+                }
+                let base = WriteBaseContent.existing(old)
+                let preview = WriteDiffPreviewBuilder.make(
+                    path: docName, summary: "在 \(docName) 中替换\(matchDesc)",
+                    base: base, newContent: applied.updated)
+                guard let merged = await context.reviewFileWrite(
+                    preview, base: base, newContent: applied.updated)
+                else { return "[!] 用户已拒绝写入：\(docName)（未落盘）" }
+                do {
+                    try await context.writeDocument(merged)
+                    return "[OK] 已写入审阅后的改动（\(merged.count) 字符）"
+                } catch {
+                    return "[!] 写入失败：\(error.localizedDescription)"
+                }
+            }
+            // 写前内容不可得：退化确认条，通过后仍走精准 patch
             let preview = Self.patchPreview(
                 path: docName, summary: "在 \(docName) 中替换\(matchDesc)",
-                oldContent: await context.currentDocument,
-                find: find, replace: replace, all: replaceAll)
+                oldContent: nil, find: find, replace: replace, all: replaceAll)
             let approved = await context.confirmFileWrite(preview)
             guard approved else { return "[!] 用户已拒绝写入：\(docName)" }
         }

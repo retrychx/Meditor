@@ -63,6 +63,30 @@ extension AIAssistantPanel {
                     if let pending = convo.pendingWrite {
                         writeConfirmBar(pending)
                     }
+                    if let report = state.agentWriteSelfCheck.pendingReport {
+                        selfCheckBar(report)
+                    }
+                    // 断点续传：上次 run 失败中断（网络/超时/模型错误，非用户取消）时，
+                    // 提供「从中断处继续」——复用已完成工具调用结果续跑，而非从零重来
+                    if !convo.isResponding, convo.lastRunState?.termination == .failed {
+                        Button(action: resumeInterruptedRun) {
+                            HStack(spacing: 5) {
+                                Image(systemName: "play.circle")
+                                    .font(.system(size: 10.5, weight: .semibold))
+                                Text(L("ai.resume.continue"))
+                                    .font(.system(size: 11.5, weight: .medium))
+                            }
+                            .foregroundStyle(Color.appAccent)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .overlay(
+                                Capsule().strokeBorder(Color.appAccent.opacity(0.5), lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .help(L("ai.resume.continueHint"))
+                        .padding(.top, 2)
+                    }
                     if !convo.isResponding && convo.messages.last?.role == .assistant {
                         Button(action: regenerate) {
                             HStack(spacing: 5) {
@@ -137,6 +161,10 @@ extension AIAssistantPanel {
             .onChange(of: convo.pendingWrite?.id) { _, newID in
                 // 待确认写入出现时同样滚到底（与 pendingCommand 同理）
                 if newID != nil { DispatchQueue.main.async { scrollToEnd(proxy) } }
+            }
+            .onChange(of: state.agentWriteSelfCheck.pendingReport) { _, newReport in
+                // 自检报告条出现时滚到底（与 pendingWrite 同理）
+                if newReport != nil { DispatchQueue.main.async { scrollToEnd(proxy) } }
             }
             .onAppear {
                 DispatchQueue.main.async { proxy.scrollTo("bottom", anchor: .bottom) }
@@ -238,15 +266,22 @@ extension AIAssistantPanel {
         }
     }
 
-    /// 步骤面板尾部的用量脚注：「↑prompt ↓completion tokens · 总耗时」。
-    /// 后端未返回 usage（如 ClaudeCLI）时整体不显示，优雅降级。
+    /// 步骤面板尾部的用量脚注：「↑prompt ↓completion tokens · 缓存命中 · ≈成本 · 总耗时」。
+    /// 后端未返回 usage（如 ClaudeCLI）时整体不显示，优雅降级；
+    /// 模型价格表查不到时只省略成本部分（token 数照显）。
     @ViewBuilder
     private func usageFooter(_ runState: AgentRunState) -> some View {
         if let usage = runState.usage {
             HStack(spacing: 5) {
                 Image(systemName: "arrow.up.arrow.down")
                     .font(.system(size: 8, weight: .medium))
-                Text("↑\(usage.promptTokens.formatted()) ↓\(usage.completionTokens.formatted()) tokens")
+                Text("↑\(ModelPricing.compactTokens(usage.promptTokens)) ↓\(ModelPricing.compactTokens(usage.completionTokens)) tokens")
+                if usage.cacheReadTokens > 0 {
+                    Text("· " + L("ai.usage.cachedHit", ModelPricing.compactTokens(usage.cacheReadTokens)))
+                }
+                if let cost = ModelPricing.estimateCost(usage: usage, model: runState.modelName) {
+                    Text("· ≈" + ModelPricing.formatUSD(cost))
+                }
                 if let duration = runState.runDurationSeconds {
                     Text("· \(String(format: "%.1f", duration))s")
                 }

@@ -233,6 +233,10 @@ final class AgentContext: AgentContextProtocol {
         await doc.confirmFileWrite(preview)
     }
 
+    func reviewFileWrite(_ preview: FileWritePreview, base: WriteBaseContent, newContent: String) async -> String? {
+        await doc.reviewFileWrite(preview, base: base, newContent: newContent)
+    }
+
     func cancelPendingWriteConfirmation() {
         doc.cancelPendingWriteConfirmation()
     }

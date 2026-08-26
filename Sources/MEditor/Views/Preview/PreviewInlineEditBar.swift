@@ -104,22 +104,24 @@ struct PreviewInlineEditBar: View {
         if !extra.isEmpty { systemPrompt += "\n\n---\n\n# 附加技能\n\n" + extra }
         let userMsg = action.userInstruction(for: selectedText, document: fullContent)
 
+        let splice: (String) -> String = { fullContent.replacingCharacters(in: sourceRange, with: $0) }
+        let flash = Self.flashChange(state: state, fullContent: fullContent, sourceRange: sourceRange)
+
         // 流式执行管线与编辑器侧共享（InlineEditSession）；写回后闪示改动位置
         InlineEditSession.run(
             state: state, settings: settings,
             systemPrompt: systemPrompt, userMessage: userMsg,
             fullContent: fullContent, actionLabel: action.displayName,
-            splice: { fullContent.replacingCharacters(in: sourceRange, with: $0) },
-            onFinalize: Self.flashChange(state: state, fullContent: fullContent, sourceRange: sourceRange)
+            splice: splice,
+            onFinalize: flash
         )
 
         // 连续微调入口：对最近一次生成结果按自由指令迭代（"再短一点"…）。
         // beginStreaming（在 InlineEditSession.run 内）会清空该入口，故在调用后重新注入。
-        state.diffReview.onRefine = { [weak state] instruction in
-            guard let state else { return }
-            Self.runRefinement(state: state, settings: settings, instruction: instruction,
-                               fullContent: fullContent, sourceRange: sourceRange)
-        }
+        InlineEditSession.installRefinement(
+            state: state, settings: settings,
+            fullContent: fullContent, splice: splice, onFinalize: flash
+        )
         onDismiss?()
     }
 
@@ -139,41 +141,6 @@ struct PreviewInlineEditBar: View {
             if let flashRange = merged.literalRange(of: finalText, nearestTo: anchor) {
                 state.flashPreviewChange(sourceRange: flashRange, in: merged)
             }
-        }
-    }
-
-    /// 连续微调：以上一次生成结果为输入，按自由指令再跑一轮，流式更新 diff。
-    private static func runRefinement(
-        state: AppState,
-        settings: AppSettings,
-        instruction: String,
-        fullContent: String,
-        sourceRange: Range<String.Index>
-    ) {
-        let trimmed = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
-        let previous = state.diffReview.lastGeneratedText
-        guard !trimmed.isEmpty, !previous.isEmpty else { return }
-
-        let systemPrompt = """
-        你是文本优化助手。严格按照用户的修改指令改写给定文本，只输出改写后的文本本身，\
-        不要输出解释、前言或引号。保持原文的 Markdown 格式约定。
-        """
-        let userMsg = "待修改文本：\n\n\(previous)\n\n修改指令：\(trimmed)"
-
-        InlineEditSession.run(
-            state: state, settings: settings,
-            systemPrompt: systemPrompt, userMessage: userMsg,
-            fullContent: fullContent, actionLabel: L("ai.inline.adjust"),
-            splice: { fullContent.replacingCharacters(in: sourceRange, with: $0) },
-            useTools: false,
-            onFinalize: flashChange(state: state, fullContent: fullContent, sourceRange: sourceRange)
-        )
-
-        // beginStreaming 会清空微调入口，重新注入以便继续迭代
-        state.diffReview.onRefine = { [weak state] next in
-            guard let state else { return }
-            Self.runRefinement(state: state, settings: settings, instruction: next,
-                               fullContent: fullContent, sourceRange: sourceRange)
         }
     }
 }

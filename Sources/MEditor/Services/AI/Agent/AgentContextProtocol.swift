@@ -70,6 +70,12 @@ protocol ShellContext: AnyObject {
     /// 携带 diff 预览的写入确认（写工具在确认前预算好「写前 vs 写入」的段落级 diff）。
     /// 是协议要求而非扩展方法：保证 existential 调用动态分发到 conformer 的实现。
     func confirmFileWrite(_ preview: FileWritePreview) async -> Bool
+    /// 写前审阅（改前 diff 预览的默认主流程）：把「写前 vs 写后」交给用户逐块审阅，
+    /// 返回用户批准后的最终内容（可能与 newContent 不同——逐块接受后的合并结果）。
+    /// 返回 nil = 用户拒绝 / 全部拒绝 / 主动取消，调用方不得写入、也不应视为错误。
+    /// 「是否需要审阅」由 context 决定（GUI 默认进审阅态，headless / 全部允许直接放行），
+    /// 工具层不感知 UI 策略。是协议要求而非扩展方法：保证 existential 动态分发。
+    func reviewFileWrite(_ preview: FileWritePreview, base: WriteBaseContent, newContent: String) async -> String?
     /// 取消挂起的文件写入确认（Runner 超时/正常结束时调用），语义与
     /// cancelPendingCommandConfirmation 完全对齐：拒绝并恢复工具内挂起的 continuation。
     func cancelPendingWriteConfirmation()
@@ -87,6 +93,11 @@ extension ShellContext {
     /// （mock / headless）语义不变，diff 预览只有接入 UI 的实现才消费。
     func confirmFileWrite(_ preview: FileWritePreview) async -> Bool {
         await confirmFileWrite(preview.path, summary: preview.summary)
+    }
+    /// 默认退化为 Bool 确认条语义：批准则原样写 newContent，拒绝则 nil。
+    /// 未接入审阅 UI 的 conformer（mock / headless / 移动端）行为与此前完全一致。
+    func reviewFileWrite(_ preview: FileWritePreview, base: WriteBaseContent, newContent: String) async -> String? {
+        await confirmFileWrite(preview) ? newContent : nil
     }
     /// 默认无挂起确认——与 cancelPendingCommandConfirmation 的默认实现同理。
     func cancelPendingWriteConfirmation() {}

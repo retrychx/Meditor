@@ -1,0 +1,47 @@
+diff --git a/Sources/MEditor/Skills/SkillSnippets.swift b/Sources/MEditor/Skills/SkillSnippets.swift
+new file mode 100644
+index 0000000..4a3f2c1
+--- /dev/null
++++ b/Sources/MEditor/Skills/SkillSnippets.swift
+@@ -0,0 +1,42 @@
++import Foundation
++
++/// A reusable prompt fragment that users can insert into their own skills.
++struct SkillSnippet: Identifiable, Codable {
++    let id: UUID
++    var title: String
++    var body: String
++    var tags: [String]
++}
++
++enum SkillSnippetStore {
++    private static let key = "MEditor.skillSnippets"
++
++    static func load() -> [SkillSnippet] {
++        guard let data = UserDefaults.standard.data(forKey: key),
++              let decoded = try? JSONDecoder().decode([SkillSnippet].self, from: data)
++        else { return [] }
++        return decoded
++    }
++
++    static func save(_ snippets: [SkillSnippet]) {
++        if let data = try? JSONEncoder().encode(snippets) {
++            UserDefaults.standard.set(data, forKey: key)
++        }
++    }
++}
+diff --git a/Sources/MEditor/Views/Settings/PluginSettingsTab.swift b/Sources/MEditor/Views/Settings/PluginSettingsTab.swift
+index 9d2a1b3..7f8c44e 100644
+--- a/Sources/MEditor/Views/Settings/PluginSettingsTab.swift
++++ b/Sources/MEditor/Views/Settings/PluginSettingsTab.swift
+@@ -18,6 +18,11 @@ struct PluginSettingsTab: View {
+                 Toggle("启用技能", isOn: $skill.isEnabled)
+             }
+         }
++        Section("片段库") {
++            ForEach(snippetStore.snippets) { snippet in
++                Text(snippet.title)
++            }
++        }
+     }
+ }
