@@ -667,7 +667,7 @@ extension LocalizationManager {
         // Settings
         "settings.tab.general": ("General", "通用"),
         "settings.tab.editor": ("Editor", "编辑器"),
-        "settings.tab.sharing": ("Sharing", "分享"),
+        "settings.tab.sharing": ("Publish & Share", "发布分享"),
         "settings.section.preview": ("Preview", "预览"),
         "settings.fontSize": ("Font Size", "字体大小"),
         "settings.section.save": ("Save", "保存"),
@@ -959,8 +959,13 @@ extension LocalizationManager {
         "share.started": ("LAN sharing on", "已开启局域网分享"),
 
         // Settings
-        "settings.tab.plugins": ("Plugins", "插件"),
-        "settings.tab.paths": ("Paths", "路径"),
+        "settings.tab.plugins": ("Skills", "技能"),
+        "settings.tab.integrations": ("Integrations", "集成"),
+        "settings.tab.about": ("About", "关于"),
+        "settings.section.appearance": ("Appearance", "外观"),
+        "settings.softwareUpdate": ("Software Update", "软件更新"),
+        "settings.desc.checkUpdates": ("Check for a new version of MEditor", "检查 MEditor 是否有新版本"),
+        "settings.about.website": ("Website", "官方网站"),
         "settings.test.okModel": ("✓ Connected (model: %@)", "✓ 连接成功（model: %@）"),
         "settings.test.failed": ("✗ Connection failed: %@", "✗ 连接失败：%@"),
         "settings.test.okCLI": ("✓ Connected (CLI available)", "✓ 连接成功（CLI 可用）"),
