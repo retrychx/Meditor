@@ -43,25 +43,27 @@ struct SettingsView: View {
     private static let tagline      = "A minimal Markdown editor for macOS"
 
     enum SettingsTab: String, CaseIterable {
-        case general, ai, sharing, plugins, paths
+        case general, ai, integrations, sharing, plugins, about
 
         var label: String {
             switch self {
-            case .general: return L("settings.tab.general")
-            case .ai:      return L("settings.tab.ai")
-            case .sharing: return L("settings.tab.sharing")
-            case .plugins: return L("settings.tab.plugins")
-            case .paths:   return L("settings.tab.paths")
+            case .general:      return L("settings.tab.general")
+            case .ai:           return L("settings.tab.ai")
+            case .integrations: return L("settings.tab.integrations")
+            case .sharing:      return L("settings.tab.sharing")
+            case .plugins:      return L("settings.tab.plugins")
+            case .about:        return L("settings.tab.about")
             }
         }
 
         var icon: String {
             switch self {
-            case .general: return "slider.horizontal.3"
-            case .ai:      return "sparkles"
-            case .sharing: return "wifi"
-            case .plugins: return "puzzlepiece.extension"
-            case .paths:   return "folder"
+            case .general:      return "slider.horizontal.3"
+            case .ai:           return "sparkles"
+            case .integrations: return "puzzlepiece.extension"
+            case .sharing:      return "square.and.arrow.up"
+            case .plugins:      return "wand.and.stars"
+            case .about:        return "info.circle"
             }
         }
     }
@@ -98,11 +100,12 @@ struct SettingsView: View {
                 // Right content
                 Group {
                     switch selectedTab {
-                    case .general: generalContent
-                    case .ai:      aiContent
-                    case .sharing: sharingContent
-                    case .plugins: pluginsContent
-                    case .paths:   pathsContent
+                    case .general:      generalContent
+                    case .ai:           aiContent
+                    case .integrations: integrationsContent
+                    case .sharing:      sharingContent
+                    case .plugins:      pluginsContent
+                    case .about:        aboutContent
                     }
                 }
                 .id(selectedTab)

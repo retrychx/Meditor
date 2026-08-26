@@ -6,7 +6,8 @@ extension SettingsView {
     var generalContent: some View {
         ScrollView {
             VStack(spacing: 0) {
-                settingsGroup(title: L("theme.title")) {
+                // 外观
+                settingsGroup(title: L("settings.section.appearance")) {
                     settingsRow(label: L("theme.title"), subtitle: L("settings.desc.theme")) {
                         SettingsMenu(
                             selection: Binding(
@@ -18,19 +19,6 @@ extension SettingsView {
                         .frame(width: 170)
                     }
                     rowDivider
-                    settingsRow(label: L("ai.accentStyle"), subtitle: L("settings.desc.accent")) {
-                        SettingsMenu(
-                            selection: Binding(
-                                get: { AIAccentStyle.current(settings) },
-                                set: { settings.aiAccentStyle = $0.rawValue }
-                            ),
-                            options: AIAccentStyle.allCases.map { ($0, L($0.labelKey)) }
-                        )
-                        .frame(width: 170)
-                    }
-                }
-
-                settingsGroup(title: L("settings.section.language")) {
                     settingsRow(label: L("settings.language"), subtitle: L("settings.desc.language")) {
                         SettingsMenu(
                             selection: languageBinding,
@@ -44,6 +32,7 @@ extension SettingsView {
                     }
                 }
 
+                // 编辑器
                 settingsGroup(title: L("settings.section.editor")) {
                     settingsRow(label: L("settings.editorFont"), subtitle: L("settings.desc.editorFont")) {
                         SettingsMenu(
@@ -65,9 +54,7 @@ extension SettingsView {
                                 .frame(width: 42, alignment: .trailing)
                         }
                     }
-                }
-
-                settingsGroup(title: L("settings.section.preview")) {
+                    rowDivider
                     settingsStackedRow(label: L("settings.fontSize"), subtitle: L("settings.desc.fontSize")) {
                         HStack(spacing: DS.Space.md) {
                             Slider(value: fontSizeBinding, in: 10...28, step: 1)
@@ -80,6 +67,7 @@ extension SettingsView {
                     }
                 }
 
+                // 保存与导出
                 settingsGroup(title: L("settings.section.save")) {
                     settingsRow(label: L("settings.autoSave"), subtitle: L("settings.desc.autoSave")) {
                         Toggle("", isOn: bindableSettings.autoSave).labelsHidden()
@@ -99,33 +87,35 @@ extension SettingsView {
                             .frame(width: 130)
                         }
                     }
-                }
-
-                settingsGroup(title: L("settings.section.export")) {
+                    rowDivider
                     settingsRow(label: L("settings.exportPreflight"), subtitle: L("settings.desc.exportPreflight")) {
                         Toggle("", isOn: bindableSettings.exportPreflightEnabled).labelsHidden()
                     }
                 }
 
-                settingsGroup(title: L("settings.section.about")) {
-                    settingsRow(label: "MEditor", subtitle: L("settings.version")) {
-                        Text(UpdateController.shared.appVersion)
-                            .font(DS.Font.mono(12))
-                            .foregroundStyle(.secondary)
-                    }
+                // 存储位置（原「路径」tab，两行配置并入通用）
+                settingsGroup(title: L("paths.group")) {
+                    PathRow(
+                        icon: "folder.fill",
+                        title: L("paths.userDocs"),
+                        subtitle: L("paths.userDocsHint"),
+                        iconColor: .blue,
+                        currentPath: AppSettings.shared.userDocPath,
+                        onChoose: { chooseUserDocPath() },
+                        onClear:  { try? AppSettings.shared.setUserDocPath(nil) }
+                    )
+
                     rowDivider
-                    settingsRow(label: L("settings.autoCheckUpdates"), subtitle: L("settings.desc.autoCheckUpdates")) {
-                        Toggle("", isOn: Binding(
-                            get: { UpdateController.shared.automaticallyChecksForUpdates },
-                            set: { UpdateController.shared.automaticallyChecksForUpdates = $0 }
-                        )).labelsHidden()
-                    }
-                    rowDivider
-                    settingsRow(label: L("settings.checkUpdates")) {
-                        Button(L("settings.checkUpdates")) {
-                            UpdateController.shared.checkForUpdates()
-                        }
-                    }
+
+                    PathRow(
+                        icon: "shippingbox.fill",
+                        title: L("paths.appDocs"),
+                        subtitle: L("paths.appDocsHint"),
+                        iconColor: .orange,
+                        currentPath: AppSettings.shared.appDocPath,
+                        onChoose: { chooseAppDocPath() },
+                        onClear:  { try? AppSettings.shared.setAppDocPath(nil) }
+                    )
                 }
             }
             .padding(DS.Space.lg)
@@ -153,5 +143,76 @@ extension SettingsView {
             get: { loc.language },
             set: { loc.language = $0 }
         )
+    }
+
+    // MARK: - 存储位置
+
+    func chooseUserDocPath() {
+        Task {
+            if let url = await state.filePickerService.pickFolder(message: nil) {
+                try? AppSettings.shared.setUserDocPath(url)
+            }
+        }
+    }
+
+    func chooseAppDocPath() {
+        Task {
+            if let url = await state.filePickerService.pickFolder(message: nil) {
+                try? AppSettings.shared.setAppDocPath(url)
+            }
+        }
+    }
+}
+
+// MARK: - Path Row
+
+struct PathRow: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let iconColor: Color
+    let currentPath: URL?
+    let onChoose: () -> Void
+    let onClear: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16))
+                .foregroundStyle(iconColor)
+                .frame(width: 24, alignment: .center)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary)
+                if let url = currentPath {
+                    Text(url.path.replacingOccurrences(of:
+                        FileManager.default.homeDirectoryForCurrentUser.path, with: "~"))
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } else {
+                    Text(subtitle)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            HStack(spacing: 6) {
+                Button(L("paths.choose"), action: onChoose)
+                    .controlSize(.small)
+                if currentPath != nil {
+                    Button(L("paths.clear"), action: onClear)
+                        .controlSize(.small)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 }
