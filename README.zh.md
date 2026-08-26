@@ -221,18 +221,19 @@ MEditor/
 - [x] 斜杠命令库、选区浮动操作条、文档上下文自动附带
 - [x] 图片粘贴/拖拽自动落盘、本地历史快照、标签页右键菜单
 - [x] 导出预检 + 一键 Agent 修复、PDF 导出主题、复制为富文本
-- [x] 全局搜索（⌘⇧F）、Quick Look 插件
-- [x] 局域网分享 + Cloudflare 在线发布
+- [x] 全局搜索（⌘⇧F）、Quick Look 插件、Spotlight 索引与 Shortcuts intents
+- [x] 局域网分享 + Cloudflare 在线发布（免费档 + Pro）
 - [x] iOS 伴侣（iCloud 编辑 / 聊天 / 发布）
 - [x] 放映与专注模式、HTML 导出、预览主题、Sparkle 自动更新
+- [x] MCP Server —— 把 Agent 工具暴露给 Claude Desktop / Cursor
+- [x] Onboarding —— 首启引导、零配置 Claude CLI、脚本化演示
+- [x] Agent 运行一键回滚（run 级检查点）
+- [x] Agent 写入默认 diff 审阅、连续微调、断点续传
+- [x] 写入后自动诊断自检、Prompt 缓存、单次运行成本透明
 
-**下一步**（Phase 1–3）
-- [ ] Onboarding —— 首启引导、零配置 Claude CLI 默认后端、脚本化演示
-- [ ] Agent 运行一键回滚（run 级检查点）
-
-**后续**（Phase 4–6）
-- [ ] Spotlight 索引与 Shortcuts intents
-- [ ] MCP Server —— 把 Agent 工具暴露给 Claude Desktop / Cursor
+**后续**
+- [ ] 多窗口支持
+- [ ] 编辑器字体/字号偏好
 
 ---
 

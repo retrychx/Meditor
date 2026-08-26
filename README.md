@@ -227,18 +227,19 @@ MEditor/
 - [x] Slash command library, selection action bar, auto-attached document context
 - [x] Image paste/drag auto-save, local history snapshots, tab context menu
 - [x] Pre-export diagnostics with one-click Agent fix, PDF export themes, copy as rich text
-- [x] Global search (⌘⇧F), Quick Look plugin
-- [x] LAN share + Cloudflare online publish
+- [x] Global search (⌘⇧F), Quick Look plugin, Spotlight indexing & Shortcuts intents
+- [x] LAN share + Cloudflare online publish (free tier + Pro)
 - [x] iOS companion (iCloud edit / chat / publish)
 - [x] Presentation & focus modes, HTML export, preview themes, Sparkle auto-update
+- [x] MCP server — expose the Agent's tools to Claude Desktop / Cursor
+- [x] Onboarding — first-launch guide, zero-config Claude CLI, scripted demo
+- [x] One-click rollback of an Agent run (run-level checkpoints)
+- [x] Diff review by default for Agent writes, refine loop, resume interrupted runs
+- [x] Post-write self-check diagnostics, prompt caching, per-run cost transparency
 
-**Next** (Phase 1–3)
-- [ ] Onboarding — first-launch guide, zero-config Claude CLI default, scripted demo
-- [ ] One-click rollback of an Agent run (run-level checkpoints)
-
-**Later** (Phase 4–6)
-- [ ] Spotlight indexing & Shortcuts intents
-- [ ] MCP server — expose the Agent's tools to Claude Desktop / Cursor
+**Later**
+- [ ] Multi-window support
+- [ ] Editor font/size preferences
 
 ---
 

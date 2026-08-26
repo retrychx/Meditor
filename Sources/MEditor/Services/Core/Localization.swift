@@ -1119,6 +1119,14 @@ extension LocalizationManager {
                                        "在临时目录重跑 30 秒会议纪要整理演示；未配置 AI 时离线预演"),
         "settings.ai.replayDemoAction": ("Run Demo", "运行演示"),
 
+        // MCP 服务器（外部 Agent 接入）
+        "settings.ai.mcp": ("MCP Server", "MCP 服务器"),
+        "settings.ai.mcpHint": ("Let external agents (Claude Desktop, Cursor…) operate on your workspace via MCP — 12 tools, same sandbox as the in-app Agent",
+                                "让 Claude Desktop / Cursor 等外部 Agent 通过 MCP 协议操作你的工作区（12 个工具，与内置 Agent 同一沙箱）"),
+        "settings.ai.mcpConfigLabel": ("Claude Desktop config", "Claude Desktop 配置"),
+        "settings.ai.mcpCopy": ("Copy", "复制"),
+        "settings.ai.mcpCopied": ("MCP config copied", "MCP 配置已复制"),
+
         // 技能导入/导出（用户间分享技能）
         "plugin.import": ("Import", "导入"),
         "plugin.importFromFile": ("Import from File…", "从文件导入…"),
