@@ -69,19 +69,22 @@ final class AgentToolTests: XCTestCase {
             arguments: ["find": .string("Hello world"), "replace": .string("Hi there")],
             context: ctx
         )
-        XCTAssertEqual(ctx.patchCalls.count, 1, "应调用一次 patchDocument")
-        XCTAssertEqual(ctx.patchCalls[0].find, "Hello world")
-        XCTAssertEqual(ctx.patchCalls[0].replace, "Hi there")
-        XCTAssertTrue(result.contains("✅") || result.contains("已替换"), "成功时应有正向反馈")
+        // 改前审阅默认主流程：确认（审阅）通过后写合并后的完整内容，不重放 patchDocument
+        XCTAssertEqual(ctx.writtenContents.last, "Hi there\nSecond line\nThird line")
+        XCTAssertTrue(result.contains("[OK]"), "成功时应有正向反馈")
     }
 
     func testPatchDocument_allFlag() async throws {
+        var proposed: String? = nil
+        ctx.reviewWriteHandler = { _, p in proposed = p; return p }
         let tool = PatchDocumentTool()
         _ = try await tool.execute(
             arguments: ["find": .string("line"), "replace": .string("LINE"), "replace_all": .bool(true)],
             context: ctx
         )
-        XCTAssertTrue(ctx.patchCalls[0].all, "all=true 应传递到 context")
+        XCTAssertEqual(proposed, "Hello world\nSecond LINE\nThird LINE",
+                       "all=true 应替换全部匹配（预演内容进审阅）")
+        XCTAssertEqual(ctx.currentDocument, "Hello world\nSecond LINE\nThird LINE")
     }
 
     func testPatchDocument_notFound_returnsRichError() async throws {
@@ -107,8 +110,9 @@ final class AgentToolTests: XCTestCase {
             ],
             context: ctx
         )
-        // 指定文件时调用 patchFile，spy 同样在 patchCalls 里
-        XCTAssertFalse(ctx.patchCalls.isEmpty, "应有 patch 调用")
+        // 指定文件：审阅通过后写合并后的完整内容（writeFile），不重放 patchFile
+        XCTAssertTrue(ctx.patchCalls.isEmpty)
+        XCTAssertEqual(ctx.files["notes.md"], "# Notes\n\nUpdated notes here.\nMore content.")
     }
 
     func testPatchDocument_emptyFind_rejectedBeforeContext() async throws {

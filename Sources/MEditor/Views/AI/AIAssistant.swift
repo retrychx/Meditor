@@ -257,6 +257,11 @@ struct AIAssistantPanel: View {
         convo.lastRunState = nil
         coordinator.runCompletion(includeAutoContext: settings.aiAutoAttachContext)
     }
+
+    /// 断点续传入口（上次 run 失败中断时出现）：复用已完成的工具调用结果继续跑。
+    func resumeInterruptedRun() {
+        coordinator.resumeInterruptedRun()
+    }
 }
 
 // MARK: - Header button

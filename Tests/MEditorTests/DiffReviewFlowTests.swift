@@ -184,4 +184,60 @@ final class DiffReviewFlowTests: XCTestCase {
         XCTAssertFalse(conflict)
         XCTAssertEqual(finalized, "A\n\n用户插入\n\nB1\n\nB2\n\nC")
     }
+
+    // MARK: - 连续微调（refine）入口生命周期
+    //
+    // InlineEditSession.installRefinement 依赖的契约：beginStreaming 清空入口与上轮
+    // 生成文本，发起方在每轮 run 启动后重新注入；上轮迟到的 commit 不得复活。
+
+    func test_refineEntry_clearedByNewStream_reinjectedEachRound() {
+        let dr = DiffReviewState()
+        dr.beginStreaming(original: "原文", actionLabel: "改写")
+        XCTAssertNil(dr.onRefine, "beginStreaming 应清空微调入口")
+
+        // 首轮完成：commit 成功后由 InlineEditSession 记录生成文本、发起方注入微调入口
+        let gen1 = dr.streamGeneration
+        XCTAssertTrue(dr.commitStreamWithModified("改写 v1", generation: gen1) { _ in })
+        dr.lastGeneratedText = "改写 v1"
+        var refineCount = 0
+        dr.onRefine = { _ in refineCount += 1 }
+        XCTAssertFalse(dr.isStreaming)
+        XCTAssertEqual(dr.lastGeneratedText, "改写 v1", "上轮生成文本是微调的基础文本")
+
+        // 微调新一轮开始（beginStreaming）：入口与上轮生成文本被清空，等待重新注入
+        dr.beginStreaming(original: "原文", actionLabel: "调整")
+        XCTAssertNil(dr.onRefine)
+        XCTAssertEqual(dr.lastGeneratedText, "")
+        XCTAssertTrue(dr.isStreaming)
+
+        // 上一轮迟到的 commit 不得复活旧 diff（generation 已失效）
+        var revived = false
+        XCTAssertFalse(dr.commitStreamWithModified("迟到的 v1", generation: gen1) { _ in revived = true })
+        XCTAssertFalse(revived)
+        XCTAssertTrue(dr.isStreaming)
+
+        // 第二轮完成后入口重新注入，可继续迭代（多轮微调）
+        let gen2 = dr.streamGeneration
+        XCTAssertTrue(dr.commitStreamWithModified("改写 v2", generation: gen2) { _ in })
+        dr.lastGeneratedText = "改写 v2"
+        dr.onRefine = { _ in refineCount += 1 }
+        dr.onRefine?("再短一点")
+        XCTAssertEqual(refineCount, 1)
+    }
+
+    func test_dismiss_clearsRefineState() {
+        let dr = DiffReviewState()
+        dr.beginStreaming(original: "原文", actionLabel: "改写")
+        dr.commitStreamWithModified("改写 v1") { _ in }
+        dr.lastGeneratedText = "改写 v1"
+        dr.refineInput = "再短一点"
+        dr.onRefine = { _ in }
+
+        dr.dismiss()
+
+        XCTAssertNil(dr.onRefine)
+        XCTAssertEqual(dr.lastGeneratedText, "")
+        XCTAssertEqual(dr.refineInput, "")
+        XCTAssertFalse(dr.isPresented)
+    }
 }

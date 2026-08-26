@@ -95,4 +95,61 @@ enum InlineEditSession {
             context: AgentContext.make(appState: state)
         )
     }
+
+    // MARK: - 连续微调（refine）
+
+    /// 微调轮次的系统 prompt：纯文本改写，不带工具（省 token）。
+    private static let refineSystemPrompt = """
+    你是文本优化助手。严格按照用户的修改指令改写给定文本，只输出改写后的文本本身，\
+    不要输出解释、前言或引号。保持原文的 Markdown 格式约定。
+    """
+
+    /// 注入「继续调整」入口：首轮改写完成后挂到 diffReview（DiffModeBar 据此显示
+    /// 微调输入框）。编辑器侧与预览侧共用，保证两侧多轮微调行为一致。
+    /// - Parameters:
+    ///   - splice: 与首轮相同的拼接闭包（捕获触发时的选区范围与全文快照——微调
+    ///     轮次始终把「最新生成文本」拼回原始选区，而非在上次写回结果上叠加）。
+    ///   - onFinalize: 与首轮相同的写回后附加动作（预览侧闪示改动位置；编辑器侧 nil）。
+    static func installRefinement(
+        state: AppState,
+        settings: AppSettings,
+        fullContent: String,
+        splice: @escaping (String) -> String,
+        onFinalize: ((String, String) -> Void)? = nil
+    ) {
+        state.diffReview.onRefine = { [weak state] instruction in
+            guard let state else { return }
+            runRefinement(state: state, settings: settings, instruction: instruction,
+                          fullContent: fullContent, splice: splice, onFinalize: onFinalize)
+        }
+    }
+
+    /// 连续微调：以上一次生成结果（diffReview.lastGeneratedText，由 run 的 onComplete
+    /// 在 commit 成功后写入）为输入，按自由指令再跑一轮，流式更新 diff；完成后入口
+    /// 重新注入，可继续迭代直到用户接受或放弃。
+    private static func runRefinement(
+        state: AppState,
+        settings: AppSettings,
+        instruction: String,
+        fullContent: String,
+        splice: @escaping (String) -> String,
+        onFinalize: ((String, String) -> Void)?
+    ) {
+        let trimmed = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        let previous = state.diffReview.lastGeneratedText
+        guard !trimmed.isEmpty, !previous.isEmpty else { return }
+
+        let userMsg = "待修改文本：\n\n\(previous)\n\n修改指令：\(trimmed)"
+
+        run(
+            state: state, settings: settings,
+            systemPrompt: refineSystemPrompt, userMessage: userMsg,
+            fullContent: fullContent, actionLabel: L("ai.inline.adjust"),
+            splice: splice, useTools: false, onFinalize: onFinalize
+        )
+
+        // beginStreaming（在 run 内）会清空微调入口，重新注入以便继续迭代
+        installRefinement(state: state, settings: settings,
+                          fullContent: fullContent, splice: splice, onFinalize: onFinalize)
+    }
 }

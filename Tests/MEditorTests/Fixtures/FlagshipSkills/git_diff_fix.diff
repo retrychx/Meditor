@@ -1,0 +1,13 @@
+diff --git a/Sources/MEditor/Services/Plugin/PluginManager.swift b/Sources/MEditor/Services/Plugin/PluginManager.swift
+index 3b7a1c2..8e5f9d4 100644
+--- a/Sources/MEditor/Services/Plugin/PluginManager.swift
++++ b/Sources/MEditor/Services/Plugin/PluginManager.swift
+@@ -382,7 +382,8 @@ final class PluginManager {
+     /// 跨启动稳定的技能 ID：SHA256(标准化路径) 的前 16 个 hex 字符。
+     private func persistentID(for url: URL) -> String {
+-        let path = url.path
++        // standardizedFileURL 解析符号链接与 ".."，避免同一路径产生不同 ID
++        let path = url.standardizedFileURL.path
+         let digest = SHA256.hash(data: Data(path.utf8))
+         let hex = digest.map { String(format: "%02x", $0) }.joined()
+         return String(hex.prefix(16))

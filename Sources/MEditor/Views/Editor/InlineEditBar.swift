@@ -263,18 +263,28 @@ struct InlineEditBar: View {
         let userMsg = action.userInstruction(for: selectedText,
                                               document: state.selectedTab?.content)
 
+        let splice: (String) -> String = { replacement in
+            fullContent.replacingCharacters(in: targetRange, with: replacement)
+        }
+
         // 流式执行管线与预览侧共享（InlineEditSession）
         InlineEditSession.run(
             state: state, settings: settings,
             systemPrompt: systemPrompt, userMessage: userMsg,
             fullContent: fullContent, actionLabel: action.displayName,
-            splice: { replacement in
-                fullContent.replacingCharacters(in: targetRange, with: replacement)
-            },
+            splice: splice,
             onSettled: {
                 isLoading    = false
                 loadingLabel = ""
             }
+        )
+
+        // 连续微调入口：改写完成后 diff 顶栏出现「继续调整」输入框，对最近一次
+        // 生成结果按自由指令多轮迭代（与预览侧共用同一实现，行为对齐）。
+        // beginStreaming（在 InlineEditSession.run 内）会清空该入口，故在调用后注入。
+        InlineEditSession.installRefinement(
+            state: state, settings: settings,
+            fullContent: fullContent, splice: splice
         )
     }
 }

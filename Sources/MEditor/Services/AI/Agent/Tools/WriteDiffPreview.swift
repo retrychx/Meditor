@@ -40,7 +40,7 @@ struct FileWritePreview: Sendable {
 }
 
 /// 写前内容的来源形态（由工具层根据目标文件是否存在 / 是否可读判定）。
-enum WriteBaseContent {
+enum WriteBaseContent: Sendable {
     /// 文件已存在，写前内容已知（调用方需经 fileContentFull 取，tab 内存优先）
     case existing(String)
     /// 全新文件（diff = 纯新增）

@@ -240,6 +240,15 @@ final class AIConversation {
         lastRunStates[sessionID] = runState
     }
 
+    /// 累加指定会话的 token 用量（run 结束、后端返回了 usage 时调用）；
+    /// 同时记录最近使用的模型名，供累计成本估算。会话已删除时静默丢弃。
+    func recordUsage(_ usage: AgentUsage, model: String, sessionID: UUID) {
+        guard let si = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        sessions[si].cumulativeUsage = (sessions[si].cumulativeUsage ?? AgentUsage()) + usage
+        if !model.isEmpty { sessions[si].lastModel = model }
+        persist()
+    }
+
     // MARK: Context estimation
 
     /// estimatedTokenCount 的指纹缓存（@ObservationIgnored：纯派生数据的备忘，

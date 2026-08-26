@@ -155,9 +155,13 @@ struct RestAgentBackend: AgentBackend {
 
             // 先取 usage：include_usage 的末帧没有 choices，不能落入下方畸形行计数
             if let usageObj = obj["usage"] as? [String: Any] {
+                // OpenAI prompt caching 是服务端自动的（>1024 tokens），命中部分在
+                // prompt_tokens_details.cached_tokens 里回传；不支持的实现没有该字段，默认 0
+                let cached = (usageObj["prompt_tokens_details"] as? [String: Any])?["cached_tokens"] as? Int ?? 0
                 usage = AgentUsage(
                     promptTokens:     usageObj["prompt_tokens"]     as? Int ?? 0,
-                    completionTokens: usageObj["completion_tokens"] as? Int ?? 0
+                    completionTokens: usageObj["completion_tokens"] as? Int ?? 0,
+                    cacheReadTokens:  cached
                 )
             }
 
@@ -231,9 +235,12 @@ struct RestAgentBackend: AgentBackend {
         var stopReason = "end_turn"
         var malformedCount = 0   // 解析失败的 data 行计数，流结束后统一记录
         /// 流式 usage：message_start 带 input_tokens（及初始 output_tokens），
-        /// 各 message_delta 带累计 output_tokens（直接覆盖，不累加）
+        /// 各 message_delta 带累计 output_tokens（直接覆盖，不累加）。
+        /// 缓存量（cache_read/cache_creation）随 message_start 的 usage 回传。
         var inputTokens: Int? = nil
         var outputTokens: Int? = nil
+        var cacheReadTokens = 0
+        var cacheWriteTokens = 0
 
         for try await line in bytes.lines {
             // Anthropic SSE: ignore event lines, only parse data lines
@@ -248,11 +255,13 @@ struct RestAgentBackend: AgentBackend {
 
             switch type {
             case "message_start":
-                // 首帧携带 usage.input_tokens（prompt 用量）
+                // 首帧携带 usage.input_tokens（prompt 用量）及缓存命中/写入量
                 if let message = obj["message"] as? [String: Any],
                    let usageObj = message["usage"] as? [String: Any] {
                     inputTokens  = usageObj["input_tokens"]  as? Int ?? inputTokens
                     outputTokens = usageObj["output_tokens"] as? Int ?? outputTokens
+                    cacheReadTokens  = usageObj["cache_read_input_tokens"]      as? Int ?? cacheReadTokens
+                    cacheWriteTokens = usageObj["cache_creation_input_tokens"]  as? Int ?? cacheWriteTokens
                 }
 
             case "content_block_start":
@@ -283,9 +292,13 @@ struct RestAgentBackend: AgentBackend {
                     stopReason = sr
                 }
                 // message_delta.usage.output_tokens 是累计值，逐帧覆盖即可
-                if let usageObj = obj["usage"] as? [String: Any],
-                   let out = usageObj["output_tokens"] as? Int {
-                    outputTokens = out
+                if let usageObj = obj["usage"] as? [String: Any] {
+                    if let out = usageObj["output_tokens"] as? Int {
+                        outputTokens = out
+                    }
+                    // 部分实现会把缓存量延迟到 message_delta 才回传，顺手覆盖
+                    cacheReadTokens  = usageObj["cache_read_input_tokens"]     as? Int ?? cacheReadTokens
+                    cacheWriteTokens = usageObj["cache_creation_input_tokens"] as? Int ?? cacheWriteTokens
                 }
 
             case "error":
@@ -310,9 +323,14 @@ struct RestAgentBackend: AgentBackend {
             Self.logger.debug("Anthropic SSE: skipped \(malformedCount) malformed data line(s)")
         }
         let finishReason = stopReason == "tool_use" ? "tool_calls" : "stop"
-        // 两个方向任一帧出现过 usage 才构造；完全没收到时保持 nil（UI 降级不显示）
+        // 两个方向任一帧出现过 usage 才构造；完全没收到时保持 nil（UI 降级不显示）。
+        // Anthropic 的 input_tokens 不含缓存量，这里加回，与 OpenAI 口径（prompt_tokens
+        // 含 cached_tokens）对齐为「全部输入 token」，成本计算/展示才有统一基准。
         let usage: AgentUsage? = (inputTokens != nil || outputTokens != nil)
-            ? AgentUsage(promptTokens: inputTokens ?? 0, completionTokens: outputTokens ?? 0)
+            ? AgentUsage(promptTokens: (inputTokens ?? 0) + cacheReadTokens + cacheWriteTokens,
+                         completionTokens: outputTokens ?? 0,
+                         cacheReadTokens: cacheReadTokens,
+                         cacheWriteTokens: cacheWriteTokens)
             : nil
         return AgentCompletionResponse(text: accText, toolCalls: toolCalls, finishReason: finishReason, usage: usage)
     }
@@ -378,7 +396,16 @@ struct RestAgentBackend: AgentBackend {
 
         // system 单独提取，其余按 Anthropic 多轮格式组装
         let system = messages.first(where: { $0.role == .system })?.content ?? ""
-        let convo  = buildAnthropicMessages(from: messages)
+        var convo  = buildAnthropicMessages(from: messages)
+        // prompt caching 只对 Anthropic 官方端点开启：自定义 baseURL 可能是
+        // 严格校验的第三方中转（one-api/new-api 等），对未知字段直接 400。
+        let cacheEnabled: Bool = {
+            guard !config.baseURL.isEmpty,
+                  let host = URL(string: config.baseURL)?.host()?.lowercased()
+            else { return true }   // 默认官方端点
+            return host == "api.anthropic.com"
+        }()
+        if cacheEnabled { Self.applyCacheBreakpoint(to: &convo) }
 
         var payload: [String: Any] = [
             "model":      config.model,
@@ -386,11 +413,49 @@ struct RestAgentBackend: AgentBackend {
             "messages":   convo
         ]
         if stream       { payload["stream"] = true }
-        if !system.isEmpty { payload["system"] = system }
-        if !tools.isEmpty  { payload["tools"]  = tools.map { $0.spec.anthropicDict } }
+        // prompt caching（cache_control: ephemeral，规范上限 4 个断点，这里用 3 个）：
+        // ① tools 末尾：工具定义体积大且每次 run 固定，是最稳的可复用前缀
+        // ② system 末尾：系统提示含文档全文/技能注入，同会话内稳定
+        // ③ 消息列表末尾：见上。
+        if !system.isEmpty {
+            if cacheEnabled {
+                payload["system"] = [[
+                    "type": "text",
+                    "text": system,
+                    "cache_control": ["type": "ephemeral"]
+                ]]
+            } else {
+                payload["system"] = system
+            }
+        }
+        if !tools.isEmpty {
+            var toolDicts = tools.map { $0.spec.anthropicDict }
+            if cacheEnabled {
+                toolDicts[toolDicts.count - 1]["cache_control"] = ["type": "ephemeral"]
+            }
+            payload["tools"] = toolDicts
+        }
 
         req.httpBody = try JSONSerialization.data(withJSONObject: payload)
         return req
+    }
+
+    /// 给消息列表最后一条的最后一个内容块打 cache_control 断点
+    /// （content 为字符串时升级为块数组——两种形态对 Anthropic 都合法）。
+    private static func applyCacheBreakpoint(to convo: inout [[String: Any]]) {
+        guard var last = convo.last else { return }
+        var blocks: [[String: Any]]
+        if let arr = last["content"] as? [[String: Any]] {
+            blocks = arr
+        } else if let str = last["content"] as? String, !str.isEmpty {
+            blocks = [["type": "text", "text": str]]
+        } else {
+            return
+        }
+        guard !blocks.isEmpty else { return }
+        blocks[blocks.count - 1]["cache_control"] = ["type": "ephemeral"]
+        last["content"] = blocks
+        convo[convo.count - 1] = last
     }
 
     /// AgentMessage 数组 → Anthropic 多轮消息格式。
@@ -520,9 +585,12 @@ struct RestAgentBackend: AgentBackend {
             }
 
         let usageObj = json["usage"] as? [String: Any]
-        let usage = usageObj.map {
-            AgentUsage(promptTokens: $0["prompt_tokens"] as? Int ?? 0,
-                       completionTokens: $0["completion_tokens"] as? Int ?? 0)
+        let usage = usageObj.map { u in
+            // prompt_tokens_details.cached_tokens：自动 prompt caching 的命中量（缺失则 0）
+            let cached = (u["prompt_tokens_details"] as? [String: Any])?["cached_tokens"] as? Int ?? 0
+            return AgentUsage(promptTokens: u["prompt_tokens"] as? Int ?? 0,
+                              completionTokens: u["completion_tokens"] as? Int ?? 0,
+                              cacheReadTokens: cached)
         }
         return AgentCompletionResponse(text: text, toolCalls: toolCalls, finishReason: finishReason, usage: usage)
     }
@@ -558,9 +626,15 @@ struct RestAgentBackend: AgentBackend {
 
         let finishReason = stopReason == "tool_use" ? "tool_calls" : "stop"
         let usageObj = json["usage"] as? [String: Any]
-        let usage = usageObj.map {
-            AgentUsage(promptTokens: $0["input_tokens"] as? Int ?? 0,
-                       completionTokens: $0["output_tokens"] as? Int ?? 0)
+        let usage = usageObj.map { u in
+            // Anthropic 的 input_tokens 不含缓存量（cache_read/cache_creation 单列），
+            // 加回后与 OpenAI 口径对齐为「全部输入 token」（见 AgentUsage 头注释）
+            let cacheRead  = u["cache_read_input_tokens"] as? Int ?? 0
+            let cacheWrite = u["cache_creation_input_tokens"] as? Int ?? 0
+            return AgentUsage(promptTokens: (u["input_tokens"] as? Int ?? 0) + cacheRead + cacheWrite,
+                              completionTokens: u["output_tokens"] as? Int ?? 0,
+                              cacheReadTokens: cacheRead,
+                              cacheWriteTokens: cacheWrite)
         }
         return AgentCompletionResponse(text: text, toolCalls: toolCalls, finishReason: finishReason, usage: usage)
     }

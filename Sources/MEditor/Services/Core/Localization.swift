@@ -1145,6 +1145,29 @@ extension LocalizationManager {
         "skill.transfer.error.contentType": ("The link did not return a Markdown/text file (%@)",
                                              "链接返回的不是 Markdown/文本文件（%@）"),
         "skill.transfer.error.notUTF8": ("The file is not valid UTF-8 text", "文件不是有效的 UTF-8 文本"),
+
+        // AI usage / cost transparency（prompt 缓存命中与会话累计成本）
+        "ai.usage.cachedHit": ("cached %@", "缓存命中 %@"),
+        "ai.usage.sessionTotal": ("Total %@ tokens", "累计 %@ tokens"),
+
+        // 改前 diff 审阅（agent 写操作默认主流程）
+        "settings.ai.autoApplyWrites": ("Auto-apply Agent Changes", "自动应用 Agent 改动"),
+        "settings.ai.autoApplyWritesHint": ("Write files after a simple confirmation instead of reviewing each change in the diff view first",
+                                            "写操作只弹确认条直接落盘，不先进入逐块 diff 审阅"),
+        "diff.totalCount": ("%d changes", "共 %d 处改动"),
+
+        // Agent 断点续传（运行失败中断后从中断处继续）
+        "ai.resume.continue": ("Continue from Interruption", "从中断处继续"),
+        "ai.resume.continueHint": ("Resume the interrupted run — completed tool steps are kept, only the remaining work is redone",
+                                   "带着已完成的步骤从中断处继续运行，不从头重来"),
+
+        // Agent 写后自检（AI 是唯一作者：写工具内容生效后自动跑本地诊断并分级报告）
+        "ai.selfcheck.title": ("Post-write Self-check", "写后自检"),
+        "ai.selfcheck.toast": ("Self-check found %d issue(s) — see AI panel", "自检发现 %d 个问题——见 AI 面板"),
+        "ai.selfcheck.summary": ("Found %d issue(s): %d auto-fixable, %d need manual review",
+                                 "发现 %d 个问题：%d 个可一键修复，%d 个需人工确认"),
+        "ai.selfcheck.fix": ("Fix with Agent (%d)", "一键修复（%d）"),
+        "ai.selfcheck.dismiss": ("Dismiss", "忽略"),
     ]
 
     static let table: [String: (en: String, zh: String)] = {

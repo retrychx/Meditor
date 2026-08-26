@@ -144,7 +144,9 @@ final class AgentRunner {
         wasTruncated       = false
         state.stall        = nil
         state.usage        = nil
+        state.modelName    = config.model   // 成本估算用（UI 查价格表）
         state.runDurationSeconds = nil
+        state.termination  = .running
         lastThinkingIndex  = nil
         isRunning          = true
 
@@ -173,6 +175,7 @@ final class AgentRunner {
                 if let timedOut = await group.next(), timedOut, self.isRunning,
                    self.runGeneration == generation {
                     self.error     = "操作超时（\(Int(self.timeoutSeconds))s），请重试或简化任务"
+                    self.state.termination = .failed   // 超时可断点续传
                     self.isRunning = false
                     self.runTask   = nil
                     // 拒绝挂起的命令确认：恢复工具内 withCheckedContinuation，否则确认框
@@ -194,6 +197,8 @@ final class AgentRunner {
         // 不把状态复位会导致 UI 一直停在"运行中"。确认由调用方（AIConversation）负责 dismiss，
         // 之后 _run 的 cleanup 会再次幂等地走一遍收尾流程。
         isRunning = false
+        // 用户主动取消：不提供断点续传入口（cleanup 不得覆盖此标记）
+        state.termination = .cancelled
         if finalText.isEmpty && error == nil {
             error = "已取消"
         }
@@ -500,6 +505,11 @@ final class AgentRunner {
         isRunning         = false
         lastThinkingIndex = nil
         runTask           = nil
+        // 结束方式分类：用户取消（cancel 已标记）不覆盖；其余按有无错误归类——
+        // UI 据此决定是否在错误旁提供「从中断处继续」（仅 .failed 可续跑）
+        if state.termination != .cancelled {
+            state.termination = (error == nil) ? .completed : .failed
+        }
         state.runDurationSeconds = Date().timeIntervalSince(runStartedAt)
         // 正常结束也拒绝挂起的命令确认（幂等），兜底防 continuation 泄漏
         context.cancelPendingCommandConfirmation()

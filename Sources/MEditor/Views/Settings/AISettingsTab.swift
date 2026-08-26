@@ -159,6 +159,18 @@ extension SettingsView {
 
                     rowDivider
 
+                    settingsRow(
+                        label: L("settings.ai.autoApplyWrites"),
+                        subtitle: L("settings.ai.autoApplyWritesHint")
+                    ) {
+                        Toggle("", isOn: bindableSettings.aiAgentAutoApplyWrites)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                    }
+
+                    rowDivider
+
                     settingsStackedRow(
                         label: L("settings.ai.customPrompt"),
                         subtitle: L("settings.ai.customPromptHint")

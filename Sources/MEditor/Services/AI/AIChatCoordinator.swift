@@ -100,6 +100,44 @@ final class AIChatCoordinator {
             convo.messages.append(notice)
         }
 
+        startAgentRun(agentMessages: agentMessages, config: config, context: context,
+                      tools: tools, checkpoint: checkpoint)
+    }
+
+    /// 断点续传：上次 run 因网络/超时/模型错误中断（termination == .failed）时，
+    /// 复用已保存的 agent 历史（原始指令 + 已完成工具调用结果）从中断处继续，
+    /// 而不是从零重来。用户取消（.cancelled）不提供续跑入口。
+    func resumeInterruptedRun() {
+        guard !convo.isResponding else { return }
+        guard convo.lastRunState?.termination == .failed else { return }
+        // includeFullDoc: false——文档全文已在历史首轮注入过，只提醒文档名
+        // （成本口径与 runCompletion 的后续轮一致）
+        let sysContent = systemContext(includeFullDoc: false)
+        guard let agentMessages = AgentResumeContext.makeMessages(
+            history: convo.agentHistory, freshSystemPrompt: sysContent
+        ) else { return }
+
+        convo.isResponding = true
+        convo.respondingSessionID = convo.activeID
+
+        let config     = AIConfig.current(settings, scene: .agent)
+        // 续跑沿用失败 run 的 checkpoint（引用类型，快照累加）：回滚入口覆盖
+        // 「失败 run 已落盘的写入 + 续跑的写入」完整链路；没有则新建。
+        let checkpoint = convo.lastRunState?.checkpoint ?? AgentRunCheckpoint()
+        let context    = AgentContext.make(appState: state, checkpoint: checkpoint)
+        startAgentRun(agentMessages: agentMessages, config: config, context: context,
+                      tools: BuiltinAgentTools.all, checkpoint: checkpoint)
+    }
+
+    /// 启动 AgentRunner 并接线全部回调（按发起会话定向写回）。
+    /// runCompletion 与断点续传共用：差别只在 agentMessages 的构造方式。
+    private func startAgentRun(
+        agentMessages: [AgentMessage],
+        config: AIConfig,
+        context: AgentContext,
+        tools: [any AgentTool],
+        checkpoint: AgentRunCheckpoint
+    ) {
         // 在消息列表末尾加一个空 assistant 占位，用于流式显示
         let replyMessage = AIChatMessage(role: .assistant, text: "")
         let replyID      = replyMessage.id
@@ -179,6 +217,12 @@ final class AIChatCoordinator {
             // 保存完整的 agent 消息历史（含工具调用），下次对话时直接使用——写回发起会话
             if let fm = runner?.finalMessages, !fm.isEmpty {
                 convo.setAgentHistory(fm, sessionID: sessionID)
+            }
+
+            // 会话级累计用量：run 收尾时把本轮 usage 累加进持久化会话（成本透明，
+            // 历史列表展示「累计 tokens ≈ $」）。后端未返回 usage（如 ClaudeCLI）则跳过。
+            if let usage = runner?.state.usage {
+                convo.recordUsage(usage, model: config.model, sessionID: sessionID)
             }
 
             // 保存本次运行状态快照（per-session：步骤面板跟随发起会话，不挂到别的会话上）

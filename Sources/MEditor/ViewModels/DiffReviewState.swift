@@ -60,6 +60,11 @@ final class DiffReviewState {
     /// - markdownVsHTML: receives `modifiedContent` (the generated HTML).
     var onFinalize: ((String) -> Void)?
 
+    /// 用户主动放弃审阅（dismiss / skipAll）时的回调——agent 写审阅用它恢复
+    /// 工具内挂起的 continuation（返回 nil = 不落盘）。finalize 成功后 dismiss
+    /// 也会经过同一入口，调用方需自行保证幂等。
+    var onCancel: (() -> Void)?
+
     // MARK: 快照过期防护（写回时重定位）
 
     /// 写回那一刻读取当前文档内容的闭包（由发起方注入，如行内编辑）。
@@ -83,6 +88,7 @@ final class DiffReviewState {
         diffs           = []
         isStreaming     = true
         onFinalize      = nil
+        onCancel        = nil
         onRefine        = nil      // 连续微调入口由发起方在调用后重新注入
         currentContentProvider = nil   // 快照过期防护闭包由发起方在调用后重新注入
         onRebaseConflict     = nil
@@ -145,6 +151,7 @@ final class DiffReviewState {
         self.streamedContent  = ""
         self.streamingAction  = ""
         self.onRefine         = nil
+        self.onCancel         = nil
         self.currentContentProvider = nil
         self.onRebaseConflict     = nil
         self.lastGeneratedText = ""
@@ -326,6 +333,7 @@ final class DiffReviewState {
         activeStreamTask = nil
         activeRunner?.cancel()
         activeRunner = nil
+        let cancelHook = onCancel
         isPresented      = false
         isLoading        = false
         isStreaming      = false
@@ -336,11 +344,13 @@ final class DiffReviewState {
         originalContent  = ""
         modifiedContent  = ""
         onFinalize       = nil
+        onCancel         = nil
         onRefine         = nil
         currentContentProvider = nil
         onRebaseConflict     = nil
         lastGeneratedText = ""
         refineInput      = ""
+        cancelHook?()   // 状态清空后再通知「用户放弃审阅」，避免回调里读到半清空状态
     }
 
     // MARK: Private

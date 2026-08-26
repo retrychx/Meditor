@@ -17,6 +17,19 @@ struct DocumentIssue: Identifiable, Equatable, Sendable {
             if case .missingImage = self { return false }
             return true
         }
+
+        /// 写后自检的分级（比 isAgentFixable 更严）：文本层面可确定性修复、
+        /// 结果不依赖外部因素的才进「一键修复」列表。
+        /// deadLink 的目标文件可能稍后才被创建（Agent 分批写文件的中途态），
+        /// 与 missingImage 一样只报告不自动改。
+        var isDeterministicFix: Bool {
+            switch self {
+            case .duplicateHeading, .headingLevelSkip, .emptyHeading, .unclosedCodeBlock:
+                return true
+            case .deadLink, .missingImage:
+                return false
+            }
+        }
     }
 
     /// 严重度：error 会让导出产物明显缺内容，warning 只是质量提醒。

@@ -35,6 +35,9 @@ final class MockAgentContext: AgentContextProtocol {
     var confirmedWrites:    [(path: String, summary: String)] = []
     /// 携带 diff 预览的写入确认 spy（与 confirmedWrites 同步记录，另存完整 preview）
     var confirmedWritePreviews: [FileWritePreview]           = []
+    /// 写前审阅 spy：记录进入审阅的 preview 与提议内容
+    var reviewedWritePreviews: [FileWritePreview]            = []
+    var reviewedWriteContents:  [String]                     = []
 
     // MARK: - Error injection
 
@@ -52,6 +55,9 @@ final class MockAgentContext: AgentContextProtocol {
     /// 文件写入确认的注入结果 / run 级「全部允许」开关（spy 语义同 commandConfirmResult）
     var writeConfirmResult: Bool                    = true
     var fileWriteAllowedForRun: Bool                = false
+    /// 写前审阅结果注入：返回批准后的最终内容（可改写），nil = 用户拒绝/取消。
+    /// 未设置时走协议默认语义——转发 confirmFileWrite（Bool 确认），保持既有测试不变。
+    var reviewWriteHandler: ((FileWritePreview, String) -> String?)? = nil
 
     func setAllowedCommandPatterns(_ patterns: [String]?) {
         allowedCommandPatterns = patterns?.isEmpty == false ? patterns : nil
@@ -190,6 +196,14 @@ final class MockAgentContext: AgentContextProtocol {
         return writeConfirmResult
     }
 
+    func reviewFileWrite(_ preview: FileWritePreview, base: WriteBaseContent, newContent: String) async -> String? {
+        reviewedWritePreviews.append(preview)
+        reviewedWriteContents.append(newContent)
+        if let handler = reviewWriteHandler { return handler(preview, newContent) }
+        // 默认与协议扩展一致：退化为 Bool 确认条语义
+        return await confirmFileWrite(preview) ? newContent : nil
+    }
+
     var isFileWriteAllowedForRun: Bool { fileWriteAllowedForRun }
 
     func isCommandApproved(_ key: String) -> Bool {
@@ -237,6 +251,8 @@ final class MockAgentContext: AgentContextProtocol {
         confirmedCommands  = []
         confirmedWrites    = []
         confirmedWritePreviews = []
+        reviewedWritePreviews = []
+        reviewedWriteContents = []
         _approvedKeys      = []
     }
 

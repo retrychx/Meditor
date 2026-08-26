@@ -1,6 +1,13 @@
 import Foundation
 import Observation
 
+/// 一次 run 的结束方式（断点续传入口判定用）。
+/// - failed（网络/超时/模型错误/停滞/超步数）：可带着已完成的工具调用结果续跑；
+/// - cancelled（用户主动取消）：不提供「继续」入口——用户已明确放弃本次运行。
+enum AgentRunTermination: String, Equatable, Sendable {
+    case running, completed, cancelled, failed
+}
+
 /// 停滞检测中断时的诊断信息：哪个工具卡住、连续失败次数、最后一次错误摘要。
 /// 由 AgentRunner 在中断 run 时写入，供 UI 展示与日志排查。
 struct AgentStallDiagnostic: Sendable, Equatable {
@@ -11,13 +18,26 @@ struct AgentStallDiagnostic: Sendable, Equatable {
 
 /// 单次后端响应 / 单次 run 的 token 用量。
 /// 后端不返回 usage 字段时（如 ClaudeCLI 子进程）整体为 nil，不构造零值。
-struct AgentUsage: Sendable, Equatable {
+///
+/// 口径约定（成本计算依赖此归一）：
+///   - promptTokens = 全部输入 token（含缓存命中与缓存写入部分）。
+///     OpenAI 的 prompt_tokens 本来就含 cached_tokens；Anthropic 的 input_tokens
+///     不含缓存量，解析侧已把 cache_read/cache_creation 加回来，两边口径一致。
+///   - cacheReadTokens / cacheWriteTokens 是 promptTokens 的子集，计价时按
+///     (promptTokens - cacheRead - cacheWrite) × input 价 + 各自缓存价 计算。
+struct AgentUsage: Sendable, Equatable, Codable {
     var promptTokens = 0
     var completionTokens = 0
+    /// 缓存命中的输入 token（Anthropic cache_read / OpenAI cached_tokens）
+    var cacheReadTokens = 0
+    /// 写入缓存的输入 token（仅 Anthropic cache_creation；OpenAI 无此概念，保持 0）
+    var cacheWriteTokens = 0
 
     static func + (lhs: AgentUsage, rhs: AgentUsage) -> AgentUsage {
         AgentUsage(promptTokens: lhs.promptTokens + rhs.promptTokens,
-                   completionTokens: lhs.completionTokens + rhs.completionTokens)
+                   completionTokens: lhs.completionTokens + rhs.completionTokens,
+                   cacheReadTokens: lhs.cacheReadTokens + rhs.cacheReadTokens,
+                   cacheWriteTokens: lhs.cacheWriteTokens + rhs.cacheWriteTokens)
     }
 }
 
@@ -37,10 +57,15 @@ final class AgentRunState {
     var stall: AgentStallDiagnostic? = nil
     /// 本轮累计 token 用量（各 step 响应 usage 之和；后端不返回 usage 时为 nil，UI 降级不显示）
     var usage: AgentUsage? = nil
+    /// 本次 run 使用的模型名（成本估算用；UI 据此查内置价格表，查不到则只显示 token 数）
+    var modelName: String? = nil
     /// 本轮总耗时（run 收尾时写入；进行中为 nil）
     var runDurationSeconds: TimeInterval? = nil
     /// 本次 run 的文件快照（一键回滚用）。run 结束且确有写入时由发起方
     /// （AIChatCoordinator）挂入；仅内存、不落盘——快照随本状态一起丢弃，
     /// 重启后不可回滚（取舍见 AgentRunCheckpoint 头注释）。
     var checkpoint: AgentRunCheckpoint? = nil
+    /// 结束方式（断点续传判定）：.failed 时 UI 提供「从中断处继续」，
+    /// .cancelled（用户主动取消）不提供。由 AgentRunner 在收尾/cancel 时写入。
+    var termination: AgentRunTermination = .running
 }

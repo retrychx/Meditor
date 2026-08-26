@@ -19,6 +19,10 @@ struct AISession: Identifiable, Codable, Sendable {
     /// 输入框草稿（按会话独立保存，切换/新建会话不再丢失）。
     /// 可选类型保证旧版 ai-sessions.json（无此字段）解码兼容。
     var draft: String? = nil
+    /// 会话级累计 token 用量（每次 run 结束时累加；可选类型保证旧数据解码兼容）。
+    var cumulativeUsage: AgentUsage? = nil
+    /// 最近一次 run 使用的模型名（累计成本估算用；会话可能跨模型，按最近模型近似）
+    var lastModel: String? = nil
 }
 
 // MARK: - Accent style
