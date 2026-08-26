@@ -208,6 +208,25 @@ extension SettingsView {
                         }
                     }
                 }
+
+                // MARK: MCP 服务器（外部 Agent 接入）
+                settingsGroup(title: L("settings.ai.mcp")) {
+                    settingsStackedRow(label: L("settings.ai.mcpConfigLabel"), subtitle: L("settings.ai.mcpHint")) {
+                        HStack(alignment: .top, spacing: 8) {
+                            Text(mcpConfigSnippet)
+                                .font(.system(size: 11, design: .monospaced))
+                                .textSelection(.enabled)
+                                .padding(8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            Button(L("settings.ai.mcpCopy")) {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(mcpConfigSnippet, forType: .string)
+                                state.showToast(L("settings.ai.mcpCopied"), icon: "doc.on.doc")
+                            }
+                        }
+                    }
+                }
             }
             .padding(DS.Space.lg)
         }
