@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // MARK: - AI tab
 
@@ -197,9 +198,45 @@ extension SettingsView {
                         }
                     }
                 }
+
+                // MARK: MCP 服务器（外部 Agent 接入）
+                settingsGroup(title: L("settings.ai.mcp")) {
+                    settingsStackedRow(label: L("settings.ai.mcpConfigLabel"), subtitle: L("settings.ai.mcpHint")) {
+                        HStack(alignment: .top, spacing: 8) {
+                            Text(mcpConfigSnippet)
+                                .font(.system(size: 11, design: .monospaced))
+                                .textSelection(.enabled)
+                                .padding(8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            Button(L("settings.ai.mcpCopy")) {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(mcpConfigSnippet, forType: .string)
+                                state.showToast(L("settings.ai.mcpCopied"), icon: "doc.on.doc")
+                            }
+                        }
+                    }
+                }
             }
             .padding(DS.Space.lg)
         }
+    }
+
+    /// Claude Desktop 的 MCP 配置片段：命令指向当前运行的 app 内二进制，
+    /// 工作区默认填当前打开的目录（未打开时留占位提示用户替换）。
+    var mcpConfigSnippet: String {
+        let binary = Bundle.main.executableURL?.path ?? "/Applications/MEditor.app/Contents/MacOS/MEditor"
+        let workspace = state.rootURL?.path ?? "/path/to/your/workspace"
+        return """
+        {
+          "mcpServers": {
+            "meditor": {
+              "command": "\(binary)",
+              "args": ["mcp", "--workspace", "\(workspace)"]
+            }
+          }
+        }
+        """
     }
 
     // MARK: - Claude Code 监听
