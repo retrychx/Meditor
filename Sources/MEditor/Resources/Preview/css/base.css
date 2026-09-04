@@ -65,6 +65,10 @@ blockquote {
   color: var(--blockquote-text);
   border-left: 4px solid var(--blockquote-border);
 }
+/* 引用块内的段落不再叠加全局 p 的上下外边距——否则左边竖条会
+   比文字多出上下各 16px 的空心区域（看起来像解析出了空行） */
+blockquote p:first-child { margin-top: 0; }
+blockquote p:last-child { margin-bottom: 0; }
 
 code {
   font-family: 'SF Mono', Menlo, Consolas, monospace;

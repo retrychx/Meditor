@@ -303,7 +303,9 @@ private struct ToolbarItemGlassDisabler: NSViewRepresentable {
 // MARK: - Scroll edge effects
 
 private extension View {
-    /// 关掉 macOS 26 滚动边缘的玻璃/渐隐圆晕；低版本系统本来就没有，直接透传。
+    /// 关掉 macOS 26 滚动边缘的玻璃/渐隐圆晕：用 `.hard` 在边缘硬裁剪。
+    /// 注意参数是 Optional——传 `.none` 会被解析成 nil（= automatic 默认效果），
+    /// 不是「关闭效果」。低版本系统本来就没有，直接透传。
     /// #if compiler 守卫：API 只在 macOS 26 SDK（Xcode 26 / Swift 6.2）里存在，
     /// CI 的 Xcode 16（macOS 15 SDK）编译期就找不到符号，#available 救不了。
     @ViewBuilder
@@ -311,8 +313,8 @@ private extension View {
         #if compiler(>=6.2)
         if #available(macOS 26.0, *) {
             self
-                .scrollEdgeEffectStyle(.none, for: .leading)
-                .scrollEdgeEffectStyle(.none, for: .trailing)
+                .scrollEdgeEffectStyle(.hard, for: .leading)
+                .scrollEdgeEffectStyle(.hard, for: .trailing)
         } else {
             self
         }
