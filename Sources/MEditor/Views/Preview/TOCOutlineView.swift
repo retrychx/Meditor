@@ -8,22 +8,39 @@ struct TOCOutlineView: View {
     let isLoading: Bool
     let onSelect: (TOCItem) -> Void
 
+    /// 滚动内容顶部 y（named 坐标系内），< 0 表示已向下滚动。
+    @State private var scrollMinY: CGFloat = 0
+
     var body: some View {
-        // macOS 26：detail 列通顶到窗口顶缘（toolbar 是透明玻璃）。ScrollView
-        // 的 frame 一旦碰到顶部安全区，滚动内容就会延伸进横带（实测安全区高
-        // 52pt）——但整条 52pt 都让出来又显得 outline 顶部留白太多。折中：
-        // frame 伸进横带 14pt（tab 胶囊下缘约在 37pt 处），配合 .hard 边缘
-        // 效果在 frame 顶缘硬裁剪——内容可占用横带下部、但绝不越过裁剪线。
-        // 注意：frame 伸进安全区后系统自动给滚动内容加剩余的安全区内边距
-        // （初始内容会从 52pt 而不是 38pt 开始），用等量的反向 padding 抵消，
-        // 保证初始位置和滚动后的裁剪线一致。
+        // macOS 26：detail 列通顶到窗口顶缘（toolbar 是 52pt 透明玻璃），
+        // ScrollView 的 frame 碰到顶部安全区后，滚动内容会延伸进横带。
+        // 处理：frame 顶缘停在 tab 胶囊下缘（安全区 - 14pt），配合 .hard
+        // 在 frame 顶缘硬裁剪。系统的自动安全区内边距/边缘渐隐都不可靠
+        // （内边距让初始内容过低，.soft 会把初始内容也淡化），所以渐隐
+        // 完全自己做：仅在发生滚动后，在 frame 顶部盖一条栏背景色的渐变
+        // 遮罩，未滚动时遮罩不存在，初始内容永远是不透明的。
         GeometryReader { geo in
-            let clipOffset = topClipOffset(geo)
-            outlineList(topInsetCompensation: clipOffset - geo.safeAreaInsets.top)
-                .padding(.top, clipOffset)
+            outlineList
+                .overlay(alignment: .top) { topFadeOverlay }
+                .padding(.top, topClipOffset(geo))
         }
         // 平面化（Apple 备忘录式）：TOC 是预览左缘的一个普通栏，
         // 背景和右侧分隔线由 PreviewPanel 提供，不再自成悬浮卡片。
+    }
+
+    /// 滚动后才出现的顶部渐隐遮罩：栏背景色 → 透明，盖在裁剪线下方 14pt，
+    /// 让滚上去的内容「溶进」栏背景而不是撞上硬边。
+    private var topFadeOverlay: some View {
+        LinearGradient(
+            colors: [theme.editorBackground, theme.editorBackground.opacity(0)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .frame(height: 14)
+        .frame(maxWidth: .infinity)
+        .opacity(scrollMinY < -1 ? 1 : 0)
+        .animation(.easeInOut(duration: 0.15), value: scrollMinY < -1)
+        .allowsHitTesting(false)
     }
 
     /// macOS 26+ 躲开 toolbar 横带但吃回其下部 14pt；旧系统 detail 列本来就
@@ -35,11 +52,19 @@ struct TOCOutlineView: View {
         return 0
     }
 
-    /// - Parameter topInsetCompensation: 抵消系统自动安全区内边距的反向值（≤0）。
-    private func outlineList(topInsetCompensation: CGFloat) -> some View {
+    private var outlineList: some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
+                    // 滚动位置探针：把内容顶部 y 通过 preference 报出去
+                    GeometryReader { probe in
+                        Color.clear.preference(
+                            key: TOCScrollOffsetKey.self,
+                            value: probe.frame(in: .named(Self.scrollSpace)).minY
+                        )
+                    }
+                    .frame(width: 0, height: 0)
+
                     Text("OUTLINE")
                         .font(.system(size: 9.5, weight: .semibold))
                         .foregroundStyle(.tertiary)
@@ -67,10 +92,10 @@ struct TOCOutlineView: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.top, 4)
-                // 抵消系统的自动顶部安全区内边距（macOS 26+ 为负值，其余为 0）
-                .padding(.top, topInsetCompensation)
                 .padding(.bottom, 10)
             }
+            .coordinateSpace(name: Self.scrollSpace)
+            .onPreferenceChange(TOCScrollOffsetKey.self) { scrollMinY = $0 }
             .onChange(of: activeLineIndex) { _, newIdx in
                 guard newIdx >= 0 else { return }
                 DispatchQueue.main.async {
@@ -85,6 +110,16 @@ struct TOCOutlineView: View {
         // 初始（未滚动）内容也在渐隐区内，会被误伤成半透明。
         // 也不要传 .none：参数是 Optional，.none = nil = 系统默认效果。
         .topScrollEdgeHardClipIfAvailable()
+    }
+
+    private static let scrollSpace = "tocOutlineScroll"
+}
+
+/// TOC 滚动位置 preference（内容顶部在 named 坐标系中的 minY）。
+private struct TOCScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
