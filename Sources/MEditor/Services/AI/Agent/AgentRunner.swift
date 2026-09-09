@@ -73,7 +73,7 @@ final class AgentRunner {
     private static let parallelReadOnlyTools: Set<String> = [
         "read_document", "search_document",
         "list_files", "read_file", "search_workspace",
-        "get_html_template",
+        "get_html_template", "load_skill",
     ]
 
     /// 运行代际计数：cancel() 会同步放行 isRunning，但旧 _run 可能仍卡在不可取消点
@@ -138,6 +138,23 @@ final class AgentRunner {
         context: any AgentContextProtocol
     ) {
         guard !isRunning else { return }
+
+        // Agent Skills（渐进披露）：每次 run 开始重扫技能目录（目录很小，直接重扫，
+        // 天然覆盖工作区切换与目录内容变更），再把「名称 + 描述 + 来源」的目录段追加到
+        // system 消息——技能正文不进系统提示，模型按需经 load_skill 工具拉取。
+        // 仅当本次 run 注册了 load_skill 才注入：slash 命令等按 allowedTools 过滤工具的
+        // 路径没有该工具，注入目录会让模型去调不存在的工具。
+        // 目录为空时系统提示零改动（回归保证）；消息列表没有 system 消息时跳过注入。
+        var prepared = messages
+        if tools.contains(where: { $0.spec.name == "load_skill" }) {
+            let skillStore = AgentSkillStore.shared
+            skillStore.refresh(workspaceURL: context.workspaceURL)
+            if let section = skillStore.catalogPromptSection(),
+               let sysIndex = prepared.firstIndex(where: { $0.role == .system }) {
+                prepared[sysIndex].content += section
+            }
+        }
+        let messages = prepared
 
         runGeneration += 1
         let generation = runGeneration

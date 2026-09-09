@@ -26,6 +26,8 @@ enum BuiltinAgentTools {
             InsertAtCursorTool(),
             OpenFileTool(),
             GetHTMLTemplateTool(),
+            // Skills（渐进披露：按名加载技能全文，详见 AgentSkillStore）
+            LoadSkillTool(),
         ]
         // Shell (script-based skills; gated by per-session user confirmation)
 #if os(macOS)
