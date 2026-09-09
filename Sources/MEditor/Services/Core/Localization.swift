@@ -1232,6 +1232,20 @@ extension LocalizationManager {
         "ai.background.cancelled": ("Background task cancelled: %@", "后台任务已取消：%@"),
         "ai.background.cancelTask": ("Cancel this task", "取消该任务"),
         "ai.background.notificationTitle": ("MEditor Background Task", "MEditor 后台任务"),
+
+        // 定时任务（cron 触发的后台 Agent 任务；设置页「定时任务」区 + 触发失败提示）
+        "settings.ai.scheduledTasks": ("Scheduled Tasks", "定时任务"),
+        "settings.ai.scheduledTasksLabel": ("Cron-triggered Agent runs", "定时触发的 Agent 任务"),
+        "settings.ai.scheduledTasksHint": ("Run an Agent prompt on a cron schedule as a background task. Config: ~/.meditor/schedules.json plus <workspace>/.meditor/schedules.json (same-name entries in the workspace file win)",
+                                           "按 cron 表达式定时把一段指令交给后台 Agent 运行。配置文件：~/.meditor/schedules.json 与 <工作区>/.meditor/schedules.json（同名条目以工作区为准）"),
+        "settings.ai.scheduledTasksEmpty": ("No scheduled tasks configured", "尚未配置定时任务"),
+        "settings.ai.scheduledTasksOpenConfig": ("Open Config File", "打开配置文件"),
+        "settings.ai.scheduledTasksNext": ("Next: %@", "下次触发：%@"),
+        "settings.ai.scheduledTasksGlobal": ("global", "全局"),
+        "settings.ai.scheduledTasksWorkspace": ("workspace", "工作区"),
+        "settings.ai.scheduledTasksConfigIssue": ("Config issue: %@", "配置问题：%@"),
+        "ai.schedule.notConfigured": ("AI is not configured — scheduled task \"%@\" skipped",
+                                      "未配置 AI——定时任务「%@」已跳过"),
     ]
 
     static let table: [String: (en: String, zh: String)] = {
