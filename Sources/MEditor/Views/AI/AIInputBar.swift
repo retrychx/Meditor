@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Composer（输入区 + 引用选段卡片 + mention picker）
 
@@ -30,6 +31,11 @@ extension AIAssistantPanel {
                 quotedContextCard(quoted)
             }
 
+            // 待发送图片附件（粘贴/拖拽进入），缩略图 chips，可单个删除
+            if !pendingImages.isEmpty {
+                attachmentChipsRow
+            }
+
             // Primary prompt area — @mention-aware rich composer
             AtMentionComposerWrapper(
                 plainText: Binding(get: { convo.input }, set: { convo.input = $0 }),
@@ -42,6 +48,7 @@ extension AIAssistantPanel {
                 // Esc 归属：picker 未显示时 Esc 归面板关闭（与 hero overlay 的 onExitCommand 同一语义）。
                 // NSTextView 会吞掉 Esc（cancelOperation:），必须由 composer 显式回调上来。
                 onEscapeWithoutPicker: onClose,
+                onImagesPasted: addPendingImages,
                 theme: theme,
                 pickerContent: { mentionPickerPopoverContent }
             )
@@ -178,6 +185,10 @@ extension AIAssistantPanel {
                 .shadow(color: .black.opacity(theme.isDark ? 0.24 : 0.06), radius: 6, x: 0, y: 2)
         )
         .animation(DS.Motion.fast, value: inputFocused)
+        // 拖拽图片文件进入输入区（截图粘贴走 MentionTextView.paste 链路）
+        .onDrop(of: [UTType.fileURL.identifier, UTType.image.identifier], isTargeted: nil) { providers in
+            handleImageDrop(providers)
+        }
         .padding(12)
         .background(composerTray)
     }
@@ -260,7 +271,98 @@ extension AIAssistantPanel {
     }
 
     private var canSend: Bool {
-        !convo.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !convo.isResponding
+        // 允许纯图片发送（文本为空时 content parts 只含图片块）
+        (!convo.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+         || !pendingImages.isEmpty) && !convo.isResponding
+    }
+
+    // MARK: - 图片附件（粘贴 / 拖拽）
+
+    /// 粘贴/拖拽进来的图片追加到待发送列表；超过上限（4 张）的部分拒收。
+    func addPendingImages(_ new: [AIImageAttachment]) {
+        let result = AIImageProcessor.appending(new, to: pendingImages)
+        withAnimation(DS.Motion.fast) { pendingImages = result.merged }
+        if result.rejected > 0 {
+            AppLog.session.info("AI 输入图片附件超限：拒收 \(result.rejected) 张")
+        }
+    }
+
+    func removePendingImage(_ id: UUID) {
+        withAnimation(DS.Motion.fast) { pendingImages.removeAll { $0.id == id } }
+    }
+
+    /// 输入区缩略图 chips 行：横向排列，单个可删。
+    private var attachmentChipsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(pendingImages) { attachment in
+                    attachmentChip(attachment)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    private func attachmentChip(_ attachment: AIImageAttachment) -> some View {
+        ZStack(alignment: .topTrailing) {
+            Group {
+                if let image = attachment.nsImage {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Image(systemName: "photo")
+                        .foregroundStyle(theme.craftSecondary)
+                }
+            }
+            .frame(width: 44, height: 44)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(theme.separator.opacity(0.5), lineWidth: 0.5)
+            )
+
+            Button { removePendingImage(attachment.id) } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(theme.craftSecondary)
+                    .background(Circle().fill(theme.editorBackground))
+            }
+            .buttonStyle(.plain)
+            .help(L("ai.images.remove"))
+            .offset(x: 4, y: -4)
+        }
+        .padding(4)   // 给右上角 × 留出出血空间
+    }
+
+    /// 拖拽图片进入：文件 URL 优先，其次 NSImage（Photos 等直接拖位图）。
+    /// 与编辑器拖图落盘不同，这里只走内存附件（AIImageProcessor）。
+    private func handleImageDrop(_ providers: [NSItemProvider]) -> Bool {
+        var accepted = false
+        for provider in providers {
+            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                accepted = true
+                _ = provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                    // fileURL flavor 可能是 URL 或 file bookmark Data
+                    var url = item as? URL
+                    if url == nil, let data = item as? Data {
+                        url = URL(dataRepresentation: data, relativeTo: nil)
+                    }
+                    guard let url,
+                          let attachment = AIImageProcessor.makeAttachment(fromFileURL: url) else { return }
+                    Task { @MainActor in self.addPendingImages([attachment]) }
+                }
+            } else if provider.canLoadObject(ofClass: NSImage.self) {
+                accepted = true
+                _ = provider.loadObject(ofClass: NSImage.self) { object, _ in
+                    guard let image = object as? NSImage,
+                          let attachment = AIImageProcessor.makeAttachment(from: image) else { return }
+                    Task { @MainActor in self.addPendingImages([attachment]) }
+                }
+            }
+        }
+        return accepted
     }
 }
 

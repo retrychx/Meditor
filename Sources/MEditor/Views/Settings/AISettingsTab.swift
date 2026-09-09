@@ -209,6 +209,25 @@ extension SettingsView {
                     }
                 }
 
+                // MARK: 端侧智能（Apple Foundation Models，macOS 26+；默认关，静默回退）
+                settingsGroup(title: L("settings.ai.onDevice")) {
+                    settingsRow(
+                        label: L("settings.ai.onDevicePasteCleanup"),
+                        subtitle: L("settings.ai.onDevicePasteCleanupHint")
+                    ) {
+                        Toggle("", isOn: bindableSettings.aiOnDevicePasteCleanup)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                    }
+
+                    rowDivider
+
+                    settingsRow(label: L("settings.ai.onDeviceStatus")) {
+                        onDeviceStatusView
+                    }
+                }
+
                 // MARK: MCP 服务器（外部 Agent 接入）
                 settingsGroup(title: L("settings.ai.mcp")) {
                     settingsStackedRow(label: L("settings.ai.mcpConfigLabel"), subtitle: L("settings.ai.mcpHint")) {
@@ -295,6 +314,23 @@ extension SettingsView {
             }
             .disabled(aiLoadingModels)
             .help(L("ai.refreshModels"))
+        }
+    }
+
+    // MARK: - 端侧智能状态展示
+
+    /// 端侧模型当前可用状态（可用为绿色，不可用按原因展示灰色说明）。
+    /// availability 探测是本地状态读取，直接放在 body 里同步计算。
+    @ViewBuilder
+    var onDeviceStatusView: some View {
+        let availability = FoundationModelService.shared.availability
+        HStack(spacing: 6) {
+            Circle()
+                .fill(availability.isAvailable ? Color.green : Color.secondary.opacity(0.5))
+                .frame(width: 7, height: 7)
+            Text(L(availability.statusLabelKey))
+                .font(.system(size: 12))
+                .foregroundStyle(availability.isAvailable ? Color.primary : Color.secondary)
         }
     }
 

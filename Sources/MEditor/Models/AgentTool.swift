@@ -44,15 +44,25 @@ struct AgentToolSpec: Sendable {
     var name: String
     var description: String
     var parameters: ToolParameterSchema
+    /// 远端 JSON Schema 原文透传（MCP 客户端工具）：非 nil 时 openAIDict/anthropicDict
+    /// 的 parameters/input_schema 直接用它，不再由 parameters 重建——嵌套数组/对象等
+    /// ToolPropertySchema 表达不了的结构不丢失；parameters 仍保留顶层属性的降级表示，
+    /// 供 ClaudeCLI 紧凑签名等展示路径使用。
+    var rawSchema: [String: AnySendableValue]?
 
-    init(name: String, description: String, parameters: ToolParameterSchema = ToolParameterSchema()) {
+    init(name: String, description: String, parameters: ToolParameterSchema = ToolParameterSchema(),
+         rawSchema: [String: AnySendableValue]? = nil) {
         self.name = name
         self.description = description
         self.parameters = parameters
+        self.rawSchema = rawSchema
     }
 
-    // Serialize to OpenAI tool format
-    var openAIDict: [String: Any] {
+    /// wire 用的 schema 字典：rawSchema 优先（还原为 Foundation 值），否则由 parameters 生成
+    private var wireSchema: [String: Any] {
+        if let rawSchema {
+            return rawSchema.reduce(into: [String: Any]()) { $0[$1.key] = $1.value.anyValue }
+        }
         var props: [String: Any] = [:]
         for (key, schema) in parameters.orderedProperties {
             var p: [String: Any] = ["type": schema.type, "description": schema.description]
@@ -60,35 +70,30 @@ struct AgentToolSpec: Sendable {
             props[key] = p
         }
         return [
+            "type": "object",
+            "properties": props,
+            "required": parameters.required
+        ]
+    }
+
+    // Serialize to OpenAI tool format
+    var openAIDict: [String: Any] {
+        [
             "type": "function",
             "function": [
                 "name": name,
                 "description": description,
-                "parameters": [
-                    "type": "object",
-                    "properties": props,
-                    "required": parameters.required
-                ] as [String: Any]
+                "parameters": wireSchema
             ] as [String: Any]
         ]
     }
 
     // Anthropic Messages API tool format
     var anthropicDict: [String: Any] {
-        var props: [String: Any] = [:]
-        for (key, schema) in parameters.orderedProperties {
-            var p: [String: Any] = ["type": schema.type, "description": schema.description]
-            if let enums = schema.enumValues { p["enum"] = enums }
-            props[key] = p
-        }
-        return [
+        [
             "name": name,
             "description": description,
-            "input_schema": [
-                "type": "object",
-                "properties": props,
-                "required": parameters.required
-            ] as [String: Any]
+            "input_schema": wireSchema
         ]
     }
 

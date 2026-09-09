@@ -22,6 +22,7 @@
 		26000000000000000000020D /* ../Sources/MEditor/Services/AI/Agent/Tools/WorkspaceTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26000000000000000000010D /* ../Sources/MEditor/Services/AI/Agent/Tools/WorkspaceTools.swift */; };
 		26000000000000000000020E /* ../Sources/MEditor/Models/AgentTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26000000000000000000010E /* ../Sources/MEditor/Models/AgentTool.swift */; };
 		26000000000000000000020F /* ../Sources/MEditor/Models/AIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26000000000000000000010F /* ../Sources/MEditor/Models/AIModels.swift */; };
+		2600000000000000000002A1 /* ../Sources/MEditor/Models/AIImageAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001A1 /* ../Sources/MEditor/Models/AIImageAttachment.swift */; };
 		260000000000000000000210 /* ../Sources/MEditor/Models/AppError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000110 /* ../Sources/MEditor/Models/AppError.swift */; };
 		260000000000000000000211 /* ../Sources/MEditor/Managers/AIConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000111 /* ../Sources/MEditor/Managers/AIConversationStore.swift */; };
 		260000000000000000000212 /* ../Sources/MEditor/Services/Core/Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260000000000000000000112 /* ../Sources/MEditor/Services/Core/Localization.swift */; };
@@ -73,6 +74,7 @@
 		26000000000000000000010D /* ../Sources/MEditor/Services/AI/Agent/Tools/WorkspaceTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/AI/Agent/Tools/WorkspaceTools.swift; sourceTree = "<group>"; };
 		26000000000000000000010E /* ../Sources/MEditor/Models/AgentTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Models/AgentTool.swift; sourceTree = "<group>"; };
 		26000000000000000000010F /* ../Sources/MEditor/Models/AIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Models/AIModels.swift; sourceTree = "<group>"; };
+		2600000000000000000001A1 /* ../Sources/MEditor/Models/AIImageAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Models/AIImageAttachment.swift; sourceTree = "<group>"; };
 		260000000000000000000110 /* ../Sources/MEditor/Models/AppError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Models/AppError.swift; sourceTree = "<group>"; };
 		260000000000000000000111 /* ../Sources/MEditor/Managers/AIConversationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Managers/AIConversationStore.swift; sourceTree = "<group>"; };
 		260000000000000000000112 /* ../Sources/MEditor/Services/Core/Localization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/Core/Localization.swift; sourceTree = "<group>"; };
@@ -162,6 +164,7 @@
 				26000000000000000000010D /* ../Sources/MEditor/Services/AI/Agent/Tools/WorkspaceTools.swift */,
 				26000000000000000000010E /* ../Sources/MEditor/Models/AgentTool.swift */,
 				26000000000000000000010F /* ../Sources/MEditor/Models/AIModels.swift */,
+				2600000000000000000001A1 /* ../Sources/MEditor/Models/AIImageAttachment.swift */,
 				260000000000000000000110 /* ../Sources/MEditor/Models/AppError.swift */,
 				260000000000000000000111 /* ../Sources/MEditor/Managers/AIConversationStore.swift */,
 				260000000000000000000112 /* ../Sources/MEditor/Services/Core/Localization.swift */,
@@ -303,6 +306,7 @@
 				26000000000000000000020D /* ../Sources/MEditor/Services/AI/Agent/Tools/WorkspaceTools.swift in Sources */,
 				26000000000000000000020E /* ../Sources/MEditor/Models/AgentTool.swift in Sources */,
 				26000000000000000000020F /* ../Sources/MEditor/Models/AIModels.swift in Sources */,
+				2600000000000000000002A1 /* ../Sources/MEditor/Models/AIImageAttachment.swift in Sources */,
 				260000000000000000000210 /* ../Sources/MEditor/Models/AppError.swift in Sources */,
 				260000000000000000000211 /* ../Sources/MEditor/Managers/AIConversationStore.swift in Sources */,
 				260000000000000000000212 /* ../Sources/MEditor/Services/Core/Localization.swift in Sources */,

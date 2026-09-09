@@ -10,6 +10,9 @@ extension SettingsView {
                 // Claude Code 监听
                 claudeMonitorSection
 
+                // MCP 客户端（内置 Agent 调用外部 MCP server 的工具）
+                mcpClientSection
+
                 // MCP 服务器（外部 Agent 接入）
                 settingsGroup(title: L("settings.ai.mcp")) {
                     settingsStackedRow(label: L("settings.ai.mcpConfigLabel"), subtitle: L("settings.ai.mcpHint")) {
@@ -112,5 +115,112 @@ extension SettingsView {
                 settings.claudeMonitorCustomPath = url.path
             }
         }
+    }
+
+    // MARK: - MCP 客户端（内置 Agent → 外部 MCP server）
+
+    var mcpClientSection: some View {
+        settingsGroup(title: L("settings.ai.mcpClient")) {
+            settingsStackedRow(label: L("settings.ai.mcpClientLabel"), subtitle: L("settings.ai.mcpClientHint")) {
+                VStack(alignment: .leading, spacing: 8) {
+                    let manager = state.mcpClientManager
+                    if manager.statuses.isEmpty {
+                        Text(L("settings.ai.mcpClientEmpty"))
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(manager.statuses) { status in
+                            mcpServerRow(status)
+                        }
+                    }
+                    // 配置解析容错记录（坏条目说明），有则展示
+                    ForEach(manager.configIssues, id: \.self) { issue in
+                        Text(L("settings.ai.mcpClientConfigIssue", issue))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.orange)
+                            .lineLimit(2)
+                            .truncationMode(.middle)
+                    }
+                    HStack(spacing: 8) {
+                        Button(L("settings.ai.mcpClientOpenConfig")) { openMCPClientConfig() }
+                        Button(L("settings.ai.mcpClientReconnect")) {
+                            Task { await state.mcpClientManager.reconnectAll(workspaceURL: state.rootURL) }
+                        }
+                        .disabled(manager.statuses.isEmpty)
+                    }
+                }
+            }
+        }
+        // 打开设置页时仅加载配置摘要（不发起连接）；连接发生在 agent run 开始时
+        .onAppear { state.mcpClientManager.reloadConfigSummaries(workspaceURL: state.rootURL) }
+    }
+
+    /// 单个 server 的状态行：名称 + 类型徽标 + 连接状态（工具数/错误摘要）
+    private func mcpServerRow(_ status: MCPClientManager.ServerStatus) -> some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(mcpStatusColor(status.state))
+                .frame(width: 7, height: 7)
+            Text(status.name)
+                .font(.system(size: 12, weight: .medium))
+                .lineLimit(1)
+            Text(status.kindLabel)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+            Spacer(minLength: 8)
+            Text(mcpStatusText(status.state))
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func mcpStatusColor(_ state: MCPClientManager.ConnectionState) -> Color {
+        switch state {
+        case .connected:               return .green
+        case .connecting:              return .orange
+        case .failed:                  return .red
+        case .disconnected:            return .secondary.opacity(0.4)
+        }
+    }
+
+    private func mcpStatusText(_ state: MCPClientManager.ConnectionState) -> String {
+        switch state {
+        case .connected(let count):
+            return "\(L("settings.ai.mcpClientConnected")) · \(L("settings.ai.mcpClientToolsCount", count))"
+        case .connecting:              return L("settings.ai.mcpClientConnecting")
+        case .failed(let message):     return "\(L("settings.ai.mcpClientFailed")): \(message)"
+        case .disconnected:            return L("settings.ai.mcpClientDisconnected")
+        }
+    }
+
+    /// 打开全局配置文件（~/.meditor/mcp.json）；不存在时先写入模板再打开。
+    func openMCPClientConfig() {
+        let url = MCPClientConfigLoader.defaultGlobalConfigURL
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: url.path) {
+            try? fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let template = """
+            {
+              "mcpServers": {
+                "example-stdio": {
+                  "command": "npx",
+                  "args": ["-y", "@modelcontextprotocol/server-everything"],
+                  "env": {}
+                },
+                "example-http": {
+                  "url": "https://example.com/mcp"
+                }
+              }
+            }
+            """
+            try? template.write(to: url, atomically: true, encoding: .utf8)
+        }
+        NSWorkspace.shared.open(url)
     }
 }

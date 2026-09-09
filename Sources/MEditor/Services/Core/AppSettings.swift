@@ -41,6 +41,8 @@ final class AppSettings {
         static let aiCustomSystemPrompt = "MEditor.aiCustomSystemPrompt"
         static let aiAutoAttachContext  = "MEditor.aiAutoAttachContext"
         static let aiAgentAutoApplyWrites = "MEditor.aiAgentAutoApplyWrites"
+        // 端侧智能（Apple Foundation Models）
+        static let aiOnDevicePasteCleanup = "MEditor.aiOnDevicePasteCleanup"
         static let userDocPathBookmark = "MEditor.userDocPathBookmark"
         static let appDocPathBookmark  = "MEditor.appDocPathBookmark"
         // Claude Code 监听
@@ -191,6 +193,14 @@ final class AppSettings {
     /// 写文档/打补丁先进入逐块审阅态，用户接受后才写盘）。给信任度高的用户。
     var aiAgentAutoApplyWrites: Bool {
         didSet { defaults.set(aiAgentAutoApplyWrites, forKey: Key.aiAgentAutoApplyWrites) }
+    }
+
+    // MARK: - 端侧智能（Apple Foundation Models）
+
+    /// 粘贴网页内容时用端侧模型清理广告/推广/追踪参数（默认关）。
+    /// 端侧不可用或清理失败时静默回退原始转换结果，不联网。
+    var aiOnDevicePasteCleanup: Bool {
+        didSet { defaults.set(aiOnDevicePasteCleanup, forKey: Key.aiOnDevicePasteCleanup) }
     }
 
     // MARK: - Claude Code 监听
@@ -388,6 +398,8 @@ final class AppSettings {
         aiAutoAttachContext = d.object(forKey: Key.aiAutoAttachContext) != nil
             ? d.bool(forKey: Key.aiAutoAttachContext) : true
         aiAgentAutoApplyWrites = d.bool(forKey: Key.aiAgentAutoApplyWrites)  // 默认关 = 预览优先
+        // 端侧智能（默认关：用户显式开启后才过端侧模型）
+        aiOnDevicePasteCleanup = d.bool(forKey: Key.aiOnDevicePasteCleanup)
         // Claude Code 监听
         claudeMonitorEnabled    = d.object(forKey: Key.claudeMonitorEnabled) != nil ? d.bool(forKey: Key.claudeMonitorEnabled) : false
         claudeMonitorCustomPath = d.string(forKey: Key.claudeMonitorCustomPath) ?? ""

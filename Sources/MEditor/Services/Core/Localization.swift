@@ -244,6 +244,15 @@ extension LocalizationManager {
         "ai.autoAttach.toggleHint": ("Inject the active tab as default context when sending; the input bar chip can skip it per message",
                                      "发送对话时默认注入当前 tab 的文档内容；输入栏 chip 可单次移除"),
 
+        // 聊天视觉输入（图片附件：输入框 chips / 气泡缩略图 / 后端降级提示）
+        "ai.images.remove": ("Remove image", "移除图片"),
+        "ai.images.preview": ("Preview image", "预览图片"),
+        "ai.images.decodeFailed": ("Couldn't load this image", "图片加载失败"),
+        "ai.images.historyPlaceholder": ("%d image(s) — images aren't kept in chat history",
+                                         "%d 张图片（历史记录不保存图片内容）"),
+        "ai.images.unsupportedBackend": ("The current backend doesn't support image input — your images weren't sent, only the text.",
+                                         "当前后端不支持图片输入——图片未发送，仅发送了文字。"),
+
         // 斜杠 AI 命令库（编辑器 / 菜单，标题与一句话说明随 UI 语言）
         "slash.ask.title": ("AI Answer", "AI 回答问题"),
         "slash.ask.subtitle": ("Ask a question inline at the caret", "在光标处内联回答问题"),
@@ -1133,6 +1142,21 @@ extension LocalizationManager {
         "settings.ai.mcpCopy": ("Copy", "复制"),
         "settings.ai.mcpCopied": ("MCP config copied", "MCP 配置已复制"),
 
+        // MCP 客户端（内置 Agent 作为 MCP client 连接外部工具服务器）
+        "settings.ai.mcpClient": ("MCP Client", "MCP 客户端"),
+        "settings.ai.mcpClientLabel": ("External tool servers", "外部工具服务器"),
+        "settings.ai.mcpClientHint": ("Give the in-app Agent tools from external MCP servers. Config: ~/.meditor/mcp.json plus <workspace>/.meditor/mcp.json (same-name entries in the workspace file win)",
+                                      "让内置 Agent 调用外部 MCP server 的工具。配置文件：~/.meditor/mcp.json 与 <工作区>/.meditor/mcp.json（同名条目以工作区为准）"),
+        "settings.ai.mcpClientEmpty": ("No MCP servers configured", "尚未配置 MCP server"),
+        "settings.ai.mcpClientOpenConfig": ("Open Config File", "打开配置文件"),
+        "settings.ai.mcpClientReconnect": ("Reconnect", "重新连接"),
+        "settings.ai.mcpClientToolsCount": ("%d tools", "%d 个工具"),
+        "settings.ai.mcpClientConnected": ("Connected", "已连接"),
+        "settings.ai.mcpClientFailed": ("Connection failed", "连接失败"),
+        "settings.ai.mcpClientDisconnected": ("Not connected", "未连接"),
+        "settings.ai.mcpClientConnecting": ("Connecting…", "连接中…"),
+        "settings.ai.mcpClientConfigIssue": ("Config issue: %@", "配置问题：%@"),
+
         // 技能导入/导出（用户间分享技能）
         "plugin.import": ("Import", "导入"),
         "plugin.importFromFile": ("Import from File…", "从文件导入…"),
@@ -1182,6 +1206,19 @@ extension LocalizationManager {
                                  "发现 %d 个问题：%d 个可一键修复，%d 个需人工确认"),
         "ai.selfcheck.fix": ("Fix with Agent (%d)", "一键修复（%d）"),
         "ai.selfcheck.dismiss": ("Dismiss", "忽略"),
+
+        // 端侧智能（Apple Foundation Models，macOS 26+）：设置页分区与可用状态
+        "settings.ai.onDevice": ("On-Device Intelligence (Apple Intelligence)", "端侧智能（Apple 智能）"),
+        "settings.ai.onDevicePasteCleanup": ("Clean Pasted Content", "粘贴内容智能清理"),
+        "settings.ai.onDevicePasteCleanupHint": ("Use the on-device model to remove ads, tracking parameters and promo blocks from pasted web content; the original text is kept if cleanup fails — nothing is sent over the network",
+                                                 "粘贴网页内容时用端侧模型去除广告、追踪参数和推广段落；失败时保留原文，全程不联网"),
+        "settings.ai.onDeviceStatus": ("On-Device Model Status", "端侧模型状态"),
+        "ai.onDevice.available": ("Available", "可用"),
+        "ai.onDevice.unsupportedOS": ("Requires macOS 26 or later", "需要 macOS 26 或更高版本"),
+        "ai.onDevice.deviceNotEligible": ("This device doesn't support Apple Intelligence", "此设备不支持 Apple 智能"),
+        "ai.onDevice.notEnabled": ("Apple Intelligence isn't enabled in System Settings", "Apple 智能未启用（请在系统设置中开启）"),
+        "ai.onDevice.modelNotReady": ("Model is downloading…", "模型资源下载中…"),
+        "ai.onDevice.unknown": ("Unavailable", "暂不可用"),
     ]
 
     static let table: [String: (en: String, zh: String)] = {

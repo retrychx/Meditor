@@ -21,6 +21,11 @@ struct AIAssistantPanel: View {
     /// 「自动附带当前文档」chip 被移除的 tab id：仅对当次发送生效——切 tab（id 不
     /// 匹配）或发送完成（重置 nil）后自动恢复，不影响历史消息与其他 tab。
     @State var autoContextRemovedForTab: UUID? = nil
+    /// 待发送的图片附件（输入框上方的缩略图 chips；发送后清空）。
+    /// 不随草稿持久化——图片只活在当前面板会话内。
+    @State var pendingImages: [AIImageAttachment] = []
+    /// 气泡里点开的大图预览（popover 展示）
+    @State var previewImage: AIImageAttachment? = nil
     @FocusState var inputFocused: Bool
 
     /// 首次使用引导：显示 @mention 能力提示。
@@ -87,6 +92,23 @@ struct AIAssistantPanel: View {
             }
             state.aiUI.pendingSelectionPrompt = nil
             inputFocused = true
+        }
+        // 气泡缩略图点击后的大图预览（简单弹窗，不引 Quick Look 面板复杂度）
+        .popover(item: $previewImage, arrowEdge: .leading) { attachment in
+            Group {
+                if let image = attachment.nsImage {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFit()
+                } else {
+                    Text(L("ai.images.decodeFailed"))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .padding(24)
+                }
+            }
+            .frame(minWidth: 240, maxWidth: 720, minHeight: 160, maxHeight: 560)
+            .padding(10)
         }
     }
 
@@ -211,12 +233,14 @@ struct AIAssistantPanel: View {
             convo.showAllSuggestions = false
         }
         mentionTokens = []
+        pendingImages = []   // 待发送图片属于上一次提问语境，不带进新会话
         inputFocused = true
     }
 
     func send() {
         let trimmed = convo.input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !convo.isResponding else { return }
+        // 允许纯图片发送（文本为空时 content parts 只含图片块）
+        guard !trimmed.isEmpty || !pendingImages.isEmpty, !convo.isResponding else { return }
 
         // 若带有「引用选段」，作为 markdown 引用拼到提问前，给 AI 完整上下文
         let messageText: String
@@ -230,9 +254,11 @@ struct AIAssistantPanel: View {
             messageText = trimmed
         }
 
+        let images = pendingImages
         withAnimation(DS.Motion.standard) {
-            convo.messages.append(AIChatMessage(role: .user, text: messageText))
+            convo.messages.append(AIChatMessage(role: .user, text: messageText, images: images))
             convo.input = ""
+            pendingImages = []
         }
         state.aiUI.quotedContext = nil
         // 保存当次 @tokens，供 runCompletion 注入上下文，然后清空

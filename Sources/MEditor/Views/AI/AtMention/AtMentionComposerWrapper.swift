@@ -17,6 +17,8 @@ struct AtMentionComposerWrapper<Picker: View>: View {
     var onSubmit: () -> Void
     /// picker 未显示时按下 Esc 的回调（透传给 AtMentionComposerView，用于关闭 AI 面板）
     var onEscapeWithoutPicker: (() -> Void)? = nil
+    /// ⌘V 粘贴到图片时回调（透传给 AtMentionComposerView）
+    var onImagesPasted: (([AIImageAttachment]) -> Void)? = nil
     var theme: PreviewTheme
     @ViewBuilder var pickerContent: () -> Picker
 
@@ -37,6 +39,7 @@ struct AtMentionComposerWrapper<Picker: View>: View {
                 isFocused: $isFocused,
                 onSubmit: onSubmit,
                 onEscapeWithoutPicker: onEscapeWithoutPicker,
+                onImagesPasted: onImagesPasted,
                 theme: theme,
                 fontSize: 13.5
             )

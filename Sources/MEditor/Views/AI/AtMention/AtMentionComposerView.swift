@@ -34,6 +34,9 @@ struct AtMentionComposerView: NSViewRepresentable {
     /// NSTextView 默认会把 Esc 转成 cancelOperation: 并吞掉，SwiftUI 的 onExitCommand 收不到，
     /// 必须在这里显式上报。为 nil 时保持系统默认行为（不拦截）。
     var onEscapeWithoutPicker: (() -> Void)? = nil
+    /// ⌘V 粘贴到图片时回调（返回 nil 表示未启用图片输入，走系统默认粘贴）。
+    /// 图片从粘贴板提取（截图 PNG/TIFF、图片文件 URL），处理成聊天附件后上抛。
+    var onImagesPasted: (([AIImageAttachment]) -> Void)? = nil
     /// Theme so colors match the rest of the panel
     var theme: PreviewTheme
     /// Font size matching editor settings
@@ -47,6 +50,7 @@ struct AtMentionComposerView: NSViewRepresentable {
                     isFocused: $isFocused,
                     onSubmit: onSubmit,
                     onEscapeWithoutPicker: onEscapeWithoutPicker,
+                    onImagesPasted: onImagesPasted,
                     theme: theme,
                     fontSize: fontSize)
     }
@@ -85,6 +89,7 @@ struct AtMentionComposerView: NSViewRepresentable {
         context.coordinator.applyTheme(theme, fontSize: fontSize)
         // 父视图每次 body 求值都会重建闭包，这里同步最新值，避免 Coordinator 持有过期闭包
         context.coordinator.onEscapeWithoutPicker = onEscapeWithoutPicker
+        context.coordinator.onImagesPasted = onImagesPasted
         let tv = context.coordinator.textView
         // 外部（send 后）清空 plainText → 同步清空 textView
         if plainText.isEmpty && !tv.string.isEmpty {
@@ -111,6 +116,8 @@ struct AtMentionComposerView: NSViewRepresentable {
         var onSubmit: () -> Void
         /// picker 未显示时按下 Esc 的回调（见 AtMentionComposerView.onEscapeWithoutPicker）
         var onEscapeWithoutPicker: (() -> Void)?
+        /// 图片粘贴回调（见 AtMentionComposerView.onImagesPasted）
+        var onImagesPasted: (([AIImageAttachment]) -> Void)?
         var theme: PreviewTheme
         var fontSize: CGFloat
 
@@ -130,6 +137,7 @@ struct AtMentionComposerView: NSViewRepresentable {
              isFocused: Binding<Bool>,
              onSubmit: @escaping () -> Void,
              onEscapeWithoutPicker: (() -> Void)? = nil,
+             onImagesPasted: (([AIImageAttachment]) -> Void)? = nil,
              theme: PreviewTheme,
              fontSize: CGFloat) {
             _plainText    = plainText
@@ -137,6 +145,7 @@ struct AtMentionComposerView: NSViewRepresentable {
             _isFocused    = isFocused
             self.onSubmit = onSubmit
             self.onEscapeWithoutPicker = onEscapeWithoutPicker
+            self.onImagesPasted = onImagesPasted
             self.theme    = theme
             self.fontSize = fontSize
             textView = MentionTextView()
@@ -252,6 +261,18 @@ struct AtMentionComposerView: NSViewRepresentable {
             // 光标移到末尾，方便用户接着输入问题
             textView.setSelectedRange(NSRange(location: (text as NSString).length, length: 0))
             if plainText != text { plainText = text }
+        }
+
+        // MARK: 图片粘贴
+
+        /// ⌘V 时优先拦截粘贴板里的图片（截图 PNG/TIFF、图片文件 URL）→ 聊天附件。
+        /// 返回 true = 已消费，调用方不再走系统默认文本粘贴。
+        func handleImagePaste() -> Bool {
+            guard let onImagesPasted else { return false }
+            let attachments = AIImageProcessor.attachments(from: .general)
+            guard !attachments.isEmpty else { return false }
+            onImagesPasted(attachments)
+            return true
         }
 
         // MARK: Plain text sync
@@ -411,6 +432,12 @@ private extension UInt16 {
 final class MentionTextView: NSTextView {
 
     weak var mentionCoordinator: AtMentionComposerView.Coordinator?
+
+    /// ⌘V：粘贴板含图片时交给聊天附件链路（缩略图 chips），否则走系统默认文本粘贴
+    override func paste(_ sender: Any?) {
+        if mentionCoordinator?.handleImagePaste() == true { return }
+        super.paste(sender)
+    }
 
     override func keyDown(with event: NSEvent) {
         let isPickerVisible = mentionCoordinator?.activeQuery != nil

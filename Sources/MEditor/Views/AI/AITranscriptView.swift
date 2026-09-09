@@ -20,7 +20,8 @@ extension AIAssistantPanel {
                         // 历史消息（响应中排除最后一条 reply 占位，交由下方单独渲染，
                         // 使 steps 能放在 reply 之上且能随 runner.steps 更新）
                         ForEach(displayMessages) { message in
-                            if !message.text.isEmpty {
+                            // 纯图片消息文本为空也要渲染（气泡只画缩略图/占位）
+                            if !message.text.isEmpty || !message.images.isEmpty || message.imageCount > 0 {
                                 bubble(message).id(message.id)
                             }
                         }
