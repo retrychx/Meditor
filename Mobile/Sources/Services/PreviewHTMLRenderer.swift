@@ -54,7 +54,9 @@ final class PreviewHTMLRenderer: NSObject {
             (try resource("base", "css"), "css/base.css"),
             (try resource("render", "js"), "scripts/render.js"),
             (try resource("bridge", "js"), "scripts/bridge.js"),
+            (try resource("boot", "js"), "scripts/boot.js"),
             (try resource("marked.min", "js"), "marked.min.js"),
+            (try resource("purify.min", "js"), "purify.min.js"),
             (try resource("highlight.min", "js"), "highlight.min.js"),
             (try resource("mermaid.min", "js"), "mermaid.min.js"),
         ]
@@ -63,7 +65,10 @@ final class PreviewHTMLRenderer: NSObject {
         }
 
         var template = try String(contentsOf: resource("template", "html"), encoding: .utf8)
-        let contentJSON = String(data: try JSONEncoder().encode(markdown), encoding: .utf8) ?? "\"\""
+        // 初始内容以 JSON 数据块传递（模板 CSP 禁内联脚本）；"<" 转成
+        // Unicode 转义（'\\u003c'），防止内容里的 "</script>" 提前闭合数据块。
+        let contentJSON = (String(data: try JSONEncoder().encode(markdown), encoding: .utf8) ?? "\"\"")
+            .replacingOccurrences(of: "<", with: "\\u003c")
         template = template
             .replacingOccurrences(of: "{{INITIAL_THEME}}", with: theme)
             .replacingOccurrences(of: "{{INITIAL_CONTENT_JSON}}", with: contentJSON)

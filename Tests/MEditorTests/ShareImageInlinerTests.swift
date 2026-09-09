@@ -98,7 +98,8 @@ final class ShareImageInlinerTests: XCTestCase {
 
     func testTotalBudgetStopsLaterImages() {
         // 三张 1.4MB 的图（单图未超上限）：前两张内联（2.8MB），第三张超总预算被跳过
-        let chunk = Data(repeating: 0xCD, count: 1_400_000)
+        // （PNG 魔数开头 + 填充——内联前有真实图片格式嗅探，纯填充数据会被拒）
+        let chunk = pngData + Data(repeating: 0xCD, count: 1_400_000 - pngData.count)
         write("a.png", chunk)
         write("b.png", chunk)
         write("c.png", chunk)
@@ -113,5 +114,50 @@ final class ShareImageInlinerTests: XCTestCase {
     func testNoImagesUnchanged() {
         let html = "<p>纯文本</p>"
         XCTAssertEqual(ShareImageInliner.inlineImages(in: html, baseDirectory: tempDir), html)
+    }
+
+    // MARK: - 安全：路径 confine + 魔数嗅探
+
+    /// 相对路径解析后必须仍在 baseDirectory 内——否则 `../..` 能把任意文件
+    /// 内联进发布到公网的 HTML。
+    func testRelativePathEscapingBaseDirectoryNotInlined() {
+        // 在 baseDirectory 的父目录放一张"图片"，用 ../ 引用它
+        let outside = tempDir.deletingLastPathComponent().appendingPathComponent("outside-\(UUID().uuidString).png")
+        try! pngData.write(to: outside)
+        defer { try? FileManager.default.removeItem(at: outside) }
+
+        let html = img("../\(outside.lastPathComponent)")
+        XCTAssertEqual(ShareImageInliner.inlineImages(in: html, baseDirectory: tempDir), html)
+    }
+
+    /// 扩展名伪装成图片的文本文件不内联（魔数嗅探）。
+    func testNonImageContentNotInlined() {
+        write("secret.png", Data("-----BEGIN OPENSSH PRIVATE KEY-----".utf8))
+        let html = img("secret.png")
+        XCTAssertEqual(ShareImageInliner.inlineImages(in: html, baseDirectory: tempDir), html)
+    }
+
+    func testResolveFileURLConfinesRelativePaths() {
+        let inside = ShareImageInliner.resolveFileURL(src: "assets/pic.png", baseDirectory: tempDir)
+        XCTAssertNotNil(inside)
+        XCTAssertTrue(inside!.path.hasPrefix(tempDir.standardizedFileURL.path + "/"))
+
+        XCTAssertNil(ShareImageInliner.resolveFileURL(src: "../pic.png", baseDirectory: tempDir))
+        XCTAssertNil(ShareImageInliner.resolveFileURL(src: "../../etc/passwd", baseDirectory: tempDir))
+        // 百分号编码的 .. 同样挡住
+        XCTAssertNil(ShareImageInliner.resolveFileURL(src: "%2E%2E/pic.png", baseDirectory: tempDir))
+    }
+
+    func testImageDataSniffing() {
+        XCTAssertTrue(ShareImageInliner.isSupportedImageData(pngData))
+        XCTAssertTrue(ShareImageInliner.isSupportedImageData(Data([0xFF, 0xD8, 0xFF, 0xE0]))) // JPEG
+        XCTAssertTrue(ShareImageInliner.isSupportedImageData(Data("GIF89a".utf8) + Data(repeating: 0, count: 10)))
+        XCTAssertTrue(ShareImageInliner.isSupportedImageData(Data("RIFF".utf8) + Data(repeating: 0, count: 4) + Data("WEBP".utf8) + Data(repeating: 0, count: 4)))
+        XCTAssertTrue(ShareImageInliner.isSupportedImageData(Data(svgString.utf8)))
+        XCTAssertTrue(ShareImageInliner.isSupportedImageData(Data("<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\"/>".utf8)))
+
+        XCTAssertFalse(ShareImageInliner.isSupportedImageData(Data("plain text".utf8)))
+        XCTAssertFalse(ShareImageInliner.isSupportedImageData(Data("#!/bin/sh\necho hi".utf8)))
+        XCTAssertFalse(ShareImageInliner.isSupportedImageData(Data()))
     }
 }

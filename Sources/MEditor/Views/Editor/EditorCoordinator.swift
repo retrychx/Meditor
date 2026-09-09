@@ -128,6 +128,23 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
         }
     }
 
+    /// 换文档（tab 切换/外部重载）前的冲刷：防抖窗口内的在途击键立即回推给
+    /// 当前（旧）tab 的 onContentChange。必须在 updateNSView 替换 onContentChange
+    /// 闭包之前调用——防抖 Timer 触发时读的是「那一刻」的闭包，若先替换闭包，
+    /// pending 文本会通过新 tab 的闭包写进新 tab；若直接丢弃，pending 击键会随
+    /// textView 全量替换而丢失（textView 跨 tab 复用）。
+    func flushPendingKeystrokeForDocumentSwitch() {
+        // localRevisionPredictionActive 为 true 才说明存在未回推的在途击键
+        //（textDidChange 置位，Timer 触发或 flush 后复位）
+        guard localRevisionPredictionActive else { return }
+        let pending = textView?.string ?? lastAcknowledgedContent
+        flushPendingKeystroke()   // 作废旧 Timer 并回滚预测增量
+        lastAcknowledgedContent = pending
+        // 与防抖 Timer 触发路径一致：回推后模型侧 contentRevision +1，这里同步预测值
+        lastAcknowledgedRevision &+= 1
+        onContentChange(pending)
+    }
+
     func textView(_ textView: NSTextView, shouldChangeTextIn range: NSRange, replacementString text: String?) -> Bool {
         guard !isProgrammaticChange else { return true }
         if slashHandler.isApplyingCommand { return true }
@@ -249,6 +266,52 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
         return false
     }
 
+    // MARK: - AI programmatic edits
+
+    /// AI 插入/替换的共用执行路径，与 writeBack 走同一套 revision 协议：
+    /// 先冲刷在途击键（否则防抖 Timer 会把编辑前的旧文本回推给 tab.content），
+    /// 编辑过程用 isProgrammaticChange 包裹（避免 textDidChange 再走一遍防抖/
+    /// 预测而产生多余的回推），结束后同步 lastAcknowledged* 再回推
+    /// onContentChange——否则下一次 updateNSView 会把刚写入的内容误判为外部
+    /// 变更而整文重置（光标/滚动丢失）。
+    /// requestedRange 是保存时刻的旧区间，AI 流式期间文档可能变短：先 clamp 到
+    /// 当前文本长度；起点已越界（无法修正）则跳过本次编辑，避免 NSRangeException。
+    func applyProgrammaticReplacement(_ replacement: String, range requestedRange: NSRange, in textView: NSTextView) {
+        guard let range = Self.clampedRange(requestedRange, textLength: textView.string.utf16.count) else { return }
+        flushPendingKeystroke()
+        isProgrammaticChange = true
+        // shouldChangeText 被拒时不按成功路径上报（revision 不递增、不回推）
+        guard textView.shouldChangeText(in: range, replacementString: replacement) else {
+            isProgrammaticChange = false
+            return
+        }
+        textView.textStorage?.replaceCharacters(in: range, with: replacement)
+        textView.didChangeText()
+        isProgrammaticChange = false
+
+        let newCaret = range.location + (replacement as NSString).length
+        textView.setSelectedRange(NSRange(location: newCaret, length: 0))
+        let newContent = textView.string
+        lastAcknowledgedContent = newContent
+        // 与 onContentChange → updateTabContent 的 contentRevision 递增保持同步，
+        // 避免紧接着的 updateNSView 把刚写入的内容再整体替换一遍
+        lastAcknowledgedRevision &+= 1
+        highlighter.rebuildLineOffsets(for: newContent)
+        onContentChange(newContent)
+        highlighter.scheduleHighlight()
+        textView.scrollRangeToVisible(textView.selectedRange())
+    }
+
+    /// clamp 替换区间到当前文本范围；起点越界（NSNotFound/负数/超出文本长度）
+    /// 时无法修正，返回 nil 表示跳过本次编辑。
+    static func clampedRange(_ range: NSRange, textLength: Int) -> NSRange? {
+        guard range.location != NSNotFound,
+              range.location >= 0,
+              range.location <= textLength else { return nil }
+        let length = min(max(range.length, 0), textLength - range.location)
+        return NSRange(location: range.location, length: length)
+    }
+
     // MARK: - Image paste
 
     /// ⌘V 入口（MEditorTextView.paste 调用）：粘贴板含图片时落盘并在光标处插入
@@ -295,6 +358,50 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
             return (png, "png")
         }
         return nil
+    }
+
+    // MARK: - Rich text paste (HTML → Markdown)
+
+    /// ⌘V 入口（MEditorTextView.paste 调用，图片之后）：粘贴板含 HTML 时异步
+    /// 转成 Markdown 插入光标处。返回 false = 未处理（非 Markdown 文档 / 无
+    /// HTML flavor / HTML 无实际标签），调用方回退系统默认粘贴。
+    /// insertText 走 textView 常规编辑路径，自动注册 undo。
+    /// 要粘贴原始纯文本可用系统「粘贴并匹配样式」（⌥⇧⌘V）。
+    @discardableResult
+    func pasteRichTextFromPasteboard(_ pasteboard: NSPasteboard) -> Bool {
+        guard let textView else { return false }
+        // 只在 Markdown 文档里做转换——HTML/代码文件里粘贴 HTML 应保留原文
+        guard highlighter.language == .markdown else { return false }
+        guard let html = pasteboard.string(forType: .html),
+              Self.containsMarkup(html) else { return false }
+
+        // 转换是异步的（离屏 WebView），先捕获粘贴时刻的选区与文档；
+        // 失败时回退插入纯文本 flavor
+        let insertionRange = textView.selectedRange()
+        let pasteDocumentURL = documentURL
+        let plainFallback = pasteboard.string(forType: .string)
+        Task { @MainActor [weak self, weak textView] in
+            PasteHTMLConverter.shared.convert(html: html) { markdown in
+                guard let self, let textView else { return }
+                // textView 跨 tab 复用：转换期间用户可能已切换 tab，
+                // 此时插入会把旧文档的粘贴内容写进新文档——放弃本次插入
+                guard self.documentURL == pasteDocumentURL else { return }
+                guard let text = (markdown?.isEmpty == false ? markdown : plainFallback),
+                      !text.isEmpty else { return }
+                // 转换期间用户可能又动了光标/内容：clamp 捕获的选区到当前文本范围
+                let textLength = textView.string.utf16.count
+                let location = min(insertionRange.location, textLength)
+                let length = min(insertionRange.length, textLength - location)
+                textView.insertText(text, replacementRange: NSRange(location: location, length: length))
+            }
+        }
+        return true
+    }
+
+    /// 判断 HTML 字符串是否含有真实标签。Safari 等来源复制纯文本也会带一个
+    /// 无标签的 HTML flavor，那种内容走默认粘贴即可，不值得拉起 WebView。
+    static func containsMarkup(_ html: String) -> Bool {
+        html.range(of: "<[a-zA-Z][^>]*>", options: .regularExpression) != nil
     }
 
     // MARK: - Image drag & drop

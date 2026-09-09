@@ -27,10 +27,12 @@ final class WebViewPool {
               let templateURL = PreviewResourceLocator.templateURL(),
               let template = try? String(contentsOf: templateURL, encoding: .utf8) else { return }
 
-        // Ensure all assets are in cache dir (same as real preview)
+        // Ensure all assets are in cache dir (same as real preview).
+        // 与 PreviewAssetMirror.mirroredItems 保持一致；mermaid.min.js
+        // 不预热——render.js 首次遇到 mermaid 图时动态加载。
         let fm = FileManager.default
         try? fm.createDirectory(at: cacheDir, withIntermediateDirectories: true)
-        let items = ["css", "scripts", "marked.min.js", "highlight.min.js"]
+        let items = PreviewAssetMirror.mirroredItems
         for item in items {
             let src = resourcesRoot.appendingPathComponent(item)
             let dst = cacheDir.appendingPathComponent(item)

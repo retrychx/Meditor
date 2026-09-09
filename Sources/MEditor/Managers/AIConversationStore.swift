@@ -389,6 +389,8 @@ final class AIConversation {
     func cancelStreaming() {
         streamTask?.cancel()
         streamTask = nil
+        // agentRunner.cancel() 会经 run 的 context 解除挂起的命令确认 / 写入确认 /
+        // 写审阅 continuation（reject/dismiss 均幂等，与下面的补救路径先到先生效）
         agentRunner?.cancel()
         agentRunner = nil
         // dismiss 挂起的命令确认：reject() 会以 false 恢复工具内的 continuation，

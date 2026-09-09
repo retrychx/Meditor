@@ -101,6 +101,9 @@ struct NativeEditorView: NSViewRepresentable {
         textView.imagePasteHandler = { [weak coordinator = context.coordinator] pasteboard in
             coordinator?.pasteImageFromPasteboard(pasteboard) ?? false
         }
+        textView.richPasteHandler = { [weak coordinator = context.coordinator] pasteboard in
+            coordinator?.pasteRichTextFromPasteboard(pasteboard) ?? false
+        }
 
         textView.isRichText = false
         textView.allowsUndo = true
@@ -179,6 +182,13 @@ struct NativeEditorView: NSViewRepresentable {
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        // 换文档（tab 切换/外部重载，即下面的 revision 分支将全量替换内容）时，
+        // 先把防抖窗口内的在途击键回推给旧 tab 的闭包——必须发生在替换
+        // onContentChange 之前：防抖 Timer 触发时读的是「那一刻」的闭包，
+        // 先替换会把旧 tab 的 pending 文本通过新 tab 的闭包写进新 tab（数据损坏）。
+        if context.coordinator.lastAcknowledgedRevision != contentRevision {
+            context.coordinator.flushPendingKeystrokeForDocumentSwitch()
+        }
         context.coordinator.onContentChange = onContentChange
         context.coordinator.onCursorChange = onCursorChange
         context.coordinator.onVisibleTopLineChange = onVisibleTopLineChange
@@ -218,6 +228,10 @@ struct NativeEditorView: NSViewRepresentable {
             context.coordinator.localRevisionPredictionActive = false
             context.coordinator.lastAcknowledgedRevision = contentRevision
             context.coordinator.isProgrammaticChange = true
+            // 全量替换即「换文档」语义：清空 UndoManager，否则 ⌘Z 会把旧文档的
+            // 编辑记录按旧 range 应用到新文档。performUndoableWriteBack 路径是
+            // 故意保留 undo 的（AI 写回可撤销），不要在那里清。
+            textView.undoManager?.removeAllActions()
             textView.string = content
             context.coordinator.lastAcknowledgedContent = content
             context.coordinator.highlighter.rebuildLineOffsets(for: content)
@@ -236,19 +250,11 @@ struct NativeEditorView: NSViewRepresentable {
         if insertRequestID != context.coordinator.lastInsertRequestID {
             context.coordinator.lastInsertRequestID = insertRequestID
             if insertRequestID > 0, !insertText.isEmpty {
-                let range = textView.selectedRange()
-                if textView.shouldChangeText(in: range, replacementString: insertText) {
-                    textView.textStorage?.replaceCharacters(in: range, with: insertText)
-                    textView.didChangeText()
-                    let newCaret = range.location + (insertText as NSString).length
-                    textView.setSelectedRange(NSRange(location: newCaret, length: 0))
-                    let newContent = textView.string
-                    context.coordinator.lastAcknowledgedContent = newContent
-                    context.coordinator.highlighter.rebuildLineOffsets(for: newContent)
-                    context.coordinator.onContentChange(newContent)
-                    context.coordinator.highlighter.scheduleHighlight()
-                    textView.scrollRangeToVisible(textView.selectedRange())
-                }
+                // 与 writeBack 同一套 revision 协议：flush 在途击键、
+                // isProgrammaticChange 包裹、同步 lastAcknowledged*
+                context.coordinator.applyProgrammaticReplacement(
+                    insertText, range: textView.selectedRange(), in: textView
+                )
             }
         }
 
@@ -256,19 +262,12 @@ struct NativeEditorView: NSViewRepresentable {
         if replaceRequestID != context.coordinator.lastReplaceNonce {
             context.coordinator.lastReplaceNonce = replaceRequestID
             if replaceRequestID > 0, !replaceText.isEmpty {
+                // pendingReplaceRange 是保存时刻的旧区间，AI 流式期间文档可能
+                // 变短——applyProgrammaticReplacement 内会 clamp，越界则跳过
                 let range = pendingReplaceRange ?? textView.selectedRange()
-                if textView.shouldChangeText(in: range, replacementString: replaceText) {
-                    textView.textStorage?.replaceCharacters(in: range, with: replaceText)
-                    textView.didChangeText()
-                    let newCaret = range.location + (replaceText as NSString).length
-                    textView.setSelectedRange(NSRange(location: newCaret, length: 0))
-                    let newContent = textView.string
-                    context.coordinator.lastAcknowledgedContent = newContent
-                    context.coordinator.highlighter.rebuildLineOffsets(for: newContent)
-                    context.coordinator.onContentChange(newContent)
-                    context.coordinator.highlighter.scheduleHighlight()
-                    textView.scrollRangeToVisible(textView.selectedRange())
-                }
+                context.coordinator.applyProgrammaticReplacement(
+                    replaceText, range: range, in: textView
+                )
             }
         }
 

@@ -16,7 +16,7 @@ enum PreviewAssetMirror {
     /// the first time a document contains a ```mermaid block. This saves
     /// ~50-100ms of file I/O on every preview initialization for the 95%+
     /// of documents that don't use mermaid diagrams.
-    static let mirroredItems = ["css", "scripts", "marked.min.js", "highlight.min.js"]
+    static let mirroredItems = ["css", "scripts", "marked.min.js", "purify.min.js", "highlight.min.js"]
 
     /// Hard cap on preview cache size. Beyond this we wipe the directory
     /// and let it rebuild on next render. mermaid.min.js (~3.3 MB) and
@@ -130,7 +130,7 @@ enum PreviewAssetMirror {
             return nil
         }
 
-        let contentJSON = jsonEncode(string: initialContent) ?? "\"\""
+        let contentJSON = escapedInitialContentJSON(initialContent)
         let html = template
             .replacingOccurrences(of: "{{INITIAL_THEME}}", with: theme.rawValue)
             .replacingOccurrences(of: "{{INITIAL_CONTENT_JSON}}", with: contentJSON)
@@ -170,5 +170,13 @@ enum PreviewAssetMirror {
     static func jsonEncode(string: String) -> String? {
         guard let data = try? JSONEncoder().encode(string) else { return nil }
         return String(data: data, encoding: .utf8)
+    }
+
+    /// 初始内容现在以 <script type="application/json"> 数据块传递（CSP
+    /// 禁内联脚本）。JSON 串里的 "<" 必须转成 Unicode 转义（'\\u003c'），
+    /// 否则内容中的 "</script>" 会提前闭合数据块，把文档内容变成可执行脚本。
+    static func escapedInitialContentJSON(_ initialContent: String) -> String {
+        return (jsonEncode(string: initialContent) ?? "\"\"")
+            .replacingOccurrences(of: "<", with: "\\u003c")
     }
 }

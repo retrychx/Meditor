@@ -68,7 +68,7 @@
       if (block.length <= PARAGRAPH_CACHE_MAX_BLOCK && paragraphCache.has(block)) {
         htmlParts.push(paragraphCache.get(block));
       } else {
-        var blockHTML = marked.parse(fixTableSeparators(block), { gfm: true, breaks: false });
+        var blockHTML = sanitizeHTML(marked.parse(fixTableSeparators(block), { gfm: true, breaks: false }));
         if (block.length <= PARAGRAPH_CACHE_MAX_BLOCK) {
           paragraphCache.set(block, blockHTML);
           if (paragraphCache.size > PARAGRAPH_CACHE_LIMIT) {
@@ -94,7 +94,20 @@
       .replace(/^(#{1,6}\s+[^\n]+)\n(?!\n)/gm, '$1\n\n')
       .replace(/^(---+|\*\*\*+|___+)\s*\n(?!\n)/gm, '$1\n\n');
     processed = fixTableSeparators(processed);
-    return marked.parse(processed, { gfm: true, breaks: false });
+    return sanitizeHTML(marked.parse(processed, { gfm: true, breaks: false }));
+  }
+
+  // marked 不做任何消毒，其输出直接 innerHTML 会让恶意 markdown 注入
+  // <script>/onerror 等载荷（XSS，进而借 meditor-asset:// 读盘外泄）。
+  // 所有渲染出口统一在这里过 DOMPurify；ALLOWED_URI_REGEXP 在默认白名单
+  // 协议上额外放行 file: 和 meditor-asset:（本地图片路径，点击导航由
+  // Swift 侧 PreviewLinkNavigator 拦截，不会在 webview 内打开）。
+  var SANITIZE_URI_REGEXP = /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix|file|meditor-asset):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i;
+
+  function sanitizeHTML(html) {
+    // 消毒库缺失时兜底放行——template.html 的 CSP（script-src 'self'）仍挡着内联脚本。
+    if (typeof DOMPurify === 'undefined' || typeof DOMPurify.sanitize !== 'function') return html;
+    return DOMPurify.sanitize(html, { ALLOWED_URI_REGEXP: SANITIZE_URI_REGEXP });
   }
 
   function fixTableSeparators(text) {
@@ -228,10 +241,39 @@
     pre.appendChild(btn);
   }
 
-  // Mermaid
-  // mermaid is loaded synchronously in template.html — always available
+  // Mermaid（3.3MB）不再随 template.html 同步加载——template 里没有它的
+  // <script> 标签，这里按需动态注入（Swift 侧 ensureMermaidProvisioned 负责
+  // 在首次出现 ```mermaid 时把文件复制进预览缓存目录）。
+  // 注意 src 必须锚定 window.location（preview.html 所在目录）：页面的
+  // <base href> 被改成了 meditor-asset:// 文档目录，相对 src 会解析错。
+  var mermaidLoadPromise = null;
+
   function loadMermaidIfNeeded() {
-    return Promise.resolve();
+    if (typeof mermaid !== 'undefined') return Promise.resolve();
+    if (mermaidLoadPromise) return mermaidLoadPromise;
+    mermaidLoadPromise = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = new URL('mermaid.min.js', window.location.href).href;
+      s.onload = function () { resolve(); };
+      s.onerror = function () {
+        mermaidLoadPromise = null; // 允许下次重试
+        reject(new Error('mermaid.min.js 加载失败'));
+      };
+      document.head.appendChild(s);
+    });
+    return mermaidLoadPromise;
+  }
+
+  /** 加载/渲染失败时把占位块替换为错误提示，避免页面上留下无声空白。 */
+  function failMermaidPlaceholders(diagrams, message) {
+    (diagrams || []).forEach(function (d) {
+      var el = document.getElementById(d.id);
+      if (!el) return;
+      var div = document.createElement('div');
+      div.className = 'error-block';
+      div.textContent = 'Mermaid: ' + message;
+      el.outerHTML = div.outerHTML;
+    });
   }
 
   // 最近一次 renderInto 提取出的全部 mermaid 图（id 按文档顺序稳定），
@@ -267,7 +309,9 @@
         var el = document.getElementById(d.id);
         if (el) observer.observe(el);
       });
-    }).catch(function () {});
+    }).catch(function (e) {
+      failMermaidPlaceholders(diagrams, String(e && e.message || e));
+    });
   }
 
   /** 立即渲染所有仍是占位的 mermaid 图（导出/发布前调用），全部完成后 resolve。 */

@@ -81,6 +81,7 @@ final class PreviewAssetMirrorTests: XCTestCase {
         try! "body{}".write(to: cssDir.appendingPathComponent("github.css"), atomically: true, encoding: .utf8)
         try! "console.log(1)".write(to: scriptsDir.appendingPathComponent("bridge.js"), atomically: true, encoding: .utf8)
         try! "marked".write(to: root.appendingPathComponent("marked.min.js"), atomically: true, encoding: .utf8)
+        try! "purify".write(to: root.appendingPathComponent("purify.min.js"), atomically: true, encoding: .utf8)
         try! "hljs".write(to: root.appendingPathComponent("highlight.min.js"), atomically: true, encoding: .utf8)
         try! "SHOULD-NOT-MIRROR".write(to: root.appendingPathComponent("mermaid.min.js"), atomically: true, encoding: .utf8)
         return root
@@ -189,5 +190,23 @@ final class PreviewAssetMirrorTests: XCTestCase {
         let data = try XCTUnwrap(encoded.data(using: .utf8))
         let decoded = try JSONDecoder().decode(String.self, from: data)
         XCTAssertEqual(decoded, "hello \"world\"\nline2")
+    }
+
+    // MARK: - escapedInitialContentJSON
+
+    /// 初始内容写进 <script type="application/json"> 数据块：内容里的 "</script>"
+    /// 必须被转义，否则会提前闭合数据块变成可执行脚本（XSS）。
+    func test_escapedInitialContentJSON_closesScriptTagSafely() throws {
+        let payload = "before </script><script>alert(1)</script> after"
+        let encoded = PreviewAssetMirror.escapedInitialContentJSON(payload)
+
+        XCTAssertFalse(encoded.contains("</script>"), "closing tag must be escaped")
+        XCTAssertFalse(encoded.contains("<"), "no raw '<' may survive")
+
+        // 仍是合法 JSON，且解码后还原原文。
+        let unescaped = encoded.replacingOccurrences(of: "\\u003c", with: "<")
+        let data = try XCTUnwrap(unescaped.data(using: .utf8))
+        let decoded = try JSONDecoder().decode(String.self, from: data)
+        XCTAssertEqual(decoded, payload)
     }
 }

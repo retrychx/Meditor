@@ -755,6 +755,7 @@ extension LocalizationManager {
         "error.file.accessDenied": ("Access denied to the file", "无权访问该文件"),
         "error.file.readFailed": ("Failed to read file: %@", "读取文件失败：%@"),
         "error.file.writeFailed": ("Failed to write file: %@", "写入文件失败：%@"),
+        "error.file.alreadyExists": ("A file named “%@” already exists", "已存在同名文件“%@”"),
 
         // Image paste / drop
         "image.pasteFailed": ("Couldn't save the image: %@", "图片保存失败：%@"),
