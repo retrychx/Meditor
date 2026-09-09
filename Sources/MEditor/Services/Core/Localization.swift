@@ -244,6 +244,15 @@ extension LocalizationManager {
         "ai.autoAttach.toggleHint": ("Inject the active tab as default context when sending; the input bar chip can skip it per message",
                                      "发送对话时默认注入当前 tab 的文档内容；输入栏 chip 可单次移除"),
 
+        // 聊天视觉输入（图片附件：输入框 chips / 气泡缩略图 / 后端降级提示）
+        "ai.images.remove": ("Remove image", "移除图片"),
+        "ai.images.preview": ("Preview image", "预览图片"),
+        "ai.images.decodeFailed": ("Couldn't load this image", "图片加载失败"),
+        "ai.images.historyPlaceholder": ("%d image(s) — images aren't kept in chat history",
+                                         "%d 张图片（历史记录不保存图片内容）"),
+        "ai.images.unsupportedBackend": ("The current backend doesn't support image input — your images weren't sent, only the text.",
+                                         "当前后端不支持图片输入——图片未发送，仅发送了文字。"),
+
         // 斜杠 AI 命令库（编辑器 / 菜单，标题与一句话说明随 UI 语言）
         "slash.ask.title": ("AI Answer", "AI 回答问题"),
         "slash.ask.subtitle": ("Ask a question inline at the caret", "在光标处内联回答问题"),

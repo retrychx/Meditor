@@ -7,6 +7,32 @@ struct AIChatMessage: Identifiable, Codable, Sendable {
     var id = UUID()
     let role: Role
     var text: String
+    /// 图片附件（仅内存）：base64 体积大，不进会话持久化；编码时只记 imageCount 占位。
+    var images: [AIImageAttachment] = []
+    /// 持久化的图片数量：重新打开会话后图片数据已丢弃，按此在气泡里渲染占位说明。
+    var imageCount: Int = 0
+
+    enum CodingKeys: String, CodingKey {
+        case id, role, text, imageCount   // images 故意不编码（见 images 注释）
+    }
+
+    init(id: UUID = UUID(), role: Role, text: String, images: [AIImageAttachment] = []) {
+        self.id = id
+        self.role = role
+        self.text = text
+        self.images = images
+        self.imageCount = images.count
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        role = try c.decode(Role.self, forKey: .role)
+        text = try c.decode(String.self, forKey: .text)
+        // 旧版 ai-sessions.json 无 imageCount 字段，解码兼容为 0
+        imageCount = try c.decodeIfPresent(Int.self, forKey: .imageCount) ?? 0
+        images = []
+    }
 }
 
 struct AISession: Identifiable, Codable, Sendable {

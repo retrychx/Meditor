@@ -52,6 +52,13 @@ struct AgentMessage: Sendable, Codable {
     var toolCalls: [AgentToolCall]?
     var toolCallID: String?
     var toolName: String?
+    /// 图片附件（仅 user 消息、仅当前 run 内存）：base64 不进 agentHistory 持久化，
+    /// 与 AIChatMessage.images 同一取舍。不参与 Codable（见 CodingKeys）。
+    var images: [AIImageAttachment]? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case role, content, toolCalls, toolCallID, toolName   // images 故意不编码
+    }
 
     // Convert to standard AIMessage (system/user/assistant only)
     var asAIMessage: AIMessage {
@@ -72,6 +79,21 @@ struct AgentMessage: Sendable, Codable {
         case .system:
             return ["role": "system", "content": content]
         case .user:
+            // 带图片附件 → OpenAI 多模态 content parts；无图片保持纯文本字符串格式
+            // （兼容纯文本模型，且不改变历史请求的 wire 字节）
+            if let images, !images.isEmpty {
+                var parts: [[String: Any]] = []
+                if !content.isEmpty {
+                    parts.append(["type": "text", "text": content])
+                }
+                for image in images {
+                    parts.append([
+                        "type": "image_url",
+                        "image_url": ["url": image.dataURL]
+                    ])
+                }
+                return ["role": "user", "content": parts]
+            }
             return ["role": "user", "content": content]
         case .assistant:
             var d: [String: Any] = ["role": "assistant"]

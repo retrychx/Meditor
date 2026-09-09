@@ -7,16 +7,58 @@ extension AIAssistantPanel {
         HStack(alignment: .top, spacing: 9) {
             if message.role == .user {
                 Spacer(minLength: 40)
-                Text(message.text)
-                    .font(.system(size: 13))
-                    .foregroundStyle(accent.onFill(theme))
-                    .textSelection(.enabled)
-                    .lineSpacing(3)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous).fill(accent.fill(theme))
-                    )
+                VStack(alignment: .trailing, spacing: 6) {
+                    if !message.images.isEmpty {
+                        // 图片附件缩略图（当前会话内可点开大图预览）
+                        HStack(spacing: 6) {
+                            ForEach(message.images) { attachment in
+                                Button { previewImage = attachment } label: {
+                                    Group {
+                                        if let image = attachment.nsImage {
+                                            Image(nsImage: image)
+                                                .resizable()
+                                                .scaledToFill()
+                                        } else {
+                                            Image(systemName: "photo")
+                                                .foregroundStyle(theme.craftSecondary)
+                                        }
+                                    }
+                                    .frame(width: 88, height: 88)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .strokeBorder(theme.separator.opacity(0.5), lineWidth: 0.5)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .help(L("ai.images.preview"))
+                            }
+                        }
+                    } else if message.imageCount > 0 {
+                        // 会话重启后图片数据不进持久化（省体积），只显示占位说明
+                        Label(L("ai.images.historyPlaceholder", message.imageCount), systemImage: "photo")
+                            .font(.system(size: 11))
+                            .foregroundStyle(accent.onFill(theme).opacity(0.85))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(accent.fill(theme).opacity(0.75))
+                            )
+                    }
+                    if !message.text.isEmpty {
+                        Text(message.text)
+                            .font(.system(size: 13))
+                            .foregroundStyle(accent.onFill(theme))
+                            .textSelection(.enabled)
+                            .lineSpacing(3)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(accent.fill(theme))
+                            )
+                    }
+                }
             } else {
                 AIAssistantOrb(size: 20, glow: true).padding(.top, 1)
                 VStack(alignment: .leading, spacing: 6) {

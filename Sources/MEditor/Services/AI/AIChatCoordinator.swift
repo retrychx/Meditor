@@ -31,7 +31,6 @@ final class AIChatCoordinator {
         // run 结束且有写入时挂到 runState 供步骤面板提供回滚入口
         let checkpoint = AgentRunCheckpoint()
         let context = AgentContext.make(appState: state, checkpoint: checkpoint)
-        let tools   = BuiltinAgentTools.all
 
         // @mention 所需的主线程上下文快照（不能在 Task.detached 里访问 MainActor 属性）
         let docName    = state.selectedTab?.name
@@ -41,6 +40,7 @@ final class AIChatCoordinator {
 
         let userTurnCount = convo.messages.filter { $0.role == .user }.count
         let baseSys = systemContext(includeFullDoc: userTurnCount == 1 && includeAutoContext)
+        let mcpManager = state.mcpClientManager
 
         Task {
             // @mention IO 在后台执行
@@ -53,6 +53,11 @@ final class AIChatCoordinator {
             )
             var sysContent = baseSys
             if !mentionCtx.isEmpty { sysContent += mentionCtx }
+            // MCP 客户端：run 开始时才懒连接有配置的 server；连接失败的降级为跳过，
+            // 并把失败名单注入系统提示，让模型知道这些 mcp__ 工具本轮不可用
+            var tools = BuiltinAgentTools.all
+            tools.append(contentsOf: await mcpManager.refreshForAgentRun(workspaceURL: wsRoot))
+            if let notice = mcpManager.modelFacingNotice { sysContent += notice }
             await MainActor.run {
                 launchAgentRunner(sysContent: sysContent, config: config, context: context,
                                   tools: tools, checkpoint: checkpoint)
@@ -84,13 +89,34 @@ final class AIChatCoordinator {
             } else {
                 agentMessages.insert(AgentMessage(role: .system, content: sysContent), at: 0)
             }
-            agentMessages.append(AgentMessage(role: .user, content: newUserMsg.text))
+            agentMessages.append(AgentMessage(
+                role: .user, content: newUserMsg.text,
+                images: newUserMsg.images.isEmpty ? nil : newUserMsg.images
+            ))
         } else {
-            // 回退：从 AIChatMessage 重建（丢失工具调用上下文，适用于首轮或旧会话）
+            // 回退：从 AIChatMessage 重建（丢失工具调用上下文，适用于首轮或旧会话）。
+            // 图片只挂在当前这条 user 消息上：历史消息的图片在会话重启后已丢弃，
+            // 且不应每轮重复发送（体积/token 成本）。
             agentMessages = [AgentMessage(role: .system, content: sysContent)]
             agentMessages += convo.messages.map {
                 AgentMessage(role: $0.role == .user ? .user : .assistant, content: $0.text)
             }
+            if let lastUser = convo.messages.last, lastUser.role == .user,
+               !lastUser.images.isEmpty, agentMessages.last?.role == .user {
+                agentMessages[agentMessages.count - 1].images = lastUser.images
+            }
+        }
+
+        // Claude CLI 后端是文本-only 的子进程通道，不支持图片 content block：
+        // 图片不随消息发送（文字照发），并在 transcript 里给用户明确提示。
+        if config.kind == .claudeCLI,
+           let lastUser = convo.messages.last, lastUser.role == .user, !lastUser.images.isEmpty {
+            if agentMessages.last?.role == .user {
+                agentMessages[agentMessages.count - 1].images = nil
+            }
+            convo.messages.append(
+                AIChatMessage(role: .assistant, text: L("ai.images.unsupportedBackend"))
+            )
         }
 
         // 截断提示追加在最新用户消息之后（占位 bubble 之前）——时序上提示是对最新
@@ -125,8 +151,13 @@ final class AIChatCoordinator {
         // 「失败 run 已落盘的写入 + 续跑的写入」完整链路；没有则新建。
         let checkpoint = convo.lastRunState?.checkpoint ?? AgentRunCheckpoint()
         let context    = AgentContext.make(appState: state, checkpoint: checkpoint)
-        startAgentRun(agentMessages: agentMessages, config: config, context: context,
-                      tools: BuiltinAgentTools.all, checkpoint: checkpoint)
+        // MCP 工具与首发路径同一来源：续跑同样走懒连接 + 失败降级
+        Task {
+            var tools = BuiltinAgentTools.all
+            tools.append(contentsOf: await state.mcpClientManager.refreshForAgentRun(workspaceURL: state.rootURL))
+            startAgentRun(agentMessages: agentMessages, config: config, context: context,
+                          tools: tools, checkpoint: checkpoint)
+        }
     }
 
     /// 启动 AgentRunner 并接线全部回调（按发起会话定向写回）。

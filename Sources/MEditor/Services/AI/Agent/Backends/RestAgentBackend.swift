@@ -473,6 +473,22 @@ struct RestAgentBackend: AgentBackend {
             case .system: break   // 已在外层提取
 
             case .user:
+                // 图片附件 → Anthropic image 内容块（base64 source）。放在文本块之前
+                // （官方推荐的 parts 顺序）。无图片时 content 保持字符串形态，与旧版一致。
+                var newBlocks: [[String: Any]] = []
+                for image in msg.images ?? [] {
+                    newBlocks.append([
+                        "type": "image",
+                        "source": [
+                            "type": "base64",
+                            "media_type": image.mimeType,
+                            "data": image.base64
+                        ] as [String: Any]
+                    ])
+                }
+                if !msg.content.isEmpty {
+                    newBlocks.append(["type": "text", "text": msg.content])
+                }
                 // 连续 user 消息合并（Anthropic 要求 user/assistant 严格交替）：
                 // 从 AIChatMessage fallback 重建历史时可能出现 user-user 相邻。
                 // 与下方 tool_result 合并同手法：content 统一升级为块数组再追加。
@@ -485,11 +501,11 @@ struct RestAgentBackend: AgentBackend {
                     } else {
                         blocks = []
                     }
-                    if !msg.content.isEmpty {
-                        blocks.append(["type": "text", "text": msg.content])
-                    }
+                    blocks.append(contentsOf: newBlocks)
                     last["content"] = blocks
                     result[result.count - 1] = last
+                } else if msg.images?.isEmpty == false {
+                    result.append(["role": "user", "content": newBlocks])
                 } else {
                     result.append(["role": "user", "content": msg.content])
                 }
