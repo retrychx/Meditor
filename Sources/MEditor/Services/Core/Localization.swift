@@ -1142,6 +1142,21 @@ extension LocalizationManager {
         "settings.ai.mcpCopy": ("Copy", "复制"),
         "settings.ai.mcpCopied": ("MCP config copied", "MCP 配置已复制"),
 
+        // MCP 客户端（内置 Agent 作为 MCP client 连接外部工具服务器）
+        "settings.ai.mcpClient": ("MCP Client", "MCP 客户端"),
+        "settings.ai.mcpClientLabel": ("External tool servers", "外部工具服务器"),
+        "settings.ai.mcpClientHint": ("Give the in-app Agent tools from external MCP servers. Config: ~/.meditor/mcp.json plus <workspace>/.meditor/mcp.json (same-name entries in the workspace file win)",
+                                      "让内置 Agent 调用外部 MCP server 的工具。配置文件：~/.meditor/mcp.json 与 <工作区>/.meditor/mcp.json（同名条目以工作区为准）"),
+        "settings.ai.mcpClientEmpty": ("No MCP servers configured", "尚未配置 MCP server"),
+        "settings.ai.mcpClientOpenConfig": ("Open Config File", "打开配置文件"),
+        "settings.ai.mcpClientReconnect": ("Reconnect", "重新连接"),
+        "settings.ai.mcpClientToolsCount": ("%d tools", "%d 个工具"),
+        "settings.ai.mcpClientConnected": ("Connected", "已连接"),
+        "settings.ai.mcpClientFailed": ("Connection failed", "连接失败"),
+        "settings.ai.mcpClientDisconnected": ("Not connected", "未连接"),
+        "settings.ai.mcpClientConnecting": ("Connecting…", "连接中…"),
+        "settings.ai.mcpClientConfigIssue": ("Config issue: %@", "配置问题：%@"),
+
         // 技能导入/导出（用户间分享技能）
         "plugin.import": ("Import", "导入"),
         "plugin.importFromFile": ("Import from File…", "从文件导入…"),

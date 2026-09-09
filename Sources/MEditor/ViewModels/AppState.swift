@@ -48,6 +48,10 @@ final class AppState {
     /// 不再逐轮弹框——缓存从 per-context（每轮消息新建即失效）提升到共享实例。
     let commandApprovals = CommandApprovalStore()
 
+    /// MCP 客户端管理器（App 会话级单例）：内置 Agent 连接外部 MCP server，
+    /// 把远端工具纳入工具目录。懒连接——agent run 开始时才真正拉起 server。
+    let mcpClientManager = MCPClientManager()
+
     /// AI assistant conversation store (multi-session, persisted).
     /// Lazy so disk I/O is deferred until the AI panel is first opened.
     @ObservationIgnored
