@@ -49,6 +49,8 @@ struct AIAssistantPanel: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            // 后台任务区（进行中/最近完成）：有任务时才占位
+            AIBackgroundTasksSection(theme: theme)
             content
             // @mention picker：作为独立布局元素显示在输入框正上方，绝不遮挡
             if showMentionPicker {
@@ -287,6 +289,41 @@ struct AIAssistantPanel: View {
     /// 断点续传入口（上次 run 失败中断时出现）：复用已完成的工具调用结果继续跑。
     func resumeInterruptedRun() {
         coordinator.resumeInterruptedRun()
+    }
+
+    /// 「后台运行」入口：输入作为独立后台任务发起（独立 AgentRunner + context），
+    /// 不占用当前聊天会话——不追加消息、不经流式渲染，完成后 toast + 系统通知。
+    /// 已知取舍：@mention 不做上下文展开；图片附件不支持（入口按钮在带图时禁用）。
+    func sendInBackground() {
+        let trimmed = convo.input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, pendingImages.isEmpty else { return }
+
+        // 引用选段与聊天发送同一处理：作为 markdown 引用拼到提问前
+        let prompt: String
+        if let quoted = state.aiUI.quotedContext, !quoted.isEmpty {
+            let quotedBlock = quoted
+                .split(separator: "\n", omittingEmptySubsequences: false)
+                .map { "> \($0)" }
+                .joined(separator: "\n")
+            prompt = quotedBlock + "\n\n" + trimmed
+        } else {
+            prompt = trimmed
+        }
+
+        let includeFullDoc = settings.aiAutoAttachContext
+            && autoContextRemovedForTab != state.selectedTab?.id
+        let started = state.backgroundAgentTasks.start(
+            prompt: prompt,
+            systemPrompt: coordinator.systemContext(includeFullDoc: includeFullDoc),
+            config: AIConfig.current(settings, scene: .agent),
+            maxSteps: settings.aiAgentMaxSteps
+        )
+        // 并发上限拒绝等场景已由 service toast，输入保留给用户重试
+        guard started != nil else { return }
+        convo.input = ""
+        mentionTokens = []
+        autoContextRemovedForTab = nil
+        state.aiUI.quotedContext = nil
     }
 }
 

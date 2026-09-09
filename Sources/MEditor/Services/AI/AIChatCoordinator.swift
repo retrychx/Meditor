@@ -285,7 +285,9 @@ final class AIChatCoordinator {
     ///   it of the document name to avoid re-paying the token cost every round.
     ///   Selected text (and its containing paragraph) is always included because
     ///   it's user-initiated and small.
-    private func systemContext(includeFullDoc: Bool = true) -> String {
+    /// internal（非 private）：后台任务发起路径（AIAssistantPanel.sendInBackground）
+    /// 复用同一份 grounding，不另写一套 system prompt。
+    func systemContext(includeFullDoc: Bool = true) -> String {
         var ctx = """
 You are a helpful writing assistant embedded in a native macOS Markdown editor.
 Rules:

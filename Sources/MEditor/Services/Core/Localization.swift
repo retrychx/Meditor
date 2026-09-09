@@ -1219,6 +1219,19 @@ extension LocalizationManager {
         "ai.onDevice.notEnabled": ("Apple Intelligence isn't enabled in System Settings", "Apple 智能未启用（请在系统设置中开启）"),
         "ai.onDevice.modelNotReady": ("Model is downloading…", "模型资源下载中…"),
         "ai.onDevice.unknown": ("Unavailable", "暂不可用"),
+
+        // 后台 Agent 任务（脱离聊天 UI 独立运行；toast + 系统通知 + 任务列表）
+        "ai.background.section": ("Background Tasks", "后台任务"),
+        "ai.background.running": ("Running…", "运行中…"),
+        "ai.background.runHelp": ("Run in background — keep editing and chatting while it works",
+                                  "在后台运行该任务，运行期间可继续编辑和聊天"),
+        "ai.background.limitReached": ("%d background tasks already running — wait for one to finish",
+                                       "已有 %d 个后台任务在运行，请等待完成后再发起"),
+        "ai.background.done": ("Background task done: %@", "后台任务完成：%@"),
+        "ai.background.failed": ("Background task failed: %@ — %@", "后台任务失败：%@——%@"),
+        "ai.background.cancelled": ("Background task cancelled: %@", "后台任务已取消：%@"),
+        "ai.background.cancelTask": ("Cancel this task", "取消该任务"),
+        "ai.background.notificationTitle": ("MEditor Background Task", "MEditor 后台任务"),
     ]
 
     static let table: [String: (en: String, zh: String)] = {

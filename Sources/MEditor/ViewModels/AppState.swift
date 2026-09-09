@@ -57,6 +57,13 @@ final class AppState {
     @ObservationIgnored
     private(set) lazy var aiConversation: AIConversation = AIConversation()
 
+    #if os(macOS)
+    /// 后台 Agent 任务（macOS-only）：脱离聊天 UI 独立运行 agent run，
+    /// 完成后 toast + 系统通知。lazy：首次发起后台任务时才创建。
+    @ObservationIgnored
+    private(set) lazy var backgroundAgentTasks = BackgroundAgentTaskService(appState: self)
+    #endif
+
     /// 全局待办状态，两个 Todo 视图共享同一份数据。
     let todoStore = TodoStore()
 
