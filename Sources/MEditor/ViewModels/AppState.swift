@@ -62,6 +62,10 @@ final class AppState {
     /// 完成后 toast + 系统通知。lazy：首次发起后台任务时才创建。
     @ObservationIgnored
     private(set) lazy var backgroundAgentTasks = BackgroundAgentTaskService(appState: self)
+    /// 定时任务调度（macOS-only）：cron 命中时复用 backgroundAgentTasks 发起后台 run。
+    /// lazy + init 末尾主动触碰：随 App 启动生效，首次访问前不占资源。
+    @ObservationIgnored
+    private(set) lazy var agentScheduler = AgentSchedulerService(appState: self)
     #endif
 
     /// 全局待办状态，两个 Todo 视图共享同一份数据。
@@ -77,6 +81,10 @@ final class AppState {
             if rootURL?.standardizedFileURL != oldValue?.standardizedFileURL {
                 rebuildWorkspaceIndex(root: rootURL)
                 if rootURL == nil { gitStatusService.clear() }
+                #if os(macOS)
+                // 工作区切换 → 重载定时任务配置（全局 + 工作区合并）
+                agentScheduler.reload(workspaceURL: rootURL)
+                #endif
             }
         }
     }
@@ -417,6 +425,10 @@ final class AppState {
         agentWriteSelfCheck.onReport = { [weak self] report in
             self?.showToast(L("ai.selfcheck.toast", report.totalCount), icon: "stethoscope")
         }
+        #if os(macOS)
+        // 启动时即生效定时任务（无工作区时也会触发全局条目）
+        _ = agentScheduler
+        #endif
     }
 
     deinit {

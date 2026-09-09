@@ -13,6 +13,9 @@ extension SettingsView {
                 // MCP 客户端（内置 Agent 调用外部 MCP server 的工具）
                 mcpClientSection
 
+                // 定时任务（cron 触发的后台 Agent 任务）
+                scheduledTasksSection
+
                 // MCP 服务器（外部 Agent 接入）
                 settingsGroup(title: L("settings.ai.mcp")) {
                     settingsStackedRow(label: L("settings.ai.mcpConfigLabel"), subtitle: L("settings.ai.mcpHint")) {
@@ -222,5 +225,94 @@ extension SettingsView {
             try? template.write(to: url, atomically: true, encoding: .utf8)
         }
         NSWorkspace.shared.open(url)
+    }
+
+    // MARK: - 定时任务（cron → 后台 Agent 任务）
+
+    var scheduledTasksSection: some View {
+        settingsGroup(title: L("settings.ai.scheduledTasks")) {
+            settingsStackedRow(label: L("settings.ai.scheduledTasksLabel"),
+                               subtitle: L("settings.ai.scheduledTasksHint")) {
+                VStack(alignment: .leading, spacing: 8) {
+                    let scheduler = state.agentScheduler
+                    if scheduler.entries.isEmpty {
+                        Text(L("settings.ai.scheduledTasksEmpty"))
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(scheduler.entries) { entry in
+                            scheduledTaskRow(entry)
+                        }
+                    }
+                    // 配置解析容错记录（坏条目说明），有则展示
+                    ForEach(scheduler.configIssues, id: \.self) { issue in
+                        Text(L("settings.ai.scheduledTasksConfigIssue", issue))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.orange)
+                            .lineLimit(2)
+                            .truncationMode(.middle)
+                    }
+                    HStack(spacing: 8) {
+                        Button(L("settings.ai.scheduledTasksOpenConfig")) { openScheduledTasksConfig() }
+                    }
+                }
+            }
+        }
+        // 打开设置页时重载配置摘要（用户可能在外部编辑过 schedules.json）
+        .onAppear { state.agentScheduler.reload(workspaceURL: state.rootURL) }
+    }
+
+    /// 单个定时任务行：启用开关 + 名称 + 来源徽标 + cron 与下次触发时间
+    private func scheduledTaskRow(_ entry: ScheduledTaskConfig) -> some View {
+        HStack(spacing: 8) {
+            Toggle("", isOn: Binding(
+                get: { entry.enabled },
+                set: { state.agentScheduler.setEnabled($0, entry: entry) }
+            ))
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(entry.name)
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                    Text(entry.source == .global
+                         ? L("settings.ai.scheduledTasksGlobal")
+                         : L("settings.ai.scheduledTasksWorkspace"))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                }
+                HStack(spacing: 6) {
+                    Text(entry.cron)
+                        .font(.system(size: 10.5, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                    if entry.enabled, let next = state.agentScheduler.nextFireDate(for: entry) {
+                        Text(L("settings.ai.scheduledTasksNext",
+                               next.formatted(date: .abbreviated, time: .shortened)))
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+            }
+            Spacer(minLength: 8)
+        }
+        .padding(.vertical, 2)
+    }
+
+    /// 打开全局配置文件（~/.meditor/schedules.json）；不存在时先写入示例模板再打开。
+    func openScheduledTasksConfig() {
+        let url = ScheduledTaskConfigLoader.defaultGlobalConfigURL
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: url.path) {
+            try? fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? ScheduledTaskConfigWriter.template.write(to: url, atomically: true, encoding: .utf8)
+        }
+        NSWorkspace.shared.open(url)
+        state.agentScheduler.reload(workspaceURL: state.rootURL)
     }
 }
