@@ -110,6 +110,22 @@ extension AIAssistantPanel {
 
                 Spacer(minLength: 4)
 
+                // 「后台运行」：输入作为独立后台任务发起，不占用当前聊天会话
+                //（达到并发上限时由 service toast 拒绝；带图片附件时不支持，禁用）
+                let canSendBackground = !convo.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    && pendingImages.isEmpty
+                Button(action: sendInBackground) {
+                    Image(systemName: "moon.circle")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(canSendBackground ? theme.craftSecondary : theme.craftSecondary.opacity(0.35))
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(theme.craftHover))
+                        .overlay(Circle().strokeBorder(theme.separator.opacity(0.5), lineWidth: 0.5))
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSendBackground)
+                .help(L("ai.background.runHelp"))
+
                 // run 归属另一会话：不误显 Stop（点了会掐断别处的 run），禁用并说明
                 let respondingElsewhere = convo.isResponding && !convo.isActiveSessionResponding
                 // ⌘Return 冲突规避：确认条挂起期间把快捷键让给确认条的「允许执行」

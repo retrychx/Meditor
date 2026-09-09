@@ -54,6 +54,8 @@
 		2600000000000000000003F7 /* ../Sources/MEditor/Resources/Preview/purify.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000004F7 /* ../Sources/MEditor/Resources/Preview/purify.min.js */; };
 		2600000000000000000003F8 /* ../Sources/MEditor/Resources/Preview/scripts/boot.js in Resources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000004F8 /* ../Sources/MEditor/Resources/Preview/scripts/boot.js */; };
 		2600000000000000000002FA /* ../Sources/MEditor/Extensions/FileManager+Directories.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001FA /* ../Sources/MEditor/Extensions/FileManager+Directories.swift */; };
+		2600000000000000000002FB /* ../Sources/MEditor/Skills/AgentSkillStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001FB /* ../Sources/MEditor/Skills/AgentSkillStore.swift */; };
+		2600000000000000000002FC /* ../Sources/MEditor/Services/AI/Agent/Tools/SkillTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001FC /* ../Sources/MEditor/Services/AI/Agent/Tools/SkillTools.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -106,6 +108,8 @@
 		2600000000000000000004F7 /* ../Sources/MEditor/Resources/Preview/purify.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ../Sources/MEditor/Resources/Preview/purify.min.js; sourceTree = "<group>"; };
 		2600000000000000000004F8 /* ../Sources/MEditor/Resources/Preview/scripts/boot.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ../Sources/MEditor/Resources/Preview/scripts/boot.js; sourceTree = "<group>"; };
 		2600000000000000000001FA /* ../Sources/MEditor/Extensions/FileManager+Directories.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/MEditor/Extensions/FileManager+Directories.swift"; sourceTree = "<group>"; };
+		2600000000000000000001FB /* ../Sources/MEditor/Skills/AgentSkillStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Skills/AgentSkillStore.swift; sourceTree = "<group>"; };
+		2600000000000000000001FC /* ../Sources/MEditor/Services/AI/Agent/Tools/SkillTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/MEditor/Services/AI/Agent/Tools/SkillTools.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -195,6 +199,8 @@
 				2600000000000000000004F7 /* ../Sources/MEditor/Resources/Preview/purify.min.js */,
 				2600000000000000000004F8 /* ../Sources/MEditor/Resources/Preview/scripts/boot.js */,
 				2600000000000000000001FA /* ../Sources/MEditor/Extensions/FileManager+Directories.swift */,
+				2600000000000000000001FB /* ../Sources/MEditor/Skills/AgentSkillStore.swift */,
+				2600000000000000000001FC /* ../Sources/MEditor/Services/AI/Agent/Tools/SkillTools.swift */,
 			);
 			name = Shared;
 			sourceTree = "<group>";
@@ -327,6 +333,8 @@
 				2600000000000000000002F8 /* ../Sources/MEditor/Services/Network/ShareImageInliner.swift in Sources */,
 				2600000000000000000002F9 /* ../Sources/MEditor/Utils/UbiquitousFileHelper.swift in Sources */,
 				2600000000000000000002FA /* ../Sources/MEditor/Extensions/FileManager+Directories.swift in Sources */,
+				2600000000000000000002FB /* ../Sources/MEditor/Skills/AgentSkillStore.swift in Sources */,
+				2600000000000000000002FC /* ../Sources/MEditor/Services/AI/Agent/Tools/SkillTools.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

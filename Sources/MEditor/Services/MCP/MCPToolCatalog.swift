@@ -12,10 +12,13 @@ enum MCPToolCatalog {
 
     /// 依赖 UI / AppState 状态的工具，无头模式下没有语义，不暴露：
     /// - insert_at_cursor：需要编辑器光标位置（无头没有编辑器）；
-    /// - open_file：语义是「在编辑器里打开 tab」（退化为读文件，read_file 已覆盖）。
+    /// - open_file：语义是「在编辑器里打开 tab」（退化为读文件，read_file 已覆盖）；
+    /// - load_skill：配套的技能目录只注入 App 内 agent 的系统提示，MCP 无头模式
+    ///   没有该提示，外部 agent 无从得知可用技能名，暴露出去是孤儿工具。
     static let excludedToolNames: Set<String> = [
         "insert_at_cursor",
         "open_file",
+        "load_skill",
     ]
 
     /// 无头模式暴露的工具集（从全量内建工具实时筛选，注册表增删工具时自动跟随）。
