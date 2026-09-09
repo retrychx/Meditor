@@ -417,6 +417,51 @@ final class AgentRunnerStabilityTests: XCTestCase {
         XCTAssertNil(duration, "短路分支不应有执行耗时")
     }
 
+    // MARK: - B15 用户 Stop 解除挂起的写审阅（continuation 不响应 Task 取消）
+
+    func test_cancel_releasesPendingWriteReview_andPreventsLateWrite() async {
+        // 真实 WriteDocumentTool + 挂起式审阅的 mock context：工具卡在 reviewFileWrite
+        // 的 continuation 上（不响应 Task 取消）。用户点 Stop（runner.cancel）必须经
+        // context 解除挂起，否则 run 卡到超时，且审阅随后被批准时写入仍会落盘。
+        let backend = ScriptedBackend(script: [
+            .respond(AgentCompletionResponse(
+                text: "",
+                toolCalls: [AgentToolCall(id: "tc1", name: "write_document",
+                                          argumentsJSON: #"{"content":"rewritten"}"#)],
+                finishReason: "tool_calls"
+            )),
+            .respond(AgentCompletionResponse(text: "不应到达", toolCalls: [], finishReason: "stop")),
+        ])
+        let runner = AgentRunner(maxSteps: 5, backendFactory: { _ in backend })
+        ctx.reviewHangsUntilCancelled = true
+        var completed = false
+        runner.onComplete = { completed = true }
+
+        runner.run(messages: [AgentMessage(role: .user, content: "rewrite")],
+                   tools: [WriteDocumentTool()], config: cfg, context: ctx)
+
+        // 等工具进入挂起的写审阅
+        let startDeadline = Date().addingTimeInterval(2)
+        while ctx.reviewedWritePreviews.isEmpty && Date() < startDeadline {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(ctx.reviewedWritePreviews.count, 1, "工具应已进入写审阅并挂起")
+
+        // 用户点 Stop：cancel 必须解除挂起的审阅，run 及时收尾而非卡到超时
+        runner.cancel()
+
+        let doneDeadline = Date().addingTimeInterval(2)
+        while !completed && Date() < doneDeadline {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(completed, "cancel 后 run 应及时收尾，不卡到超时")
+        XCTAssertGreaterThanOrEqual(ctx.cancelPendingWriteConfirmationCallCount, 1,
+                                    "cancel 应经 context 解除挂起的写审阅")
+        XCTAssertTrue(ctx.writtenContents.isEmpty, "已取消的 run 不得再写入文档")
+        XCTAssertEqual(ctx.currentDocument, "Initial document content")
+        XCTAssertEqual(backend.receivedMessages.count, 1, "取消后不应再发后端请求")
+    }
+
     // MARK: - Helpers
 
     private func runAndWait(_ runner: AgentRunner, tools: [any AgentTool] = []) async {

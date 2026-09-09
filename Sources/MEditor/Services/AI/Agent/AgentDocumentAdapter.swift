@@ -10,6 +10,8 @@ protocol AgentDocumentAdapter: AnyObject {
     var currentDocumentName: String? { get }
     var workspaceURL: URL?           { get }
     var currentTabURL: URL?          { get }   // 供 resolveFile 优先级排序用
+    /// 当前激活 tab 的稳定身份（tab 锁定校验用，见 DocumentContext.currentTabID）
+    var currentTabID: UUID?          { get }
 
     // 当前文档（Tab）操作
     func writeDocument(_ content: String) throws
@@ -51,6 +53,8 @@ protocol AgentDocumentAdapter: AnyObject {
 extension AgentDocumentAdapter {
     /// 默认无打开 Tab——mock / 测试实现无需关心此方法。
     func hasOpenTab(at url: URL) -> Bool { false }
+    /// 默认无 tab 身份——mock / 测试实现的 tab 锁定校验按「未切换」通过。
+    var currentTabID: UUID? { nil }
     /// 默认无挂起确认——mock / 测试实现无需关心此方法。
     func cancelPendingCommandConfirmation() {}
     /// 默认放行——mock / headless 实现无需感知写入确认流程，不破坏既有 conformer。
@@ -98,6 +102,7 @@ final class AppStateDocumentAdapter: AgentDocumentAdapter {
     var currentDocumentName: String? { appState?.selectedTab?.name }
     var workspaceURL: URL?           { appState?.rootURL }
     var currentTabURL: URL?          { appState?.selectedTab?.url.standardizedFileURL }
+    var currentTabID: UUID?          { appState?.selectedTab?.id }
 
     // MARK: - Document ops
 
@@ -254,7 +259,7 @@ final class AppStateDocumentAdapter: AgentDocumentAdapter {
         }
     }
 
-    /// Runner 超时/正常结束时拒绝挂起的写入确认（PendingWrite.reject 幂等，
+    /// Runner 超时/正常结束/用户停止时拒绝挂起的写入确认（PendingWrite.reject 幂等，
     /// 与 AIConversation.cancelStreaming 的补救路径不冲突）。
     func cancelPendingWriteConfirmation() {
         if let convo = appState?.aiConversation {
@@ -262,9 +267,12 @@ final class AppStateDocumentAdapter: AgentDocumentAdapter {
             convo.pendingWrite = nil
         }
         // 挂起的写审阅同样取消：dismiss 触发 DiffReviewState.onCancel，
-        // 恢复工具内挂起的 continuation（resume 幂等，双通道先到先生效）
-        pendingReviewCancel?()
+        // 恢复工具内挂起的 continuation（resume 幂等，双通道先到先生效）。
+        // 先取出再调：dismiss 链上可能重入本方法（dismiss → activeRunner.cancel
+        // → cancelPendingWriteConfirmation），先清空保证重入是 no-op。
+        let cancel = pendingReviewCancel
         pendingReviewCancel = nil
+        cancel?()
     }
 
     // MARK: - 写前 diff 审阅（默认主流程）

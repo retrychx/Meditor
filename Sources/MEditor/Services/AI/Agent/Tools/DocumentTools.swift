@@ -5,6 +5,27 @@ import Foundation
 //   - 传 filename   → 直接作用于指定文件（文件名 / 工作区相对路径 / 绝对路径），
 //                     无需先 open_file 激活 tab。
 
+// MARK: - 当前文档写回校验（tab 锁定 + 取消检查）
+
+/// 写回「当前文档」前的双重校验（对齐 SlashAICommandExecutor 的 sourceTabID 锁定模式）。
+/// diff 审阅 / 确认条把工具挂起在 continuation 上（不响应 Task 取消），期间用户可能：
+///   - 切到别的 tab → 写回目标已变，直接把内容写进去就是数据损坏；
+///   - 点了 Stop    → run 已取消，审阅随后被批准也不得落盘。
+/// - Returns: 校验失败时给模型的错误文案（不落盘）；nil = 校验通过可写入。
+/// - Throws:  run 已取消时抛 CancellationError（Runner 按取消走向收尾，
+///            不包装成误导性的 tool error 回灌历史）。
+private func validateCurrentDocWriteTarget(
+    sourceTabID: UUID?,
+    docName: String,
+    context: any AgentContextProtocol
+) async throws -> String? {
+    if Task.isCancelled { throw CancellationError() }
+    guard await context.currentTabID == sourceTabID else {
+        return "[!] 已放弃写入 \(docName)：审阅期间活动文档已切换，为避免写进错误文档本次未落盘。请切回目标文档后重新发起。"
+    }
+    return nil
+}
+
 // MARK: - Read Document
 
 struct ReadDocumentTool: AgentTool {
@@ -144,6 +165,9 @@ struct WriteDocumentTool: AgentTool {
             }
         }
         let docName = await context.currentDocumentName ?? "当前文档"
+        // 锁定发起 tab：审阅挂起期间用户可能切 tab——写回那一刻当前 tab 必须仍是
+        // 发起 tab，否则放弃写入（对齐 SlashAICommandExecutor 的 sourceTabID 模式）
+        let sourceTabID = await context.currentTabID
         var finalContent = content
         // 写入前审阅（当前文档全量重写）；写前内容 = 当前 tab 内存内容
         if !(await context.isFileWriteAllowedForRun) {
@@ -155,7 +179,12 @@ struct WriteDocumentTool: AgentTool {
             guard let approved = await context.reviewFileWrite(preview, base: base, newContent: content) else {
                 return "[!] 用户已拒绝写入：\(docName)（未落盘）"
             }
-            finalContent = approved
+            finalContent = approved   // 逐块审阅后的合并结果，可能与原内容不同
+        }
+        // 审阅返回后、实际写入前：run 已被取消（Stop）或 tab 已切换则绝不落盘
+        if let refusal = try await validateCurrentDocWriteTarget(
+            sourceTabID: sourceTabID, docName: docName, context: context) {
+            return refusal
         }
         do {
             try await context.writeDocument(finalContent)
@@ -260,6 +289,8 @@ struct PatchDocumentTool: AgentTool {
         }
 
         let docName = await context.currentDocumentName ?? "当前文档"
+        // 锁定发起 tab（理由同 write_document 当前文档分支）
+        let sourceTabID = await context.currentTabID
         // 写入前审阅（当前文档局部替换）；写前内容 = 当前 tab 内存内容
         if !(await context.isFileWriteAllowedForRun) {
             if let old = await context.currentDocument {
@@ -278,6 +309,11 @@ struct PatchDocumentTool: AgentTool {
                 guard let merged = await context.reviewFileWrite(
                     preview, base: base, newContent: applied.updated)
                 else { return "[!] 用户已拒绝写入：\(docName)（未落盘）" }
+                // 审阅返回后、实际写入前：run 已被取消（Stop）或 tab 已切换则绝不落盘
+                if let refusal = try await validateCurrentDocWriteTarget(
+                    sourceTabID: sourceTabID, docName: docName, context: context) {
+                    return refusal
+                }
                 do {
                     try await context.writeDocument(merged)
                     return "[OK] 已写入审阅后的改动（\(merged.count) 字符）"
@@ -291,6 +327,11 @@ struct PatchDocumentTool: AgentTool {
                 oldContent: nil, find: find, replace: replace, all: replaceAll)
             let approved = await context.confirmFileWrite(preview)
             guard approved else { return "[!] 用户已拒绝写入：\(docName)" }
+        }
+        // 确认条返回后、实际 patch 前同样校验（确认条也会把工具挂起）
+        if let refusal = try await validateCurrentDocWriteTarget(
+            sourceTabID: sourceTabID, docName: docName, context: context) {
+            return refusal
         }
         do {
             let count = try await context.patchDocument(find: find, replace: replace, all: replaceAll)

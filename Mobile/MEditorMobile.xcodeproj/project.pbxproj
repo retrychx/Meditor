@@ -50,6 +50,8 @@
 		2600000000000000000003F4 /* ../Sources/MEditor/Resources/Preview/scripts/bridge.js in Resources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000004F4 /* ../Sources/MEditor/Resources/Preview/scripts/bridge.js */; };
 		2600000000000000000003F5 /* ../Sources/MEditor/Resources/Preview/marked.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000004F5 /* ../Sources/MEditor/Resources/Preview/marked.min.js */; };
 		2600000000000000000003F6 /* ../Sources/MEditor/Resources/Preview/highlight.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000004F6 /* ../Sources/MEditor/Resources/Preview/highlight.min.js */; };
+		2600000000000000000003F7 /* ../Sources/MEditor/Resources/Preview/purify.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000004F7 /* ../Sources/MEditor/Resources/Preview/purify.min.js */; };
+		2600000000000000000003F8 /* ../Sources/MEditor/Resources/Preview/scripts/boot.js in Resources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000004F8 /* ../Sources/MEditor/Resources/Preview/scripts/boot.js */; };
 		2600000000000000000002FA /* ../Sources/MEditor/Extensions/FileManager+Directories.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600000000000000000001FA /* ../Sources/MEditor/Extensions/FileManager+Directories.swift */; };
 /* End PBXBuildFile section */
 
@@ -99,6 +101,8 @@
 		2600000000000000000004F4 /* ../Sources/MEditor/Resources/Preview/scripts/bridge.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ../Sources/MEditor/Resources/Preview/scripts/bridge.js; sourceTree = "<group>"; };
 		2600000000000000000004F5 /* ../Sources/MEditor/Resources/Preview/marked.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ../Sources/MEditor/Resources/Preview/marked.min.js; sourceTree = "<group>"; };
 		2600000000000000000004F6 /* ../Sources/MEditor/Resources/Preview/highlight.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ../Sources/MEditor/Resources/Preview/highlight.min.js; sourceTree = "<group>"; };
+		2600000000000000000004F7 /* ../Sources/MEditor/Resources/Preview/purify.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ../Sources/MEditor/Resources/Preview/purify.min.js; sourceTree = "<group>"; };
+		2600000000000000000004F8 /* ../Sources/MEditor/Resources/Preview/scripts/boot.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ../Sources/MEditor/Resources/Preview/scripts/boot.js; sourceTree = "<group>"; };
 		2600000000000000000001FA /* ../Sources/MEditor/Extensions/FileManager+Directories.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/MEditor/Extensions/FileManager+Directories.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -185,6 +189,8 @@
 				2600000000000000000004F4 /* ../Sources/MEditor/Resources/Preview/scripts/bridge.js */,
 				2600000000000000000004F5 /* ../Sources/MEditor/Resources/Preview/marked.min.js */,
 				2600000000000000000004F6 /* ../Sources/MEditor/Resources/Preview/highlight.min.js */,
+				2600000000000000000004F7 /* ../Sources/MEditor/Resources/Preview/purify.min.js */,
+				2600000000000000000004F8 /* ../Sources/MEditor/Resources/Preview/scripts/boot.js */,
 				2600000000000000000001FA /* ../Sources/MEditor/Extensions/FileManager+Directories.swift */,
 			);
 			name = Shared;
@@ -269,6 +275,8 @@
 				2600000000000000000003F4 /* ../Sources/MEditor/Resources/Preview/scripts/bridge.js in Resources */,
 				2600000000000000000003F5 /* ../Sources/MEditor/Resources/Preview/marked.min.js in Resources */,
 				2600000000000000000003F6 /* ../Sources/MEditor/Resources/Preview/highlight.min.js in Resources */,
+				2600000000000000000003F7 /* ../Sources/MEditor/Resources/Preview/purify.min.js in Resources */,
+				2600000000000000000003F8 /* ../Sources/MEditor/Resources/Preview/scripts/boot.js in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

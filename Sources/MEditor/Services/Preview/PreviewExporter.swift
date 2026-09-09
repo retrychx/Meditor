@@ -127,128 +127,19 @@ final class PreviewExporter: PreviewExporterProtocol {
         }
     }
 
-    // MARK: - Markdown export (HTML → Markdown via turndown-style JS)
+    // MARK: - Markdown export (HTML → Markdown via shared converter)
 
     private static func exportMarkdown(webView: WKWebView,
                                        to url: URL,
                                        completion: @escaping (Result<URL, ExportError>) -> Void) {
-        // Extract the HTML body content, then do a basic HTML→Markdown conversion in JS.
-        // Elements with inline style attributes are preserved as raw HTML in the output.
-        let js = """
+        // Extract the HTML body content, then convert with the shared mdH2M
+        // converter (HTMLToMarkdownJS, 与粘贴路径同一份实现)。
+        let js = HTMLToMarkdownJS.converterSource + """
+        ;
         (function() {
-            function h2m(el, indent) {
-                indent = indent || '';
-                var md = '';
-                el.childNodes.forEach(function(node) {
-                    if (node.nodeType === 3) {
-                        // 折叠空白为单空格（模拟浏览器渲染）；纯空白节点（标签间的换行/缩进）
-                        // 直接丢弃，否则会作为前导空格污染行首，导致 ## 标题被当成代码块
-                        var t = node.textContent.replace(/\\s+/g, ' ');
-                        if (t.trim() !== '') md += t;
-                        return;
-                    }
-                    if (node.nodeType !== 1) return;
-                    var tag = node.tagName.toLowerCase();
-                    // 跳过脚本/样式/模板，避免 JS/CSS 源码混入 markdown
-                    if (tag === 'script' || tag === 'style' || tag === 'noscript' || tag === 'template') return;
-                    // 带 inline style 的元素保留为 raw HTML，但 <pre> 例外（走下方代码块转换更干净）；
-                    // 前后补空行，确保与相邻 markdown 块正确分隔，否则后续 ### 标题会紧贴而不渲染
-                    if (node.getAttribute('style') && tag !== 'pre') {
-                        md += '\\n\\n' + node.outerHTML + '\\n\\n';
-                        return;
-                    }
-                    if (tag === 'h1') md += '# ' + h2m(node, indent).trim() + '\\n\\n';
-                    else if (tag === 'h2') md += '## ' + h2m(node, indent).trim() + '\\n\\n';
-                    else if (tag === 'h3') md += '### ' + h2m(node, indent).trim() + '\\n\\n';
-                    else if (tag === 'h4') md += '#### ' + h2m(node, indent).trim() + '\\n\\n';
-                    else if (tag === 'h5') md += '##### ' + h2m(node, indent).trim() + '\\n\\n';
-                    else if (tag === 'h6') md += '###### ' + h2m(node, indent).trim() + '\\n\\n';
-                    else if (tag === 'p') md += h2m(node, indent).trim() + '\\n\\n';
-                    else if (tag === 'br') md += '\\n';
-                    // 用 HTML 标签而非 **/*：中文标点边界下 markdown 的 **粗体** 常无法闭合渲染，
-                    // inline HTML 在 markdown 中通用且渲染可靠
-                    else if (tag === 'strong' || tag === 'b') md += '<strong>' + h2m(node, indent) + '</strong>';
-                    else if (tag === 'em' || tag === 'i') md += '<em>' + h2m(node, indent) + '</em>';
-                    else if (tag === 'code' && node.parentElement && node.parentElement.tagName === 'PRE') md += h2m(node, indent);
-                    else if (tag === 'code') md += '`' + h2m(node, indent) + '`';
-                    else if (tag === 'pre') {
-                        var code = node.querySelector('code');
-                        var lang = '';
-                        if (code) { var cls = code.className.match(/language-(\\w+)/); if (cls) lang = cls[1]; }
-                        md += '```' + lang + '\\n' + (code || node).textContent + '\\n```\\n\\n';
-                    }
-                    else if (tag === 'a') md += '[' + h2m(node, indent) + '](' + (node.getAttribute('href') || '') + ')';
-                    else if (tag === 'img') md += '![' + (node.getAttribute('alt') || '') + '](' + (node.getAttribute('src') || '') + ')';
-                    else if (tag === 'ul') {
-                        var lis = node.querySelectorAll(':scope > li');
-                        lis.forEach(function(li) {
-                            var liText = '';
-                            var subList = '';
-                            li.childNodes.forEach(function(c) {
-                                if (c.nodeType === 1 && (c.tagName === 'UL' || c.tagName === 'OL')) {
-                                    subList += h2m(c, indent + '  ');
-                                } else if (c.nodeType === 1) {
-                                    liText += h2m(c, indent);
-                                } else if (c.nodeType === 3) {
-                                    liText += c.textContent;
-                                }
-                            });
-                            md += indent + '- ' + liText.trim() + '\\n';
-                            if (subList) md += subList;
-                        });
-                        if (!indent) md += '\\n';
-                    }
-                    else if (tag === 'ol') {
-                        var i = 1;
-                        var olis = node.querySelectorAll(':scope > li');
-                        olis.forEach(function(li) {
-                            var liText = '';
-                            var subList = '';
-                            li.childNodes.forEach(function(c) {
-                                if (c.nodeType === 1 && (c.tagName === 'UL' || c.tagName === 'OL')) {
-                                    subList += h2m(c, indent + '  ');
-                                } else if (c.nodeType === 1) {
-                                    liText += h2m(c, indent);
-                                } else if (c.nodeType === 3) {
-                                    liText += c.textContent;
-                                }
-                            });
-                            md += indent + i + '. ' + liText.trim() + '\\n';
-                            if (subList) md += subList;
-                            i++;
-                        });
-                        if (!indent) md += '\\n';
-                    }
-                    else if (tag === 'blockquote') {
-                        var inner = h2m(node, indent).trim();
-                        inner.split('\\n').forEach(function(line) {
-                            md += '> ' + line + '\\n';
-                        });
-                        md += '\\n';
-                    }
-                    else if (tag === 'hr') md += '---\\n\\n';
-                    else if (tag === 'table') {
-                        var rows = node.querySelectorAll('tr');
-                        rows.forEach(function(row, ri) {
-                            var cells = row.querySelectorAll('th, td');
-                            var line = '|';
-                            cells.forEach(function(c) { line += ' ' + h2m(c, indent).trim() + ' |'; });
-                            md += line + '\\n';
-                            if (ri === 0) {
-                                md += '|';
-                                cells.forEach(function() { md += ' --- |'; });
-                                md += '\\n';
-                            }
-                        });
-                        md += '\\n';
-                    }
-                    else md += h2m(node, indent);
-                });
-                return md;
-            }
             // 优先从主内容区导出，跳过侧边栏/目录导航等非正文容器；无则退回整个 body
             var root = document.querySelector('main, .main, article, [role="main"]') || document.body;
-            return h2m(root, '');
+            return mdH2M(root, '');
         })();
         """
         webView.evaluateJavaScript(js) { result, error in
@@ -261,11 +152,8 @@ final class PreviewExporter: PreviewExporterProtocol {
                     completion(.failure(.javaScriptFailed("empty result")))
                     return
                 }
-                // 清理：去行尾空格、折叠 3+ 连续空行为一个空行、去首尾空白
-                let cleaned = markdown
-                    .replacingOccurrences(of: "[ \\t]+\\n", with: "\n", options: .regularExpression)
-                    .replacingOccurrences(of: "\\n{3,}", with: "\n\n", options: .regularExpression)
-                    .trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
+                // 清理 + 文件末尾补换行
+                let cleaned = HTMLToMarkdownJS.cleanConvertedMarkdown(markdown) + "\n"
                 do {
                     try cleaned.write(to: url, atomically: true, encoding: .utf8)
                     completion(.success(url))
@@ -325,6 +213,7 @@ final class PreviewExporter: PreviewExporterProtocol {
         webView.evaluateJavaScript("document.documentElement.outerHTML") { result, _ in
             guard let html = result as? String else { completion(nil); return }
             let originalURL = webView.url
+            let originalDelegate = webView.navigationDelegate
             let cacheDir = originalURL?.deletingLastPathComponent()
 
             // Determine if this is a user HTML file (not MEditor's markdown preview cache).
@@ -343,22 +232,34 @@ final class PreviewExporter: PreviewExporterProtocol {
             // Extra delay for HTML files with JS rendering (charts need time to paint).
             let delay: TimeInterval = isMEditorCache ? 0 : 1.5
 
-            let delegate = OneShotNavDelegate(delay: delay) {
-                let config = WKPDFConfiguration()
-                webView.createPDF(configuration: config) { pdfResult in
-                    DispatchQueue.main.async {
-                        // 仅当原始 URL 确为 file:// 时才用 loadFileURL 恢复预览；
-                        // 否则（about:blank / loadHTMLString 来源等）loadFileURL 会抛
-                        // NSInvalidArgumentException 导致整个 app abort，这里用 reload 兜底。
-                        if let originalURL, originalURL.isFileURL, let cacheDir {
-                            webView.loadFileURL(originalURL, allowingReadAccessTo: cacheDir)
-                        } else {
-                            webView.reload()
-                        }
-                        completion(try? pdfResult.get())
-                    }
+            // 导出结束后统一恢复现场：换回原来的 navigationDelegate（预览的
+            // Coordinator——链接拦截/didFinish 注入圈选 listener 都挂在它上面），
+            // 重新 loadFileURL 加载预览页，再通知预览层强制重推当前内容
+            // （页面已被整页重载，Swift 侧 revision 未变，updateNSView 不会自动重推）。
+            let restore: (Data?) -> Void = { data in
+                webView.navigationDelegate = originalDelegate
+                // 仅当原始 URL 确为 file:// 时才用 loadFileURL 恢复预览；
+                // 否则（about:blank / loadHTMLString 来源等）loadFileURL 会抛
+                // NSInvalidArgumentException 导致整个 app abort，这里用 reload 兜底。
+                if let originalURL, originalURL.isFileURL, let cacheDir {
+                    webView.loadFileURL(originalURL, allowingReadAccessTo: cacheDir)
+                } else {
+                    webView.reload()
                 }
+                (originalDelegate as? PreviewExportRestorable)?.restorePreviewAfterExport()
+                completion(data)
             }
+
+            let delegate = OneShotNavDelegate(
+                delay: delay,
+                onFinish: {
+                    let config = WKPDFConfiguration()
+                    webView.createPDF(configuration: config) { pdfResult in
+                        DispatchQueue.main.async { restore(try? pdfResult.get()) }
+                    }
+                },
+                onFail: { restore(nil) }
+            )
             objc_setAssociatedObject(webView, &OneShotNavDelegate.key, delegate, .OBJC_ASSOCIATION_RETAIN)
             webView.navigationDelegate = delegate
             webView.loadHTMLString(processed, baseURL: baseURL)
@@ -451,24 +352,49 @@ final class PreviewExporter: PreviewExporterProtocol {
 
 // MARK: - One-shot navigation delegate for export reload
 
+/// 导出流程（captureViaReload）结束后由预览侧实现的恢复钩子：
+/// 导出会临时替换 navigationDelegate 并整页重载 webview，完成后需要预览层
+/// 强制重推当前内容，恢复显示/链接拦截/圈选监听。
+protocol PreviewExportRestorable: AnyObject {
+    func restorePreviewAfterExport()
+}
+
 private final class OneShotNavDelegate: NSObject, WKNavigationDelegate {
     static var key: UInt8 = 0
     private let delay: TimeInterval
     private let onFinish: () -> Void
+    private let onFail: () -> Void
 
-    init(delay: TimeInterval = 0, onFinish: @escaping () -> Void) {
+    init(delay: TimeInterval = 0, onFinish: @escaping () -> Void, onFail: @escaping () -> Void) {
         self.delay = delay
         self.onFinish = onFinish
+        self.onFail = onFail
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        webView.navigationDelegate = nil
-        objc_setAssociatedObject(webView, &OneShotNavDelegate.key, nil, .OBJC_ASSOCIATION_RETAIN)
+        detach(from: webView)
         if delay > 0 {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { self.onFinish() }
         } else {
             onFinish()
         }
+    }
+
+    // loadHTMLString 加载失败时也必须回调，否则导出的 completion 永远不触发
+    // （保存面板已关，调用方无从得知失败）。
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        detach(from: webView)
+        onFail()
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        detach(from: webView)
+        onFail()
+    }
+
+    private func detach(from webView: WKWebView) {
+        webView.navigationDelegate = nil
+        objc_setAssociatedObject(webView, &OneShotNavDelegate.key, nil, .OBJC_ASSOCIATION_RETAIN)
     }
 }
 

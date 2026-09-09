@@ -22,6 +22,10 @@ enum FileResolveResult {
 protocol DocumentContext: AnyObject {
     var currentDocument: String? { get }
     var currentDocumentName: String? { get }
+    /// 当前激活 tab 的稳定身份标识：写工具启动时捕获、写入前校验——diff 审阅
+    /// 挂起期间用户切 tab 时能识别目标已变，绝不把内容写进别的文档
+    /// （与 SlashAICommandExecutor 的 sourceTabID 同一模式）。nil = 无激活 tab。
+    var currentTabID: UUID? { get }
     func writeDocument(_ content: String) throws
     @discardableResult
     func patchDocument(find: String, replace: String, all: Bool) throws -> Int
@@ -29,6 +33,11 @@ protocol DocumentContext: AnyObject {
     /// 文件级精准 patch（不依赖激活 tab）。返回替换次数；文件不存在时抛错。
     @discardableResult
     func patchFile(name: String, find: String, replace: String, all: Bool) async throws -> Int
+}
+
+extension DocumentContext {
+    /// 默认无 tab 概念——mock / headless 实现恒 nil，「写入前 tab 未变」校验按通过处理。
+    var currentTabID: UUID? { nil }
 }
 
 /// 工作区文件操作。

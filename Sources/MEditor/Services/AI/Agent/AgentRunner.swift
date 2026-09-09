@@ -58,6 +58,10 @@ final class AgentRunner {
     /// Backend factory，默认从 AIConfig 创建；测试时可注入 mock
     private let backendFactory: @Sendable (AIConfig) -> any AgentBackend
     private var runTask: Task<Void, Never>? = nil
+    /// 当前 run 的 context：cancel() 需要经它解除挂起的命令/写入确认——工具确认与
+    /// 写审阅的 continuation 不响应 Task 取消，必须显式 reject，否则 run 卡到超时，
+    /// 且取消后用户在 diff 视图点「全部接受」时写入仍会落盘。
+    private var activeContext: (any AgentContextProtocol)? = nil
 
     /// 停滞检测阈值：相同 (工具名, 参数) 的调用连续失败达到该次数即中断 run。
     /// 3 = 给模型两次换参数/换思路的机会，第三次原样失败基本可判定卡住。
@@ -149,6 +153,7 @@ final class AgentRunner {
         state.termination  = .running
         lastThinkingIndex  = nil
         isRunning          = true
+        activeContext      = context   // cancel() 经它解除挂起的确认/审阅
 
         runTask = Task { [weak self] in
             guard let self else { return }
@@ -193,8 +198,13 @@ final class AgentRunner {
     func cancel() {
         runTask?.cancel()
         runTask = nil
-        // 立即置为未运行：工具可能卡在用户确认对话框（continuation 不响应 Task 取消），
-        // 不把状态复位会导致 UI 一直停在"运行中"。确认由调用方（AIConversation）负责 dismiss，
+        // 解除挂起的命令确认 / 写入确认 / 写审阅：工具可能卡在这些 continuation 上
+        //（不响应 Task 取消），不显式 reject 的话 run 会卡到超时，且取消后用户在
+        // diff 视图点「全部接受」时写入仍会落盘。reject/dismiss 均幂等，与 _run
+        // 收尾和超时路径的兜底调用不冲突（先到先生效）。
+        activeContext?.cancelPendingCommandConfirmation()
+        activeContext?.cancelPendingWriteConfirmation()
+        // 立即置为未运行：不把状态复位会导致 UI 一直停在"运行中"。
         // 之后 _run 的 cleanup 会再次幂等地走一遍收尾流程。
         isRunning = false
         // 用户主动取消：不提供断点续传入口（cleanup 不得覆盖此标记）
@@ -505,6 +515,7 @@ final class AgentRunner {
         isRunning         = false
         lastThinkingIndex = nil
         runTask           = nil
+        activeContext     = nil
         // 结束方式分类：用户取消（cancel 已标记）不覆盖；其余按有无错误归类——
         // UI 据此决定是否在错误旁提供「从中断处继续」（仅 .failed 可续跑）
         if state.termination != .cancelled {

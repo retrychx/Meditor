@@ -50,4 +50,29 @@ final class MeditorAssetSchemeHandlerTests: XCTestCase {
         XCTAssertEqual(standardized, "/Users/test/notes/assets/pic.png",
                        "relative '../' references must escape the base directory correctly, matching how markdown authors reference sibling asset folders")
     }
+
+    // MARK: - isSensitivePath（纵深防御：私钥/凭据目录不通过 meditor-asset 提供）
+
+    func test_isSensitivePath_blocksCredentialDirectories() {
+        let home = "/Users/test"
+        XCTAssertTrue(MeditorAssetSchemeHandler.isSensitivePath("\(home)/.ssh/id_rsa", homeDirectory: home))
+        XCTAssertTrue(MeditorAssetSchemeHandler.isSensitivePath("\(home)/.aws/credentials", homeDirectory: home))
+        XCTAssertTrue(MeditorAssetSchemeHandler.isSensitivePath("\(home)/.gnupg/secring.gpg", homeDirectory: home))
+        XCTAssertTrue(MeditorAssetSchemeHandler.isSensitivePath("\(home)/.kube/config", homeDirectory: home))
+        XCTAssertTrue(MeditorAssetSchemeHandler.isSensitivePath("\(home)/Library/Keychains/login.keychain-db", homeDirectory: home))
+        XCTAssertTrue(MeditorAssetSchemeHandler.isSensitivePath("/etc/passwd", homeDirectory: home))
+        XCTAssertTrue(MeditorAssetSchemeHandler.isSensitivePath("/private/etc/hosts", homeDirectory: home))
+        // 目录本身也拦
+        XCTAssertTrue(MeditorAssetSchemeHandler.isSensitivePath("\(home)/.ssh", homeDirectory: home))
+    }
+
+    func test_isSensitivePath_allowsNormalDocumentPaths() {
+        let home = "/Users/test"
+        XCTAssertFalse(MeditorAssetSchemeHandler.isSensitivePath("\(home)/Documents/pic.png", homeDirectory: home))
+        XCTAssertFalse(MeditorAssetSchemeHandler.isSensitivePath("\(home)/Desktop/notes/assets/pic.png", homeDirectory: home))
+        // 前缀必须按路径段匹配，"/Users/test/.ssh2" 这类目录不能误伤
+        XCTAssertFalse(MeditorAssetSchemeHandler.isSensitivePath("\(home)/.ssh2/config", homeDirectory: home))
+        XCTAssertFalse(MeditorAssetSchemeHandler.isSensitivePath("\(home)/.awsome/pic.png", homeDirectory: home))
+        XCTAssertFalse(MeditorAssetSchemeHandler.isSensitivePath("/etcetera/pic.png", homeDirectory: home))
+    }
 }

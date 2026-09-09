@@ -4,12 +4,14 @@ enum FileServiceError: LocalizedError {
     case accessDenied
     case readFailed(Error)
     case writeFailed(Error)
+    case alreadyExists(URL)
 
     var errorDescription: String? {
         switch self {
         case .accessDenied: return L("error.file.accessDenied")
         case .readFailed(let e): return L("error.file.readFailed", e.localizedDescription)
         case .writeFailed(let e): return L("error.file.writeFailed", e.localizedDescription)
+        case .alreadyExists(let url): return L("error.file.alreadyExists", url.lastPathComponent)
         }
     }
 }
@@ -131,6 +133,12 @@ final class FileService: FileServiceProtocol {
     }
 
     func createFile(at url: URL, content: String) throws {
+        // 拒绝覆盖已存在文件：用户输入的是确切文件名，静默覆盖会丢失数据。
+        // 与 writeFile（语义就是覆盖保存）不同，create 必须先挡一道，
+        // 不依赖调用方自查（参考 TemplateManager 的去重循环是另一条路径）。
+        guard !fm.fileExists(atPath: url.path) else {
+            throw FileServiceError.alreadyExists(url)
+        }
         try content.write(to: url, atomically: true, encoding: .utf8)
     }
 

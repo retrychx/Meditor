@@ -16,6 +16,8 @@ final class MockAgentContext: AgentContextProtocol {
     var currentDocument: String?     = "# Test Document\n\nSome content here.\nAnother line."
     var currentDocumentName: String? = "test.md"
     var workspaceURL: URL?           = URL(fileURLWithPath: "/mock/workspace")
+    /// 当前 tab 身份（tab 锁定校验用）：测试中可在审阅回调里改值，模拟「审阅期间切 tab」。
+    var currentTabID: UUID?          = UUID()
 
     // MARK: - In-memory filesystem
     // 文件名（不含目录前缀）→ 内容，resolveFile / listWorkspaceFiles 从此查找
@@ -58,6 +60,14 @@ final class MockAgentContext: AgentContextProtocol {
     /// 写前审阅结果注入：返回批准后的最终内容（可改写），nil = 用户拒绝/取消。
     /// 未设置时走协议默认语义——转发 confirmFileWrite（Bool 确认），保持既有测试不变。
     var reviewWriteHandler: ((FileWritePreview, String) -> String?)? = nil
+    /// 挂起式写审阅：置 true 后 reviewFileWrite 挂起在 continuation 上（不响应 Task 取消，
+    /// 模拟 GUI diff 审阅态），直到 cancelPendingWriteConfirmation() 以「取消」语义放行。
+    var reviewHangsUntilCancelled: Bool = false
+    /// 挂起中的写审阅 continuation（cancelPendingWriteConfirmation 统一放行）
+    private var pendingReviewContinuations: [CheckedContinuation<String?, Never>] = []
+    /// cancelPending* 调用次数 spy（验证 Runner cancel/收尾的解除接线）
+    private(set) var cancelPendingWriteConfirmationCallCount = 0
+    private(set) var cancelPendingCommandConfirmationCallCount = 0
 
     func setAllowedCommandPatterns(_ patterns: [String]?) {
         allowedCommandPatterns = patterns?.isEmpty == false ? patterns : nil
@@ -185,23 +195,45 @@ final class MockAgentContext: AgentContextProtocol {
         return commandConfirmResult
     }
 
+    /// 确认条钩子（测试用）：返回 writeConfirmResult 前调用，模拟确认条挂起期间的状态变化
+    var confirmWriteHook: (() -> Void)? = nil
+
     func confirmFileWrite(_ path: String, summary: String) async -> Bool {
         confirmedWrites.append((path: path, summary: summary))
+        confirmWriteHook?()
         return writeConfirmResult
     }
 
     func confirmFileWrite(_ preview: FileWritePreview) async -> Bool {
         confirmedWritePreviews.append(preview)
         confirmedWrites.append((path: preview.path, summary: preview.summary))
+        confirmWriteHook?()
         return writeConfirmResult
     }
 
     func reviewFileWrite(_ preview: FileWritePreview, base: WriteBaseContent, newContent: String) async -> String? {
         reviewedWritePreviews.append(preview)
         reviewedWriteContents.append(newContent)
+        if reviewHangsUntilCancelled {
+            // 挂起直到 cancelPendingWriteConfirmation 以 nil（取消）放行
+            return await withCheckedContinuation { cont in
+                pendingReviewContinuations.append(cont)
+            }
+        }
         if let handler = reviewWriteHandler { return handler(preview, newContent) }
         // 默认与协议扩展一致：退化为 Bool 确认条语义
         return await confirmFileWrite(preview) ? newContent : nil
+    }
+
+    func cancelPendingWriteConfirmation() {
+        cancelPendingWriteConfirmationCallCount += 1
+        let pending = pendingReviewContinuations
+        pendingReviewContinuations = []
+        for cont in pending { cont.resume(returning: nil) }   // 取消 = 拒绝语义，不落盘
+    }
+
+    func cancelPendingCommandConfirmation() {
+        cancelPendingCommandConfirmationCallCount += 1
     }
 
     var isFileWriteAllowedForRun: Bool { fileWriteAllowedForRun }

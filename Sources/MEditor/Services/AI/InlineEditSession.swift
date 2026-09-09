@@ -14,6 +14,14 @@ import Foundation
 @MainActor
 enum InlineEditSession {
 
+    /// 写回目标校验：当前 tab 必须仍是发起 tab——AI 运行期间用户切了 tab 时
+    /// 返回 nil，调用方绝不把结果写进别的文档
+    /// （对齐 SlashAICommandExecutor 的 sourceTabID 锁定模式）。
+    static func sourceTabIfCurrent(_ state: AppState, sourceTabID: UUID?) -> EditorTab? {
+        guard let tab = state.selectedTab, tab.id == sourceTabID else { return nil }
+        return tab
+    }
+
     /// 发起一次内联编辑运行。
     /// - Parameters:
     ///   - splice: 把 AI 生成的选区替换文本拼回全文（两侧的定位方式不同：
@@ -40,9 +48,19 @@ enum InlineEditSession {
         let runner = AgentRunner()
         state.diffReview.activeRunner = runner
 
+        // 锁定发起 tab：AI 运行期间用户可能切换 tab——写回那一刻当前 tab 不是
+        // 发起 tab 时绝不把结果合并进别的文档（provider / onFinalize 双重校验，
+        // 对齐 SlashAICommandExecutor 的 sourceTabID 模式）
+        let sourceTabID = state.selectedTab?.id
+
         // 快照过期防护：AI 运行期间用户可能继续编辑——写回时以当前文档为起点
-        // 重定位合并；目标段落已被改动则拒绝覆盖并提示，由用户放弃本次结果
-        state.diffReview.currentContentProvider = { [weak state] in state?.selectedTab?.content }
+        // 重定位合并；目标段落已被改动则拒绝覆盖并提示，由用户放弃本次结果。
+        // 当前 tab 不是发起 tab 时返回 nil（不进 rebase），由 onFinalize 的
+        // tab 校验中止写回并提示。
+        state.diffReview.currentContentProvider = { [weak state] in
+            guard let state else { return nil }
+            return sourceTabIfCurrent(state, sourceTabID: sourceTabID)?.content
+        }
         state.diffReview.onRebaseConflict = { [weak state] in
             state?.showToast(L("ai.inline.targetLost"),
                              icon: "exclamationmark.triangle")
@@ -76,9 +94,13 @@ enum InlineEditSession {
             let modified = splice(finalText)
             // token 失效（dismiss / 新一轮流式）时 commit 被丢弃，lastGeneratedText 也不写回
             let committed = state.diffReview.commitStreamWithModified(modified, generation: streamGen) { merged in
-                if let tab = state.selectedTab {
-                    state.applyAIWriteBack(tab.id, content: merged)
+                // 写回那一刻当前 tab 必须仍是发起 tab：AI 运行期间切了 tab 则
+                // 放弃本次结果，绝不写进别的文档
+                guard let tab = sourceTabIfCurrent(state, sourceTabID: sourceTabID) else {
+                    state.showToast(L("slash.writeBack.tabChanged"), icon: "exclamationmark.triangle")
+                    return
                 }
+                state.applyAIWriteBack(tab.id, content: merged)
                 onFinalize?(merged, finalText)
             }
             if committed {

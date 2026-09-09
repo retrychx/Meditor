@@ -39,6 +39,13 @@ final class MeditorAssetSchemeHandler: NSObject, WKURLSchemeHandler {
             urlSchemeTask.didFailWithError(URLError(.badURL))
             return
         }
+        // 纵深防御：挡住明显敏感的目录前缀。主防线是渲染输出的 DOMPurify
+        // 消毒 + CSP（connect-src 'none'），这里是就算攻击者最终构造出了
+        // meditor-asset:// 请求，也不给读私钥/凭据/系统配置。
+        guard !Self.isSensitivePath(filePath) else {
+            urlSchemeTask.didFailWithError(URLError(.noPermissionsToReadFile))
+            return
+        }
 
         DispatchQueue.global(qos: .userInitiated).async {
             let fm = FileManager.default
@@ -78,6 +85,23 @@ final class MeditorAssetSchemeHandler: NSObject, WKURLSchemeHandler {
         let encodedPath = url.path
         guard let decoded = encodedPath.removingPercentEncoding else { return nil }
         return (decoded as NSString).standardizingPath
+    }
+
+    /// 敏感路径前缀拦截（拆成纯函数便于单测）。
+    /// 只挡"明确不该出现在预览里的"目录：私钥/凭据/系统配置。
+    /// 注意 /etc 是 /private/etc 的符号链接，standardizingPath 不解符号链接，两个都要列。
+    static func isSensitivePath(_ path: String, homeDirectory: String = NSHomeDirectory()) -> Bool {
+        let prefixes = [
+            homeDirectory + "/.ssh",
+            homeDirectory + "/.aws",
+            homeDirectory + "/.gnupg",
+            homeDirectory + "/.kube",
+            homeDirectory + "/.docker",
+            homeDirectory + "/Library/Keychains",
+            "/etc",
+            "/private/etc",
+        ]
+        return prefixes.contains { path == $0 || path.hasPrefix($0 + "/") }
     }
 
     private static func mimeType(forPathExtension ext: String) -> String {

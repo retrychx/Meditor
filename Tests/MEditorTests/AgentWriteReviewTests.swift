@@ -116,6 +116,96 @@ final class AgentWriteReviewTests: XCTestCase {
         XCTAssertEqual(ctx.currentDocument, "Alpha\n\nBeta\n\nGamma")
     }
 
+    // MARK: - tab 锁定：审阅期间切 tab → 绝不写进别的文档（对齐 SlashAI sourceTabID 模式）
+
+    func testWriteDocument_tabSwitchedDuringReview_doesNotWrite() async throws {
+        ctx.reviewWriteHandler = { _, proposed in
+            self.ctx.currentTabID = UUID()   // 模拟审阅挂起期间用户切到别的 tab
+            return proposed             // 用户随后点「全部接受」
+        }
+        let result = try await WriteDocumentTool().execute(
+            arguments: ["content": .string("重写内容")],
+            context: ctx
+        )
+        XCTAssertTrue(result.contains("[!]"), "tab 已切换应返回模型可读的放弃文案")
+        XCTAssertTrue(ctx.writtenContents.isEmpty, "tab 已切换时绝不写入")
+        XCTAssertEqual(ctx.currentDocument, "Alpha\n\nBeta\n\nGamma")
+    }
+
+    func testPatchDocument_tabSwitchedDuringReview_doesNotWrite() async throws {
+        ctx.reviewWriteHandler = { _, proposed in
+            self.ctx.currentTabID = UUID()
+            return proposed
+        }
+        let result = try await PatchDocumentTool().execute(
+            arguments: ["find": .string("Beta"), "replace": .string("BETA")],
+            context: ctx
+        )
+        XCTAssertTrue(result.contains("[!]"))
+        XCTAssertTrue(ctx.writtenContents.isEmpty, "tab 已切换时绝不写入")
+        XCTAssertTrue(ctx.patchCalls.isEmpty)
+        XCTAssertEqual(ctx.currentDocument, "Alpha\n\nBeta\n\nGamma")
+    }
+
+    func testPatchDocument_tabSwitchedBeforeDirectPatch_doesNotPatch() async throws {
+        // 写前内容不可得 → 退化确认条路径同样受 tab 锁定保护
+        ctx.currentDocument = nil
+        ctx.writeConfirmResult = true
+        ctx.confirmWriteHook = { self.ctx.currentTabID = UUID() }   // 确认条挂起期间切 tab
+        let result = try await PatchDocumentTool().execute(
+            arguments: ["find": .string("Beta"), "replace": .string("BETA")],
+            context: ctx
+        )
+        XCTAssertTrue(result.contains("[!]"))
+        XCTAssertTrue(ctx.patchCalls.isEmpty, "tab 已切换时精准 patch 也不得执行")
+    }
+
+    func testWriteDocument_tabUnchanged_stillWrites() async throws {
+        // 回归防护：tab 未切换（currentTabID 不变）时正常落盘
+        ctx.reviewWriteHandler = { _, proposed in proposed }
+        let result = try await WriteDocumentTool().execute(
+            arguments: ["content": .string("Alpha\n\nBETA")],
+            context: ctx
+        )
+        XCTAssertTrue(result.contains("[OK]"))
+        XCTAssertEqual(ctx.currentDocument, "Alpha\n\nBETA")
+    }
+
+    // MARK: - 取消检查：审阅批准返回时 run 已被取消（Stop）→ 不落盘
+
+    func testWriteDocument_cancelledDuringReview_doesNotWrite() async throws {
+        ctx.reviewWriteHandler = { _, proposed in
+            // 模拟：diff 审阅挂起期间用户点了 Stop（Task 已取消），随后才点「全部接受」
+            withUnsafeCurrentTask { $0?.cancel() }
+            return proposed
+        }
+        do {
+            _ = try await WriteDocumentTool().execute(
+                arguments: ["content": .string("重写内容")], context: ctx)
+            XCTFail("已取消的 run 应抛 CancellationError 走向收尾，不应照常写入")
+        } catch is CancellationError {
+            // 预期：Runner 按取消收尾，不包装成 tool error
+        }
+        XCTAssertTrue(ctx.writtenContents.isEmpty, "已取消后审阅批准也不得落盘")
+        XCTAssertEqual(ctx.currentDocument, "Alpha\n\nBeta\n\nGamma")
+    }
+
+    func testPatchDocument_cancelledDuringReview_doesNotWrite() async throws {
+        ctx.reviewWriteHandler = { _, proposed in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return proposed
+        }
+        do {
+            _ = try await PatchDocumentTool().execute(
+                arguments: ["find": .string("Beta"), "replace": .string("BETA")], context: ctx)
+            XCTFail("已取消的 run 应抛 CancellationError")
+        } catch is CancellationError {
+            // 预期
+        }
+        XCTAssertTrue(ctx.writtenContents.isEmpty)
+        XCTAssertEqual(ctx.currentDocument, "Alpha\n\nBeta\n\nGamma")
+    }
+
     // MARK: - run 级「全部允许」：直通，不进审阅
 
     func testAllowAllForRun_skipsReview() async throws {

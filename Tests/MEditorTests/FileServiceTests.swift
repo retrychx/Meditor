@@ -210,6 +210,30 @@ final class FileServiceTests: XCTestCase {
         XCTAssertEqual(readBack, "# New")
     }
 
+    // MARK: - createFile（新建不允许覆盖）
+
+    func test_createFile_createsNewFile() throws {
+        let url = tempDir.appendingPathComponent("new.md")
+        try service.createFile(at: url, content: "# Fresh")
+        let readBack = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertEqual(readBack, "# Fresh")
+    }
+
+    func test_createFile_existingFile_throwsAndPreservesContent() throws {
+        // 新建文件的目标已存在时：必须抛错且原内容不被截断（数据丢失防护）
+        let url = createFile("existing.md", content: "# Precious")
+
+        XCTAssertThrowsError(try service.createFile(at: url, content: "")) { error in
+            guard case FileServiceError.alreadyExists(let existingURL) = error else {
+                return XCTFail("应抛出 FileServiceError.alreadyExists，实际为 \(error)")
+            }
+            XCTAssertEqual(existingURL, url)
+        }
+
+        let readBack = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertEqual(readBack, "# Precious", "已存在文件的内容不得被覆盖")
+    }
+
     func test_loadImmediateChildren_nonexistentDir_returnsEmpty() {
         let badURL = URL(fileURLWithPath: "/nonexistent_path_xyz")
         let items = service.loadImmediateChildren(of: badURL)

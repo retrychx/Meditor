@@ -64,6 +64,8 @@ final class AgentContext: AgentContextProtocol {
     var currentDocument: String?     { doc.currentDocument }
     var currentDocumentName: String? { doc.currentDocumentName }
     var workspaceURL: URL?           { doc.workspaceURL }
+    /// 当前 tab 身份（写工具的 tab 锁定校验用，见 DocumentContext.currentTabID）
+    var currentTabID: UUID?          { doc.currentTabID }
 
     /// 当前文档全量重写（= 当前 tab 内容替换）。快照记 tab 写前原文
     /// （tab 内存内容是用户视角的最新内容，含未保存编辑）。

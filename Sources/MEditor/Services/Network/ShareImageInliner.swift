@@ -64,7 +64,11 @@ enum ShareImageInliner {
 
     // MARK: - src → 本地文件 URL（返回 nil = 不内联）
 
-    private static func resolveFileURL(src: String, baseDirectory: URL) -> URL? {
+    /// 相对路径解析后必须仍落在 baseDirectory 内——否则恶意文档里的
+    /// `../../.ssh/...` 之类引用会在发布时被内联进公网链接。
+    /// （绝对路径 / meditor-asset:// 是用户显式写死的，由 loadImageData 的
+    /// 图片魔数嗅探兜底，非图片内容不内联。）
+    static func resolveFileURL(src: String, baseDirectory: URL) -> URL? {
         if src.isEmpty || src.hasPrefix("data:") || src.hasPrefix("http://") || src.hasPrefix("https://") {
             return nil
         }
@@ -79,7 +83,10 @@ enum ShareImageInliner {
         }
         // 相对路径：先解百分号编码，再相对文档目录解析
         let decoded = src.removingPercentEncoding ?? src
-        return baseDirectory.appendingPathComponent(decoded).standardizedFileURL
+        let resolved = baseDirectory.appendingPathComponent(decoded).standardizedFileURL
+        let basePath = baseDirectory.standardizedFileURL.path
+        guard resolved.path == basePath || resolved.path.hasPrefix(basePath + "/") else { return nil }
+        return resolved
     }
 
     // MARK: - 读文件（带体积预算与类型检查）
@@ -90,8 +97,39 @@ enum ShareImageInliner {
         guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue,
               let attrs = try? fm.attributesOfItem(atPath: url.path),
               let size = attrs[.size] as? Int,
-              size > 0, size <= budget else { return nil }
-        return fm.contents(atPath: url.path)
+              size > 0, size <= budget,
+              let data = fm.contents(atPath: url.path) else { return nil }
+        // 魔数嗅探：扩展名可伪造，发布会把内联结果放到公网——
+        // 只内联真实图片，避免把任意本地文件（伪造成 .png）外泄。
+        guard isSupportedImageData(data) else { return nil }
+        return data
+    }
+
+    /// 真实图片格式嗅探：PNG / JPEG / GIF / WebP 查魔数，SVG 查文本前缀。
+    static func isSupportedImageData(_ data: Data) -> Bool {
+        let bytes = [UInt8](data.prefix(512))
+        if bytes.count >= 8, bytes[0] == 0x89, bytes[1] == 0x50, bytes[2] == 0x4E, bytes[3] == 0x47,
+           bytes[4] == 0x0D, bytes[5] == 0x0A, bytes[6] == 0x1A, bytes[7] == 0x0A {
+            return true // PNG
+        }
+        if bytes.count >= 3, bytes[0] == 0xFF, bytes[1] == 0xD8, bytes[2] == 0xFF {
+            return true // JPEG
+        }
+        if bytes.count >= 6, bytes[0] == 0x47, bytes[1] == 0x49, bytes[2] == 0x46, bytes[3] == 0x38 {
+            return true // GIF ("GIF8")
+        }
+        if bytes.count >= 12, bytes[0] == 0x52, bytes[1] == 0x49, bytes[2] == 0x46, bytes[3] == 0x46,
+           bytes[8] == 0x57, bytes[9] == 0x45, bytes[10] == 0x42, bytes[11] == 0x50 {
+            return true // WebP ("RIFF....WEBP")
+        }
+        // SVG：文本格式，跳过 BOM/空白后应以 "<svg" 或 "<?xml"（随后含 <svg）开头
+        if let text = String(data: Data(bytes), encoding: .utf8) {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "\u{FEFF}", with: "")
+            if trimmed.hasPrefix("<svg") { return true }
+            if trimmed.hasPrefix("<?xml"), trimmed.contains("<svg") { return true }
+        }
+        return false
     }
 
     private static func mimeType(forPathExtension ext: String) -> String {
