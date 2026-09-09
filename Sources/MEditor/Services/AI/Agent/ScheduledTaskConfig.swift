@@ -116,10 +116,17 @@ enum ScheduledTaskConfigLoader {
         return ScheduledTaskConfigLoadResult(entries: entries, issues: issues)
     }
 
+    /// parseEntry 的中间结果（SwiftLint large_tuple：五元组换成具名结构）。
+    private struct ParsedEntry {
+        let name: String
+        let cron: String
+        let prompt: String
+        let enabled: Bool
+        let schedule: CronSchedule
+    }
+
     /// 解析单个条目；失败原因用于 issues 记录（模式同 MCPClientConfigLoader.parseEntry）。
-    private static func parseEntry(_ entry: [String: Any])
-        -> (config: (name: String, cron: String, prompt: String, enabled: Bool,
-                     schedule: CronSchedule)?, issue: String?) {
+    private static func parseEntry(_ entry: [String: Any]) -> (config: ParsedEntry?, issue: String?) {
         guard let rawName = entry["name"] as? String else {
             return (nil, "has a missing or non-string 'name'")
         }
@@ -139,7 +146,8 @@ enum ScheduledTaskConfigLoader {
 
         // enabled 缺省视为 true（手写配置的最少字段就是 name/cron/prompt）
         let enabled = (entry["enabled"] as? Bool) ?? true
-        return ((name, rawCron, prompt, enabled, schedule), nil)
+        return (ParsedEntry(name: name, cron: rawCron, prompt: prompt, enabled: enabled,
+                            schedule: schedule), nil)
     }
 }
 
