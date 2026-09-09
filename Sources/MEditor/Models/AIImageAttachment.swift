@@ -1,5 +1,7 @@
-import AppKit
 import Foundation
+#if os(macOS)
+import AppKit
+#endif
 
 // MARK: - AI 聊天图片附件（仅内存，不落盘）
 
@@ -33,6 +35,7 @@ struct AIImageAttachment: Identifiable, Sendable {
     var dataURL: String { "data:\(mimeType);base64,\(base64)" }
 }
 
+#if os(macOS)
 extension AIImageAttachment {
     /// 解码后的 NSImage（进程内缓存：气泡/芯片每次 body 求值都会取图，
     /// 不缓存则每次重渲染都解码一次 JPEG）。
@@ -47,3 +50,4 @@ extension AIImageAttachment {
     /// 缓存总量很小（单条会话最多 4 张 × 1MB），交给 NSCache 内存压力淘汰即可。
     private static let imageCache = NSCache<NSString, NSImage>()
 }
+#endif
