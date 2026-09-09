@@ -381,6 +381,9 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
         let pasteDocumentURL = documentURL
         let plainFallback = pasteboard.string(forType: .string)
         Task { @MainActor [weak self, weak textView] in
+            // 端侧清理开关在粘贴时刻快照（默认关；见 AISettingsTab 端侧智能分区）。
+            // AppSettings 是 @MainActor，读取必须在此闭包内。
+            let onDeviceCleanupEnabled = AppSettings.shared.aiOnDevicePasteCleanup
             PasteHTMLConverter.shared.convert(html: html) { markdown in
                 guard let self, let textView else { return }
                 // textView 跨 tab 复用：转换期间用户可能已切换 tab，
@@ -388,14 +391,36 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
                 guard self.documentURL == pasteDocumentURL else { return }
                 guard let text = (markdown?.isEmpty == false ? markdown : plainFallback),
                       !text.isEmpty else { return }
-                // 转换期间用户可能又动了光标/内容：clamp 捕获的选区到当前文本范围
-                let textLength = textView.string.utf16.count
-                let location = min(insertionRange.location, textLength)
-                let length = min(insertionRange.length, textLength - location)
-                textView.insertText(text, replacementRange: NSRange(location: location, length: length))
+                // 转换完成后、insertText 之前：开关开启且端侧可用时过一次端侧清理。
+                // 关闭（默认）时走原始同步路径，行为与功能不存在时完全一致。
+                guard onDeviceCleanupEnabled,
+                      FoundationModelService.shared.availability.isAvailable else {
+                    self.insertPastedText(text, at: insertionRange, in: textView)
+                    return
+                }
+                Task { @MainActor [weak self, weak textView] in
+                    // 清理失败/超时/输出为空时 cleanPastedMarkdown 原样返回原文
+                    //（静默回退，不提示），插入路径与正常粘贴一致。
+                    let cleaned = await FoundationModelService.shared
+                        .cleanPastedMarkdown(text, enabled: true)
+                    guard let self, let textView else { return }
+                    // 清理（最长 3s）期间用户可能已切换 tab——再次校验，避免把
+                    // 旧文档的粘贴内容写进新文档
+                    guard self.documentURL == pasteDocumentURL else { return }
+                    self.insertPastedText(cleaned, at: insertionRange, in: textView)
+                }
             }
         }
         return true
+    }
+
+    /// 粘贴插入的共用落点：清理期间用户可能又动了光标/内容，
+    /// clamp 捕获的选区到当前文本范围。insertText 走常规编辑路径，自动注册 undo。
+    private func insertPastedText(_ text: String, at capturedRange: NSRange, in textView: NSTextView) {
+        let textLength = textView.string.utf16.count
+        let location = min(capturedRange.location, textLength)
+        let length = min(capturedRange.length, textLength - location)
+        textView.insertText(text, replacementRange: NSRange(location: location, length: length))
     }
 
     /// 判断 HTML 字符串是否含有真实标签。Safari 等来源复制纯文本也会带一个

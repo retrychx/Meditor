@@ -1182,6 +1182,19 @@ extension LocalizationManager {
                                  "发现 %d 个问题：%d 个可一键修复，%d 个需人工确认"),
         "ai.selfcheck.fix": ("Fix with Agent (%d)", "一键修复（%d）"),
         "ai.selfcheck.dismiss": ("Dismiss", "忽略"),
+
+        // 端侧智能（Apple Foundation Models，macOS 26+）：设置页分区与可用状态
+        "settings.ai.onDevice": ("On-Device Intelligence (Apple Intelligence)", "端侧智能（Apple 智能）"),
+        "settings.ai.onDevicePasteCleanup": ("Clean Pasted Content", "粘贴内容智能清理"),
+        "settings.ai.onDevicePasteCleanupHint": ("Use the on-device model to remove ads, tracking parameters and promo blocks from pasted web content; the original text is kept if cleanup fails — nothing is sent over the network",
+                                                 "粘贴网页内容时用端侧模型去除广告、追踪参数和推广段落；失败时保留原文，全程不联网"),
+        "settings.ai.onDeviceStatus": ("On-Device Model Status", "端侧模型状态"),
+        "ai.onDevice.available": ("Available", "可用"),
+        "ai.onDevice.unsupportedOS": ("Requires macOS 26 or later", "需要 macOS 26 或更高版本"),
+        "ai.onDevice.deviceNotEligible": ("This device doesn't support Apple Intelligence", "此设备不支持 Apple 智能"),
+        "ai.onDevice.notEnabled": ("Apple Intelligence isn't enabled in System Settings", "Apple 智能未启用（请在系统设置中开启）"),
+        "ai.onDevice.modelNotReady": ("Model is downloading…", "模型资源下载中…"),
+        "ai.onDevice.unknown": ("Unavailable", "暂不可用"),
     ]
 
     static let table: [String: (en: String, zh: String)] = {
