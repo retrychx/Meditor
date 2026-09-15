@@ -701,11 +701,13 @@ extension AIClient {
 
 // MARK: - LockedProcessBox
 
+#if os(macOS)
 /// 线程安全的 Process 持有盒（与 RunCommandTool.ProcessBox 同款思路）。
 ///
 /// watchdog / `continuation.onTermination` 可能在任意线程读写，裸 `var` 是数据竞争；
 /// `killRequested` 关闭「终止请求早于进程赋值」的窗口——赋值时补发 terminate，
 /// 避免取消后 claude 子进程变成孤儿。`timedOut` 同样加锁，读取不会拿到脏值。
+/// 仅在 macOS 编译：iOS 无 `Process`（claude CLI 路径本身也是 macOS-only）。
 private final class LockedProcessBox: @unchecked Sendable {
     private let lock = NSLock()
     private var _process: Process?
@@ -737,3 +739,4 @@ private final class LockedProcessBox: @unchecked Sendable {
         p?.terminate()
     }
 }
+#endif
