@@ -194,8 +194,11 @@ final class AgentRunnerMultiTurnTests: XCTestCase {
 
         await runAndWait(runner)
 
-        // 注意：SequentialBackend 实现了 completeStreaming 的默认回退实现，
-        // onTextChunk 不被调用，finalText 由 runner 在 response.text 嵌入后回调。
+        // SequentialBackend 走 completeStreaming 的默认回退实现，onTextChunk 不被调用，
+        // 但 runner 在拿到最终回复时会用 onChunk 推一次全文——这里断言确实推送过，
+        // 而不是只断言 finalText（否则测试名与验证内容不符）。
+        XCTAssertFalse(chunks.isEmpty, "run 结束前应至少推送一次累积文本")
+        XCTAssertEqual(chunks.last, "final text")
         XCTAssertEqual(runner.finalText, "final text")
     }
 
@@ -460,9 +463,11 @@ private final class SequentialBackend: AgentBackend, @unchecked Sendable {
     init(responses: [MockResponse]) { self.responses = responses }
 
     func complete(messages: [AgentMessage], tools: [any AgentTool]) async throws -> AgentCompletionResponse {
-        lock.lock(); defer { lock.unlock() }
-        let resp = index < responses.count ? responses[index] : MockResponse.text("done")
-        index += 1
+        let resp = lock.withLock { () -> MockResponse in
+            let r = index < responses.count ? responses[index] : MockResponse.text("done")
+            index += 1
+            return r
+        }
         return resp.asCompletion
     }
 }
@@ -550,7 +555,11 @@ private final class ChunkingBackend: AgentBackend, @unchecked Sendable {
         tools: [any AgentTool],
         onTextChunk: @escaping @Sendable (String) -> Void
     ) async throws -> AgentCompletionResponse {
-        lock.lock(); let call = callCount; callCount += 1; lock.unlock()
+        let call = lock.withLock { () -> Int in
+            let c = callCount
+            callCount += 1
+            return c
+        }
 
         switch mode {
         case .textOnly(let chunks, let finalText):

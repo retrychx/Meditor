@@ -11,8 +11,8 @@ final class SkillTransferTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "MEditor.pluginSkillStates")
     }
 
-    override func setUp() { super.setUp(); cleanDefaults() }
-    override func tearDown() { cleanDefaults(); super.tearDown() }
+    override func setUp() async throws { try await super.setUp(); cleanDefaults() }
+    override func tearDown() async throws { cleanDefaults(); try await super.tearDown() }
 
     private func makeTempDir() -> URL {
         FileManager.default.temporaryDirectory

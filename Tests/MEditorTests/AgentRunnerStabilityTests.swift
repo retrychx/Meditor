@@ -185,12 +185,17 @@ final class AgentRunnerStabilityTests: XCTestCase {
         XCTAssertEqual(call.rawArgumentsJSON, raw, "rawArgumentsJSON 必须保留原始非法文本")
         XCTAssertTrue(call.arguments.isEmpty)
 
-        // 注意：JSONSerialization 的 NSNumber 桥接使 0/1 优先匹配 Bool（现有行为，勿钉反例），
-        // 这里用字符串与普通整数验证正常解析路径。
-        let good = AgentToolCall(id: "y", name: "t", argumentsJSON: #"{"a":"ok","n":42}"#)
+        // 回归：JSONSerialization 的 NSNumber 桥接下，整数 0/1 过去会被误判为 Bool，
+        // 导致 read_document 的 start_line:1 拿不到 intValue → 读全文。
+        // 现在用 CFBoolean 类型判定，0/1 保持为 .int，true/false 才是 .bool。
+        let good = AgentToolCall(id: "y", name: "t",
+                                 argumentsJSON: #"{"a":"ok","n":42,"start_line":1,"zero":0,"flag":true}"#)
         XCTAssertNil(good.argumentsParseError)
         XCTAssertEqual(good.arguments["a"], .string("ok"))
         XCTAssertEqual(good.arguments["n"], .int(42))
+        XCTAssertEqual(good.arguments["start_line"], .int(1))
+        XCTAssertEqual(good.arguments["zero"], .int(0))
+        XCTAssertEqual(good.arguments["flag"], .bool(true))
     }
 
     // MARK: - B10 classifyError 文案（private，经 runner 错误路径断言 state.error）
@@ -501,12 +506,12 @@ private final class ScriptedBackend: AgentBackend, @unchecked Sendable {
     init(script: [Step]) { self.script = script }
 
     func complete(messages: [AgentMessage], tools: [any AgentTool]) async throws -> AgentCompletionResponse {
-        lock.lock()
-        receivedMessages.append(messages)
-        let step = script.isEmpty
-            ? Step.respond(AgentCompletionResponse(text: "done", toolCalls: [], finishReason: "stop"))
-            : script.removeFirst()
-        lock.unlock()
+        let step = lock.withLock { () -> Step in
+            receivedMessages.append(messages)
+            return script.isEmpty
+                ? Step.respond(AgentCompletionResponse(text: "done", toolCalls: [], finishReason: "stop"))
+                : script.removeFirst()
+        }
         switch step {
         case .respond(let response): return response
         case .fail(let error):       throw error
@@ -575,11 +580,9 @@ private final class StuckTool: AgentTool, @unchecked Sendable {
     }
 
     func execute(arguments: [String: AnySendableValue], context: any AgentContextProtocol) async throws -> String {
-        lock.lock(); didStart = true; lock.unlock()
+        lock.withLock { didStart = true }
         return await withCheckedContinuation { cont in
-            lock.lock()
-            continuation = cont
-            lock.unlock()
+            lock.withLock { continuation = cont }
         }
     }
 

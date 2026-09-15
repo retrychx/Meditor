@@ -32,11 +32,19 @@ final class RichTextCopyServiceTests: XCTestCase {
         XCTAssertTrue(out.contains(#"src="file:///tmp/docs/assets/pic.png""#))
     }
 
-    func test_absolutizingImageSources_resolvesParentAndSpacePaths() {
+    func test_absolutizingImageSources_resolvesSpacePathsInsideDocDir() {
         let base = URL(fileURLWithPath: "/tmp/docs", isDirectory: true)
-        let html = #"<img src="../shared/a b.png">"#
+        let html = #"<img src="assets/a b.png">"#
         let out = RichTextCopyService.absolutizingImageSources(in: html, baseURL: base)
-        XCTAssertTrue(out.contains("file:///tmp/shared/a%20b.png"))
+        XCTAssertTrue(out.contains("file:///tmp/docs/assets/a%20b.png"))
+    }
+
+    func test_absolutizingImageSources_doesNotEscapeDocDir() {
+        // 回归：`../` 逃逸文档目录的图片不得被绝对化成 file://（剪贴板本地文件读取 gadget）。
+        let base = URL(fileURLWithPath: "/tmp/docs", isDirectory: true)
+        let html = #"<img src="../shared/a.png">"#
+        let out = RichTextCopyService.absolutizingImageSources(in: html, baseURL: base)
+        XCTAssertEqual(out, html, "../ 逃逸出文档目录的图片不应被绝对化")
     }
 
     func test_absolutizingImageSources_leavesAbsoluteURLsAlone() {

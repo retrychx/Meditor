@@ -19,7 +19,9 @@ struct DocumentComment: Codable, Equatable, Identifiable {
     }
 }
 
-final class DocumentCommentStore {
+/// 评论持久化。底层 UserDefaults 本身线程安全，标注 @unchecked Sendable
+/// 以便跨 actor 引用共享实例（Swift 6 并发检查要求）。
+final class DocumentCommentStore: @unchecked Sendable {
     static let shared = DocumentCommentStore()
 
     private let defaults = UserDefaults.standard

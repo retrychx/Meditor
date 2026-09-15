@@ -121,6 +121,17 @@ final class SpotlightMetadataTests: XCTestCase {
         XCTAssertEqual(item.attributeSet.contentModificationDate, modDate)
     }
 
+    /// 隐私默认：includeContent=false 时不写正文/描述，仅保留标题与修改时间。
+    func testMakeItemWithoutContentOmitsTextAndDescription() {
+        let url = URL(fileURLWithPath: "/tmp/ws/doc.md")
+        let meta = SpotlightDocumentMetadata(title: "T", contentDescription: "D", textContent: "C")
+        let item = SpotlightItemBuilder.makeItem(
+            url: url, domainIdentifier: "workspace-abc", metadata: meta, includeContent: false)
+        XCTAssertEqual(item.attributeSet.title, "T")
+        XCTAssertNil(item.attributeSet.textContent, "关闭正文索引时不得写入 textContent")
+        XCTAssertNil(item.attributeSet.contentDescription, "关闭正文索引时不得写入 contentDescription")
+    }
+
     // MARK: - Differ
 
     func testDiffNewModifiedDeletedAndUnchanged() {

@@ -101,12 +101,15 @@ enum SpotlightItemBuilder {
         url: URL,
         domainIdentifier: String,
         metadata: SpotlightDocumentMetadata,
-        contentModificationDate: Date? = nil
+        contentModificationDate: Date? = nil,
+        includeContent: Bool = true
     ) -> CSSearchableItem {
         let attributes = CSSearchableItemAttributeSet(contentType: markdownContentType)
         attributes.title = metadata.title
-        attributes.contentDescription = metadata.contentDescription
-        attributes.textContent = metadata.textContent
+        if includeContent {
+            attributes.contentDescription = metadata.contentDescription
+            attributes.textContent = metadata.textContent
+        }
         attributes.contentModificationDate = contentModificationDate
         return CSSearchableItem(
             uniqueIdentifier: SpotlightMetadata.identifier(for: url),

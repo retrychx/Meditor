@@ -66,8 +66,8 @@ enum ShareImageInliner {
 
     /// 相对路径解析后必须仍落在 baseDirectory 内——否则恶意文档里的
     /// `../../.ssh/...` 之类引用会在发布时被内联进公网链接。
-    /// （绝对路径 / meditor-asset:// 是用户显式写死的，由 loadImageData 的
-    /// 图片魔数嗅探兜底，非图片内容不内联。）
+    /// 绝对路径 / `file://` / `meditor-asset://` 同样必须落在 baseDirectory 内：
+    /// 这些来源可由文档自身写入，不能因为「看起来是绝对路径」就放行。
     static func resolveFileURL(src: String, baseDirectory: URL) -> URL? {
         if src.isEmpty || src.hasPrefix("data:") || src.hasPrefix("http://") || src.hasPrefix("https://") {
             return nil
@@ -75,17 +75,38 @@ enum ShareImageInliner {
         if src.hasPrefix("meditor-asset://") {
             guard let url = URL(string: src) else { return nil }
             let decoded = url.path.removingPercentEncoding ?? url.path
-            return URL(fileURLWithPath: (decoded as NSString).standardizingPath)
+            return confinedToBase(URL(fileURLWithPath: (decoded as NSString).standardizingPath),
+                                  baseDirectory: baseDirectory)
         }
         if src.hasPrefix("file://") {
             guard let url = URL(string: src) else { return nil }
-            return url
+            return confinedToBase(url, baseDirectory: baseDirectory)
         }
         // 相对路径：先解百分号编码，再相对文档目录解析
         let decoded = src.removingPercentEncoding ?? src
-        let resolved = baseDirectory.appendingPathComponent(decoded).standardizedFileURL
-        let basePath = baseDirectory.standardizedFileURL.path
-        guard resolved.path == basePath || resolved.path.hasPrefix(basePath + "/") else { return nil }
+        return confinedToBase(baseDirectory.appendingPathComponent(decoded), baseDirectory: baseDirectory)
+    }
+
+    /// 解析 symlink 后检查仍在 baseDirectory 内（含 symlink 逃逸防护）。
+    private static func confinedToBase(_ url: URL, baseDirectory: URL) -> URL? {
+        let resolved = Self.resolveSymlinks(url)
+        let base = Self.resolveSymlinks(baseDirectory)
+        guard resolved.path == base.path || resolved.path.hasPrefix(base.path + "/") else { return nil }
+        return resolved
+    }
+
+    /// 解析符号链接，兼容目标尚不存在的场景（先解析最深的已存在祖先，再拼回剩余组件）。
+    /// 自带实现而非引用 `CommandSandbox`：本文件是 macOS/iOS 共享文件，而
+    /// CommandSandbox 不在 iOS target 的文件列表里。纯 Foundation，两端通用。
+    private static func resolveSymlinks(_ url: URL) -> URL {
+        var base = url.standardizedFileURL
+        var suffix: [String] = []
+        while !FileManager.default.fileExists(atPath: base.path), base.path != "/" {
+            suffix.insert(base.lastPathComponent, at: 0)
+            base.deleteLastPathComponent()
+        }
+        var resolved = base.resolvingSymlinksInPath()
+        for component in suffix { resolved.appendPathComponent(component) }
         return resolved
     }
 

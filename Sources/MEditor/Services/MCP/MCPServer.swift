@@ -19,9 +19,10 @@ final class MCPServer {
     /// initialize 响应的 serverInfo.version；取 app bundle 版本，裸二进制（swift build）降级 "dev"。
     let serverVersion: String
 
-    init(workspaceRoot: URL, allowWarnCommands: Bool = false, tools: [any AgentTool]? = nil) {
+    init(workspaceRoot: URL, allowWarnCommands: Bool = false,
+         allowShell: Bool = false, tools: [any AgentTool]? = nil) {
         self.context = MCPHeadlessContext(workspaceRoot: workspaceRoot, allowWarnCommands: allowWarnCommands)
-        self.tools = tools ?? MCPToolCatalog.headlessTools
+        self.tools = tools ?? MCPToolCatalog.headlessTools(allowShell: allowShell)
         self.serverVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
     }
 
@@ -146,7 +147,7 @@ enum MCPCommand {
     }
 
     static let usage = """
-    Usage: MEditor mcp [--workspace <path>] [--allow-warn-commands]
+    Usage: MEditor mcp [--workspace <path>] [--allow-warn-commands] [--allow-shell]
 
     Starts an MCP server over stdio (newline-delimited JSON-RPC 2.0) exposing
     MEditor's agent tools against a fixed workspace directory.
@@ -155,12 +156,16 @@ enum MCPCommand {
       --allow-warn-commands     Allow WARN-level shell commands (e.g. git push, mv).
                                 Disabled by default in headless mode; BLOCKED-level
                                 commands are always rejected.
+      --allow-shell             Expose the run_command tool at all. Disabled by default:
+                                headless mode cannot show a confirmation dialog, so the
+                                static command blocklist is not a security boundary.
     """
 
     /// 解析参数并运行 stdio 会话，直到 stdin EOF。返回进程退出码。
     static func run(arguments: [String]) async -> Int32 {
         var workspacePath: String?
         var allowWarn = false
+        var allowShell = false
         var i = 2   // arguments[0] = 可执行文件，[1] = "mcp"
         while i < arguments.count {
             switch arguments[i] {
@@ -174,6 +179,8 @@ enum MCPCommand {
                 }
             case "--allow-warn-commands":
                 allowWarn = true
+            case "--allow-shell":
+                allowShell = true
             case "--help", "-h":
                 MCPLog.info("\n\(usage)")
                 return 0
@@ -198,8 +205,11 @@ enum MCPCommand {
         if allowWarn {
             MCPLog.info("WARN-level shell commands are ENABLED for this session")
         }
+        if !allowShell {
+            MCPLog.info("run_command is NOT exposed (pass --allow-shell to enable)")
+        }
 
-        let server = MCPServer(workspaceRoot: root, allowWarnCommands: allowWarn)
+        let server = MCPServer(workspaceRoot: root, allowWarnCommands: allowWarn, allowShell: allowShell)
         return await server.runStdioLoop()
     }
 }

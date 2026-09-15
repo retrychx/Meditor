@@ -144,6 +144,10 @@ extension SettingsView {
                             .lineLimit(2)
                             .truncationMode(.middle)
                     }
+                    // 工作区级 mcp.json：默认忽略，需显式授权（防不可信仓库 RCE）
+                    if let wsInfo = manager.workspaceMCPInfo {
+                        workspaceMCPTrustRow(wsInfo)
+                    }
                     HStack(spacing: 8) {
                         Button(L("settings.ai.mcpClientOpenConfig")) { openMCPClientConfig() }
                         Button(L("settings.ai.mcpClientReconnect")) {
@@ -158,9 +162,47 @@ extension SettingsView {
         .onAppear { state.mcpClientManager.reloadConfigSummaries(workspaceURL: state.rootURL) }
     }
 
+    /// 工作区级 mcp.json 的信任行：展示将执行的 server 名单，未授权时提供「信任并启用」。
+    @ViewBuilder
+    private func workspaceMCPTrustRow(_ info: MCPClientManager.WorkspaceMCPInfo) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Divider().padding(.vertical, 2)
+            HStack(spacing: 6) {
+                Image(systemName: info.trusted ? "checkmark.shield" : "exclamationmark.shield")
+                    .foregroundStyle(info.trusted ? Color.green : Color.orange)
+                Text(L("settings.ai.mcpWorkspaceConfig"))
+                    .font(.system(size: 11.5, weight: .medium))
+                Spacer(minLength: 8)
+                if info.trusted {
+                    Button(L("settings.ai.mcpWorkspaceRevoke")) {
+                        Task { await state.mcpClientManager.revokeCurrentWorkspaceMCP() }
+                    }
+                    .controlSize(.small)
+                } else {
+                    Button(L("settings.ai.mcpWorkspaceTrust")) {
+                        Task { await state.mcpClientManager.trustCurrentWorkspaceMCP() }
+                    }
+                    .controlSize(.small)
+                }
+            }
+            if !info.serverNames.isEmpty {
+                Text(info.serverNames.joined(separator: ", "))
+                    .font(.system(size: 10.5, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .truncationMode(.middle)
+            }
+            if !info.trusted {
+                Text(L("settings.ai.mcpWorkspaceHint"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
     /// 单个 server 的状态行：名称 + 类型徽标 + 连接状态（工具数/错误摘要）
-    private func mcpServerRow(_ status: MCPClientManager.ServerStatus) -> some View {
-        HStack(spacing: 8) {
+    private func mcpServerRow(_ status: MCPClientManager.ServerStatus) -> some View {        HStack(spacing: 8) {
             Circle()
                 .fill(mcpStatusColor(status.state))
                 .frame(width: 7, height: 7)

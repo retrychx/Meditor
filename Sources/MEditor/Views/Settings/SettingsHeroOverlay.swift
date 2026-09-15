@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Reports the source button's bounds so the settings panel can "grow" out of it.
 struct SettingsAnchorKey: PreferenceKey {
-    static var defaultValue: Anchor<CGRect>? = nil
+    static let defaultValue: Anchor<CGRect>? = nil
     static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
         value = nextValue() ?? value
     }

@@ -56,10 +56,6 @@ enum DS {
 
     // MARK: - Elevation (shadow system)
     enum Shadow {
-        /// Cards, sidebar header
-        static var sm: some View {
-            EmptyView()
-        }
         static func card() -> some ShapeStyle { AnyShapeStyle(SwiftUI.Color.black.opacity(0.07)) }
 
         static let cardRadius: CGFloat = 8

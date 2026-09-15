@@ -3,7 +3,7 @@ import SwiftUI
 /// Reports the transcript's bottom-marker offset within the scroll viewport,
 /// used to decide whether to auto-follow streaming output.
 private struct AIBottomOffsetKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
+    static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
     }
@@ -246,7 +246,7 @@ extension AIAssistantPanel {
                 .foregroundStyle(theme.craftSecondary)
                 .padding(.top, 2)
             } else {
-                Button(action: { state.rollbackAgentRun(checkpoint) }) {
+                Button(action: { Task { await state.rollbackAgentRun(checkpoint) } }) {
                     HStack(spacing: 5) {
                         Image(systemName: "arrow.uturn.backward")
                             .font(.system(size: 10.5, weight: .semibold))
@@ -320,6 +320,7 @@ private struct TypingDots: View {
             }
         }
         .onAppear { animating = true }
+        .accessibilityHidden(true)
     }
 }
 
@@ -333,6 +334,7 @@ private struct StreamingCursorView: View {
         Text("◍")
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(.secondary)
+            .accessibilityHidden(true)
             .opacity(visible ? 0.8 : 0.1)
             .padding(.leading, 2)
             .padding(.vertical, 2)

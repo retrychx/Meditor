@@ -1,6 +1,8 @@
 import Foundation
 
-protocol FileServiceProtocol: AnyObject {
+/// 文件 IO 服务。实现为无状态磁盘操作，允许跨线程调用，故要求 Sendable
+/// （Swift 6 下 Task.detached 捕获服务实例需要它 Sendable）。
+protocol FileServiceProtocol: AnyObject, Sendable {
     // Directory scanning
     func loadImmediateChildren(of directory: URL) -> [FileItem]
     func loadChildren(for item: FileItem) -> [FileItem]

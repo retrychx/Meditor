@@ -21,7 +21,8 @@ enum TodoScanner {
                 options: [.skipsHiddenFiles]
             ) else { return [] }
 
-            for case let url as URL in enumerator {
+            // 用 nextObject() 显式迭代：NSEnumerator 的 makeIterator 在 async 上下文不可用。
+            while let url = enumerator.nextObject() as? URL {
                 guard url.pathExtension.lowercased() == "md",
                       let res = try? url.resourceValues(forKeys: [.isRegularFileKey]),
                       res.isRegularFile == true else { continue }

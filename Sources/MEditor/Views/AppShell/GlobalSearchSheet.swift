@@ -29,6 +29,7 @@ struct GlobalSearchSheet: View {
                 Image(systemName: "text.magnifyingglass")
                     .foregroundStyle(theme.craftSecondary)
                     .font(.system(size: 13))
+                    .accessibilityHidden(true)
                 TextField(L("globalSearch.placeholder"), text: $query)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
@@ -153,6 +154,7 @@ struct GlobalSearchSheet: View {
         .listRowSeparator(.hidden)
         .listRowBackground(idx == highlighted ? Color.appAccent.opacity(0.15) : theme.chromeBackground)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
         .id(idx)
         .onTapGesture(count: 2) {
             highlighted = idx
@@ -179,6 +181,7 @@ struct GlobalSearchSheet: View {
             Image(systemName: "doc.text.magnifyingglass")
                 .font(.system(size: 22, weight: .light))
                 .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
             Text(message)
                 .font(.system(size: 12))
                 .foregroundStyle(.tertiary)

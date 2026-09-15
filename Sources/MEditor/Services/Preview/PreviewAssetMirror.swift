@@ -96,7 +96,7 @@ enum PreviewAssetMirror {
 
     // MARK: - Mermaid (on-demand)
 
-    private static var mermaidProvisioned = false
+    nonisolated(unsafe) private static var mermaidProvisioned = false
 
     /// Copy mermaid.min.js into the preview cache dir on first need.
     static func ensureMermaidProvisioned(at cacheDir: URL, fileManager fm: FileManager = .default) {

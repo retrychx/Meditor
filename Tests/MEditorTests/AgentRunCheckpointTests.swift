@@ -274,10 +274,10 @@ final class AgentRunCheckpointTests: XCTestCase {
         return ckpt
     }
 
-    func testRollback_restoresModifiedFileOnDisk() {
+    func testRollback_restoresModifiedFileOnDisk() async {
         makeAppState()
         let ckpt = stubWrittenCheckpoint(name: "a.md", original: "原始内容", written: "agent 写入")
-        let actions = state.rollbackAgentRun(ckpt)
+        let actions = await state.rollbackAgentRun(ckpt)
 
         XCTAssertEqual(mockService.fileContent(at: fileURL("a.md")), "原始内容")
         XCTAssertEqual(actions, [.restore(url: fileURL("a.md").standardizedFileURL, content: "原始内容")])
@@ -285,7 +285,7 @@ final class AgentRunCheckpointTests: XCTestCase {
         XCTAssertNotNil(ckpt.rollbackSummary)
     }
 
-    func testRollback_deletesCreatedFile() {
+    func testRollback_deletesCreatedFile() async {
         makeAppState()
         let url = fileURL("new.md")
         mockService.setFile(url, content: "新建内容")
@@ -293,12 +293,12 @@ final class AgentRunCheckpointTests: XCTestCase {
         ckpt.captureCreatedFile(url: url)
         ckpt.markWritten(url: url, content: "新建内容")
 
-        let actions = state.rollbackAgentRun(ckpt)
+        let actions = await state.rollbackAgentRun(ckpt)
         XCTAssertEqual(actions, [.deleteCreated(url: url.standardizedFileURL)])
         XCTAssertNil(mockService.fileContent(at: url), "run 新建的文件应被删除")
     }
 
-    func testRollback_multipleFiles_restoreAndDelete() {
+    func testRollback_multipleFiles_restoreAndDelete() async {
         makeAppState()
         let ckpt = stubWrittenCheckpoint(name: "a.md", original: "原文A", written: "写入A")
         let createdURL = fileURL("b.md")
@@ -306,19 +306,19 @@ final class AgentRunCheckpointTests: XCTestCase {
         ckpt.captureCreatedFile(url: createdURL)
         ckpt.markWritten(url: createdURL, content: "新建B")
 
-        let actions = state.rollbackAgentRun(ckpt)
+        let actions = await state.rollbackAgentRun(ckpt)
         XCTAssertEqual(actions.count, 2)
         XCTAssertEqual(mockService.fileContent(at: fileURL("a.md")), "原文A")
         XCTAssertNil(mockService.fileContent(at: createdURL))
     }
 
-    func testRollback_skipsFileEditedByUserAfterRun() {
+    func testRollback_skipsFileEditedByUserAfterRun() async {
         makeAppState()
         let ckpt = stubWrittenCheckpoint(name: "a.md", original: "原始内容", written: "agent 写入")
         // run 结束后用户又手动改了该文件
         mockService.setFile(fileURL("a.md"), content: "用户后续编辑")
 
-        let actions = state.rollbackAgentRun(ckpt)
+        let actions = await state.rollbackAgentRun(ckpt)
         XCTAssertEqual(actions, [.skip(url: fileURL("a.md").standardizedFileURL, reason: .editedAfterRun)])
         XCTAssertEqual(mockService.fileContent(at: fileURL("a.md")), "用户后续编辑",
                        "用户编辑过的文件必须保持原样，绝不覆盖")
@@ -326,18 +326,18 @@ final class AgentRunCheckpointTests: XCTestCase {
                       "跳过的文件必须在摘要里点名提示（断言语种无关：只查文件名，摘要是本地化的）")
     }
 
-    func testRollback_skipsFileDeletedAfterRun() {
+    func testRollback_skipsFileDeletedAfterRun() async {
         makeAppState()
         let url = fileURL("a.md")
         let ckpt = AgentRunCheckpoint()
         ckpt.captureBeforeWrite(url: url, knownContent: "原文")
         ckpt.markWritten(url: url, content: "写入")
         // 磁盘上已无此文件（用户 run 后自行删除）
-        let actions = state.rollbackAgentRun(ckpt)
+        let actions = await state.rollbackAgentRun(ckpt)
         XCTAssertEqual(actions, [.skip(url: url.standardizedFileURL, reason: .fileMissing)])
     }
 
-    func testRollback_syncsOpenTabContent() {
+    func testRollback_syncsOpenTabContent() async {
         makeAppState()
         let url = fileURL("a.md")
         let ckpt = stubWrittenCheckpoint(name: "a.md", original: "原始内容", written: "agent 写入")
@@ -345,12 +345,12 @@ final class AgentRunCheckpointTests: XCTestCase {
         let tab = EditorTab(url: url, content: "agent 写入", language: .markdown)
         state.openTabs = [tab]
 
-        state.rollbackAgentRun(ckpt)
+        await state.rollbackAgentRun(ckpt)
         XCTAssertEqual(tab.content, "原始内容", "打开的 tab 内容必须同步恢复")
         XCTAssertFalse(tab.isModified, "恢复后 tab 不应标为未保存")
     }
 
-    func testRollback_createdFileOpenInTab_closesTab() {
+    func testRollback_createdFileOpenInTab_closesTab() async {
         makeAppState()
         let url = fileURL("new.md")
         mockService.setFile(url, content: "新建内容")
@@ -360,12 +360,12 @@ final class AgentRunCheckpointTests: XCTestCase {
         let tab = EditorTab(url: url, content: "新建内容", language: .markdown)
         state.openTabs = [tab]
 
-        state.rollbackAgentRun(ckpt)
+        await state.rollbackAgentRun(ckpt)
         XCTAssertNil(mockService.fileContent(at: url))
         XCTAssertTrue(state.openTabs.isEmpty, "被删除的新建文件对应的 tab 应一并关闭")
     }
 
-    func testRollback_tabEditedByUser_skipsAndKeepsTabContent() {
+    func testRollback_tabEditedByUser_skipsAndKeepsTabContent() async {
         makeAppState()
         let url = fileURL("a.md")
         // 磁盘是 run 写入内容，但 tab 里用户又改了（tab 内存优先于磁盘）
@@ -373,17 +373,17 @@ final class AgentRunCheckpointTests: XCTestCase {
         let tab = EditorTab(url: url, content: "用户在 tab 里改了", language: .markdown)
         state.openTabs = [tab]
 
-        let actions = state.rollbackAgentRun(ckpt)
+        let actions = await state.rollbackAgentRun(ckpt)
         XCTAssertEqual(actions, [.skip(url: url.standardizedFileURL, reason: .editedAfterRun)])
         XCTAssertEqual(tab.content, "用户在 tab 里改了")
         XCTAssertEqual(mockService.fileContent(at: url), "agent 写入")
     }
 
-    func testRollback_isIdempotent() {
+    func testRollback_isIdempotent() async {
         makeAppState()
         let ckpt = stubWrittenCheckpoint(name: "a.md", original: "原始内容", written: "agent 写入")
-        _ = state.rollbackAgentRun(ckpt)
-        let second = state.rollbackAgentRun(ckpt)
+        _ = await state.rollbackAgentRun(ckpt)
+        let second = await state.rollbackAgentRun(ckpt)
         XCTAssertTrue(second.isEmpty, "重复回滚应为 no-op")
         XCTAssertEqual(mockService.fileContent(at: fileURL("a.md")), "原始内容")
     }

@@ -308,7 +308,7 @@ final class AgentRunnerContextBudgetTests: XCTestCase {
         private let lock = NSLock()
 
         func complete(messages: [AgentMessage], tools: [any AgentTool]) async throws -> AgentCompletionResponse {
-            lock.lock(); capturedMessages.append(messages); lock.unlock()
+            lock.withLock { capturedMessages.append(messages) }
             return AgentCompletionResponse(text: "done", toolCalls: [], finishReason: "stop")
         }
     }

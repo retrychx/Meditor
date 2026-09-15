@@ -35,13 +35,20 @@ enum MCPTransportError: LocalizedError {
     }
 }
 
+/// JSON-RPC 载荷的 Sendable 包装（内部仍是 `[String: Any]`）。
+///
+/// JSONSerialization 产物非 Sendable，无法跨 actor 边界；包装后只在传输边界传递，
+/// 不再共享内部可变状态，故用 @unchecked Sendable。
+struct MCPPayload: @unchecked Sendable {
+    let raw: [String: Any]
+    init(_ raw: [String: Any]) { self.raw = raw }
+    static var empty: MCPPayload { MCPPayload([:]) }
+}
+
 /// MCP 客户端传输协议。实现必须是 actor 或保证线程安全（request 可并发挂起）。
 protocol MCPClientTransport: Sendable {
-    /// 发送 JSON-RPC 请求并等待 result。服务端回 error 对象时抛 MCPError。
-    func request(method: String, params: [String: Any], timeout: TimeInterval) async throws -> [String: Any]
-    /// 发送通知（无响应），尽力而为、不抛错。
-    func notify(method: String, params: [String: Any]) async
-    /// 关闭传输（终止子进程 / 放弃连接），幂等。
+    func request(method: String, params: MCPPayload, timeout: TimeInterval) async throws -> MCPPayload
+    func notify(method: String, params: MCPPayload) async
     func close() async
 }
 
@@ -56,7 +63,8 @@ actor MCPStdioTransport: MCPClientTransport {
 
     private let process: Process
     private let stdinHandle: FileHandle
-    private var readTask: Task<Void, Never>?
+    /// nonisolated(unsafe)：仅在 nonisolated init 中赋值一次，之后只在 actor 内取消/读取。
+    nonisolated(unsafe) private var readTask: Task<Void, Never>?
 
     private var nextRequestID = 0
     /// 挂起中的请求：id → (continuation, 超时哨兵)。响应到达/超时/断开时结算。
@@ -81,9 +89,11 @@ actor MCPStdioTransport: MCPClientTransport {
             process.executableURL = URL(fileURLWithPath: command)
             process.arguments = args
         }
-        var environment = ProcessInfo.processInfo.environment
-        for (key, value) in env { environment[key] = value }
-        process.environment = environment
+        // 只继承必要环境变量：MCP server 是第三方进程，把 app 进程的完整环境
+        // （可能含 CI token、其他服务密钥）透传给它会扩大泄露面。PATH/HOME 等
+        // 运行必需项保留，其余由用户在 mcp.json 的 env 里显式声明。
+        process.environment = Self.serverEnvironment(
+            inherited: ProcessInfo.processInfo.environment, configured: env)
 
         let inPipe = Pipe()
         let outPipe = Pipe()
@@ -105,6 +115,19 @@ actor MCPStdioTransport: MCPClientTransport {
     /// shell 单引号转义（' → '\''），config 是用户自己写的，只需防意外不防攻击。
     private static func shellQuote(_ s: String) -> String {
         "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    /// 传给 MCP server 进程的最小环境：只继承运行必需项，`configured` 覆盖/补充。
+    /// 纯函数，便于单测——第三方 server 不应拿到 app 的完整环境（可能含密钥）。
+    static func serverEnvironment(inherited: [String: String],
+                                  configured: [String: String]) -> [String: String] {
+        let inheritedKeys = ["PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE"]
+        var environment: [String: String] = [:]
+        for key in inheritedKeys {
+            if let value = inherited[key] { environment[key] = value }
+        }
+        for (key, value) in configured { environment[key] = value }
+        return environment
     }
 
     // MARK: - 读循环
@@ -132,7 +155,7 @@ actor MCPStdioTransport: MCPClientTransport {
             while true {
                 let chunk = handle.availableData   // 同读循环：有数据即返回
                 if chunk.isEmpty { break }
-                tail += String(decoding: chunk, as: UTF8.self)
+                tail += String(data: chunk, encoding: .utf8) ?? ""
                 if tail.count > 2048 { tail = String(tail.suffix(2048)) }
             }
             await target.setStderrTail(tail)
@@ -149,7 +172,7 @@ actor MCPStdioTransport: MCPClientTransport {
         while let newlineIndex = readBuffer.firstIndex(of: UInt8(ascii: "\n")) {
             let lineData = readBuffer.subdata(in: readBuffer.startIndex..<newlineIndex)
             readBuffer.removeSubrange(readBuffer.startIndex...newlineIndex)
-            dispatch(line: String(decoding: lineData, as: UTF8.self))
+            dispatch(line: String(data: lineData, encoding: .utf8) ?? "")
         }
     }
 
@@ -195,17 +218,17 @@ actor MCPStdioTransport: MCPClientTransport {
 
     // MARK: - MCPClientTransport
 
-    func request(method: String, params: [String: Any], timeout: TimeInterval) async throws -> [String: Any] {
+    func request(method: String, params: MCPPayload, timeout: TimeInterval) async throws -> MCPPayload {
         guard !isClosed else { throw MCPTransportError.closed }
         nextRequestID += 1
         let id = nextRequestID
         let message: [String: Any] = [
-            "jsonrpc": "2.0", "id": id, "method": method, "params": params,
+            "jsonrpc": "2.0", "id": id, "method": method, "params": params.raw,
         ]
         let line = Data((MCPJSONRPC.serialize(message) + "\n").utf8)
         // 先登记 pending 再写请求：快 server 的响应可能在 write 返回后立刻被读循环
         // 分发，若 pending 尚未登记，响应会被当作「无主的行」丢弃，请求挂到超时
-        return try await withCheckedThrowingContinuation { cont in
+        let result: [String: Any] = try await withCheckedThrowingContinuation { cont in
             let timeoutTask = Task {
                 try? await Task.sleep(for: .seconds(timeout))
                 guard !Task.isCancelled else { return }
@@ -220,6 +243,7 @@ actor MCPStdioTransport: MCPClientTransport {
                 cont.resume(throwing: MCPTransportError.closed)
             }
         }
+        return MCPPayload(result)
     }
 
     private func timeoutRequest(id: Int, method: String, timeout: TimeInterval) {
@@ -227,9 +251,9 @@ actor MCPStdioTransport: MCPClientTransport {
         entry.0.resume(throwing: MCPTransportError.timeout(method: method, seconds: Int(timeout)))
     }
 
-    func notify(method: String, params: [String: Any]) async {
+    func notify(method: String, params: MCPPayload) async {
         guard !isClosed else { return }
-        let message: [String: Any] = ["jsonrpc": "2.0", "method": method, "params": params]
+        let message: [String: Any] = ["jsonrpc": "2.0", "method": method, "params": params.raw]
         try? stdinHandle.write(contentsOf: Data((MCPJSONRPC.serialize(message) + "\n").utf8))
     }
 
@@ -264,11 +288,11 @@ actor MCPStreamableHTTPTransport: MCPClientTransport {
         self.session = session
     }
 
-    func request(method: String, params: [String: Any], timeout: TimeInterval) async throws -> [String: Any] {
+    func request(method: String, params: MCPPayload, timeout: TimeInterval) async throws -> MCPPayload {
         guard !isClosed else { throw MCPTransportError.closed }
         nextRequestID += 1
         let id = nextRequestID
-        let body: [String: Any] = ["jsonrpc": "2.0", "id": id, "method": method, "params": params]
+        let body: [String: Any] = ["jsonrpc": "2.0", "id": id, "method": method, "params": params.raw]
         let (data, http) = try await post(body: body, timeout: timeout)
         let contentType = http.value(forHTTPHeaderField: "Content-Type") ?? ""
         let object: [String: Any]
@@ -285,12 +309,12 @@ actor MCPStreamableHTTPTransport: MCPClientTransport {
             let message = error["message"] as? String ?? "unknown error"
             throw MCPError(code: code, message: message)
         }
-        return object["result"] as? [String: Any] ?? [:]
+        return MCPPayload(object["result"] as? [String: Any] ?? [:])
     }
 
-    func notify(method: String, params: [String: Any]) async {
+    func notify(method: String, params: MCPPayload) async {
         guard !isClosed else { return }
-        let body: [String: Any] = ["jsonrpc": "2.0", "method": method, "params": params]
+        let body: [String: Any] = ["jsonrpc": "2.0", "method": method, "params": params.raw]
         _ = try? await post(body: body, timeout: 15)
     }
 
@@ -330,7 +354,7 @@ actor MCPStreamableHTTPTransport: MCPClientTransport {
     /// 从 SSE body 里拣出与 requestID 匹配的 JSON-RPC 响应。
     /// SSE 帧格式：事件间空行分隔，每条事件若干 "data: <json>" 行（可续行拼接）。
     static func parseSSE(data: Data, requestID: Int) throws -> [String: Any] {
-        let text = String(decoding: data, as: UTF8.self)
+        let text = String(data: data, encoding: .utf8) ?? ""
         for event in text.components(separatedBy: "\n\n") {
             let payload = event
                 .components(separatedBy: "\n")

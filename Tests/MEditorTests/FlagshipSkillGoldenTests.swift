@@ -39,15 +39,15 @@ final class FlagshipSkillGoldenTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "MEditor.pluginSkillStates")
     }
 
-    override func setUp() { super.setUp(); cleanDefaults() }
+    override func setUp() async throws { try await super.setUp(); cleanDefaults() }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         cleanDefaults()
         for dir in tempDirs {
             try? FileManager.default.removeItem(at: dir)
         }
         tempDirs = []
-        super.tearDown()
+        try await super.tearDown()
     }
 
     /// 把 gallery 技能写入临时目录（模拟安装落盘），返回技能根目录（含 SKILL.md）。

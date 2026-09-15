@@ -34,6 +34,17 @@ final class MCPClientManager {
     /// 配置解析容错记录（坏条目说明）
     private(set) var configIssues: [String] = []
 
+    /// 当前工作区级 `<workspace>/.meditor/mcp.json` 的信任信息（设置页展示 + 授权入口）。
+    struct WorkspaceMCPInfo: Equatable {
+        let workspacePath: String
+        let configHash: String
+        let serverNames: [String]
+        let trusted: Bool
+    }
+    private(set) var workspaceMCPInfo: WorkspaceMCPInfo?
+    /// 最近一次传入的工作区 URL（授权/撤销后重新加载用）。
+    private var lastWorkspaceURL: URL?
+
     /// server 名 → 已连接的客户端（未连接/失败的 server 不在内）
     private var clients: [String: MCPClient] = [:]
     /// server 名 → 上次加载的配置（用于判断配置变更需要重连）
@@ -46,8 +57,10 @@ final class MCPClientManager {
     /// 仅重载配置与状态列表（设置页打开时调用，避免设置页一打开就拉起一堆子进程）。
     func reloadConfigSummaries(workspaceURL: URL?,
                                globalConfigURL: URL = MCPClientConfigLoader.defaultGlobalConfigURL) {
-        let result = MCPClientConfigLoader.load(globalConfigURL: globalConfigURL, workspaceRoot: workspaceURL)
-        configIssues = result.issues
+        lastWorkspaceURL = workspaceURL
+        let gatedRoot = gatedWorkspaceRoot(workspaceURL)
+        let result = MCPClientConfigLoader.load(globalConfigURL: globalConfigURL, workspaceRoot: gatedRoot)
+        configIssues = configIssuesWithTrustNotice(result.issues)
         configs = Dictionary(uniqueKeysWithValues: result.servers.map { ($0.name, $0) })
         statuses = result.servers.map { config in
             // 已有连接状态的保留（reload 不断开现有连接）
@@ -57,6 +70,51 @@ final class MCPClientManager {
             }
             return ServerStatus(name: config.name, kindLabel: config.kindLabel, state: .disconnected)
         }
+    }
+
+    // MARK: - 工作区级配置信任
+
+    /// 工作区级 `<workspace>/.meditor/mcp.json` 默认不加载——它可声明任意 `command`，
+    /// agent 启动时会被 spawn，clone 不可信仓库即可 RCE。只有用户对「当前这份内容」
+    /// 显式授权过（hash 匹配）才纳入；返回可传给 loader 的 workspaceRoot，并刷新信任信息。
+    private func gatedWorkspaceRoot(_ workspaceURL: URL?) -> URL? {
+        guard let workspaceURL else {
+            workspaceMCPInfo = nil
+            return nil
+        }
+        let path = workspaceURL.standardizedFileURL.path
+        guard let hash = MCPClientConfigLoader.workspaceConfigHash(root: workspaceURL) else {
+            workspaceMCPInfo = nil
+            return nil
+        }
+        let trusted = AppSettings.shared.isWorkspaceMCPTrusted(workspacePath: path, configHash: hash)
+        let data = (try? Data(contentsOf: MCPClientConfigLoader.workspaceConfigURL(root: workspaceURL))) ?? Data()
+        let names = MCPClientConfigLoader.parse(data: data, source: "workspace").servers.map(\.name)
+        workspaceMCPInfo = WorkspaceMCPInfo(workspacePath: path, configHash: hash,
+                                            serverNames: names, trusted: trusted)
+        return trusted ? workspaceURL : nil
+    }
+
+    /// 未授权时在容错列表里补一条提示，让设置页可见（而不是静默忽略）。
+    private func configIssuesWithTrustNotice(_ issues: [String]) -> [String] {
+        guard let info = workspaceMCPInfo, !info.trusted else { return issues }
+        return issues + [
+            "workspace: .meditor/mcp.json ignored (not trusted, \(info.serverNames.count) server(s)) — trust this project in Settings to enable"
+        ]
+    }
+
+    /// 授权当前工作区的 mcp.json（信任绑定到当前配置内容 hash，内容变更后自动失效）。
+    func trustCurrentWorkspaceMCP() async {
+        guard let info = workspaceMCPInfo else { return }
+        AppSettings.shared.trustWorkspaceMCP(workspacePath: info.workspacePath, configHash: info.configHash)
+        await reconnectAll(workspaceURL: lastWorkspaceURL)
+    }
+
+    /// 撤销当前工作区 mcp.json 的信任，并断开其已连接的 server。
+    func revokeCurrentWorkspaceMCP() async {
+        guard let info = workspaceMCPInfo else { return }
+        AppSettings.shared.revokeWorkspaceMCP(workspacePath: info.workspacePath)
+        await reconnectAll(workspaceURL: lastWorkspaceURL)
     }
 
     // MARK: - Agent run 懒连接
@@ -86,8 +144,10 @@ final class MCPClientManager {
     }
 
     private func performRefresh(workspaceURL: URL?, globalConfigURL: URL) async -> [any AgentTool] {
-        let result = MCPClientConfigLoader.load(globalConfigURL: globalConfigURL, workspaceRoot: workspaceURL)
-        configIssues = result.issues
+        lastWorkspaceURL = workspaceURL
+        let gatedRoot = gatedWorkspaceRoot(workspaceURL)
+        let result = MCPClientConfigLoader.load(globalConfigURL: globalConfigURL, workspaceRoot: gatedRoot)
+        configIssues = configIssuesWithTrustNotice(result.issues)
         let newConfigs = Dictionary(uniqueKeysWithValues: result.servers.map { ($0.name, $0) })
 
         // 关闭配置已变更或已移除的 server 连接

@@ -1,4 +1,6 @@
 import SwiftUI
+// NSEvent 非 Sendable，本地监视器仅主线程同步回调；@preconcurrency 关闭边界检查。
+@preconcurrency import AppKit
 
 @MainActor
 struct AppShell<Sidebar: View, Editor: View, Preview: View>: View {

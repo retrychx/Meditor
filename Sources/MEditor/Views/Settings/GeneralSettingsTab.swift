@@ -93,6 +93,13 @@ extension SettingsView {
                     }
                 }
 
+                // 系统搜索（Spotlight）：正文索引默认关，隐私优先
+                settingsGroup(title: L("settings.section.spotlight")) {
+                    settingsRow(label: L("settings.spotlightContent"), subtitle: L("settings.desc.spotlightContent")) {
+                        Toggle("", isOn: bindableSettings.spotlightIndexContent).labelsHidden()
+                    }
+                }
+
                 // 存储位置（原「路径」tab，两行配置并入通用）
                 settingsGroup(title: L("paths.group")) {
                     PathRow(

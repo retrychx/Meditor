@@ -24,6 +24,7 @@ struct UpdatePanelView: View {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
                 .frame(width: 44, height: 44)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: DS.Space.xxs) {
                 Text(headerTitle)
                     .font(DS.Font.label(15, weight: .semibold))

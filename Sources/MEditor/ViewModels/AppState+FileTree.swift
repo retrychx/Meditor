@@ -25,7 +25,6 @@ extension AppState {
         let normalized = url.standardizedFileURL
         let previous   = rootURL?.standardizedFileURL
         if previous != normalized { beginAccessing(normalized) }
-        rootURL = url
         if let previous, previous != normalized { endAccessing(previous) }
 
         tabManager.openTabs.forEach { endAccessing($0.url) }
@@ -33,9 +32,9 @@ extension AppState {
         tabManager.selectedTabID = nil
         selectedFileID = nil
         previewManager.clear()
-        // Load the tree BEFORE setting rootURL so that when ContentView switches
-        // from welcomeScreen → mainLayout, fileTree is already populated.
-        // This eliminates the empty-list flash on first render.
+        // 先加载文件树，再设置 rootURL：ContentView 从 welcomeScreen → mainLayout 时
+        // fileTree 已就绪，避免空列表闪烁。rootURL 只设一次——此前在清 tab 之前先设了
+        // 一次，会提前触发 didSet（索引重建 / 调度器 reload / share 同步）且带着旧 tab。
         fileTreeManager.reloadFresh(rootURL: url)
         rootURL = url
 
@@ -43,13 +42,16 @@ extension AppState {
         gitStatusService.refreshNow(rootURL: url)
 
         fileWatcher.startWatching(urls: [url]) { [weak self] in
-            guard let self else { return }
-            self.fileTreeManager.scheduleWatchedReload(rootURL: url)
-            self.checkExternalModifications()
-            self.scheduleWorkspaceIndexRefresh(root: url)
-            let spotlight = SpotlightIndexManager.shared
-            Task { await spotlight.scheduleRefresh(root: url) }
-            self.gitStatusService.scheduleRefresh(rootURL: url)
+            // FSEvents 回调经 FileWatcherService 派发到主队列；用 assumeIsolated 声明主 actor 上下文。
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.fileTreeManager.scheduleWatchedReload(rootURL: url)
+                self.checkExternalModifications()
+                self.scheduleWorkspaceIndexRefresh(root: url)
+                let spotlight = SpotlightIndexManager.shared
+                Task { await spotlight.scheduleRefresh(root: url, includeContent: AppSettings.shared.spotlightIndexContent) }
+                self.gitStatusService.scheduleRefresh(rootURL: url)
+            }
         }
     }
 
@@ -107,7 +109,7 @@ extension AppState {
         // Spotlight 即时路径：删旧 id；新路径 upsert（目录重命名的子项由 FSEvents diff 兜底）
         let spotlight = SpotlightIndexManager.shared
         Task { await spotlight.removeFile(at: oldURL) }
-        Task { await spotlight.updateFile(at: newURL) }
+        Task { await spotlight.updateFile(at: newURL, includeContent: AppSettings.shared.spotlightIndexContent) }
     }
 
     func handleItemDeleted(at deletedURL: URL) {

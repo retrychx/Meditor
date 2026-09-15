@@ -1,6 +1,7 @@
 import Foundation
 
 protocol FileWatcherServiceProtocol {
-    func startWatching(urls: [URL], onChange: @escaping () -> Void)
+    /// onChange 以 @Sendable 标注：FSEvents 回调在后台队列触发，需把闭包送到主队列执行。
+    func startWatching(urls: [URL], onChange: @escaping @Sendable () -> Void)
     func stopWatching()
 }

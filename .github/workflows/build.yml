@@ -6,12 +6,18 @@ on:
   pull_request:
     branches: [main]
 
+# 同一 ref 的新 push/PR 取消旧构建，省 runner 且让结果只看最新
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     # macos-26 = Xcode 26：与 release 包同 SDK，compiler(>=6.2) 分支（Liquid Glass
     # 相关 API）在 PR CI 里就能编到，而不是等到打 tag 才暴露问题
     name: Build & Test (macOS 26)
     runs-on: macos-26
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -43,6 +49,7 @@ jobs:
     # macos-15 = Xcode 16+：项目文件是 objectVersion 77（文件系统同步组），
     # macos-14 默认的 Xcode 15.4 打不开（"future Xcode project file format (77)"）。
     runs-on: macos-15
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -66,23 +73,27 @@ jobs:
   lint:
     name: SwiftLint
     runs-on: macos-26
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # portable 版是 universal 二进制（x86_64 + arm64），比 brew 更稳、更快
-      - name: Install SwiftLint (portable)
+      # portable 版是 universal 二进制（x86_64 + arm64），比 brew 更稳、更快。
+      # 固定版本：releases/latest 会随上游静默升级，可能突然引入新规则/新行为。
+      - name: Install SwiftLint (portable 0.65.0)
         run: |
-          curl -sL -o /tmp/swiftlint.zip             https://github.com/realm/SwiftLint/releases/latest/download/portable_swiftlint.zip
+          curl -sL -o /tmp/swiftlint.zip             https://github.com/realm/SwiftLint/releases/download/0.65.0/portable_swiftlint.zip
           unzip -o -q /tmp/swiftlint.zip -d /tmp/swiftlint
 
       - name: Lint
-        run: /tmp/swiftlint/swiftlint lint --config .swiftlint.yml Sources
+        # --strict：warning 也视为失败。当前基线 0 warning，闸门从此对警告敏感。
+        run: /tmp/swiftlint/swiftlint lint --strict --config .swiftlint.yml Sources
 
   coverage:
     name: Coverage Gate
     runs-on: macos-26
+    timeout-minutes: 45
 
     steps:
       - name: Checkout

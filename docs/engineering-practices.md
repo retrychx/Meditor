@@ -35,8 +35,13 @@
 ## 4. AI 自审（scripts/ai_review.sh）
 
 - 单作者最大的盲区是"写代码的人审查自己的代码"——AI 是成本最低的第二视角。
-- 用法：`bash scripts/ai_review.sh`（未提交改动）或 `bash scripts/ai_review.sh origin/main`（PR 范围）。
-- 脚本会先把 diff + 项目风险清单（并发/数据安全/会话恢复/强制解包）拼成审查提示词，
+- 用法：`bash scripts/ai_review.sh`（工作区改动，含 staged + unstaged）或
+  `bash scripts/ai_review.sh origin/main`（PR 范围）。
+- 无 base 时脚本用 `git diff HEAD`，因此 `git add` 过的暂存改动也会被审查；
+  如果你想确保改动全部进入审查，先 `git add` 再跑也可以。
+- 脚本会先做 lint 自检：**lint 失败不会中断 review**，但会在结尾明确报出失败状态，
+  提示先修复——不要把"提示词已生成"误当成 lint 通过。
+- 随后把 diff + 项目风险清单（并发/数据安全/会话恢复/强制解包）拼成审查提示词，
   有 claude CLI 时直接交给它，否则打印提示词。
 - 审查发现的 Critical 问题必须在本 PR 内修复；历史上有过"全量 review 修复发现
   Critical 并发安全 bug"的记录，说明这类审查确实有效。

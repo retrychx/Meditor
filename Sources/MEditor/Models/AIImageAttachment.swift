@@ -48,6 +48,7 @@ extension AIImageAttachment {
     }
 
     /// 缓存总量很小（单条会话最多 4 张 × 1MB），交给 NSCache 内存压力淘汰即可。
-    private static let imageCache = NSCache<NSString, NSImage>()
+    /// NSCache 自身线程安全，标 nonisolated(unsafe) 让它在 Swift 6 下可作为共享缓存。
+    nonisolated(unsafe) private static let imageCache = NSCache<NSString, NSImage>()
 }
 #endif

@@ -374,8 +374,9 @@ private final class TwoStepBackend: AgentBackend, @unchecked Sendable {
         self.first = first; self.second = second
     }
     func complete(messages: [AgentMessage], tools: [any AgentTool]) async throws -> AgentCompletionResponse {
-        lock.lock(); defer { lock.unlock() }
-        defer { step += 1 }
-        return step == 0 ? first : second
+        lock.withLock {
+            defer { step += 1 }
+            return step == 0 ? first : second
+        }
     }
 }

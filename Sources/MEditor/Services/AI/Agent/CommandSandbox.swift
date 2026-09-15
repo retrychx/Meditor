@@ -96,12 +96,9 @@ public enum CommandSandbox {
         .init(pattern: "rm -rf $home",        label: "blocked", description: "删除 home 目录"),
         .init(pattern: ":(){ :|:& };",        label: "blocked", description: "Fork 炸弹"),
         .init(pattern: "mkfs",                kind: .commandToken, label: "blocked", description: "磁盘格式化"),
+        // ">/dev/" 设备写入改由 writesToBlockedDevice 精确判定：无条件拦 ">/dev/"
+        // 会误杀 `2>/dev/null` 这类日常命令（见 assess 中的调用）。
         .init(pattern: "dd if=",              label: "blocked", description: "磁盘低级写入"),
-        // "> /dev/" 原本要求 > 和路径之间有空格；shell 里 `>/dev/disk0`（无空格）
-        // 是合法语法，之前的写法会被这种省略空格的形式绕过——改成不依赖空格的
-        // 子串匹配，两种写法都能拦住。
-        .init(pattern: ">/dev/",              label: "blocked", description: "写入设备文件"),
-        .init(pattern: "> /dev/",             label: "blocked", description: "写入设备文件"),
         .init(pattern: "sudo",                kind: .commandToken, label: "blocked", description: "sudo 提权"),
         .init(pattern: "doas",                kind: .commandToken, label: "blocked", description: "doas 提权"),
         // osascript 的 AppleScript 提权写法（do shell script ... with administrator privileges）
@@ -174,6 +171,12 @@ public enum CommandSandbox {
 
         for rule in blockedRules where matches(rule, in: lower) {
             return .blocked(reason: "🚫 安全限制：\(rule.description)，该命令已被自动拒绝。\n命令：\(truncated(command))")
+        }
+
+        // 设备文件写入：精确到目标，放行 /dev/null、/dev/stdout、/dev/stderr、/dev/fd/*，
+        // 其余（/dev/disk0 等）仍直接拒绝。此前的 ">/dev/" 子串规则会误杀 `2>/dev/null`。
+        if writesToBlockedDevice(lower) {
+            return .blocked(reason: "🚫 安全限制：写入设备文件，该命令已被自动拒绝。\n命令：\(truncated(command))")
         }
 
         for rule in warnRules where matches(rule, in: lower) {
@@ -250,8 +253,42 @@ public enum CommandSandbox {
         return extended.firstMatch(in: command, range: range) != nil
     }
 
-    // MARK: - Cwd Validation
+    /// 重定向目标是否为设备文件（放行 /dev/null、/dev/stdout、/dev/stderr、/dev/fd/*）。
+    /// 输入应已是规范化（小写、去反斜杠）后的命令文本。
+    static func writesToBlockedDevice(_ command: String) -> Bool {
+        guard let regex = try? NSRegularExpression(pattern: #">>?\s*/dev/([A-Za-z0-9_./-]+)"#) else {
+            return false
+        }
+        let range = NSRange(command.startIndex..., in: command)
+        for match in regex.matches(in: command, range: range) {
+            guard let targetRange = Range(match.range(at: 1), in: command) else { continue }
+            let target = String(command[targetRange]).lowercased()
+            let safe = target == "null"
+                || target.hasPrefix("stdout")
+                || target.hasPrefix("stderr")
+                || target.hasPrefix("fd/")
+            if !safe { return true }
+        }
+        return false
+    }
 
+    /// 命令是否包含「可能写出工作区」的重定向/写入语法。
+    ///
+    /// 用于给 `run_command` 兜底升级风险等级（无 UI 时黑名单不是安全边界）。
+    /// 先剔除无害的 `/dev/null`、`2>&1` 等，再看是否仍有 `>` / `>>` / `tee` / `dd of=`。
+    /// 字符串判断是启发式（可被 shell 语法绕过），这里只用于「多弹一次确认」的保守方向。
+    public static func containsWriteRedirection(_ command: String) -> Bool {
+        var s = command
+        for safe in [">/dev/null", "2>/dev/null", "&>/dev/null", ">/dev/stdout", ">/dev/stderr", "2>&1"] {
+            s = s.replacingOccurrences(of: safe, with: " ")
+        }
+        if s.contains(">>") || s.contains(">") { return true }
+        if containsCommandToken("tee", in: s.lowercased()) { return true }
+        if s.contains("dd ") && s.contains("of=") { return true }
+        return false
+    }
+
+    // MARK: - Cwd Validation
     /// 解析路径中的符号链接，兼容目标尚不存在的场景。
     /// `URL.resolvingSymlinksInPath()` 对不存在的路径会整体放弃解析（实测 macOS 14
     /// 只对完整存在的路径解析中间 symlink），这里改为先向上找到最深的已存在祖先、
@@ -322,6 +359,14 @@ public enum CommandSandbox {
 
     /// 检查命令是否符合 allowedCommandPatterns（skill SKILL.md 中声明的白名单）。
     ///
+    /// 实现要点（防止 `hasPrefix` 被链式命令绕过）：
+    ///   1. 含命令替换/参数展开/反引号（`$(`, `${`, `` ` ``）直接拒绝——这些能在
+    ///      一段合法前缀里夹带任意命令；
+    ///   2. 按 shell 分隔符（`;` `&&` `||` `|` 换行）切段，**逐段**校验：
+    ///      `git log; rm -rf x` 不能因为整串以 "git log" 开头就被放行；
+    ///   3. 前缀匹配要求 token 边界（`seg == p` 或 `seg` 以 `p + 空格` 开头），
+    ///      避免 `git logs` 命中 `git log`。
+    ///
     /// - Parameters:
     ///   - command:  要执行的命令字符串。
     ///   - patterns: 允许的命令前缀列表。nil 表示不限制（允许所有）。
@@ -329,7 +374,25 @@ public enum CommandSandbox {
     public static func matchesAllowedPatterns(_ command: String, patterns: [String]?) -> Bool {
         guard let patterns, !patterns.isEmpty else { return true }
         let cmd = command.trimmingCharacters(in: .whitespaces)
-        return patterns.contains { cmd.hasPrefix($0) }
+        guard !cmd.isEmpty else { return false }
+
+        if cmd.contains("$(") || cmd.contains("${") || cmd.contains("`") { return false }
+
+        let segments = cmd
+            .replacingOccurrences(of: "&&", with: ";")
+            .replacingOccurrences(of: "||", with: ";")
+            .replacingOccurrences(of: "|",  with: ";")
+            .replacingOccurrences(of: "\n", with: ";")
+            .components(separatedBy: ";")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        guard !segments.isEmpty else { return false }
+
+        return segments.allSatisfy { segment in
+            patterns.contains { pattern in
+                segment == pattern || segment.hasPrefix(pattern + " ")
+            }
+        }
     }
 
     // MARK: - Private Helpers

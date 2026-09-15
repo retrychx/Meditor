@@ -3,14 +3,14 @@ import XCTest
 
 @MainActor
 final class AIConversationTests: XCTestCase {
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         clearPersistedSessions()
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         clearPersistedSessions()
-        super.tearDown()
+        try await super.tearDown()
     }
 
     private func clearPersistedSessions() {
@@ -49,6 +49,22 @@ final class AIConversationTests: XCTestCase {
     func testInputDefaultsToEmpty() {
         let conv = AIConversation()
         XCTAssertTrue(conv.input.isEmpty)
+    }
+
+    /// 回归：草稿移出 sessions 后，打字不应改动消息/会话数组（此前会逐字符使整个 AI 面板失效）。
+    func testInputTypingDoesNotMutateSessions() {
+        let conv = AIConversation()
+        conv.messages = [AIChatMessage(role: .user, text: "hi")]
+        let messageCount = conv.messages.count
+        let historyCount = conv.history.count
+
+        conv.input = "a"
+        conv.input = "ab"
+        conv.input = "abc"
+
+        XCTAssertEqual(conv.messages.count, messageCount, "打字不应改动消息数组")
+        XCTAssertEqual(conv.history.count, historyCount, "打字不应改动会话列表")
+        XCTAssertEqual(conv.input, "abc")
     }
 
     // MARK: - 草稿按会话独立保存

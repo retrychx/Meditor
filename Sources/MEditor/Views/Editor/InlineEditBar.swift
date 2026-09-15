@@ -40,6 +40,7 @@ struct InlineEditBar: View {
                             .font(.system(size: 13))
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(L("common.cancel"))
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)

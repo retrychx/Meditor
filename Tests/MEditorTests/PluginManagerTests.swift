@@ -9,8 +9,8 @@ final class PluginManagerTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "MEditor.pluginSkillStates")
     }
 
-    override func setUp() { super.setUp(); cleanDefaults() }
-    override func tearDown() { cleanDefaults(); super.tearDown() }
+    override func setUp() async throws { try await super.setUp(); cleanDefaults() }
+    override func tearDown() async throws { cleanDefaults(); try await super.tearDown() }
 
     private func makeSkillDir(named name: String) throws -> URL {
         let base = FileManager.default.temporaryDirectory

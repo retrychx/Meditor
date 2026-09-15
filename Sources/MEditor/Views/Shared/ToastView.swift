@@ -20,6 +20,7 @@ struct ToastView: View {
         .padding(.vertical, 9)
         .background(.regularMaterial, in: Capsule())
         .shadow(color: .black.opacity(0.18), radius: 8, x: 0, y: 2)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -73,6 +74,7 @@ struct ClaudeFilePromptToast: View {
             Image(systemName: "sparkles")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Color.appAccent)
+                .accessibilityHidden(true)
 
             // 文字
             VStack(alignment: .leading, spacing: 2) {

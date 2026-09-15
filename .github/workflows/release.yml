@@ -9,12 +9,38 @@ on:
 permissions:
   contents: write
 
+# 同一 ref 的发布串行化；进行中的发布不取消，避免留下半发布状态。
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  test:
+    name: Build & Test (macOS 26)
+    runs-on: macos-26
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Build
+        run: swift build
+
+      - name: Test
+        run: swift test
+
   release:
     name: Build & Release
+    needs: [test]
     # macos-26：发布包必须用 macOS 26 SDK 链接，否则在 Tahoe 上是旧式灰侧栏，
     # 没有 Liquid Glass（外观按构建时 SDK 决定，与用户系统无关）
     runs-on: macos-26
+    timeout-minutes: 90
+    environment: release
 
     env:
       # Sparkle 更新分发（workers.dev）：worker 端点见 worker/index.js
@@ -26,6 +52,28 @@ jobs:
         with:
           # 生成更新日志需要完整 tag 历史（git log 上一 tag..当前 tag）
           fetch-depth: 0
+
+      - name: Guard release ref
+        run: |
+          # workflow_dispatch 可以指向任意 ref；只有 v* tag 才允许发版
+          if [[ "${GITHUB_REF}" != refs/tags/v* ]]; then
+            echo "::error::Release 只能从 v* tag 触发（当前 GITHUB_REF=${GITHUB_REF}）。请推送形如 v1.2.3 的 tag，或 workflow_dispatch 时选择该 tag。"
+            exit 1
+          fi
+
+      - name: Verify tag matches VERSION
+        run: |
+          set -euo pipefail
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag ${GITHUB_REF_NAME} 必须匹配 ^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+            exit 1
+          fi
+          VERSION_FILE="$(tr -d '[:space:]' < VERSION)"
+          if [[ "${GITHUB_REF_NAME}" != "v${VERSION_FILE}" ]]; then
+            echo "::error::tag ${GITHUB_REF_NAME} 与 VERSION（${VERSION_FILE}）不一致——请先把 VERSION 更新为 ${GITHUB_REF_NAME#v} 再打 tag。"
+            exit 1
+          fi
+          echo "version verified: ${GITHUB_REF_NAME} (VERSION=${VERSION_FILE})"
 
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
@@ -44,9 +92,14 @@ jobs:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         run: |
           # 自研签名脚本（scripts/sign_update.swift，CryptoKit 标准 Ed25519）——
-          # 不依赖 Sparkle 工具包下载，密钥格式与本地生成端天然一致
+          # 不依赖 Sparkle 工具包下载，密钥格式与本地生成端天然一致。
+          # 先校验 SPARKLE_ED_PRIVATE_KEY 派生出的公钥与仓库内固定公钥一致，
+          # 不匹配就 exit(1)——避免用错密钥签名后才在客户端更新失败。
+          set -o pipefail
           SIG=$(printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | tr -d '[:space:]')
-          swift scripts/sign_update.swift "$SIG" "MEditor-${{ github.ref_name }}.zip" | tee /tmp/sign_output.txt
+          EXPECTED_PUBKEY="$(tr -d '[:space:]' < scripts/sparkle-ed-public-key.txt)"
+          swift scripts/sign_update.swift "$SIG" "MEditor-${{ github.ref_name }}.zip" \
+            --expect-public-key "$EXPECTED_PUBKEY" | tee /tmp/sign_output.txt
 
       - name: Build appcast.xml
         run: |

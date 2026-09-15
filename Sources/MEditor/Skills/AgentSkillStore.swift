@@ -67,7 +67,8 @@ struct AgentSkill: Sendable, Equatable {
 final class AgentSkillStore: @unchecked Sendable {
 
     /// 共享实例。声明为 var 以便测试注入临时目录的实例（用后须还原）。
-    static var shared = AgentSkillStore()
+    /// nonisolated(unsafe)：本类型已 @unchecked Sendable，实例内部自持锁。
+    nonisolated(unsafe) static var shared = AgentSkillStore()
 
     /// 单个技能文件大小上限（与 SkillTransfer.maxBytes 的 256 KB 防呆对齐；
     /// SkillTransfer 不在 iOS 工程内，这里保留本地常量）。
@@ -314,7 +315,7 @@ final class AgentSkillStore: @unchecked Sendable {
     static func parseSkillDocument(
         content: String,
         fallbackName: String
-    ) -> (name: String, description: String, version: String?)? {
+    ) -> ParsedSkillDocument? {
         var name = fallbackName
         var description = ""
         var version: String? = nil
@@ -328,7 +329,15 @@ final class AgentSkillStore: @unchecked Sendable {
         if description.isEmpty { description = firstContentLine(body) }
         name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard isValidSkillName(name) else { return nil }
-        return (name, description, version)
+        return ParsedSkillDocument(name: name, description: description, version: version)
+    }
+
+    /// parseSkillDocument 的解析结果（用具名结构体替代 3 元组，避免 large_tuple，
+    /// 调用点字段名不变）。
+    struct ParsedSkillDocument {
+        let name: String
+        let description: String
+        let version: String?
     }
 
     /// 技能名必须是单段纯文本：非空、≤100 字符、无路径分隔符/控制字符/换行、

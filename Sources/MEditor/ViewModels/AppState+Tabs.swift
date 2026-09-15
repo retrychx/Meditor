@@ -44,6 +44,8 @@ extension AppState {
     func applyLoadedContent(tabID: UUID, content: String)        { tabManager.applyLoadedContent(tabID: tabID, content: content) }
     func failLoadingTab(tabID: UUID, url: URL, error: Error)     { tabManager.failLoadingTab(tabID: tabID, url: url, error: error) }
     func closeTab(_ tabID: UUID)                                 { tabManager.closeTab(tabID) }
+    func closeOtherTabs(keeping tabID: UUID)                     { tabManager.closeOtherTabs(keeping: tabID) }
+    func closeAllTabs()                                          { tabManager.closeAllTabs() }
     func confirmCloseTab(save: Bool)                             { tabManager.confirmCloseTab(save: save) }
     func performCloseTab(_ tabID: UUID)                          { tabManager.performCloseTab(tabID) }
     func updateTabContent(_ tabID: UUID, content: String) {
@@ -52,6 +54,18 @@ extension AppState {
     }
     func saveTab(_ tab: EditorTab)                               { tabManager.saveTab(tab) }
     func saveCurrentTab()                                        { tabManager.saveCurrentTab() }
+
+    /// 退出流程专用：同步等待所有已修改 tab 落盘 + 会话写盘。
+    /// saveTab 是 detached Task，普通 onDisappear 保存不等它，进程可能在 rename
+    /// 落盘前就退出（⌘Q 丢数据）。applicationShouldTerminate 用 .terminateLater
+    /// 等这个方法返回后再真正退出。
+    func saveAllModifiedTabsForTermination() async {
+        for tab in openTabs where tab.isModified {
+            tabManager.saveTab(tab)
+        }
+        await tabManager.flushPendingSaves()
+        flushSession()
+    }
     func selectTab(_ id: UUID)                                   { tabManager.selectTab(id) }
     func reopenLastClosedTab()                                   { tabManager.reopenLastClosedTab() }
     func selectNextTab()                                         { tabManager.selectNextTab() }

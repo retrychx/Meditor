@@ -5,12 +5,13 @@ import Security
 /// password. Secrets are never written to disk or logs. Reused by any feature
 /// that needs to persist a credential (AI API key, GitLab token, …).
 ///
-/// ACL 策略（仅 macOS）：
-///   存储时使用 SecAccessCreate(trustedList: nil)，即"允许任意应用读取"。
-///   对非沙盒 macOS app 这是标准做法——避免每次替换二进制（开发部署/更新）
-///   时因 code signature 变化导致 Keychain 弹出授权窗口。
-///   iOS 无 SecAccess API：Keychain 项天然按 app 隔离，直接用普通
-///   SecItemAdd / SecItemCopyMatching / SecItemUpdate / SecItemDelete 即可。
+/// ACL 策略：
+///   不设置自定义 `SecAccess`，使用系统默认 ACL——item 只信任创建它的应用
+///   （按 code signature）。此前用 `SecAccessCreate(trustedList: nil)` 构造了
+///   「任意应用可读」的 ACL，任何本机进程都能静默读取 API key / 发布 token；
+///   安全优先于「开发期替换二进制少弹一次授权框」的便利。
+///   可访问性用 `WhenUnlockedThisDeviceOnly`：不同步到 iCloud、不进备份。
+///   iOS 无 SecAccess API，Keychain 项天然按 app 隔离。
 struct Keychain {
     let service: String
     let account: String
@@ -23,19 +24,6 @@ struct Keychain {
         ]
     }
 
-    #if os(macOS)
-    /// 构造一个"允许所有应用访问"的 SecAccess 对象。
-    /// trustedList = nil → 任意程序无需授权即可访问该 item。
-    /// 这样 code signature 变化（开发期替换二进制）不会触发权限弹窗。
-    private func makeUnrestrictedAccess() -> SecAccess? {
-        var access: SecAccess?
-        let desc = "\(service)/\(account)" as CFString
-        let status = SecAccessCreate(desc, nil, &access)
-        guard status == errSecSuccess else { return nil }
-        return access
-    }
-    #endif
-
     /// 存储 `value`，替换已有 item。空字符串等同于清除。
     @discardableResult
     func save(_ value: String) -> Bool {
@@ -45,13 +33,7 @@ struct Keychain {
 
         var add = base
         add[kSecValueData as String]      = data
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        #if os(macOS)
-        // 绑定宽松 ACL：任意 app 可读，不依赖 code signature
-        if let access = makeUnrestrictedAccess() {
-            add[kSecAttrAccess as String] = access
-        }
-        #endif
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
     }
 

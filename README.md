@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/macOS-14.0+-blue?logo=apple" alt="macOS 14+" />
-  <img src="https://img.shields.io/badge/Swift-5.9-orange?logo=swift" alt="Swift 5.9" />
+  <img src="https://img.shields.io/badge/Swift-6.0-orange?logo=swift" alt="Swift 6.0" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" />
   <img src="https://img.shields.io/badge/build-passing-brightgreen" alt="Build Passing" />
 </p>
@@ -33,7 +33,7 @@ Pure SwiftUI + AppKit — **no Electron**. Bring-your-own-key — **your documen
 
 ### 🤖 A real Agent, not a chat box
 
-- **14 tools, multi-turn loop** — The Agent reads, writes, patches, and searches documents; operates workspace files; drives the editor; and runs sandboxed shell commands — reasoning across tool calls until the job is done
+- **15 tools on macOS (14 cross-platform), multi-turn loop** — The Agent reads, writes, patches, and searches documents; operates workspace files; drives the editor; and runs sandboxed shell commands — reasoning across tool calls until the job is done
 - **Three backends** — OpenAI-compatible and Anthropic (9 built-in presets: Anthropic, OpenAI, DeepSeek, Kimi, GLM, Qwen, OpenRouter, Groq, Ollama), plus a local Claude CLI backend that reuses your Claude Code login
 - **BYOK** — Any OpenAI-compatible endpoint works; keys stay in your local Keychain
 - **Streaming everywhere** — Responses stream token-by-token; tool steps render inline with expand/collapse detail
@@ -94,7 +94,7 @@ More on the [website](https://meditorapp.pages.dev).
 
 - **macOS** 14.0+ (Sonoma)
 - **Xcode** 15.0+ (for development)
-- **Swift** 5.9+
+- **Swift** 6.0+ (app and test targets in Swift 6 language mode, strict concurrency)
 
 ## 🔧 Build & Run
 
@@ -157,7 +157,7 @@ No key? The Claude CLI backend gets you running with zero configuration.
 
 ### MCP server (Claude Desktop, Cursor, …)
 
-MEditor ships a built-in [MCP](https://modelcontextprotocol.io) server over stdio, so external agents can operate on a workspace through the same tool layer the in-app Agent uses (file read/write/patch, directory listing, workspace search, sandboxed shell commands — 12 tools; UI-dependent tools like `open_file` / `insert_at_cursor` are not exposed headlessly).
+MEditor ships a built-in [MCP](https://modelcontextprotocol.io) server over stdio, so external agents can operate on a workspace through the same tool layer the in-app Agent uses (file read/write/patch, directory listing, workspace search — 11 tools; UI-dependent tools like `open_file` / `insert_at_cursor` are not exposed headlessly, and the shell tool `run_command` is off by default).
 
 Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
 
@@ -172,7 +172,7 @@ Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_conf
 }
 ```
 
-`--workspace` defaults to the current directory if omitted. Shell commands go through the same risk-tiered sandbox as the in-app Agent: BLOCKED commands are always rejected; WARN-level commands (e.g. `git push`, `mv`) are rejected by default in headless mode — add `--allow-warn-commands` to opt in.
+`--workspace` defaults to the current directory if omitted. Shell commands are **not exposed by default** — pass `--allow-shell` to add `run_command` (12 tools). When enabled they go through the same risk-tiered sandbox as the in-app Agent: BLOCKED commands are always rejected; WARN-level commands (e.g. `git push`, `mv`) are rejected by default in headless mode — add `--allow-warn-commands` to opt in. In headless mode there is no confirmation dialog, so the static command blocklist is not a security boundary; only enable `--allow-shell` for workspaces you trust.
 
 ---
 
@@ -221,7 +221,7 @@ MEditor/
 ## 🗺 Roadmap
 
 **Delivered**
-- [x] Real Agent: 14 tools, multi-turn loop, three backends (OpenAI-compatible / Anthropic / Claude CLI), BYOK
+- [x] Real Agent: 15 tools on macOS (14 cross-platform), multi-turn loop, three backends (OpenAI-compatible / Anthropic / Claude CLI), BYOK
 - [x] Agent hardening: write confirmation, risk-tiered sandbox, context budget, stall detection, parallel read-only tools, usage display
 - [x] Inline edit diff review, `@mention` context, multi-session history
 - [x] Slash command library, selection action bar, auto-attached document context

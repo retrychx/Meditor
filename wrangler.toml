@@ -18,6 +18,8 @@ binding = "UPDATES"
 id = "3f5d703eda614a0aaaf17f7998000364"
 
 # 发布鉴权（均为 wrangler secret，勿写进本文件）：
-#   SHARE_TOKEN  —— 免费档发布 token（20 篇/月、30 天过期、带品牌页脚）
+#   SHARE_TOKENS —— per-user 免费档发布 token 列表，逗号分隔（各自 20 篇/月、30 天过期、带品牌页脚；
+#                   配额按 token 独立计量，撤销单个用户只需从此列表移除）
+#   SHARE_TOKEN  —— 旧版单一免费档 token，仍兼容（建议迁移到 SHARE_TOKENS）
 #   PRO_TOKENS   —— Pro token 列表，逗号分隔（不限量、不过期、无页脚）
 #   UPDATE_TOKEN —— CI 发布更新包用

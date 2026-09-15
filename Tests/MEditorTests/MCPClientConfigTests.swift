@@ -65,6 +65,27 @@ final class MCPClientConfigTests: XCTestCase {
         XCTAssertEqual(url.absoluteString, "https://example.com/mcp")
     }
 
+    // MARK: 明文 http 仅限回环
+
+    func test_parse_plaintextHTTP_nonLocal_rejected() {
+        let json = """
+        {"mcpServers": {"remote": {"url": "http://evil.example/mcp"}}}
+        """
+        let result = MCPClientConfigLoader.parse(data: Data(json.utf8), source: "test")
+        XCTAssertTrue(result.servers.isEmpty)
+        XCTAssertTrue(result.issues.contains { $0.contains("https required") })
+    }
+
+    func test_parse_plaintextHTTP_localhost_allowed() throws {
+        for host in ["localhost", "127.0.0.1"] {
+            let json = """
+            {"mcpServers": {"local": {"url": "http://\(host):8080/mcp"}}}
+            """
+            let result = MCPClientConfigLoader.parse(data: Data(json.utf8), source: "test")
+            XCTAssertEqual(result.servers.count, 1, "\(host) 应允许明文 http")
+        }
+    }
+
     // MARK: - 容错
 
     func test_parse_invalidJSON_recordsIssue() {

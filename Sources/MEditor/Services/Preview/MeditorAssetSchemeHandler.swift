@@ -17,6 +17,14 @@ import UniformTypeIdentifiers
 /// entirely: requests for this scheme never go through WebKit's file-access
 /// check, so Swift can read any absolute path the user has filesystem
 /// permission for.
+/// @unchecked Sendable 包装：`WKURLSchemeTask` 非 Sendable，但按 WebKit 约定只在
+/// 主线程访问。后台读盘闭包捕获这个盒子（Sendable），回主线程后再调用 task 方法，
+/// 避免 Swift 6 把 task 判为跨线程发送。
+private final class SchemeTaskBox: @unchecked Sendable {
+    let task: WKURLSchemeTask
+    init(_ task: WKURLSchemeTask) { self.task = task }
+}
+
 final class MeditorAssetSchemeHandler: NSObject, WKURLSchemeHandler {
     static let scheme = "meditor-asset"
 
@@ -47,13 +55,14 @@ final class MeditorAssetSchemeHandler: NSObject, WKURLSchemeHandler {
             return
         }
 
+        let box = SchemeTaskBox(urlSchemeTask)
         DispatchQueue.global(qos: .userInitiated).async {
             let fm = FileManager.default
             var isDirectory: ObjCBool = false
             guard fm.fileExists(atPath: filePath, isDirectory: &isDirectory), !isDirectory.boolValue,
                   let data = fm.contents(atPath: filePath) else {
                 DispatchQueue.main.async {
-                    urlSchemeTask.didFailWithError(URLError(.fileDoesNotExist))
+                    box.task.didFailWithError(URLError(.fileDoesNotExist))
                 }
                 return
             }
@@ -67,9 +76,9 @@ final class MeditorAssetSchemeHandler: NSObject, WKURLSchemeHandler {
             )
 
             DispatchQueue.main.async {
-                urlSchemeTask.didReceive(response)
-                urlSchemeTask.didReceive(data)
-                urlSchemeTask.didFinish()
+                box.task.didReceive(response)
+                box.task.didReceive(data)
+                box.task.didFinish()
             }
         }
     }

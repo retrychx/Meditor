@@ -35,7 +35,8 @@ actor SpotlightIndexManager {
     // MARK: - 全量重建
 
     /// 打开/切换工作区时的全量重建。批量写入，批间让出；可随时被 Task 取消打断。
-    func reindex(root: URL) async {
+    /// - Parameter includeContent: 是否索引正文（默认 false：只索引文件名/标题与修改时间）。
+    func reindex(root: URL, includeContent: Bool = false) async {
         refreshGeneration &+= 1   // 取消未执行的增量刷新
         let domain = SpotlightMetadata.domainIdentifier(forRoot: root)
         // 切换到新工作区时先清理旧 domain，避免 Spotlight 里残留旧工作区条目
@@ -51,7 +52,7 @@ actor SpotlightIndexManager {
         var applied: [String: Date?] = [:]
         for url in files {
             if Task.isCancelled { return }
-            guard let (item, modDate) = Self.loadItem(url: url, domain: domain) else { continue }
+            guard let (item, modDate) = Self.loadItem(url: url, domain: domain, includeContent: includeContent) else { continue }
             batch.append(item)
             applied[item.uniqueIdentifier] = modDate
             if batch.count >= Self.batchSize {
@@ -82,15 +83,15 @@ actor SpotlightIndexManager {
     /// FSEvents 变化入口（内部 300ms 防抖合并连续事件）。
     /// 采用「枚举 diff」而非逐事件路径：FileWatcherService 回调不带路径信息，
     /// 枚举 + modDate 比较对千级文件是毫秒级，移动/重命名天然覆盖。
-    func scheduleRefresh(root: URL) async {
+    func scheduleRefresh(root: URL, includeContent: Bool = false) async {
         refreshGeneration &+= 1
         let generation = refreshGeneration
         try? await Task.sleep(nanoseconds: 300_000_000)
         guard generation == refreshGeneration, !Task.isCancelled else { return }
-        await refresh(root: root)
+        await refresh(root: root, includeContent: includeContent)
     }
 
-    private func refresh(root: URL) async {
+    private func refresh(root: URL, includeContent: Bool) async {
         guard self.root == root.standardizedFileURL, let domain = domainIdentifier else { return }
         let files = Self.enumerateMarkdownFiles(root: root)
         var disk: [String: Date?] = [:]
@@ -105,7 +106,7 @@ actor SpotlightIndexManager {
         for identifier in changes.upsert {
             if Task.isCancelled { return }
             let url = URL(fileURLWithPath: identifier)
-            if let (item, modDate) = Self.loadItem(url: url, domain: domain) {
+            if let (item, modDate) = Self.loadItem(url: url, domain: domain, includeContent: includeContent) {
                 items.append(item)
                 applied[identifier] = modDate
             }
@@ -120,11 +121,11 @@ actor SpotlightIndexManager {
 
     /// 单文件 upsert（Tab 保存回调 / 应用内重命名的新路径）。
     /// 非 Markdown、不在当前工作区内、读盘失败的文件按删除处理（与磁盘状态对齐）。
-    func updateFile(at url: URL) async {
+    func updateFile(at url: URL, includeContent: Bool = false) async {
         guard let domain = domainIdentifier,
               Self.isMarkdownFile(url), isUnderRoot(url) else { return }
         let identifier = SpotlightMetadata.identifier(for: url)
-        if let (item, modDate) = Self.loadItem(url: url, domain: domain) {
+        if let (item, modDate) = Self.loadItem(url: url, domain: domain, includeContent: includeContent) {
             try? await indexItems([item])
             indexedModDates[identifier] = modDate
         } else {
@@ -200,9 +201,28 @@ actor SpotlightIndexManager {
 
     /// 读盘 + 解码 + 构造索引项。返回 nil 的情形：超大小上限、iCloud 占位符
     /// （触发后台下载）、读盘失败、无法按文本解码——与 WorkspaceIndexService 同一套判定。
-    private static func loadItem(url: URL, domain: String) -> (CSSearchableItem, Date?)? {
-        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
-              let size = values.fileSize, size <= maxIndexedFileBytes else { return nil }
+    /// - Parameter includeContent: false 时不读正文，只索引文件名/标题与修改时间（隐私默认）。
+    private static func loadItem(url: URL, domain: String, includeContent: Bool) -> (CSSearchableItem, Date?)? {
+        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]) else {
+            return nil
+        }
+        if !includeContent {
+            // 不读盘内容：标题回退文件名，不带 description/textContent。
+            let metadata = SpotlightDocumentMetadata(
+                title: SpotlightMetadata.fallbackTitle(from: url.lastPathComponent),
+                contentDescription: "",
+                textContent: ""
+            )
+            let item = SpotlightItemBuilder.makeItem(
+                url: url,
+                domainIdentifier: domain,
+                metadata: metadata,
+                contentModificationDate: values.contentModificationDate,
+                includeContent: false
+            )
+            return (item, values.contentModificationDate)
+        }
+        guard let size = values.fileSize, size <= maxIndexedFileBytes else { return nil }
         if UbiquitousFileHelper.isUbiquitousItemNotDownloaded(url) {
             UbiquitousFileHelper.startDownloadingIfNeeded(url)
             return nil

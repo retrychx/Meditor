@@ -17,12 +17,13 @@ final class ShareLinkPublisher {
     private let service: ShareLinkService
 
     /// - Parameter webViewProvider: 取当前预览 webview（PreviewExporter 持有弱引用）。
+    /// settings 用可选默认值规避默认参数表达式在非隔离上下文求值的问题（Swift 6）。
     init(
-        settings: AppSettings = .shared,
+        settings: AppSettings? = nil,
         webViewProvider: @escaping () -> WKWebView? = { nil },
         service: ShareLinkService = ShareLinkService()
     ) {
-        self.settings = settings
+        self.settings = settings ?? .shared
         self.webViewProvider = webViewProvider
         self.service = service
     }

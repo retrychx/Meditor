@@ -472,7 +472,7 @@ private final class CapturingBackend: AgentBackend, @unchecked Sendable {
     var captured: [[AgentMessage]] { lock.lock(); defer { lock.unlock() }; return _captured }
 
     func complete(messages: [AgentMessage], tools: [any AgentTool]) async throws -> AgentCompletionResponse {
-        lock.lock(); _captured.append(messages); lock.unlock()
+        lock.withLock { _captured.append(messages) }
         return AgentCompletionResponse(text: "done", toolCalls: [], finishReason: "stop")
     }
 }

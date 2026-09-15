@@ -282,7 +282,9 @@ struct WelcomeView: View {
     private func startCursorBlink() {
         cursorTimer?.invalidate()
         cursorTimer = Timer.scheduledTimer(withTimeInterval: 0.55, repeats: true) { _ in
-            cursorVisible.toggle()
+            // Timer block 在 Swift 6 下是 @Sendable；但 scheduledTimer 在主 runloop 触发，
+            // 用 assumeIsolated 声明这是主 actor 上下文即可安全改 @State。
+            MainActor.assumeIsolated { cursorVisible.toggle() }
         }
     }
 
@@ -309,8 +311,10 @@ struct WelcomeView: View {
         locked = Array(repeating: false, count: 7)
 
         let shuffleTimer = Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { _ in
-            for i in 0..<7 where !locked[i] {
-                displayedChars[i] = Self.charset.randomElement() ?? " "
+            MainActor.assumeIsolated {
+                for i in 0..<7 where !locked[i] {
+                    displayedChars[i] = Self.charset.randomElement() ?? " "
+                }
             }
         }
         animationTimers.append(shuffleTimer)
@@ -329,19 +333,23 @@ struct WelcomeView: View {
     }
 
     private func startTyping() {
-        var idx = 0
+        // 用 subtitleText.count 代替捕获的 var idx：@Sendable 闭包不得捕获可变更 var。
+        // timer.invalidate() 放在 assumeIsolated 之外：Timer 非 Sendable，不能送进 sending 闭包。
         let typingTimer = Timer.scheduledTimer(withTimeInterval: 0.033, repeats: true) { timer in
-            if idx < Self.subtitle.count {
-                subtitleText += String(
-                    Self.subtitle[Self.subtitle.index(Self.subtitle.startIndex, offsetBy: idx)]
-                )
-                idx += 1
-            } else {
-                timer.invalidate()
-                firstCycleDone = true
-                withAnimation(DS.Motion.standard) { showContent = true }
-                scheduleNextCycle()
+            let finished = MainActor.assumeIsolated { () -> Bool in
+                if subtitleText.count < Self.subtitle.count {
+                    subtitleText.append(
+                        Self.subtitle[Self.subtitle.index(Self.subtitle.startIndex, offsetBy: subtitleText.count)]
+                    )
+                    return false
+                } else {
+                    firstCycleDone = true
+                    withAnimation(DS.Motion.standard) { showContent = true }
+                    scheduleNextCycle()
+                    return true
+                }
             }
+            if finished { timer.invalidate() }
         }
         animationTimers.append(typingTimer)
     }

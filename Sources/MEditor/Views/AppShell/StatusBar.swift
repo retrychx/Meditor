@@ -15,6 +15,9 @@ struct StatusBarHost: View {
                 let stats = DocStats.compute(from: tab.content)
 
                 statusChip("\(state.cursorLine):\(state.cursorColumn)", icon: "character.cursor.ibeam")
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(L("statusBar.cursor"))
+                    .accessibilityValue("\(state.cursorLine):\(state.cursorColumn)")
                 statusDivider(theme)
 
                 // Tappable word-count chip → shows detailed stats popover
@@ -34,6 +37,8 @@ struct StatusBarHost: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(L("stats.words"))
+                .accessibilityValue(stats.chipLabel)
                 .popover(isPresented: $showStatsPopover, arrowEdge: .bottom) {
                     StatsPopover(stats: stats)
                 }
@@ -56,6 +61,7 @@ struct StatusBarHost: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding(.horizontal, 8)
+                    .accessibilityElement(children: .combine)
                 }
             }
 
@@ -66,11 +72,13 @@ struct StatusBarHost: View {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 9))
                         .foregroundStyle(Color.green.opacity(0.8))
+                        .accessibilityHidden(true)
                     Text(L("statusBar.saved"))
                         .font(.system(size: 10.5))
                         .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal, 8)
+                .accessibilityElement(children: .combine)
                 .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .leading)))
             }
 

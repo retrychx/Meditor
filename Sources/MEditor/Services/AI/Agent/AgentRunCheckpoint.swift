@@ -36,7 +36,7 @@ struct AgentFileSnapshot: Equatable {
 }
 
 /// 回滚动作（planRollback 的产出，纯数据，便于单测与 UI 渲染）。
-enum AgentRollbackAction: Equatable {
+enum AgentRollbackAction: Equatable, Sendable {
     /// 恢复文件到写前内容
     case restore(url: URL, content: String)
     /// 删除本次 run 新建的文件
@@ -46,7 +46,7 @@ enum AgentRollbackAction: Equatable {
 }
 
 /// 跳过原因（结构化而非文案字符串：UI 层负责本地化，测试断言不依赖文案）。
-enum AgentRollbackSkipReason: Equatable {
+enum AgentRollbackSkipReason: Equatable, Sendable {
     /// run 结束后文件内容又有变化（用户手动编辑 / 外部进程改动），为避免覆盖而跳过
     case editedAfterRun
     /// 文件已不存在（用户已自行删除，无需也无法处理）

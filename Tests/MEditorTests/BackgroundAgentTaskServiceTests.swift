@@ -188,11 +188,11 @@ private final class BGScriptedBackend: AgentBackend, @unchecked Sendable {
     init(script: [Step]) { self.script = script }
 
     func complete(messages: [AgentMessage], tools: [any AgentTool]) async throws -> AgentCompletionResponse {
-        lock.lock()
-        let step = script.isEmpty
-            ? Step.respond(AgentCompletionResponse(text: "done", toolCalls: [], finishReason: "stop"))
-            : script.removeFirst()
-        lock.unlock()
+        let step = lock.withLock { () -> Step in
+            script.isEmpty
+                ? Step.respond(AgentCompletionResponse(text: "done", toolCalls: [], finishReason: "stop"))
+                : script.removeFirst()
+        }
         switch step {
         case .respond(let response): return response
         case .fail(let error):       throw error

@@ -95,10 +95,16 @@ struct RunCommandTool: AgentTool {
             return "[!] \(cwdValidation.errorMessage ?? "工作目录校验失败")"
         }
 
-        // 3. 静态风险评估
-        let risk = CommandSandbox.assess(command)
+        // 3. 静态风险评估（+ 返回工作区外重定向兜底升级）
+        var risk = CommandSandbox.assess(command)
         if case .blocked(let reason) = risk {
             return "[!] \(reason)"
+        }
+        // run_command 没有文件系统 confinement，`echo evil > ~/.zshrc` 本身属 safe。
+        // 含写出重定向（>/>>/tee/dd of=，已剔除 /dev/null 等无害用法）时升级为 warn，
+        // 强制每次弹确认，不依赖 per-key 审批缓存。
+        if case .safe = risk, CommandSandbox.containsWriteRedirection(command) {
+            risk = .warn(reason: "⚠️ 高风险操作：命令包含输出重定向 / tee / dd of=，可能写到工作区之外，请确认后继续。")
         }
 
         // 4. Skill 白名单校验

@@ -59,6 +59,9 @@ struct FileRow: View {
         .background(rowBackground)
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(item.name)
+        .accessibilityValue(gitStatus?.badge ?? "")
         .contextMenu { contextMenuItems }
     }
 

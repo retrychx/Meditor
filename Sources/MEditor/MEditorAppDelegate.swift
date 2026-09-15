@@ -44,6 +44,24 @@ final class MEditorAppDelegate: NSObject, NSApplicationDelegate {
         urls.forEach { openOrEnqueue($0) }
     }
 
+    /// 退出前确保未保存内容真正落盘。
+    ///
+    /// SwiftUI 的 `.onDisappear` 里调 saveTab 只是挂出 detached Task，进程可能在
+    /// 写盘完成前就退出（⌘Q 丢数据）。这里用 `.terminateLater` + 异步等待，
+    /// 等所有 tab 的写盘任务和会话快照都完成后才真正终止。
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let appState else { return .terminateNow }
+        guard appState.openTabs.contains(where: { $0.isModified }) else {
+            appState.flushSession()
+            return .terminateNow
+        }
+        Task { @MainActor in
+            await appState.saveAllModifiedTabsForTermination()
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     /// AppIntent（打开文档）与 Spotlight 共用的打开入口。
     func openOrEnqueue(_ url: URL) {
         guard let appState else {
