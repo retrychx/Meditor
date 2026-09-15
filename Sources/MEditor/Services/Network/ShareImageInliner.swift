@@ -89,9 +89,24 @@ enum ShareImageInliner {
 
     /// 解析 symlink 后检查仍在 baseDirectory 内（含 symlink 逃逸防护）。
     private static func confinedToBase(_ url: URL, baseDirectory: URL) -> URL? {
-        let resolved = CommandSandbox.resolveSymlinks(url)
-        let base = CommandSandbox.resolveSymlinks(baseDirectory)
+        let resolved = Self.resolveSymlinks(url)
+        let base = Self.resolveSymlinks(baseDirectory)
         guard resolved.path == base.path || resolved.path.hasPrefix(base.path + "/") else { return nil }
+        return resolved
+    }
+
+    /// 解析符号链接，兼容目标尚不存在的场景（先解析最深的已存在祖先，再拼回剩余组件）。
+    /// 自带实现而非引用 `CommandSandbox`：本文件是 macOS/iOS 共享文件，而
+    /// CommandSandbox 不在 iOS target 的文件列表里。纯 Foundation，两端通用。
+    private static func resolveSymlinks(_ url: URL) -> URL {
+        var base = url.standardizedFileURL
+        var suffix: [String] = []
+        while !FileManager.default.fileExists(atPath: base.path), base.path != "/" {
+            suffix.insert(base.lastPathComponent, at: 0)
+            base.deleteLastPathComponent()
+        }
+        var resolved = base.resolvingSymlinksInPath()
+        for component in suffix { resolved.appendPathComponent(component) }
         return resolved
     }
 
