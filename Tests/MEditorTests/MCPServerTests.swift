@@ -21,7 +21,9 @@ final class MCPServerTests: XCTestCase {
         tempRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("meditor-mcp-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
-        server = MCPServer(workspaceRoot: tempRoot)
+        // allowShell: true —— 本套件要覆盖 run_command 的沙箱策略；
+        // 「默认不暴露 run_command」由 test_headlessTools_* 单独覆盖。
+        server = MCPServer(workspaceRoot: tempRoot, allowShell: true)
     }
 
     override func tearDownWithError() throws {
@@ -289,7 +291,7 @@ final class MCPServerTests: XCTestCase {
     }
 
     func test_runCommand_warn_allowedWithFlag() async {
-        let permissive = MCPServer(workspaceRoot: tempRoot, allowWarnCommands: true)
+        let permissive = MCPServer(workspaceRoot: tempRoot, allowWarnCommands: true, allowShell: true)
         // mv 是 warn 级；源文件不存在 → 命令实际执行但 shell 报错退出，
         // 以此区分「被策略拒绝」与「被执行后失败」。
         let line = requestJSON("tools/call", params: [
@@ -319,6 +321,32 @@ final class MCPServerTests: XCTestCase {
         XCTAssertFalse(MCPCommand.shouldRun(arguments: ["/bin/MEditor"]))
         XCTAssertFalse(MCPCommand.shouldRun(arguments: ["/bin/MEditor", "--workspace", "/tmp"]))
         XCTAssertFalse(MCPCommand.shouldRun(arguments: ["/bin/MEditor", "mcp-extra"]))
+    }
+
+    // MARK: - run_command 默认不暴露（headless 无确认对话框，字符串黑名单不是安全边界）
+
+    func test_headlessTools_runCommandHiddenByDefault() {
+        let names = Set(MCPToolCatalog.headlessTools.map { $0.spec.name })
+        XCTAssertFalse(names.contains("run_command"), "无头模式默认不得暴露 run_command")
+        XCTAssertTrue(names.contains("read_file"))
+    }
+
+    func test_headlessTools_allowShellExposesRunCommand() {
+        let names = Set(MCPToolCatalog.headlessTools(allowShell: true).map { $0.spec.name })
+        XCTAssertTrue(names.contains("run_command"))
+    }
+
+    func test_toolsList_defaultServerHidesRunCommand() async {
+        let defaultServer = MCPServer(workspaceRoot: tempRoot)   // allowShell 默认 false
+        guard let respStr = await defaultServer.handleLine(requestJSON("tools/list", id: 1)),
+              let data = respStr.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let result = obj["result"] as? [String: Any],
+              let tools = result["tools"] as? [[String: Any]] else {
+            return XCTFail("tools/list 应有响应")
+        }
+        let names = Set(tools.compactMap { $0["name"] as? String })
+        XCTAssertFalse(names.contains("run_command"))
     }
 
     // MARK: - Private

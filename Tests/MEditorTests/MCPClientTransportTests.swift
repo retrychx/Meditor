@@ -101,7 +101,7 @@ final class MCPClientTransportTests: XCTestCase {
 
         let startedAt = Date()
         do {
-            _ = try await transport.request(method: "ping", params: [:], timeout: 1)
+            _ = try await transport.request(method: "ping", params: .empty, timeout: 1)
             XCTFail("silent server should time out")
         } catch {
             XCTAssertTrue(error.localizedDescription.contains("timed out"),
@@ -115,7 +115,7 @@ final class MCPClientTransportTests: XCTestCase {
         // /usr/bin/true 立即退出 → stdout EOF → 挂起/后续请求一律失败
         let transport = try MCPStdioTransport(command: "/usr/bin/true", args: [], env: [:], useLoginShell: false)
         do {
-            _ = try await transport.request(method: "ping", params: [:], timeout: 10)
+            _ = try await transport.request(method: "ping", params: .empty, timeout: 10)
             XCTFail("request on a dead process should fail")
         } catch {
             // EOF（closed）或写管道失败均可，关键是快速失败而不是悬挂
@@ -162,6 +162,28 @@ final class MCPClientTransportTests: XCTestCase {
     func test_parseSSE_noMatch_throws() {
         let body = "data: {\"jsonrpc\":\"2.0\",\"id\":9,\"result\":{}}\n\n"
         XCTAssertThrowsError(try MCPStreamableHTTPTransport.parseSSE(data: Data(body.utf8), requestID: 1))
+    }
+
+    /// 回归：MCP server 不应继承 app 的完整环境（可能含密钥），只放行运行必需项。
+    func test_serverEnvironment_filtersInheritedSecrets() {
+        let inherited = [
+            "PATH": "/usr/bin",
+            "HOME": "/Users/x",
+            "CI_TOKEN": "super-secret",
+            "AWS_SECRET_ACCESS_KEY": "nope",
+        ]
+        let env = MCPStdioTransport.serverEnvironment(inherited: inherited, configured: ["MY_VAR": "1"])
+        XCTAssertEqual(env["PATH"], "/usr/bin")
+        XCTAssertEqual(env["HOME"], "/Users/x")
+        XCTAssertEqual(env["MY_VAR"], "1")
+        XCTAssertNil(env["CI_TOKEN"], "不得继承 app 环境里的密钥类变量")
+        XCTAssertNil(env["AWS_SECRET_ACCESS_KEY"])
+    }
+
+    func test_serverEnvironment_configuredOverridesInherited() {
+        let env = MCPStdioTransport.serverEnvironment(
+            inherited: ["PATH": "/usr/bin"], configured: ["PATH": "/custom/bin"])
+        XCTAssertEqual(env["PATH"], "/custom/bin")
     }
 }
 

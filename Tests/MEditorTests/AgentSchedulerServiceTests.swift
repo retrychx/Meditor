@@ -19,8 +19,8 @@ final class AgentSchedulerServiceTests: XCTestCase {
     private var fired: [String]!
     private var now: Date!
 
-    override func setUpWithError() throws {
-        try super.setUpWithError()
+    override func setUp() async throws {
+        try await super.setUp()
         tempRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("scheduler-test-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
@@ -31,10 +31,10 @@ final class AgentSchedulerServiceTests: XCTestCase {
         now = date(2024, 1, 15, 9, 0, 10)   // 默认：周一 09:00
     }
 
-    override func tearDownWithError() throws {
+    override func tearDown() async throws {
         try? FileManager.default.removeItem(at: tempRoot)
         tempRoot = nil
-        try super.tearDownWithError()
+        try await super.tearDown()
     }
 
     private func date(_ y: Int, _ mo: Int, _ d: Int, _ h: Int, _ mi: Int, _ s: Int = 0) -> Date {

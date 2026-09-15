@@ -35,7 +35,8 @@ final class WorkspaceUIState {
         UserDefaults.standard.set(Array(expandedPaths), forKey: "sidebar.expandedPaths")
     }
 
-    init(settings: AppSettings = .shared) {
+    init(settings: AppSettings? = nil) {
+        let settings = settings ?? .shared
         self.settings = settings
         self.showsSidebar = settings.showSidebarOnLaunch
         self.showsEditor = settings.showEditorOnLaunch
@@ -48,9 +49,9 @@ final class WorkspaceUIState {
         showsEditor: Bool,
         showsPreview: Bool,
         sidebarWidth: CGFloat = 260,
-        settings: AppSettings = .shared
+        settings: AppSettings? = nil
     ) {
-        self.settings = settings
+        self.settings = settings ?? .shared
         self.showsSidebar = showsSidebar
         self.showsEditor = showsEditor
         self.showsPreview = showsPreview

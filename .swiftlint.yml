@@ -33,10 +33,15 @@ disabled_rules:
 # 主动开启的额外规则（安全/正确性相关）
 opt_in_rules:
   - force_unwrapping          # 禁止强制解包（error，见下方 severity）
-  - empty_count               # 优先 isEmpty
+  - empty_count               # 优先 isEmpty（error，见下方 severity）
 
 # force_unwrapping 提升为硬性 error（CI 门槛）
 force_unwrapping:
+  severity: error
+
+# empty_count 显式钉死为 error，与 docs/engineering-practices.md 声明的
+# "安全规则硬性 error" 策略一致，且不依赖 SwiftLint 各版本的默认 severity。
+empty_count:
   severity: error
 
 # file_length 软闸门：warning 不阻塞 CI，仅提示文件过大。

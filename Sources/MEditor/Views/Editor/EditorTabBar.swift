@@ -1,5 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
+// NSEvent 非 Sendable，本地监视器仅主线程同步回调；@preconcurrency 关闭边界检查。
+@preconcurrency import AppKit
 
 // MARK: - Tab Bar
 
@@ -42,10 +44,8 @@ struct EditorTabBar: View {
                     .background(TabAnchorView(tabID: tab.id))
                     .contextMenu {
                         Button(L("tab.close")) { state.closeTab(tab.id) }
-                        Button(L("tab.closeOthers")) {
-                            state.openTabs.filter { $0.id != tab.id }.forEach { state.closeTab($0.id) }
-                        }
-                        Button(L("tab.closeAll")) { state.openTabs.forEach { state.closeTab($0.id) } }
+                        Button(L("tab.closeOthers")) { state.closeOtherTabs(keeping: tab.id) }
+                        Button(L("tab.closeAll")) { state.closeAllTabs() }
                         Divider()
                         Button(L("tab.showInFinder")) {
                             NSWorkspace.shared.activateFileViewerSelecting([tab.url])
@@ -176,6 +176,8 @@ private struct TabItem: View {
             .buttonStyle(.plain)
             .onHover { isHovered = $0 }
             .help(tab.url.path)
+            .accessibilityLabel(tab.name)
+            .accessibilityValue(tab.isModified ? L("statusBar.modified") : "")
         }
     }
 
@@ -209,11 +211,13 @@ private struct TabItem: View {
                 }
                 .buttonStyle(.plain)
                 .transition(.scale(scale: 0.7).combined(with: .opacity))
+                .accessibilityLabel(L("tab.close"))
             } else if tab.isModified {
                 Circle()
                     .fill(Color.orange.opacity(0.85))
                     .frame(width: 5, height: 5)
                     .transition(.scale.combined(with: .opacity))
+                    .accessibilityHidden(true)
             }
         }
         .animation(DS.Motion.fast, value: isHovered)
@@ -427,19 +431,11 @@ struct TabBarRightClickGuard: NSViewRepresentable {
         }
 
         @objc func closeOthersAction(_ sender: NSMenuItem) {
-            withTab(sender) { state, tab in
-                // 先取快照再逐个关：closeTab 会改 openTabs，遍历原数组属于
-                // 迭代中改存储，语义上不安全，统一走快照拷贝。
-                let others = state.openTabs.filter { $0.id != tab.id }
-                for t in others { state.closeTab(t.id) }
-            }
+            withTab(sender) { state, tab in state.closeOtherTabs(keeping: tab.id) }
         }
 
         @objc func closeAllAction(_ sender: NSMenuItem) {
-            withTab(sender) { state, _ in
-                let all = state.openTabs
-                for t in all { state.closeTab(t.id) }
-            }
+            withTab(sender) { state, _ in state.closeAllTabs() }
         }
 
         @objc func showInFinderAction(_ sender: NSMenuItem) {

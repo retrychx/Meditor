@@ -13,8 +13,8 @@ final class AgentFileRepositoryStabilityTests: XCTestCase {
     private var tempDir: URL!
     private var repo: DefaultAgentFileRepository!
 
-    override func setUpWithError() throws {
-        try super.setUpWithError()
+    override func setUp() async throws {
+        try await super.setUp()
         tempDir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("meditor-eval-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -22,11 +22,11 @@ final class AgentFileRepositoryStabilityTests: XCTestCase {
         repo = DefaultAgentFileRepository { dir }
     }
 
-    override func tearDownWithError() throws {
+    override func tearDown() async throws {
         if let tempDir { try? FileManager.default.removeItem(at: tempDir) }
         repo = nil
         tempDir = nil
-        try super.tearDownWithError()
+        try await super.tearDown()
     }
 
     // 「逆水行舟不进则退」8 字一循环 × 9000 = 72_000 字符（> 64_000 截断阈值）。
@@ -85,14 +85,14 @@ final class AgentFileRepositoryStabilityTests: XCTestCase {
 @MainActor
 final class AIConversationTruncationTests: XCTestCase {
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         clearPersistedSessions()
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         clearPersistedSessions()
-        super.tearDown()
+        try await super.tearDown()
     }
 
     /// 与现有 AIConversationTests 相同：清掉持久化文件，避免 init 的异步 loadFromDisk 干扰。

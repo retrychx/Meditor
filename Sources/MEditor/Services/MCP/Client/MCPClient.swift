@@ -48,7 +48,7 @@ actor MCPClient {
     private(set) var tools: [MCPRemoteTool] = []
 
     init(config: MCPServerConfig,
-         transportFactory: @escaping @Sendable (MCPServerConfig) throws -> any MCPClientTransport = MCPClient.defaultTransport) {
+         transportFactory: @escaping @Sendable (MCPServerConfig) throws -> any MCPClientTransport = { try MCPClient.defaultTransport(for: $0) }) {
         self.config = config
         self.transportFactory = transportFactory
     }
@@ -73,17 +73,17 @@ actor MCPClient {
     func connect() async throws {
         let t = try transportFactory(config)
         do {
-            _ = try await t.request(method: "initialize", params: [
+            _ = try await t.request(method: "initialize", params: MCPPayload([
                 "protocolVersion": Self.protocolVersion,
                 "capabilities": [:] as [String: Any],
                 "clientInfo": [
                     "name": "MEditor",
                     "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev",
                 ] as [String: Any],
-            ], timeout: Self.handshakeTimeout)
-            await t.notify(method: "notifications/initialized", params: [:])
-            let list = try await t.request(method: "tools/list", params: [:], timeout: Self.handshakeTimeout)
-            tools = Self.parseToolList(list)
+            ]), timeout: Self.handshakeTimeout)
+            await t.notify(method: "notifications/initialized", params: .empty)
+            let list = try await t.request(method: "tools/list", params: .empty, timeout: Self.handshakeTimeout)
+            tools = Self.parseToolList(list.raw)
             transport = t
         } catch {
             await t.close()
@@ -95,12 +95,12 @@ actor MCPClient {
     /// 远端返回 isError: true 时抛 AgentError.executionError（让 Runner 记为工具失败）。
     func callTool(name: String, arguments: [String: Any]) async throws -> String {
         guard let transport else { throw MCPClientError.notConnected }
-        let result = try await transport.request(method: "tools/call", params: [
+        let result = try await transport.request(method: "tools/call", params: MCPPayload([
             "name": name,
             "arguments": arguments,
-        ], timeout: Self.callTimeout)
-        let text = Self.renderContent(result["content"])
-        if result["isError"] as? Bool == true {
+        ]), timeout: Self.callTimeout)
+        let text = Self.renderContent(result.raw["content"])
+        if result.raw["isError"] as? Bool == true {
             throw AgentError.executionError(text)
         }
         return text

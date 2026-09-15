@@ -19,8 +19,10 @@ final class GitHubGistManager {
     private let settings: AppSettings
     private let gistMapKey = "MEditor.githubGistMap"
 
-    init(settings: AppSettings = .shared) {
-        self.settings = settings
+    /// settings 用可选默认值：默认参数表达式在非隔离上下文求值，
+    /// 直接写 `= .shared` 在 Swift 6 下会报「main actor-isolated static property」。
+    init(settings: AppSettings? = nil) {
+        self.settings = settings ?? .shared
     }
 
     // MARK: - Publish state (observed by UI)

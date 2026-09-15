@@ -322,7 +322,7 @@ struct RestAgentBackend: AgentBackend {
         if malformedCount > 0 {
             Self.logger.debug("Anthropic SSE: skipped \(malformedCount) malformed data line(s)")
         }
-        let finishReason = stopReason == "tool_use" ? "tool_calls" : "stop"
+        let finishReason = Self.mapAnthropicFinishReason(stopReason)
         // 两个方向任一帧出现过 usage 才构造；完全没收到时保持 nil（UI 降级不显示）。
         // Anthropic 的 input_tokens 不含缓存量，这里加回，与 OpenAI 口径（prompt_tokens
         // 含 cached_tokens）对齐为「全部输入 token」，成本计算/展示才有统一基准。
@@ -640,7 +640,7 @@ struct RestAgentBackend: AgentBackend {
             }
         }
 
-        let finishReason = stopReason == "tool_use" ? "tool_calls" : "stop"
+        let finishReason = Self.mapAnthropicFinishReason(stopReason)
         let usageObj = json["usage"] as? [String: Any]
         let usage = usageObj.map { u in
             // Anthropic 的 input_tokens 不含缓存量（cache_read/cache_creation 单列），
@@ -653,5 +653,17 @@ struct RestAgentBackend: AgentBackend {
                               cacheWriteTokens: cacheWrite)
         }
         return AgentCompletionResponse(text: text, toolCalls: toolCalls, finishReason: finishReason, usage: usage)
+    }
+
+    /// Anthropic `stop_reason` → 统一 finishReason 口径。
+    ///
+    /// 关键：`max_tokens` 必须映射为 `"length"`（此前被折叠成 `"stop"`），否则
+    /// AgentRunner 检测不到截断，用户会在没有任何提示的情况下拿到被截断的结果。
+    static func mapAnthropicFinishReason(_ stopReason: String) -> String {
+        switch stopReason {
+        case "tool_use":   return "tool_calls"
+        case "max_tokens": return "length"
+        default:           return "stop"
+        }
     }
 }

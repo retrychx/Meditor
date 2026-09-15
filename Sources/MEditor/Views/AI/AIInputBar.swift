@@ -66,6 +66,7 @@ extension AIAssistantPanel {
                         Image(systemName: removed ? "doc.text" : "doc.text.fill")
                             .font(.system(size: 10.5))
                             .foregroundStyle(theme.craftSecondary)
+                            .accessibilityHidden(true)
                         Text(L("ai.autoAttach", tab.name))
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(removed ? theme.craftSecondary : theme.craftPrimary)
@@ -80,6 +81,7 @@ extension AIAssistantPanel {
                             }
                             .buttonStyle(.plain)
                             .help(L("ai.autoAttach.remove"))
+                            .accessibilityLabel(L("ai.autoAttach.remove"))
                         }
                     }
                     .padding(.horizontal, 8)
@@ -95,6 +97,7 @@ extension AIAssistantPanel {
                         Image(systemName: "doc.text.fill")
                             .font(.system(size: 10.5))
                             .foregroundStyle(theme.craftSecondary)
+                            .accessibilityHidden(true)
                         Text(documentName)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(theme.craftPrimary)
@@ -125,6 +128,7 @@ extension AIAssistantPanel {
                 .buttonStyle(.plain)
                 .disabled(!canSendBackground)
                 .help(L("ai.background.runHelp"))
+                .accessibilityLabel(L("ai.background.runHelp"))
 
                 // run 归属另一会话：不误显 Stop（点了会掐断别处的 run），禁用并说明
                 let respondingElsewhere = convo.isResponding && !convo.isActiveSessionResponding
@@ -253,6 +257,7 @@ extension AIAssistantPanel {
             }
             .buttonStyle(.plain)
             .help(L("ai.removeQuote"))
+            .accessibilityLabel(L("ai.removeQuote"))
         }
         .padding(.leading, 11)
         .padding(.trailing, 10)
@@ -347,6 +352,7 @@ extension AIAssistantPanel {
             }
             .buttonStyle(.plain)
             .help(L("ai.images.remove"))
+            .accessibilityLabel(L("ai.images.remove"))
             .offset(x: 4, y: -4)
         }
         .padding(4)   // 给右上角 × 留出出血空间
@@ -359,7 +365,7 @@ extension AIAssistantPanel {
         for provider in providers {
             if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
                 accepted = true
-                _ = provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
                     // fileURL flavor 可能是 URL 或 file bookmark Data
                     var url = item as? URL
                     if url == nil, let data = item as? Data {

@@ -217,7 +217,8 @@ struct FileSidebar: View {
         }
     }
 
-    private static func listDocFiles(at url: URL?) -> [URL] {
+    /// nonisolated：纯 FileManager 枚举、不碰视图状态，允许在后台队列调用（refreshDocFiles）。
+    nonisolated private static func listDocFiles(at url: URL?) -> [URL] {
         guard let url else { return [] }
         guard let contents = try? FileManager.default.contentsOfDirectory(
             at: url,

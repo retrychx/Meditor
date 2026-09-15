@@ -246,11 +246,16 @@ struct AgentToolCall: Sendable {
     private static func convertValue(_ value: Any) -> AnySendableValue {
         switch value {
         case let s as String:  return .string(s)
-        case let b as Bool:    return .bool(b)
-        case let i as Int:     return .int(i)
-        case let d as Double:  return .double(d)
         case let arr as [Any]: return .array(arr.map { convertValue($0) })
         case let dict as [String: Any]: return .dict(convert(dict))
+        // Bool 必须先于 Int 且用 CFBoolean 类型判定：Darwin 上 JSONSerialization 返回
+        // NSNumber，`NSNumber(1) as? Bool` / `NSNumber(0) as? Bool` 会成功，导致 JSON 里的
+        // 整数 1/0 被误判为 true/false（read_document 的 start_line:1 → bool → intValue
+        // 为 nil → 退化成读全文）。用 CFGetTypeID 区分真正的 CFBoolean。
+        case let n as NSNumber:
+            if CFGetTypeID(n) == CFBooleanGetTypeID() { return .bool(n.boolValue) }
+            if CFNumberIsFloatType(n) { return .double(n.doubleValue) }
+            return .int(n.intValue)
         default: return .null
         }
     }

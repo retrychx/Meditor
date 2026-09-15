@@ -34,6 +34,7 @@ struct WebPreviewView: NSViewRepresentable {
         config.userContentController = userContent
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
+        webView.setAccessibilityLabel(L("preview.empty"))
         webView.autoresizingMask = [.width, .height]
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
@@ -266,7 +267,7 @@ extension WebPreviewView.Coordinator: WKUIDelegate {
                     action: #selector(WebPreviewView.Coordinator.handleAddTodo(_:)),
                     keyEquivalent: ""
                 )
-                addItem.image = NSImage(systemSymbolName: "checkmark.circle", accessibilityDescription: nil)
+                addItem.image = NSImage(systemSymbolName: "checkmark.circle", accessibilityDescription: L("todo.addFromSelection"))
                 addItem.target = self
                 addItem.representedObject = selectedText
                 menu.addItem(addItem)

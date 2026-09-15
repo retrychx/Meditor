@@ -97,7 +97,10 @@ final class AgentContext: AgentContextProtocol {
         await files.listWorkspaceFiles(extensions: extensions)
     }
 
-    func readFile(at url: URL) async throws -> String { try await files.readFile(at: url) }
+    func readFile(at url: URL) async throws -> String {
+        try validateReadTarget(url)
+        return try await files.readFile(at: url)
+    }
 
     func searchWorkspace(query: String, extensions: [String]) async -> [String] {
         await files.searchWorkspace(query: query, extensions: extensions)
@@ -106,6 +109,7 @@ final class AgentContext: AgentContextProtocol {
     // MARK: - fileContentFull（桥接：Tab 内容优先，否则完整读盘）
 
     func fileContentFull(at url: URL) async throws -> String {
+        try validateReadTarget(url)
         if let tabContent = doc.contentForTab(at: url) { return tabContent }
         return try await files.readDiskFull(at: url)
     }
@@ -141,6 +145,23 @@ final class AgentContext: AgentContextProtocol {
             return
         }
         // Tab 匹配沿用未解析的标准化路径：AppState 记录的是用户打开时的原始路径
+        if doc.hasOpenTab(at: url.standardizedFileURL) { return }
+        throw AgentContextError.pathOutsideWorkspace(target.path)
+    }
+
+    /// 读取目标合规性校验：与 `validateWriteTarget` 完全对称——必须位于工作区内，
+    /// 或对应一个已打开的 Tab。
+    ///
+    /// 为什么读也要限：写路径已被约束，但读路径此前可以拿任意绝对路径
+    /// （`read_file("/Users/x/.aws/credentials")` / `~/.ssh/id_rsa`），
+    /// 文件内容会被送进模型 provider 并明文持久化到会话历史；
+    /// 配合工作区文档里的提示注入即可诱导模型读取并回显本地密钥。
+    func validateReadTarget(_ url: URL) throws {
+        let target = CommandSandbox.resolveSymlinks(url)
+        if let root = workspaceURL.map(CommandSandbox.resolveSymlinks),
+           target.path == root.path || target.path.hasPrefix(root.path + "/") {
+            return
+        }
         if doc.hasOpenTab(at: url.standardizedFileURL) { return }
         throw AgentContextError.pathOutsideWorkspace(target.path)
     }
@@ -184,9 +205,16 @@ final class AgentContext: AgentContextProtocol {
 
     func openFile(named name: String) -> Bool {
         switch resolveFile(name) {
-        case .found(let url):      return doc.openFile(at: url)
-        case .ambiguous(let urls): return doc.openFile(at: urls[0])
-        case .notFound:            return false
+        case .found(let url):
+            // 与读取同一约束：否则 open_file 可先把工作区外文件变成「已打开 tab」，
+            // 再借 hasOpenTab 绕过 readFile 的读取 confinement。
+            guard (try? validateReadTarget(url)) != nil else { return false }
+            return doc.openFile(at: url)
+        case .ambiguous(let urls):
+            guard let first = urls.first, (try? validateReadTarget(first)) != nil else { return false }
+            return doc.openFile(at: first)
+        case .notFound:
+            return false
         }
     }
 

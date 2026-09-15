@@ -1,5 +1,5 @@
-import AppKit
-import WebKit
+@preconcurrency import AppKit
+@preconcurrency import WebKit
 import Observation
 
 /// Coordinates exporting the current preview to HTML or PDF.
@@ -7,7 +7,9 @@ import Observation
 /// The preview panel registers its `WKWebView` instance here at mount time
 /// so the toolbar (which lives outside the preview hierarchy) can trigger
 /// exports without holding a direct reference to the webview.
+/// @MainActor：保存面板、WKWebView、剪贴板均在主线程操作。
 @Observable
+@MainActor
 final class PreviewExporter: PreviewExporterProtocol {
     /// Set by `MarkdownWebPreview` when the webview is created. Cleared on dismantle.
     @ObservationIgnored
@@ -46,7 +48,7 @@ final class PreviewExporter: PreviewExporterProtocol {
     ///   - completion: called on the main queue with `Result<URL, ExportError>`.
     func export(format: ExportFormat,
                 suggestedName: String,
-                completion: @escaping (Result<URL, ExportError>) -> Void) {
+                completion: @escaping @Sendable (Result<URL, ExportError>) -> Void) {
         export(format: format, suggestedName: suggestedName, pdfOptions: nil, completion: completion)
     }
 
@@ -55,7 +57,7 @@ final class PreviewExporter: PreviewExporterProtocol {
     func export(format: ExportFormat,
                 suggestedName: String,
                 pdfOptions: PDFExportOptions?,
-                completion: @escaping (Result<URL, ExportError>) -> Void) {
+                completion: @escaping @Sendable (Result<URL, ExportError>) -> Void) {
         guard let webView = webView else {
             completion(.failure(.noWebView))
             return
@@ -102,7 +104,7 @@ final class PreviewExporter: PreviewExporterProtocol {
 
     private static func exportHTML(webView: WKWebView,
                                    to url: URL,
-                                   completion: @escaping (Result<URL, ExportError>) -> Void) {
+                                   completion: @escaping @Sendable (Result<URL, ExportError>) -> Void) {
         let title = url.deletingPathExtension().lastPathComponent
         let escapedTitle = title.replacingOccurrences(of: "\\", with: "\\\\")
                                 .replacingOccurrences(of: "'", with: "\\'")
@@ -131,7 +133,7 @@ final class PreviewExporter: PreviewExporterProtocol {
 
     private static func exportMarkdown(webView: WKWebView,
                                        to url: URL,
-                                       completion: @escaping (Result<URL, ExportError>) -> Void) {
+                                       completion: @escaping @Sendable (Result<URL, ExportError>) -> Void) {
         // Extract the HTML body content, then convert with the shared mdH2M
         // converter (HTMLToMarkdownJS, 与粘贴路径同一份实现)。
         let js = HTMLToMarkdownJS.converterSource + """
@@ -170,7 +172,7 @@ final class PreviewExporter: PreviewExporterProtocol {
                                   to url: URL,
                                   title: String,
                                   options: PDFExportOptions?,
-                                  completion: @escaping (Result<URL, ExportError>) -> Void) {
+                                  completion: @escaping @Sendable (Result<URL, ExportError>) -> Void) {
         // 默认选项不需要后处理：不注入 @page 样式（保留 WebKit 自带分页/边距），
         // 也跳过 decorate——重绘会丢链接 annotation（见 postProcessPDFData）。
         let needsDecoration = options.map { !$0.isDefault } ?? false
@@ -198,8 +200,8 @@ final class PreviewExporter: PreviewExporterProtocol {
     /// PDF 后处理决策（拆成纯函数便于单测）：
     /// 默认选项直接返回原数据——PDFDocumentDecorator 走 drawPDFPage 重绘，
     /// 不保留链接 annotation，默认排版没必要付出「导出 PDF 链接全灭」的代价；
-    /// 非默认选项才装饰，装饰失败回退原始数据。
-    static func postProcessPDFData(_ data: Data, options: PDFExportOptions?, title: String) -> Data {
+    /// 非默认选项才装饰，装饰失败回退原始数据。纯数据变换，nonisolated 便于单测。
+    nonisolated static func postProcessPDFData(_ data: Data, options: PDFExportOptions?, title: String) -> Data {
         guard let options, !options.isDefault else { return data }
         return PDFDocumentDecorator.decorate(data: data, options: options, title: title) ?? data
     }
@@ -209,7 +211,7 @@ final class PreviewExporter: PreviewExporterProtocol {
     /// - Parameter extraCSS: 追加注入 </head> 前的样式（PDF 导出用它声明 @page 纸张尺寸）。
     private static func captureViaReload(webView: WKWebView,
                                          extraCSS: String? = nil,
-                                         completion: @escaping (Data?) -> Void) {
+                                         completion: @escaping @Sendable (Data?) -> Void) {
         webView.evaluateJavaScript("document.documentElement.outerHTML") { result, _ in
             guard let html = result as? String else { completion(nil); return }
             let originalURL = webView.url
@@ -282,8 +284,8 @@ final class PreviewExporter: PreviewExporterProtocol {
     }
 
     /// 在 </head> 前注入一段样式；没有 </head> 时兜底拼到文档头。
-    /// 纯字符串处理，拆出来便于单测。
-    static func injectCSS(_ html: String, css: String) -> String {
+    /// 纯字符串处理，拆出来便于单测。nonisolated：不依赖主 actor。
+    nonisolated static func injectCSS(_ html: String, css: String) -> String {
         let style = "<style>\(css)</style>"
         if let range = html.range(of: "</head>", options: .caseInsensitive) {
             var result = html
@@ -311,7 +313,7 @@ final class PreviewExporter: PreviewExporterProtocol {
 
     private static func exportImage(webView: WKWebView,
                                     to url: URL,
-                                    completion: @escaping (Result<URL, ExportError>) -> Void) {
+                                    completion: @escaping @Sendable (Result<URL, ExportError>) -> Void) {
         webView.evaluateJavaScript(
             "[document.documentElement.scrollWidth, document.documentElement.scrollHeight]"
         ) { result, error in
@@ -355,6 +357,8 @@ final class PreviewExporter: PreviewExporterProtocol {
 /// 导出流程（captureViaReload）结束后由预览侧实现的恢复钩子：
 /// 导出会临时替换 navigationDelegate 并整页重载 webview，完成后需要预览层
 /// 强制重推当前内容，恢复显示/链接拦截/圈选监听。
+/// @MainActor：实现方（MarkdownWebView.Coordinator）是主线程 UI 对象。
+@MainActor
 protocol PreviewExportRestorable: AnyObject {
     func restorePreviewAfterExport()
 }

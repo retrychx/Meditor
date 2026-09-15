@@ -18,7 +18,8 @@ final class MCPHeadlessContext: AgentContextProtocol {
     /// warn 级命令放行开关（CLI --allow-warn-commands）。默认 false = 从严。
     nonisolated let allowWarnCommands: Bool
 
-    private let files: any AgentFileRepository
+    /// nonisolated：只在 nonisolated init 赋值、之后只读（Repository 已 Sendable）。
+    nonisolated private let files: any AgentFileRepository
     private var approvedCommandKeys: Set<String> = []
 
     /// nonisolated：只初始化存储属性（URL/Bool/Repository 均为可安全构造的值），
@@ -72,11 +73,13 @@ final class MCPHeadlessContext: AgentContextProtocol {
     }
 
     func readFile(at url: URL) async throws -> String {
-        try await files.readFile(at: url)
+        try validateReadTarget(url)
+        return try await files.readFile(at: url)
     }
 
     func fileContentFull(at url: URL) async throws -> String {
-        try await files.readDiskFull(at: url)
+        try validateReadTarget(url)
+        return try await files.readDiskFull(at: url)
     }
 
     func resolveFile(_ name: String) -> FileResolveResult {
@@ -113,6 +116,12 @@ final class MCPHeadlessContext: AgentContextProtocol {
         guard target.path == root.path || target.path.hasPrefix(root.path + "/") else {
             throw AgentContextError.pathOutsideWorkspace(target.path)
         }
+    }
+
+    /// 读取目标与写入目标同一安全边界（headless 无「已打开 tab」概念）：
+    /// 防止 MCP 客户端 / 提示注入诱导读取工作区外的任意本地文件。
+    private func validateReadTarget(_ url: URL) throws {
+        try validateWriteTarget(url)
     }
 
     // MARK: ShellContext

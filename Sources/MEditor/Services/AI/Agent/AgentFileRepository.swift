@@ -85,7 +85,7 @@ enum PromptInjectionSanitizer {
 
 /// 工作区文件 IO 的抽象 — 无 AppState 依赖，可独立单测。
 /// 所有方法都可以在 @MainActor 上下文调用；内部的 async 方法通过 Task.detached 把 IO 移到后台。
-protocol AgentFileRepository: AnyObject {
+protocol AgentFileRepository: AnyObject, Sendable {
     var workspaceURL: URL? { get }
 
     // 路径解析
@@ -112,7 +112,9 @@ protocol AgentFileRepository: AnyObject {
 
 // MARK: - Default Implementation
 
-final class DefaultAgentFileRepository: AgentFileRepository {
+/// 默认实现。内部只持有可跨线程调用的闭包（workspace/index provider），
+/// 磁盘 IO 均经 Task.detached 完成；标 @unchecked Sendable 以符合协议要求。
+final class DefaultAgentFileRepository: AgentFileRepository, @unchecked Sendable {
 
     /// workspaceURL 通过闭包延迟求值，保证每次都是 AppState 最新的 rootURL
     private let workspaceProvider: () -> URL?

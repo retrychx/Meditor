@@ -280,12 +280,15 @@ struct AtMentionComposerView: NSViewRepresentable {
         /// Derives plain text: replace attachment chars with @displayName
         func syncPlainText() {
             guard let storage = textView.textStorage else { return }
+            // 只桥接一次：此前在 enumerateAttributes 闭包内反复 `storage.string as NSString`，
+            // 每个 attribute run 都桥接一次全文，长文本下是 O(runs × length)。
+            let nsString = storage.string as NSString
             let result = NSMutableString()
             storage.enumerateAttributes(in: NSRange(location: 0, length: storage.length)) { attrs, range, _ in
                 if let attachment = attrs[.attachment] as? MentionAttachment {
                     result.append("@\(attachment.token.displayName)")
                 } else {
-                    result.append((storage.string as NSString).substring(with: range))
+                    result.append(nsString.substring(with: range))
                 }
             }
             let newText = result as String
@@ -493,7 +496,12 @@ final class MentionTextView: NSTextView {
     // 保留 didChangeText 让 NSScrollView 在内容变化时自动滚到底部（类 Terminal 行为）。
     override func didChangeText() {
         super.didChangeText()
-        scrollToEndOfDocument(nil)
+        // 仅在插入点位于文末时跟随滚动（pin-to-bottom）；无条件 scrollToEndOfDocument
+        // 会让用户无法上滚查看/编辑前面的内容，并且每次输入都强制布局。
+        let length = (string as NSString).length
+        if selectedRange().location >= length {
+            scrollToEndOfDocument(nil)
+        }
     }
 
     // 方向键需要 override moveUp/moveDown，因为 NSTextView 在 interpretKeyEvents 阶段

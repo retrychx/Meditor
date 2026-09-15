@@ -156,8 +156,11 @@ private struct DocumentHeader: View {
 /// `content` string. The NSViewRepresentable's `updateNSView` already
 /// has its own `lastAcknowledgedContent` gate so it handles content
 /// diffs cheaply on its own terms.
-@MainActor
-private struct EditorViewContent: View, Equatable {
+/// `@preconcurrency` conformance：View 协议带主 actor 隔离，`==` 被推断为主 actor，
+/// 与 Equatable 的 nonisolated 要求冲突。Swift 6.2 可用 isolated conformance
+/// （`@MainActor Equatable`），但 iOS CI 的 Xcode 16 不支持；`@preconcurrency`
+/// 在两者上都能编译，且 SwiftUI 只在主线程做 equatable 比较。
+private struct EditorViewContent: View, @preconcurrency Equatable {
     let tabID: UUID
     let content: String
     let contentRevision: Int

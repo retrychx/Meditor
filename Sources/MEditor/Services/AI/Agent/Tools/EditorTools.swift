@@ -55,7 +55,12 @@ struct OpenFileTool: AgentTool {
         // 因此这里直接从磁盘读回内容一并返回，避免 agent 误以为"已看到内容"而产生幻觉。
         if let url = await context.resolveExistingFile(filename),
            let content = try? await context.readFile(at: url) {
-            return "[OK] 已在编辑器中打开：\(filename)\n\n# \(filename)\n\n\(content)"
+            // 与 read_file 同级净化：open_file 同样把文件内容回灌给模型，
+            // 不能成为绕过注入防护的旁路。
+            let (safeContent, flagged) = PromptInjectionSanitizer.sanitize(content)
+            return "[OK] 已在编辑器中打开：\(filename)\n\n"
+                + PromptInjectionSanitizer.guardrailNote(flagged: flagged)
+                + "# \(filename)\n\n\(safeContent)"
         }
         return "[OK] 已在编辑器中打开：\(filename)"
     }

@@ -56,9 +56,9 @@ extension AppState {
                            pdfOptions: PDFExportOptions?) {
         previewExporter.export(format: format, suggestedName: suggestedName,
                                pdfOptions: pdfOptions) { [weak self] result in
-            if case .failure(let error) = result {
-                self?.setError(error.localizedDescription)
-            }
+            // completion 现为 @Sendable（导出在后台/主线程回调），回到主 actor 再改状态。
+            guard case .failure(let error) = result else { return }
+            Task { @MainActor in self?.setError(error.localizedDescription) }
         }
     }
 

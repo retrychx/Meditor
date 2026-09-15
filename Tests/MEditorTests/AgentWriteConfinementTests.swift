@@ -176,10 +176,77 @@ final class AgentWriteConfinementTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "fine")
         XCTAssertTrue(FileManager.default.fileExists(atPath: inner.appendingPathComponent("ok.md").path))
     }
+
+    // MARK: 读取 confinement（与写入对称）
+
+    func testReadFileInsideWorkspaceAllowed() async throws {
+        let url = rootURL.appendingPathComponent("readable.md")
+        try "inside".write(to: url, atomically: true, encoding: .utf8)
+        let content = try await ctx.readFile(at: url)
+        XCTAssertEqual(content, "inside")
+    }
+
+    func testReadFileOutsideWorkspaceRejected() async throws {
+        let secret = outsideURL.appendingPathComponent("secret.txt")
+        try "TOP SECRET".write(to: secret, atomically: true, encoding: .utf8)
+
+        await XCTAssertThrowsErrorAsync(try await ctx.readFile(at: secret)) { error in
+            guard case AgentContextError.pathOutsideWorkspace = error else {
+                return XCTFail("期望 pathOutsideWorkspace，实际 \(error)")
+            }
+        }
+    }
+
+    func testReadFileOutsideWorkspaceAllowedWhenTabOpen() async throws {
+        let loose = outsideURL.appendingPathComponent("loose-read.md")
+        try "loose".write(to: loose, atomically: true, encoding: .utf8)
+        adapter.openTabPaths.insert(loose.standardizedFileURL.path)
+
+        let content = try await ctx.readFile(at: loose)
+        XCTAssertEqual(content, "loose")
+    }
+
+    func testFileContentFullOutsideWorkspaceRejected() async throws {
+        let secret = outsideURL.appendingPathComponent("secret-full.txt")
+        try "SECRET".write(to: secret, atomically: true, encoding: .utf8)
+
+        await XCTAssertThrowsErrorAsync(try await ctx.fileContentFull(at: secret)) { error in
+            guard case AgentContextError.pathOutsideWorkspace = error else {
+                return XCTFail("期望 pathOutsideWorkspace，实际 \(error)")
+            }
+        }
+    }
+
+    func testReadFileSymlinkEscapeRejected() async throws {
+        // 工作区内 symlink → 工作区外的密钥文件：standardizedFileURL 不解析 symlink，
+        // 修复前 read_file 可经 symlink 读取工作区外内容。
+        let secret = outsideURL.appendingPathComponent("id_rsa")
+        try "PRIVATE KEY".write(to: secret, atomically: true, encoding: .utf8)
+        let link = rootURL.appendingPathComponent("id_rsa_link")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: secret)
+
+        await XCTAssertThrowsErrorAsync(try await ctx.readFile(at: link)) { error in
+            guard case AgentContextError.pathOutsideWorkspace = error else {
+                return XCTFail("期望 pathOutsideWorkspace，实际 \(error)")
+            }
+        }
+    }
+
+    func testOpenFileOutsideWorkspaceRejected() throws {
+        // open_file 若不受约束，可先把工作区外文件变成已打开 tab，再绕过读取 confinement。
+        let secret = outsideURL.appendingPathComponent("open-secret.md")
+        try "x".write(to: secret, atomically: true, encoding: .utf8)
+
+        XCTAssertFalse(ctx.openFile(named: secret.path), "工作区外的 open_file 必须被拒绝")
+        XCTAssertTrue(adapter.openTabPaths.isEmpty)
+    }
 }
 
 // MARK: - async 断言辅助
 
+/// @MainActor：调用方是 @MainActor 测试类，闭包参数（autoclosure/errorHandler）
+/// 需留在主 actor，避免 Swift 6 把捕获了主 actor 状态的闭包判为 sending 而报错。
+@MainActor
 private func XCTAssertThrowsErrorAsync<T>(
     _ expression: @autoclosure () async throws -> T,
     _ message: String = "",

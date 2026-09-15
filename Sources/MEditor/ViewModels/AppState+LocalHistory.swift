@@ -42,7 +42,7 @@ extension AppState {
             return
         }
         // 恢复前快照当前内容：写失败不阻断恢复（当前内容仍在内存/磁盘上）
-        try? historyStore.recordSnapshot(of: tab.url, content: tab.content)
+        _ = try? historyStore.recordSnapshot(of: tab.url, content: tab.content)
         applyAIWriteBack(tab.id, content: content)
         showToast(L("history.restored"), icon: "arrow.uturn.backward")
     }

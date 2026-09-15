@@ -24,6 +24,8 @@ final class TabManager {
 
     var pendingCloseTab: EditorTab?
     var showingCloseConfirmation = false
+    /// 批量关闭时排队等待确认的 dirty tab（见 closeTab/confirmCloseTab）。
+    @ObservationIgnored private var pendingCloseQueue: [EditorTab] = []
     var pendingLargeFile: FileItem?
     var showingLargeFileWarning = false
 
@@ -189,11 +191,28 @@ final class TabManager {
     func closeTab(_ tabID: UUID) {
         guard let tab = openTabs.first(where: { $0.id == tabID }) else { return }
         if tab.isModified {
-            pendingCloseTab = tab
-            showingCloseConfirmation = true
+            // 已有确认框在展示时把后续 dirty tab 排队，逐个确认——
+            // 否则「关闭其他/全部」时单槽 pendingCloseTab 只保留最后一个，
+            // 前面的 dirty tab 既不确认也不关闭。
+            if showingCloseConfirmation {
+                pendingCloseQueue.append(tab)
+            } else {
+                pendingCloseTab = tab
+                showingCloseConfirmation = true
+            }
             return
         }
         performCloseTab(tabID)
+    }
+
+    /// 关闭除 `tabID` 外的所有 tab（dirty 的逐个弹确认）。
+    func closeOtherTabs(keeping tabID: UUID) {
+        for id in openTabs.map(\.id) where id != tabID { closeTab(id) }
+    }
+
+    /// 关闭全部 tab（dirty 的逐个弹确认）。
+    func closeAllTabs() {
+        for id in openTabs.map(\.id) { closeTab(id) }
     }
 
     func confirmCloseTab(save: Bool) {
@@ -202,6 +221,25 @@ final class TabManager {
         performCloseTab(tab.id)
         pendingCloseTab = nil
         showingCloseConfirmation = false
+        presentNextPendingCloseIfNeeded()
+    }
+
+    /// 依次处理排队中的关闭请求：clean 直接关，dirty 重新弹确认。
+    private func presentNextPendingCloseIfNeeded() {
+        while !pendingCloseQueue.isEmpty {
+            let next = pendingCloseQueue.removeFirst()
+            guard openTabs.contains(where: { $0.id == next.id }) else { continue }
+            if next.isModified {
+                // 等当前 confirmationDialog 完成 dismiss 后再置位，避免同帧内重复展示被吞
+                Task { @MainActor [weak self] in
+                    guard let self, self.pendingCloseTab == nil else { return }
+                    self.pendingCloseTab = next
+                    self.showingCloseConfirmation = true
+                }
+                return
+            }
+            performCloseTab(next.id)
+        }
     }
 
     func performCloseTab(_ tabID: UUID) {
@@ -281,6 +319,16 @@ final class TabManager {
         onDidWriteToDisk?(url)
         onDidWriteContent?(url, tab.content)
         onDidSave?()
+    }
+
+    /// 退出前等待所有已排队写盘真正落盘（applicationShouldTerminate 用）。
+    /// 有界循环：等待期间理论上不再产生新写入，兜底防死循环。
+    func flushPendingSaves() async {
+        for _ in 0..<3 {
+            let tasks = pendingSaves.values.map(\.task)
+            if tasks.isEmpty { return }
+            for task in tasks { _ = await task.value }
+        }
     }
 
     @MainActor

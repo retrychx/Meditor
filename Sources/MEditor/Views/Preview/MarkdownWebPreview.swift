@@ -1,5 +1,6 @@
 import SwiftUI
-import WebKit
+@preconcurrency import WebKit
+@preconcurrency import AppKit
 
 /// 从 selectionchange 消息体解析选区的视口位置（用于把操作浮动条放到选区旁边）。
 func previewSelectionRect(from body: [String: Any]) -> CGRect {
@@ -59,7 +60,9 @@ struct MarkdownWebPreview: View {
 
 /// A single heading entry extracted from the rendered preview.
 struct TOCItem: Identifiable, Equatable {
-    let id = UUID()
+    /// 稳定 id：同一标题行在编辑过程中保持同一行号，ForEach 才能原地更新而不是
+    /// 整表重建（此前用 `let id = UUID()`，每次 payload 都是新 id，滚动位置会丢）。
+    var id: Int { line }
     let level: Int
     let title: String
     let line: Int
@@ -113,6 +116,7 @@ private struct MarkdownWebView: NSViewRepresentable {
             uc.add(context.coordinator, name: Self.escapeHandlerName)
             pooled.navigationDelegate = context.coordinator
             pooled.uiDelegate = context.coordinator
+            pooled.setAccessibilityLabel(L("preview.empty"))
             context.coordinator.webView = pooled
             context.coordinator.lastContentRevision = contentRevision
             context.coordinator.lastTheme = theme
@@ -147,6 +151,7 @@ private struct MarkdownWebView: NSViewRepresentable {
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
+        webView.setAccessibilityLabel(L("preview.empty"))
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         context.coordinator.webView = webView
@@ -271,6 +276,7 @@ private struct MarkdownWebView: NSViewRepresentable {
 // MARK: - Coordinator
 
 extension MarkdownWebView {
+    @MainActor
     final class Coordinator: NSObject, PreviewExportRestorable {
         weak var webView: WKWebView?
         var onVisibleLineChange: ((Int) -> Void)?
@@ -360,8 +366,8 @@ extension MarkdownWebView {
 
         deinit {
             // The user content controller's script handlers retain coordinator;
-            // dismantleNSView already removes them, so deinit is mostly a safety net.
-            cancelPendingContentUpdate()
+            // dismantleNSView already removes them. 不再在此调用 cancelPendingContentUpdate()：
+            // deinit 是 nonisolated，不能访问 @MainActor 状态（Swift 6）。
         }
 
         /// Run a JS string immediately if the page is ready, otherwise queue it.
@@ -620,7 +626,7 @@ extension MarkdownWebView.Coordinator: WKUIDelegate {
                     action: #selector(MarkdownWebView.Coordinator.handleAddTodo(_:)),
                     keyEquivalent: ""
                 )
-                addItem.image = NSImage(systemSymbolName: "checkmark.circle", accessibilityDescription: nil)
+                addItem.image = NSImage(systemSymbolName: "checkmark.circle", accessibilityDescription: L("todo.addFromSelection"))
                 addItem.target = self
                 addItem.representedObject = selectedText
                 menu.addItem(addItem)

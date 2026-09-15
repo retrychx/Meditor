@@ -28,7 +28,8 @@ struct HistorySnapshot: Identifiable, Equatable {
 ///
 /// 线程安全：所有方法均为无共享状态的文件操作，可在后台线程调用；
 /// 对同一文件的并发写由原子写 + 唯一文件名兜底（最坏多一份快照，随后被清理）。
-final class LocalHistoryStore {
+/// 因此标注 @unchecked Sendable，允许在 Task.detached 中捕获。
+final class LocalHistoryStore: @unchecked Sendable {
 
     /// 每文件快照硬上限：防爆兜底，正常分层稀释远达不到这个数。
     static let maxSnapshotsPerFile = 100

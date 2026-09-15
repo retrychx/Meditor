@@ -7,6 +7,9 @@ struct ToolbarIconButton: NSViewRepresentable {
     let systemName: String
     let size: CGFloat
     let action: () -> Void
+    /// VoiceOver label for this icon-only control. Optional so existing call sites
+    /// stay source-compatible; falls back to the SF Symbol's own description.
+    var accessibilityLabel: String? = nil
 
     func makeNSView(context: Context) -> NSButton {
         let btn = NSButton()
@@ -24,9 +27,10 @@ struct ToolbarIconButton: NSViewRepresentable {
 
     private func configure(_ btn: NSButton) {
         let cfg = NSImage.SymbolConfiguration(pointSize: size, weight: .regular)
-        btn.image = NSImage(systemSymbolName: systemName, accessibilityDescription: nil)?
+        btn.image = NSImage(systemSymbolName: systemName, accessibilityDescription: accessibilityLabel)?
             .withSymbolConfiguration(cfg)
         btn.imageScaling = .scaleProportionallyDown
+        btn.setAccessibilityLabel(accessibilityLabel)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(action: action) }
@@ -44,6 +48,8 @@ struct ToolbarIconMenuButton: NSViewRepresentable {
     let size: CGFloat
     let items: [(title: String, action: () -> Void)]
     var isDisabled: Bool = false
+    /// VoiceOver label for the icon-only pop-up face. Optional for source compatibility.
+    var accessibilityLabel: String? = nil
 
     func makeNSView(context: Context) -> NSPopUpButton {
         let btn = NSPopUpButton()
@@ -61,7 +67,7 @@ struct ToolbarIconMenuButton: NSViewRepresentable {
 
     private func configure(_ btn: NSPopUpButton, context: Context) {
         let cfg = NSImage.SymbolConfiguration(pointSize: size, weight: .regular)
-        let img = NSImage(systemSymbolName: systemName, accessibilityDescription: nil)?
+        let img = NSImage(systemSymbolName: systemName, accessibilityDescription: accessibilityLabel)?
             .withSymbolConfiguration(cfg)
 
         btn.menu?.removeAllItems()
@@ -77,6 +83,7 @@ struct ToolbarIconMenuButton: NSViewRepresentable {
             btn.menu?.addItem(mi)
         }
         btn.isEnabled = !isDisabled
+        btn.setAccessibilityLabel(accessibilityLabel)
         // Hide the arrow indicator
         if let arrowCell = btn.cell as? NSPopUpButtonCell {
             arrowCell.arrowPosition = .noArrow

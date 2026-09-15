@@ -53,7 +53,7 @@ enum RichTextCopyService {
     @MainActor
     static func makeAttributedString(fromPasteboardHTML html: String) -> NSMutableAttributedString? {
         guard let data = html.data(using: .utf8),
-              let parsed = try? NSMutableAttributedString(
+              let parsed = NSMutableAttributedString(
                 html: data,
                 options: [.characterEncoding: NSUTF8StringEncoding],
                 documentAttributes: nil) else { return nil }
@@ -95,16 +95,24 @@ enum RichTextCopyService {
     }
 
     /// 相对 src → 绝对 URL 字符串；已是绝对 URL 时返回 nil（不替换）。
+    /// 解析结果必须仍在 baseURL（文档目录）内——否则 `../../secret/pic.png`
+    /// 会变成指向目录外的 `file://` URL 塞进剪贴板（本地文件读取 gadget）。
     static func resolveImageSource(_ src: String, baseURL: URL) -> String? {
         if src.hasPrefix("//") { return nil }
         if src.range(of: #"^[a-zA-Z][a-zA-Z0-9+.\-]*:"#, options: .regularExpression) != nil {
             return nil
         }
+        let resolved: URL
         if let url = URL(string: src, relativeTo: baseURL) {
-            return url.absoluteURL.absoluteString
+            resolved = url.absoluteURL
+        } else {
+            // 含空格等非法 URL 字符的裸路径：按文件路径解析（自动百分号编码）
+            resolved = URL(fileURLWithPath: src, relativeTo: baseURL).standardized
         }
-        // 含空格等非法 URL 字符的裸路径：按文件路径解析（自动百分号编码）
-        return URL(fileURLWithPath: src, relativeTo: baseURL).standardized.absoluteString
+        let base = CommandSandbox.resolveSymlinks(baseURL)
+        let real = CommandSandbox.resolveSymlinks(resolved)
+        guard real.path == base.path || real.path.hasPrefix(base.path + "/") else { return nil }
+        return resolved.absoluteString
     }
 
     /// 组装并写入剪贴板（RTF + HTML + 纯文本）。成功返回 true。

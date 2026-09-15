@@ -66,16 +66,18 @@ final class AIConversation {
 
     private var sessions: [AISession] = []
     private(set) var activeID: UUID
-    /// 输入框草稿：按会话独立保存（写 AISession.draft），切换/新建会话不再丢失，
-    /// 并随 sessions 一起防抖持久化。空串统一存 nil，保持 json 干净。
+    /// 输入框草稿（活跃会话的实时文本）。
+    ///
+    /// 独立于 `sessions` 存储：此前 `input` 的 setter 直接写 `sessions[activeIndex].draft`，
+    /// 而 `sessions` 是 `messages`/`history`/`agentHistory` 的底层存储——每敲一个字符都会
+    /// 让整个 AI 面板失效并在每个 chunk 上重排持久化。草稿只在「切换/新建会话」时写回
+    /// `sessions`，持久化时以快照注入的方式落盘，不再触碰可观察的 sessions。
+    var draftText: String = ""
+    /// 输入框绑定：读写活跃会话的实时草稿（空串统一存 nil，保持 json 干净）。
     var input: String {
-        get {
-            guard sessions.indices.contains(activeIndex) else { return "" }
-            return sessions[activeIndex].draft ?? ""
-        }
+        get { draftText }
         set {
-            guard sessions.indices.contains(activeIndex) else { return }
-            sessions[activeIndex].draft = newValue.isEmpty ? nil : newValue
+            draftText = newValue
             persist()
         }
     }
@@ -106,8 +108,12 @@ final class AIConversation {
         get { lastRunStates[activeID] }
         set { lastRunStates[activeID] = newValue }
     }
-    /// Debounced disk-persist work item.
-    @ObservationIgnored private var persistWork: DispatchWorkItem?
+    /// 防抖持久化的挂起任务（替代 DispatchWorkItem：后者在 Swift 6 下会继承主 actor
+    /// 隔离，被 global 队列执行时触发 dispatch_assert_queue 崩溃）。
+    @ObservationIgnored private var persistTask: Task<Void, Never>?
+    /// 串行写盘队列：保证快照按产生顺序落盘（并发 global 队列会让旧快照晚到覆盖新快照）。
+    @ObservationIgnored private let persistQueue = DispatchQueue(
+        label: "com.meditor.ai-sessions.persist", qos: .utility)
 
     /// 待用户确认执行的命令（nil = 无）。AIAssistant 观察它显示确认条。
     var pendingCommand: PendingCommand? = nil
@@ -150,15 +156,28 @@ final class AIConversation {
         guard !hasUserContent else {
             let existingIDs = Set(sessions.map(\.id))
             sessions.append(contentsOf: saved.filter { !existingIDs.contains($0.id) })
+            loadDraftFromActiveSession()
             return
         }
         sessions = saved
         activeID = saved[0].id
+        loadDraftFromActiveSession()
     }
 
     // MARK: Active session access
 
     private var activeIndex: Int { sessions.firstIndex { $0.id == activeID } ?? 0 }
+
+    /// 把实时草稿写回活跃会话（仅在切换 / 新建 / 删除会话等低频时机调用）。
+    private func syncDraftIntoActiveSession() {
+        guard sessions.indices.contains(activeIndex) else { return }
+        sessions[activeIndex].draft = draftText.isEmpty ? nil : draftText
+    }
+
+    /// 从活跃会话把草稿载入实时输入框。
+    private func loadDraftFromActiveSession() {
+        draftText = sessions.indices.contains(activeIndex) ? (sessions[activeIndex].draft ?? "") : ""
+    }
 
     var messages: [AIChatMessage] {
         get { sessions.indices.contains(activeIndex) ? sessions[activeIndex].messages : [] }
@@ -412,17 +431,21 @@ final class AIConversation {
         if sessions.indices.contains(activeIndex), sessions[activeIndex].messages.isEmpty {
             return
         }
+        syncDraftIntoActiveSession()
         let fresh = AISession()
         sessions.insert(fresh, at: 0)
         activeID = fresh.id
+        loadDraftFromActiveSession()
         persist()
     }
 
-    /// 切换到历史会话。草稿随 activeID 切换自动跟随（见 input 计算属性）；
+    /// 切换到历史会话。先把当前草稿写回原会话，再载入目标会话的草稿；
     /// 不取消进行中的 run（理由同 newSession）。
     func activate(_ id: UUID) {
-        guard sessions.contains(where: { $0.id == id }) else { return }
+        guard sessions.contains(where: { $0.id == id }), id != activeID else { return }
+        syncDraftIntoActiveSession()
         activeID = id
+        loadDraftFromActiveSession()
     }
 
     func delete(_ id: UUID) {
@@ -436,34 +459,46 @@ final class AIConversation {
         } else if !sessions.contains(where: { $0.id == activeID }) {
             activeID = sessions[0].id
         }
+        loadDraftFromActiveSession()
         persist()
     }
 
     // MARK: Persistence
 
     func persist() {
-        // Debounce: 只在真正要写盘时才拟快照 sessions，避免每次调用都复制整个数组。
-        persistWork?.cancel()
-        let url  = Self.fileURL
-        let work = DispatchWorkItem { [weak self] in
-            // 在工作项实际执行时打快照，这时已经在防抖窗口末尾，数据是最新的
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                let snapshot = self.sessions
-                let fileURL  = url
-                DispatchQueue.global(qos: .utility).async {
-                    do {
-                        let data = try JSONEncoder().encode(snapshot)
-                        try FileManager.default.createDirectory(
-                            at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-                        try data.write(to: fileURL, options: .atomic)
-                    } catch {
-                        AppLog.session.error("AIConversation: persist failed: \(error.localizedDescription, privacy: .public)")
-                    }
-                }
-            }
+        // 防抖：在主 actor 上 sleep，取消后不落盘；不做 DispatchWorkItem（见属性注释）。
+        persistTask?.cancel()
+        persistTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled, let self else { return }
+            self.enqueuePersistSnapshot()
         }
-        persistWork = work
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.4, execute: work)
+    }
+
+    /// 打快照并投递到串行后台队列写盘。活跃会话的实时草稿以快照注入方式落盘：
+    /// 不改 sessions（避免打字使面板失效），又保证草稿仍随会话持久化。
+    @MainActor
+    private func enqueuePersistSnapshot() {
+        var snapshot = sessions
+        if let i = snapshot.firstIndex(where: { $0.id == activeID }) {
+            snapshot[i].draft = draftText.isEmpty ? nil : draftText
+        }
+        let fileURL = Self.fileURL
+        // @Sendable：显式脱离主 actor，避免闭包继承 @MainActor 后在后台队列断言失败。
+        persistQueue.async { @Sendable in
+            Self.writeSnapshot(snapshot, to: fileURL)
+        }
+    }
+
+    /// 后台串行队列上的实际编码 + 原子写盘。
+    nonisolated private static func writeSnapshot(_ snapshot: [AISession], to fileURL: URL) {
+        do {
+            let data = try JSONEncoder().encode(snapshot)
+            try FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: fileURL, options: .atomic)
+        } catch {
+            AppLog.session.error("AIConversation: persist failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 }

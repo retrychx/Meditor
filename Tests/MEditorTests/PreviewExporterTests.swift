@@ -1,6 +1,7 @@
 import XCTest
 @testable import MEditor
 
+@MainActor
 final class PreviewExporterTests: XCTestCase {
 
     var exporter: PreviewExporter!

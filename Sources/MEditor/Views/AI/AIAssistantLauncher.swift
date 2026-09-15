@@ -5,7 +5,7 @@ import SwiftUI
 /// Reports the floating assistant button's bounds so the panel can "grow" out of it
 /// (mirrors `SettingsAnchorKey` used by the in-app settings hero overlay).
 struct AIAssistantAnchorKey: PreferenceKey {
-    static var defaultValue: Anchor<CGRect>? = nil
+    static let defaultValue: Anchor<CGRect>? = nil
     static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
         value = nextValue() ?? value
     }
@@ -113,6 +113,7 @@ struct AIAssistantButton: View {
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
         .help(L("ai.openAssistant"))
+        .accessibilityHint(L("ai.openAssistant"))
         .animation(DS.Motion.springFast, value: hovered)
         .anchorPreference(key: AIAssistantAnchorKey.self, value: .bounds) { $0 }
     }

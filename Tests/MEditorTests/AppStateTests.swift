@@ -7,9 +7,9 @@ final class MockFileWatcher: FileWatcherServiceProtocol {
     private(set) var watchedURLs: [URL] = []
     private(set) var startCallCount = 0
     private(set) var stopCallCount = 0
-    private var onChange: (() -> Void)?
+    private var onChange: (@Sendable () -> Void)?
 
-    func startWatching(urls: [URL], onChange: @escaping () -> Void) {
+    func startWatching(urls: [URL], onChange: @escaping @Sendable () -> Void) {
         watchedURLs = urls
         startCallCount += 1
         self.onChange = onChange
@@ -21,7 +21,7 @@ final class MockFileWatcher: FileWatcherServiceProtocol {
     }
 }
 
-final class DelayedFileService: MockFileService {
+final class DelayedFileService: MockFileService, @unchecked Sendable {
     var readDelay: TimeInterval = 0.15
 
     override func readFile(at url: URL) throws -> String {
@@ -42,18 +42,18 @@ final class AppStateTests: XCTestCase {
     var mockService: MockFileService!
     var mockWatcher: MockFileWatcher!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         mockService = MockFileService()
         mockWatcher = MockFileWatcher()
         state = AppState(fileService: mockService, fileWatcher: mockWatcher)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         state = nil
         mockService = nil
         mockWatcher = nil
-        super.tearDown()
+        try await super.tearDown()
     }
 
     // MARK: - historyStore 注入
@@ -326,6 +326,38 @@ final class AppStateTests: XCTestCase {
         XCTAssertEqual(state.previewContent, "")
     }
 
+    // 回归：closeOtherTabs/closeAllTabs 逐张处理 dirty tab（此前单槽 pendingCloseTab
+    // 只保留最后一个，前面的 dirty tab 既不确认也不关闭）。
+    func test_closeOtherTabs_multipleDirty_confirmEachAndCloseAll() {
+        let keep = setupTab("keep.md", content: "K")
+        let b = setupTab("b.md", content: "B")
+        let c = setupTab("c.md", content: "C")
+        state.updateTabContent(keep.id, content: "K2")
+        state.updateTabContent(b.id, content: "B2")
+        state.updateTabContent(c.id, content: "C2")
+
+        state.closeOtherTabs(keeping: keep.id)
+        XCTAssertTrue(state.showingCloseConfirmation, "第一张 dirty tab 应弹确认")
+
+        state.confirmCloseTab(save: false)                     // 处理 b
+        waitUntil { self.state.showingCloseConfirmation }       // c 的确认框（异步重新弹）
+        state.confirmCloseTab(save: false)                     // 处理 c
+
+        waitUntil { self.state.openTabs.count == 1 }
+        XCTAssertEqual(state.openTabs.first?.id, keep.id)
+    }
+
+    func test_closeAllTabs_cleanTabsClosedImmediately() {
+        let a = setupTab("a.md", content: "A")
+        let b = setupTab("b.md", content: "B")
+
+        state.closeAllTabs()
+
+        XCTAssertTrue(state.openTabs.isEmpty)
+        XCTAssertNil(state.selectedTabID)
+        _ = (a, b)
+    }
+
     // MARK: - Tab Selection
 
     func test_selectTab_switchesPreview() {
@@ -368,6 +400,54 @@ final class AppStateTests: XCTestCase {
         XCTAssertEqual(state.previewContent, "# B")
     }
 
+    // MARK: - Insert（回归：纯预览 / AI 模式下插入不得静默丢失）
+
+    /// 回归 bug：编辑器未挂载时 insertIntoEditor 直接改 tab.content 而不置 isModified，
+    /// 导致 saveTab 的 `guard tab.isModified` 与自动保存过滤都跳过、closeTab 也不提示。
+    func test_insertIntoEditor_previewOnly_marksModifiedAndAppends() {
+        let tab = setupTab("a.md", content: "hello")
+        tab.language = .markdown
+        state.isEditorMounted = false
+
+        state.insertIntoEditor("world")
+
+        XCTAssertEqual(state.openTabs[0].content, "hello\n\nworld")
+        XCTAssertTrue(state.openTabs[0].isModified, "插入必须标记为已修改，否则永不落盘")
+    }
+
+    func test_insertIntoEditor_previewOnly_emptyContentNoLeadingBlankLine() {
+        let tab = setupTab("empty.md", content: "")
+        tab.language = .markdown
+        state.isEditorMounted = false
+
+        state.insertIntoEditor("first")
+
+        XCTAssertEqual(state.openTabs[0].content, "first")
+        XCTAssertTrue(state.openTabs[0].isModified)
+    }
+
+    func test_insertIntoEditor_previewOnly_htmlInsertsBeforeBodyClose() {
+        let tab = setupTab("page.html", content: "<html><body>old</body></html>")
+        tab.language = .html
+        state.isEditorMounted = false
+
+        state.insertIntoEditor("<p>new</p>")
+
+        XCTAssertEqual(state.openTabs[0].content, "<html><body>old\n<p>new</p>\n</body></html>")
+        XCTAssertTrue(state.openTabs[0].isModified)
+    }
+
+    func test_insertIntoEditor_previewOnly_closeTabRequiresConfirmation() {
+        _ = setupTab("a.md", content: "hello")
+        state.isEditorMounted = false
+        state.insertIntoEditor("world")
+
+        state.closeTab(state.openTabs[0].id)
+
+        XCTAssertTrue(state.showingCloseConfirmation, "已修改的 tab 关闭前必须弹确认")
+        XCTAssertEqual(state.openTabs.count, 1, "确认前不得关闭 tab")
+    }
+
     // MARK: - Save
 
     func test_saveTab_writesAndClearsModified() {
@@ -393,7 +473,7 @@ final class AppStateTests: XCTestCase {
     func test_saveCurrentTab_noSelectedTabDoesNothing() {
         // No crash when there's no selected tab
         state.saveCurrentTab()
-        // Should not throw or crash
+        XCTAssertTrue(state.openTabs.isEmpty, "无选中 tab 时不应产生任何 tab")
     }
 
     // MARK: - Tab Move
@@ -482,7 +562,10 @@ final class AppStateTests: XCTestCase {
         let url = URL(fileURLWithPath: "/tmp/test.md")
         state.beginAccessing(url)
         state.endAccessing(url)
-        // Should not crash — actual security scope needs real sandboxed file
+        XCTAssertNil(state.accessRefCount(for: url), "endAccessing 后引用计数应清空")
+        // 重复 end 幂等，不应崩溃
+        state.endAccessing(url)
+        XCTAssertNil(state.accessRefCount(for: url))
     }
 
     // MARK: - Cursor

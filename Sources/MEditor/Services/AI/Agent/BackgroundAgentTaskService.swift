@@ -70,7 +70,7 @@ final class BackgroundAgentTaskService {
     var systemNotify: @MainActor (String, String) -> Void
 
     init(appState: AppState? = nil,
-         backendFactory: @escaping @Sendable (AIConfig) -> any AgentBackend = AgentBackendFactory.make) {
+         backendFactory: @escaping @Sendable (AIConfig) -> any AgentBackend = { AgentBackendFactory.make(config: $0) }) {
         self.appState = appState
         self.backendFactory = backendFactory
         self.contextFactory = { [weak appState] checkpoint in

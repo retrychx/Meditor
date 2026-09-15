@@ -4,7 +4,8 @@ import UniformTypeIdentifiers
 /// 跨平台文件/目录选择服务协议。
 /// macOS 实现：MacFilePickerService（NSOpenPanel）
 /// iOS 实现（将来）：UIDocumentPickerViewController
-protocol FilePickerServiceProtocol {
+/// Sendable：实现是 @MainActor 类，跨 Task 引用安全。
+protocol FilePickerServiceProtocol: Sendable {
     /// 选择一个目录，返回 nil 表示取消
     func pickFolder(message: String?) async -> URL?
     /// 选择单个文件

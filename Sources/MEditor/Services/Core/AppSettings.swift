@@ -7,6 +7,7 @@ extension Notification.Name {
     static let editorFontSizeChanged      = Notification.Name("MEditor.editorFontSizeChanged")
     static let docPathChanged             = Notification.Name("MEditor.docPathChanged")
     static let claudeMonitorSettingsChanged = Notification.Name("MEditor.claudeMonitorSettingsChanged")
+    static let spotlightIndexContentChanged = Notification.Name("MEditor.spotlightIndexContentChanged")
 }
 
 /// Centralized app preferences, persisted via UserDefaults.
@@ -56,6 +57,10 @@ final class AppSettings {
         static let pdfShowHeader = "MEditor.pdfShowHeader"
         static let pdfShowFooter = "MEditor.pdfShowFooter"
         static let pdfCoverPage  = "MEditor.pdfCoverPage"
+        // 工作区级 MCP 配置信任记录（防止 clone 不可信仓库即执行任意命令）
+        static let trustedWorkspaceMCP = "MEditor.trustedWorkspaceMCP"
+        // Spotlight 是否索引文档正文内容（默认关：只索引文件名/标题）
+        static let spotlightIndexContent = "MEditor.spotlightIndexContent"
     }
 
     /// LAN share server port (default 8899).
@@ -110,9 +115,15 @@ final class AppSettings {
         }
     }
 
-    /// Auto-save interval in seconds (default 30).
+    /// Auto-save interval in seconds (default 30). 钳制到 5...3600：
+    /// 0/负值会让重复 Timer 空转烧 CPU（UI 只提供 10/20/30/120）。
     var autoSaveInterval: Int {
         didSet {
+            let clamped = min(max(autoSaveInterval, 5), 3600)
+            guard clamped == autoSaveInterval else {
+                autoSaveInterval = clamped   // 触发下一轮 didSet 完成落盘与通知
+                return
+            }
             defaults.set(autoSaveInterval, forKey: Key.autoSaveInterval)
             NotificationCenter.default.post(name: .autoSaveSettingsChanged, object: nil)
         }
@@ -333,6 +344,41 @@ final class AppSettings {
         NotificationCenter.default.post(name: .docPathChanged, object: nil)
     }
 
+    // MARK: - Spotlight
+
+    /// 是否把文档**正文内容**索引进系统 Spotlight。默认关：只索引文件名/标题与修改时间。
+    ///
+    /// 正文进 Spotlight 意味着系统上任何能查询 Spotlight 的进程都能检索到私有笔记内容，
+    /// 属明确的隐私取舍，必须用户显式开启。
+    var spotlightIndexContent: Bool {
+        didSet {
+            defaults.set(spotlightIndexContent, forKey: Key.spotlightIndexContent)
+            NotificationCenter.default.post(name: .spotlightIndexContentChanged, object: nil)
+        }
+    }
+
+    // MARK: - Workspace MCP trust
+    /// 工作区级 MCP 配置（`<workspace>/.meditor/mcp.json`）的信任记录。
+    ///
+    /// key = 工作区标准化路径，value = 该配置文件的 SHA-256。默认不信任：工作区配置文件
+    /// 可声明任意 `command`，agent 启动时会被 spawn 执行——clone 一个不可信仓库即可 RCE。
+    /// 只有用户显式授权后才加载；配置文件内容变更后 hash 不再匹配，信任自动失效，需重新授权。
+    private(set) var trustedWorkspaceMCP: [String: String] {
+        didSet { defaults.set(trustedWorkspaceMCP, forKey: Key.trustedWorkspaceMCP) }
+    }
+
+    func isWorkspaceMCPTrusted(workspacePath: String, configHash: String) -> Bool {
+        trustedWorkspaceMCP[workspacePath] == configHash
+    }
+
+    func trustWorkspaceMCP(workspacePath: String, configHash: String) {
+        trustedWorkspaceMCP[workspacePath] = configHash
+    }
+
+    func revokeWorkspaceMCP(workspacePath: String) {
+        trustedWorkspaceMCP.removeValue(forKey: workspacePath)
+    }
+
     // MARK: - Theme token overrides
 
     /// Returns the user's saved override for a CSS token in a given theme, or nil if using the default.
@@ -411,6 +457,8 @@ final class AppSettings {
         pdfShowHeader = d.object(forKey: Key.pdfShowHeader) != nil ? d.bool(forKey: Key.pdfShowHeader) : false
         pdfShowFooter = d.object(forKey: Key.pdfShowFooter) != nil ? d.bool(forKey: Key.pdfShowFooter) : false
         pdfCoverPage  = d.bool(forKey: Key.pdfCoverPage)   // default false
+        trustedWorkspaceMCP = (d.dictionary(forKey: Key.trustedWorkspaceMCP) as? [String: String]) ?? [:]
+        spotlightIndexContent = d.bool(forKey: Key.spotlightIndexContent)   // default false（隐私优先）
     }
 }
 

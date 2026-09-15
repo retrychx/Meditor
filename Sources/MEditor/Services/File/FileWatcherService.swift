@@ -20,17 +20,17 @@ final class FileWatcherService: FileWatcherServiceProtocol {
     private var retainedSelf: Unmanaged<FileWatcherService>?
     private let queue = DispatchQueue(label: "com.meditor.filewatcher")
     /// Protected by `lock` — accessed from both `queue` (callback) and main thread.
-    private var _onChange: (() -> Void)?
+    private var _onChange: (@Sendable () -> Void)?
     private let lock = NSLock()
 
     /// Thread-safe read of the onChange handler.
-    fileprivate func lockedGetHandler() -> (() -> Void)? {
+    fileprivate func lockedGetHandler() -> (@Sendable () -> Void)? {
         lock.lock()
         defer { lock.unlock() }
         return _onChange
     }
 
-    func startWatching(urls: [URL], onChange: @escaping () -> Void) {
+    func startWatching(urls: [URL], onChange: @escaping @Sendable () -> Void) {
         stopWatching()
 
         lock.lock()

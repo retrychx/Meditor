@@ -45,7 +45,8 @@ final class MockURLSession: URLSessionDataProtocol, @unchecked Sendable {
 
 /// 回放 MockURLSession 预置响应的 URLProtocol，仅供 bytes(for:) 路径构造 AsyncBytes。
 private final class MockURLProtocol: URLProtocol {
-    static var stub: (data: Data, response: URLResponse)?
+    /// nonisolated(unsafe)：URLProtocol 回放用的全局 stub，测试内串行写入/读取。
+    nonisolated(unsafe) static var stub: (data: Data, response: URLResponse)?
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -210,6 +211,32 @@ final class RestAgentBackendTests: XCTestCase {
         XCTAssertEqual(response.text, "Bonjour!")
         XCTAssertEqual(response.finishReason, "stop")
         XCTAssertTrue(response.toolCalls.isEmpty)
+    }
+
+    /// 回归：Anthropic 用 `stop_reason == "max_tokens"` 表示截断，必须映射为 "length"，
+    /// 否则 AgentRunner 的 wasTruncated 永远不置位，用户拿到被截断结果却没有提示。
+    func test_completeAnthropic_maxTokensMapsToLength() async throws {
+        let mock = MockURLSession()
+        let json: [String: Any] = [
+            "content": [["type": "text", "text": "partial..."]],
+            "stop_reason": "max_tokens"
+        ]
+        mock.stubbedData = try JSONSerialization.data(withJSONObject: json)
+
+        let config = makeConfig(kind: .anthropic, baseURL: "https://api.anthropic.com/v1", apiKey: "ant-key", model: "claude-3-5-sonnet-20241022")
+        let backend = RestAgentBackend(config: config, wire: .anthropic, session: mock)
+        let response = try await backend.complete(messages: [
+            AgentMessage(role: .user, content: "Hello")
+        ], tools: [])
+
+        XCTAssertEqual(response.finishReason, "length")
+    }
+
+    func test_mapAnthropicFinishReason_allCases() {
+        XCTAssertEqual(RestAgentBackend.mapAnthropicFinishReason("max_tokens"), "length")
+        XCTAssertEqual(RestAgentBackend.mapAnthropicFinishReason("tool_use"), "tool_calls")
+        XCTAssertEqual(RestAgentBackend.mapAnthropicFinishReason("end_turn"), "stop")
+        XCTAssertEqual(RestAgentBackend.mapAnthropicFinishReason("stop_sequence"), "stop")
     }
 
     // MARK: usage 解析 — OpenAI / Anthropic 非流式

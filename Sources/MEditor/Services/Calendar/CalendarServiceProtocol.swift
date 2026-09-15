@@ -35,7 +35,7 @@ struct UnifiedCalendarEvent: Identifiable, Sendable {
 
 /// 日历服务抽象协议。视图只依赖此协议，便于测试注入 mock。
 @MainActor
-protocol CalendarServiceProtocol: AnyObject {
+protocol CalendarServiceProtocol: AnyObject, Sendable {
 
     /// 服务名称（用于 UI 标签和日志）
     var serviceName: String { get }

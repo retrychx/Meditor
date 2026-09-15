@@ -7,10 +7,16 @@ than one binary, and fails the build if coverage drops below thresholds.
 
 Usage:
     python3 scripts/coverage_gate.py coverage.lcov [--overall-min 15] [--logic-min 40]
+        [--min-dir DIR=PERCENT] ...
 
 Thresholds (defaults match the repo baseline with headroom):
     overall : whole Sources/MEditor  (baseline 17.4%, floor 15%)
     logic   : non-View code          (baseline 46.8%, floor 40%)
+
+Per-directory floors are optional and repeatable: ``--min-dir Services=60``
+(relative to --source-root). A floor whose directory has no coverage data at
+all also fails the gate, since that usually means a rename/typo rather than an
+intentionally empty directory.
 """
 import argparse
 import collections
@@ -41,7 +47,24 @@ def main():
     ap.add_argument("--overall-min", type=float, default=15.0)
     ap.add_argument("--logic-min", type=float, default=40.0)
     ap.add_argument("--source-root", default="Sources/MEditor")
+    ap.add_argument(
+        "--min-dir",
+        action="append",
+        default=[],
+        metavar="DIR=PERCENT",
+        help="per-directory floor relative to --source-root; repeatable",
+    )
     args = ap.parse_args()
+
+    dir_floors = {}
+    for spec in args.min_dir:
+        name, sep, value = spec.rpartition("=")
+        if not sep or not name:
+            ap.error("--min-dir 需要 DIR=PERCENT 形式，收到: %r" % spec)
+        try:
+            dir_floors[name] = float(value)
+        except ValueError:
+            ap.error("--min-dir 的百分比不是数字: %r" % spec)
 
     records = parse_lcov(args.lcov)
     # Keep only app sources; dedupe by path relative to the source root
@@ -52,8 +75,12 @@ def main():
         if marker not in path:
             continue
         key = path.split(marker, 1)[1]
-        cur = by_key.get(key, [0, 0])
-        by_key[key] = [max(cur[0], lf), max(cur[1], lh)]
+        cur = by_key.get(key)
+        # Same file can appear several times (multi-binary build). Keep the
+        # record with the largest LF and use THAT record's own LH: found/hit
+        # must come from the same measurement, so never max() them separately.
+        if cur is None or lf > cur[0]:
+            by_key[key] = (lf, lh)
 
     if not by_key:
         print("ERROR: no coverage data for " + args.source_root)
@@ -86,13 +113,23 @@ def main():
     print("per-directory:")
     for d, (lf, lh) in sorted(dirs.items(), key=lambda x: -x[1][0]):
         pct = lh / lf * 100 if lf else 0.0
-        print("  %-24s %6d/%6d  %5.1f%%" % (d, lh, lf, pct))
+        floor = dir_floors.get(d)
+        suffix = "  (floor %.0f%%)" % floor if floor is not None else ""
+        print("  %-24s %6d/%6d  %5.1f%%%s" % (d, lh, lf, pct, suffix))
 
     failed = []
     if ov_pct < args.overall_min:
         failed.append("overall %.1f%% < %.0f%%" % (ov_pct, args.overall_min))
     if lg_pct < args.logic_min:
         failed.append("logic (non-view) %.1f%% < %.0f%%" % (lg_pct, args.logic_min))
+    for d, floor in sorted(dir_floors.items()):
+        lf, lh = dirs.get(d, (0, 0))
+        if lf == 0:
+            failed.append("dir %s: no coverage data (floor %.0f%%)" % (d, floor))
+            continue
+        pct = lh / lf * 100
+        if pct < floor:
+            failed.append("dir %s %.1f%% < %.0f%%" % (d, pct, floor))
     if failed:
         print("")
         print("COVERAGE GATE FAILED: " + ", ".join(failed))

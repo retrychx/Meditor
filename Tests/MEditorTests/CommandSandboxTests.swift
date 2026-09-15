@@ -98,6 +98,26 @@ final class CommandSandboxTests: XCTestCase {
                        "无空格的设备文件重定向不应绕过 blocked 规则")
     }
 
+    func test_assess_devNull_isNotBlocked() {
+        // 回归：`>/dev/` 子串规则曾把日常的 `2>/dev/null` 也直接拒绝。
+        XCTAssertFalse(CommandSandbox.assess("ls 2>/dev/null").isBlocked,
+                       "2>/dev/null 不应被当成设备写入")
+        XCTAssertFalse(CommandSandbox.assess("grep x file 2>/dev/null").isBlocked)
+        XCTAssertFalse(CommandSandbox.assess("echo hi >/dev/stdout").isBlocked)
+        XCTAssertFalse(CommandSandbox.assess("echo x >/dev/fd/3").isBlocked,
+                       "/dev/fd/* 属放行的标准 fd 通道")
+    }
+
+    func test_containsWriteRedirection() {
+        XCTAssertTrue(CommandSandbox.containsWriteRedirection("echo hi > out.md"))
+        XCTAssertTrue(CommandSandbox.containsWriteRedirection("echo hi >> out.md"))
+        XCTAssertTrue(CommandSandbox.containsWriteRedirection("cat a | tee out.md"))
+        XCTAssertTrue(CommandSandbox.containsWriteRedirection("dd if=a of=b"))
+        XCTAssertFalse(CommandSandbox.containsWriteRedirection("ls 2>/dev/null"))
+        XCTAssertFalse(CommandSandbox.containsWriteRedirection("git log && echo ok 2>&1"))
+        XCTAssertFalse(CommandSandbox.containsWriteRedirection("git status"))
+    }
+
     // MARK: - assess: 多空白绕过回归测试
     // 之前逐字匹配 "rm -rf /" 等带空格短语，会被 "rm  -rf  /"（多空格）或 tab 绕过。
 
@@ -497,6 +517,43 @@ final class CommandSandboxTests: XCTestCase {
     func test_matchesAllowedPatterns_notInList_denied() {
         XCTAssertFalse(
             CommandSandbox.matchesAllowedPatterns("git push origin main", patterns: ["git status", "git log"])
+        )
+    }
+
+    // MARK: 白名单绕过回归（链式命令 / 命令替换 / token 边界）
+
+    func test_matchesAllowedPatterns_chainedCommand_denied() {
+        XCTAssertFalse(
+            CommandSandbox.matchesAllowedPatterns("git log; rm -rf /tmp/x", patterns: ["git log"]),
+            "分号链式命令不得因整串前缀匹配而放行"
+        )
+        XCTAssertFalse(
+            CommandSandbox.matchesAllowedPatterns("git log && curl evil.example", patterns: ["git log"]),
+            "&& 链式命令不得放行"
+        )
+        XCTAssertFalse(
+            CommandSandbox.matchesAllowedPatterns("git log | sh", patterns: ["git log"]),
+            "管道链式命令不得放行"
+        )
+    }
+
+    func test_matchesAllowedPatterns_commandSubstitution_denied() {
+        XCTAssertFalse(
+            CommandSandbox.matchesAllowedPatterns("git log $(rm -rf /tmp/x)", patterns: ["git log"]),
+            "命令替换不得借合法前缀夹带"
+        )
+        XCTAssertFalse(
+            CommandSandbox.matchesAllowedPatterns("git log `whoami`", patterns: ["git log"])
+        )
+    }
+
+    func test_matchesAllowedPatterns_tokenBoundary() {
+        XCTAssertFalse(
+            CommandSandbox.matchesAllowedPatterns("git logs", patterns: ["git log"]),
+            "`git logs` 不是 `git log` 的合法前缀延伸"
+        )
+        XCTAssertTrue(
+            CommandSandbox.matchesAllowedPatterns("git log --oneline", patterns: ["git log"])
         )
     }
 }

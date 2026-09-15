@@ -389,8 +389,9 @@ struct AIClient {
 #if os(macOS)
         AsyncThrowingStream { continuation in
             // Box lets the termination closure reach the process after it starts.
-            final class ProcessBox { var process: Process?; var timedOut = false }
-            let box = ProcessBox()
+            // 用带锁的盒子：watchdog / onTermination 可能在任意线程读写，
+            // 裸 var 会数据竞争，且「取消早于进程赋值」时会落空产生孤儿 claude 进程。
+            let box = LockedProcessBox()
 
             let task = Task.detached {
                 do {
@@ -519,7 +520,7 @@ struct AIClient {
             }
             continuation.onTermination = { _ in
                 task.cancel()
-                box.process?.terminate()
+                box.terminate()
             }
         }
 #else
@@ -572,9 +573,13 @@ extension AIClient {
         p.standardOutput = pipe
         p.standardError = Pipe()   // 丢弃 stderr
         guard (try? p.run()) != nil else { return nil }
+        // 先并发 drain 管道再 waitUntilExit：环境变量超过管道缓冲（~64KB）时，
+        // 子进程会阻塞在写端，若先 waitUntilExit 会永久死锁——而这里还持有着
+        // _shellEnvLock（defer 无法执行），会导致后续所有 CLI 调用一起卡死。
+        // readDataToEndOfFile 读到 EOF（子进程退出关闭管道）才返回，等效于等待退出。
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
         guard p.terminationStatus == 0 else { return nil }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
         guard let text = String(data: data, encoding: .utf8) else { return nil }
         var result: [String: String] = [:]
         for line in text.components(separatedBy: "\n") {
@@ -691,5 +696,44 @@ extension AIClient {
         // iOS 无 Process：直接视为未找到
         return nil
 #endif
+    }
+}
+
+// MARK: - LockedProcessBox
+
+/// 线程安全的 Process 持有盒（与 RunCommandTool.ProcessBox 同款思路）。
+///
+/// watchdog / `continuation.onTermination` 可能在任意线程读写，裸 `var` 是数据竞争；
+/// `killRequested` 关闭「终止请求早于进程赋值」的窗口——赋值时补发 terminate，
+/// 避免取消后 claude 子进程变成孤儿。`timedOut` 同样加锁，读取不会拿到脏值。
+private final class LockedProcessBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _process: Process?
+    private var _timedOut = false
+    private var killRequested = false
+
+    var process: Process? {
+        get { lock.lock(); defer { lock.unlock() }; return _process }
+        set {
+            lock.lock()
+            _process = newValue
+            let shouldKill = killRequested
+            lock.unlock()
+            if shouldKill { newValue?.terminate() }
+        }
+    }
+
+    var timedOut: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return _timedOut }
+        set { lock.lock(); _timedOut = newValue; lock.unlock() }
+    }
+
+    /// 请求终止子进程；进程尚未就绪时先记账，赋值时补发（重复调用无害）。
+    func terminate() {
+        lock.lock()
+        killRequested = true
+        let p = _process
+        lock.unlock()
+        p?.terminate()
     }
 }

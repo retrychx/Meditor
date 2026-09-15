@@ -121,6 +121,7 @@ struct DiffReviewOverlay: View {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(accent)
+                .accessibilityHidden(true)
             Text(title)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
@@ -155,9 +156,13 @@ struct DiffReviewOverlay: View {
 
     private var leftParagraphsForReview: [DiffWebView.ParaEntry] {
         let blocks = ParagraphDiffer.splitParagraphs(state.diffReview.originalContent)
-        let diffs  = state.diffReview.diffs
+        // 字典索引（O(段落数+diff 数)）：此前在 map 里做 diffs.first(where:) 是 O(n·m)。
+        let byIndex = Dictionary(
+            state.diffReview.diffs.map { ($0.originalIndex, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         return blocks.enumerated().map { i, text in
-            let match = diffs.first { $0.originalIndex == i }
+            let match = byIndex[i]
             return DiffWebView.ParaEntry(
                 text:   text,
                 diffId: match?.id.uuidString ?? "",
@@ -168,9 +173,12 @@ struct DiffReviewOverlay: View {
 
     private var rightParagraphsForReview: [DiffWebView.ParaEntry] {
         let blocks = ParagraphDiffer.splitParagraphs(state.diffReview.modifiedContent)
-        let diffs  = state.diffReview.diffs
+        let byIndex = Dictionary(
+            state.diffReview.diffs.map { ($0.modifiedIndex, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         return blocks.enumerated().map { j, text in
-            let match = diffs.first { $0.modifiedIndex == j }
+            let match = byIndex[j]
             return DiffWebView.ParaEntry(
                 text:   text,
                 diffId: match?.id.uuidString ?? "",
@@ -210,6 +218,7 @@ private struct DiffModeBar: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.appAccent)
                     .contentTransition(.symbolEffect(.replace))
+                    .accessibilityHidden(true)
 
                 if state.diffReview.isStreaming {
                     Text(L("ai.inline.working", state.diffReview.streamingAction))
@@ -245,6 +254,7 @@ private struct DiffModeBar: View {
                         .buttonStyle(.plain)
                         .disabled(state.diffReview.refineInput.isEmpty)
                         .help(L("diff.refineHelp"))
+                        .accessibilityLabel(L("diff.refineHelp"))
                     }
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
@@ -325,6 +335,7 @@ private struct DiffModeBar: View {
             }
             .buttonStyle(.plain)
             .help(L("diff.closeHelp"))
+            .accessibilityLabel(L("diff.closeHelp"))
             .keyboardShortcut(.escape, modifiers: [])
         }
         .padding(.horizontal, 16)
@@ -414,6 +425,7 @@ struct DiffWebView: NSViewRepresentable {
         config.userContentController = uc
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
+        webView.setAccessibilityLabel(isRight ? L("diff.aiGeneratedHTML") : L("diff.original"))
         context.coordinator.webView  = webView
         context.coordinator.lastContentSignature = contentSignature
         loadContent(into: webView)
@@ -454,10 +466,16 @@ struct DiffWebView: NSViewRepresentable {
     }
 
     private func applyStatusUpdates(webView: WKWebView) {
-        for entry in paragraphs where !entry.diffId.isEmpty {
-            let js = "if(window.updateDiffStatus)updateDiffStatus('\(entry.diffId)','\(entry.status)',\(isRight ? "true" : "false"));"
-            webView.evaluateJavaScript(js, completionHandler: nil)
-        }
+        // 批量：把所有状态变更序列化成 JSON，一次 JS 调用更新完——
+        // 此前每条 diff 一次 evaluateJavaScript（跨进程往返）。
+        let payload = paragraphs
+            .filter { !$0.diffId.isEmpty }
+            .map { ["diffId": $0.diffId, "status": $0.status] }
+        guard !payload.isEmpty,
+              let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8) else { return }
+        let js = "if(window.updateDiffStatuses)window.updateDiffStatuses(\(json));"
+        webView.evaluateJavaScript(js, completionHandler: nil)
     }
 
     // MARK: HTML
@@ -538,6 +556,13 @@ img{max-width:100%}
       b.className='para-block'+cls(newStatus);
       var a=b.querySelector('.diff-actions');
       if(a&&newStatus!=='pending')a.remove();
+    });
+  };
+
+  // 批量版本：一次 evaluateJavaScript 更新全部 diff 状态，避免逐条跨进程往返。
+  window.updateDiffStatuses=function(list){
+    (list||[]).forEach(function(item){
+      if(item&&item.diffId)window.updateDiffStatus(item.diffId,item.status);
     });
   };
 

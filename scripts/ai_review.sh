@@ -2,7 +2,7 @@
 # AI 自审脚本——单作者项目的"第二双眼睛"。
 #
 # 用法：
-#   bash scripts/ai_review.sh            # 审查工作区未提交改动
+#   bash scripts/ai_review.sh            # 审查工作区改动（git diff HEAD：staged + unstaged）
 #   bash scripts/ai_review.sh <base>     # 审查 base..HEAD 的改动（如 origin/main）
 #   bash scripts/ai_review.sh --no-pipe  # 只生成 review 提示词，不调用 Claude CLI
 #
@@ -16,8 +16,15 @@ PIPE_CLAUDE=1
 if [[ "$BASE" == "--no-pipe" ]]; then BASE=""; PIPE_CLAUDE=0; fi
 
 echo "==> 1/3 快速质量自检"
+LINT_STATUS="skipped"
 if command -v swiftlint &>/dev/null; then
-  swiftlint lint --config .swiftlint.yml Sources || true
+  # 不吞掉 lint 失败：记录状态继续跑 review（review 本身仍有价值），结尾明确报出。
+  if swiftlint lint --config .swiftlint.yml Sources; then
+    LINT_STATUS="passed"
+  else
+    LINT_STATUS="failed"
+    echo "    ⚠️  swiftlint 自检未通过（输出见上）——review 继续，但请在合并前修复。"
+  fi
 else
   echo "    (swiftlint 未安装，跳过 lint)"
 fi
@@ -26,7 +33,8 @@ echo "==> 2/3 收集 diff"
 if [[ -n "$BASE" ]]; then
   DIFF="$(git diff "$BASE"...HEAD 2>/dev/null || git diff "$BASE" HEAD)"
 else
-  DIFF="$(git diff)"
+  # git diff HEAD 覆盖 staged + unstaged（仅 git diff 会漏掉 git add 过的改动）
+  DIFF="$(git diff HEAD)"
 fi
 if [[ -z "$DIFF" ]]; then
   echo "    没有待审查的改动（工作区干净且未指定 base）。"
@@ -62,4 +70,10 @@ if [[ $PIPE_CLAUDE -eq 1 ]] && command -v claude &>/dev/null; then
 else
   echo "    -> claude CLI 不可用（或 --no-pipe），审查提示词已生成，请手动使用："
   echo "       claude -p \"\$(cat \"$PROMPT_FILE\")\""
+fi
+
+if [[ "$LINT_STATUS" == "failed" ]]; then
+  echo ""
+  echo "⚠️  注意：swiftlint 自检未通过（输出见上）——AI 审查已完成/提示词已生成，"
+  echo "    但请先修复 lint 问题再提交。"
 fi

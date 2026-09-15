@@ -33,6 +33,7 @@ struct ShareStatusChip: View {
                 .buttonStyle(.plain)
                 .help(lanURL.map { L("statusBar.copyLANLink") + "\n" + $0 }
                       ?? L("statusBar.sharing"))
+                .accessibilityValue(lanURL ?? "")
             }
 
             // GitHub Gist 上次发布链接
@@ -48,6 +49,7 @@ struct ShareStatusChip: View {
                 }
                 .buttonStyle(.plain)
                 .help(L("statusBar.copyGistLink") + "\n" + gistURL)
+                .accessibilityValue(gistURL)
             }
 
             // 在线分享上次发布链接
@@ -63,6 +65,7 @@ struct ShareStatusChip: View {
                 }
                 .buttonStyle(.plain)
                 .help(linkURL)
+                .accessibilityValue(linkURL)
             }
         }
         .animation(DS.Motion.fast, value: state.shareServer.isRunning)

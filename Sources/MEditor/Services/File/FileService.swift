@@ -16,7 +16,8 @@ enum FileServiceError: LocalizedError {
     }
 }
 
-final class FileService: FileServiceProtocol {
+/// 无状态文件服务：只持有 FileManager.default（线程安全）与常量键。
+final class FileService: FileServiceProtocol, @unchecked Sendable {
     private let fm = FileManager.default
     private let indexedResourceKeys: [URLResourceKey] = [.isDirectoryKey, .isRegularFileKey]
 

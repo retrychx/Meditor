@@ -349,6 +349,7 @@ private struct AIHeaderButton: View {
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
         .help(help)
+        .accessibilityLabel(help)
         .animation(DS.Motion.micro, value: hovered)
     }
 }

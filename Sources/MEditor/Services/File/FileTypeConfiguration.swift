@@ -16,7 +16,9 @@ struct FileTypeDescriptor {
     }
 }
 
-final class FileTypeConfiguration {
+/// 文件类型注册表。`types` 仅在启动期 `register` 时写入、之后只读；
+/// 标注 @unchecked Sendable 以允许跨 actor 引用共享实例（Swift 6 并发检查要求）。
+final class FileTypeConfiguration: @unchecked Sendable {
     static let shared = FileTypeConfiguration()
 
     private var types: [FileTypeDescriptor] = [

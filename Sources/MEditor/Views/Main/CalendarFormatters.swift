@@ -4,6 +4,7 @@ import Foundation
 
 /// DateFormatter 创建昂贵，月视图单帧会触发几十次格式化，这里统一静态缓存（仅在 @MainActor 视图内使用）。
 /// 日期格式本身已本地化（跟随应用内语言），按语言分桶缓存，切换语言后自动生效。
+@MainActor
 enum CalendarFmt {
     private static var cache: [String: DateFormatter] = [:]
 

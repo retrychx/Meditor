@@ -98,7 +98,8 @@ final class AgentRunner {
 
     init(
         maxSteps: Int = 30,
-        backendFactory: @escaping @Sendable (AIConfig) -> any AgentBackend = AgentBackendFactory.make
+        // 用 @Sendable 闭包字面量包一层：直接引用函数值会被判为「非 Sendable 函数值转换」。
+        backendFactory: @escaping @Sendable (AIConfig) -> any AgentBackend = { AgentBackendFactory.make(config: $0) }
     ) {
         self.state = AgentRunState()
         self.maxSteps = maxSteps
@@ -215,6 +216,10 @@ final class AgentRunner {
     func cancel() {
         runTask?.cancel()
         runTask = nil
+        // 注意：这里不递增 runGeneration。cancel 后 _run 仍应走到收尾并触发 onComplete
+        // （否则调用方 isResponding 永远为 true）；只有「新 run 启动」才递增 generation
+        // 来让旧 run 收尾失效。旧 run 在 await 之后的写入由 _run 内的
+        // `generation == runGeneration, !Task.isCancelled` 复核拦住。
         // 解除挂起的命令确认 / 写入确认 / 写审阅：工具可能卡在这些 continuation 上
         //（不响应 Task 取消），不显式 reject 的话 run 会卡到超时，且取消后用户在
         // diff 视图点「全部接受」时写入仍会落盘。reject/dismiss 均幂等，与 _run
@@ -314,6 +319,11 @@ final class AgentRunner {
                         self.onChunk?(self.streamAccumulated)
                     }
                 }
+
+                // 代际/取消复核（H4）：completeStreaming 期间可能已 cancel 或被新 run
+                // 接管；循环顶的检查在这一轮 await 之前，覆盖不到这里。此时再改
+                // wasTruncated/usage/steps 会污染新 run。
+                guard generation == runGeneration, !Task.isCancelled else { break }
 
                 // 输出被 max_tokens 截断：置位标记由 UI 提示，不自动续跑（避免死循环）
                 if response.finishReason == "length" || response.finishReason == "max_tokens" {

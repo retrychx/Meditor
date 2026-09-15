@@ -166,22 +166,28 @@ final class AppState {
             // 编辑器可见：走 nonce 路径，在光标处插入（保留光标位置）
             aiUI.requestInsert(text)
         } else {
-            // 编辑器隐藏（纯预览 / AI 模式）：直接追加到 tab.content
+            // 编辑器隐藏（纯预览 / AI 模式）：先算出新内容，再统一走 updateTabContent。
+            // 不能直接改 tab.content —— 那样不会置 isModified，saveTab 的
+            // `guard tab.isModified` 与自动保存过滤都会跳过，导致内容永不落盘，
+            // closeTab 也会当作干净 tab 直接关闭（静默丢数据）。
+            let newContent: String
             if tab.language == .html {
                 // HTML 文件：插入到 </body> 之前，保持结构合法
                 let bodyClose = "</body>"
                 if let range = tab.content.range(of: bodyClose, options: .caseInsensitive) {
-                    tab.content.replaceSubrange(range, with: "\n" + text + "\n" + bodyClose)
+                    newContent = tab.content.replacingCharacters(
+                        in: range, with: "\n" + text + "\n" + bodyClose)
                 } else {
-                    tab.content += "\n" + text
+                    newContent = tab.content + "\n" + text
                 }
             } else {
                 // Markdown 及其他文本：追加到末尾
                 let separator = tab.content.isEmpty ? "" : "\n\n"
-                tab.content += separator + text
+                newContent = tab.content + separator + text
             }
-            tab.contentRevision &+= 1   // 触发编辑器（如果稍后显示）刷新内容
-            scheduleDebounceSave()
+            // updateTabContent：置 isModified、递增 contentRevision、同步预览、
+            // 并在开启自动保存时安排防抖落盘。
+            updateTabContent(tab.id, content: newContent)
         }
     }
 
@@ -223,9 +229,10 @@ final class AppState {
             return false
         }
 
-        tab.content.replaceSubrange(ranges[0], with: replacement)
-        // AI 内联改写后触发自动保存
-        scheduleDebounceSave()
+        // 统一走 updateTabContent：置 isModified、递增 revision、同步预览、按需防抖保存。
+        // 直接改 tab.content 会绕过 isModified，导致替换永不落盘。
+        let newContent = content.replacingCharacters(in: ranges[0], with: replacement)
+        updateTabContent(tab.id, content: newContent)
         return true
     }
 
@@ -348,8 +355,9 @@ final class AppState {
             await index.buildIndex(root: root)
             workspaceIndexReady = true
         }
-        // 系统 Spotlight 全量索引（批量后台写入；切换工作区时旧 domain 由 reindex 内部清理）
-        Task { await spotlight.reindex(root: root) }
+        // 系统 Spotlight 全量索引（批量后台写入；切换工作区时旧 domain 由 reindex 内部清理）。
+        // 正文是否进索引由用户显式设置（默认只索引文件名/标题）。
+        Task { await spotlight.reindex(root: root, includeContent: AppSettings.shared.spotlightIndexContent) }
     }
 
     /// FSEvents 变化后的索引增量刷新（服务内部防抖；首次构建未完成时由 buildIndex 全量兜底）。
@@ -373,10 +381,14 @@ final class AppState {
     @ObservationIgnored private(set) var accessRefCounts: [URL: Int] = [:]
     @ObservationIgnored var isRestoringSession = false
     @ObservationIgnored private var sessionPersistScheduled = false
-    @ObservationIgnored var autoSaveTimer: Timer?
-    @ObservationIgnored var autoSaveObserver: Any?
+    // deinit 是 nonisolated，访问 Timer/Any 这类非 Sendable 的主 actor 属性在 Swift 6 下
+    // 会报错；这些资源只在主线程创建/使用、且在 deinit（唯一引用）中清理，标注 unsafe 即可。
+    @ObservationIgnored nonisolated(unsafe) var autoSaveTimer: Timer?
+    @ObservationIgnored nonisolated(unsafe) var autoSaveObserver: Any?
+    /// Spotlight 正文索引开关变更的观察者（切换后立即按新口径重建当前工作区索引）。
+    @ObservationIgnored nonisolated(unsafe) private var spotlightContentObserver: Any?
     /// 输入停止后 2 秒触发保存的防抖计时器。
-    @ObservationIgnored var debounceSaveTimer: Timer?
+    @ObservationIgnored nonisolated(unsafe) var debounceSaveTimer: Timer?
     /// Mod-dates for open files; used by AppState+ExternalMod.
     @ObservationIgnored var externalModDates: [URL: Date] = [:]
 
@@ -411,6 +423,7 @@ final class AppState {
         setupAutoSaveTimer()
         pluginManager.load()
         setupClaudeMonitor()
+        setupSpotlightContentObserver()
         fileTreeManager.onMentionItemsUpdated = { [weak self] in
             guard let self else { return }
             self.mentionItems = self.fileTreeManager.mentionItems
@@ -435,7 +448,21 @@ final class AppState {
         autoSaveTimer?.invalidate()
         debounceSaveTimer?.invalidate()
         if let obs = autoSaveObserver { NotificationCenter.default.removeObserver(obs) }
+        if let obs = spotlightContentObserver { NotificationCenter.default.removeObserver(obs) }
         for url in accessRefCounts.keys { url.stopAccessingSecurityScopedResource() }
+    }
+
+    /// Spotlight 正文索引开关变更：立即按新口径重建当前工作区索引。
+    private func setupSpotlightContentObserver() {
+        spotlightContentObserver = NotificationCenter.default.addObserver(
+            forName: .spotlightIndexContentChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, let root = self.rootURL else { return }
+                await SpotlightIndexManager.shared.reindex(
+                    root: root, includeContent: AppSettings.shared.spotlightIndexContent)
+            }
+        }
     }
 
     // MARK: - Claude 监听配置
@@ -542,7 +569,7 @@ final class AppState {
             let index = self.workspaceIndex
             Task { await index.updateFile(at: url) }
             let spotlight = SpotlightIndexManager.shared
-            Task { await spotlight.updateFile(at: url) }
+            Task { await spotlight.updateFile(at: url, includeContent: AppSettings.shared.spotlightIndexContent) }
         }
     }
 
@@ -583,6 +610,9 @@ final class AppState {
         accessRefCounts.removeValue(forKey: s)
         s.stopAccessingSecurityScopedResource()
     }
+
+    /// 测试可见：当前 security-scoped 访问的引用计数（生产代码不用）。
+    func accessRefCount(for url: URL) -> Int? { accessRefCounts[url.standardizedFileURL] }
 
     func requiresDirectFileAccess(_ url: URL) -> Bool {
         guard let rootURL else { return true }

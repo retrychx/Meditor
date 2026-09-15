@@ -408,7 +408,8 @@ private final class SSEReplayProtocol: URLProtocol {
         case failAfter(Data, URLResponse, Error)
     }
 
-    static var plan: Plan?
+    /// nonisolated(unsafe)：URLProtocol 回放用的全局计划，测试内串行写入/读取。
+    nonisolated(unsafe) static var plan: Plan?
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -445,18 +446,18 @@ private final class SequencedStreamSession: URLSessionDataProtocol, @unchecked S
     init(stubs: [(Data, URLResponse)]) { self.stubs = stubs }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-        lock.lock(); capturedRequests.append(request); lock.unlock()
+        lock.withLock { capturedRequests.append(request) }
         return nextStub()
     }
 
     func bytes(for request: URLRequest) async throws -> (URLSession.AsyncBytes, URLResponse) {
-        lock.lock(); capturedRequests.append(request); lock.unlock()
+        lock.withLock { capturedRequests.append(request) }
         let stub = nextStub()
         SSEReplayProtocol.plan = .replay(stub.0, stub.1)
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SSEReplayProtocol.self]
         let session = URLSession(configuration: config)
-        lock.lock(); heldSessions.append(session); lock.unlock()
+        lock.withLock { heldSessions.append(session) }
         return try await session.bytes(for: request)
     }
 
@@ -503,7 +504,7 @@ private final class MidStreamFailSession: URLSessionDataProtocol, @unchecked Sen
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SSEReplayProtocol.self]
         let session = URLSession(configuration: config)
-        lock.lock(); heldSessions.append(session); lock.unlock()
+        lock.withLock { heldSessions.append(session) }
         return try await session.bytes(for: request)
     }
 }

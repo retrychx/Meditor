@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/macOS-14.0+-blue?logo=apple" alt="macOS 14+" />
-  <img src="https://img.shields.io/badge/Swift-5.9-orange?logo=swift" alt="Swift 5.9" />
+  <img src="https://img.shields.io/badge/Swift-6.0-orange?logo=swift" alt="Swift 6.0" />
   <img src="https://img.shields.io/badge/%E5%8D%8F%E8%AE%AE-MIT-green" alt="MIT License" />
   <img src="https://img.shields.io/badge/%E7%BC%96%E8%AF%91-%E9%80%9A%E8%BF%87-brightgreen" alt="编译通过" />
 </p>
@@ -33,7 +33,7 @@ MEditor 是 **macOS 上给技术人写文档的 Agent 工作台**。核心闭环
 
 ### 🤖 真 Agent，不是聊天框
 
-- **14 个工具，多轮循环** — Agent 读写、补丁式修改、搜索文档，操作工作区文件，驱动编辑器，执行沙盒 Shell 命令 —— 在多轮工具调用中持续推理，直到把活干完
+- **macOS 上 15 个工具（14 个跨平台），多轮循环** — Agent 读写、补丁式修改、搜索文档，操作工作区文件，驱动编辑器，执行沙盒 Shell 命令 —— 在多轮工具调用中持续推理，直到把活干完
 - **三种后端** — OpenAI 兼容与 Anthropic（内置 9 家预设：Anthropic、OpenAI、DeepSeek、Kimi、GLM、通义千问、OpenRouter、Groq、Ollama），外加复用本机 Claude Code 登录态的 Claude CLI 后端
 - **自带密钥（BYOK）** — 兼容任何 OpenAI 格式端点，密钥只存在本机 Keychain 里
 - **全程流式** — 回复逐字流出；工具步骤内联展示，支持展开/折叠查看详情
@@ -79,7 +79,7 @@ MEditor 是 **macOS 上给技术人写文档的 Agent 工作台**。核心闭环
 
 - **macOS** 14.0+ (Sonoma)
 - **Xcode** 15.0+（开发用）
-- **Swift** 5.9+
+- **Swift** 6.0+ (app and test targets in Swift 6 language mode, strict concurrency)
 
 ## 🔧 构建与运行
 
@@ -151,7 +151,7 @@ open Package.swift
 
 ### MCP Server（Claude Desktop、Cursor 等）
 
-MEditor 内置基于 stdio 的 [MCP](https://modelcontextprotocol.io) Server，外部 agent 可以借此操作工作区——复用的正是应用内 Agent 的同一套工具层（文件读写/补丁、列目录、全局搜索、沙箱 shell 命令，共 12 个；`open_file` / `insert_at_cursor` 等依赖 UI 的工具不在无头模式暴露）。
+MEditor 内置基于 stdio 的 [MCP](https://modelcontextprotocol.io) Server，外部 agent 可以借此操作工作区——复用的正是应用内 Agent 的同一套工具层（文件读写/补丁、列目录、全局搜索，共 11 个；`open_file` / `insert_at_cursor` 等依赖 UI 的工具不在无头模式暴露，shell 工具 `run_command` 默认关闭）。
 
 Claude Desktop 配置（`~/Library/Application Support/Claude/claude_desktop_config.json`）：
 
@@ -166,7 +166,7 @@ Claude Desktop 配置（`~/Library/Application Support/Claude/claude_desktop_con
 }
 ```
 
-不传 `--workspace` 时默认使用当前目录。shell 命令走与应用内 Agent 相同的风险分级沙箱：blocked 级一律拒绝；warn 级（如 `git push`、`mv`）在无头模式下默认拒绝，可加 `--allow-warn-commands` 显式放开。
+不传 `--workspace` 时默认使用当前目录。shell 命令**默认不暴露**——加 `--allow-shell` 才会注册 `run_command`（共 12 个工具）。启用后走与应用内 Agent 相同的风险分级沙箱：blocked 级一律拒绝；warn 级（如 `git push`、`mv`）在无头模式下默认拒绝，可加 `--allow-warn-commands` 显式放开。无头模式没有确认弹窗，静态命令黑名单不构成安全边界——只对信任的工作区开启 `--allow-shell`。
 
 ---
 
@@ -215,7 +215,7 @@ MEditor/
 ## 🗺 路线图
 
 **已交付**
-- [x] 真 Agent：14 个工具、多轮循环、三种后端（OpenAI 兼容 / Anthropic / Claude CLI）、BYOK
+- [x] 真 Agent：macOS 上 15 个工具（14 个跨平台）、多轮循环、三种后端（OpenAI 兼容 / Anthropic / Claude CLI）、BYOK
 - [x] Agent 加固：写文件确认、命令沙盒风险分级、上下文预算、停滞检测、只读工具并行、用量显示
 - [x] 行内编辑 diff 审阅、`@mention` 上下文、多会话历史
 - [x] 斜杠命令库、选区浮动操作条、文档上下文自动附带

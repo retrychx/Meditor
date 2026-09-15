@@ -21,6 +21,7 @@ struct EmptyStateView: View {
                         .font(.system(size: 22, weight: .light))
                         .foregroundStyle(Color.appAccent.opacity(0.6))
                 }
+                .accessibilityHidden(true)
 
                 VStack(spacing: DS.Space.xs) {
                     Text(message)

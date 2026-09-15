@@ -116,7 +116,10 @@ struct GitHubGistService {
         let body: [String: Any] = [
             "files": [fileName: ["content": content]]
         ]
-        let data = try await send("PATCH", path: "/gists/\(id)", token: token, body: body)
+        // id 来自不可信来源时含 `/` `?` 会改写请求路径——只保留 RFC 3986 unreserved 字符。
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+        let encodedID = id.addingPercentEncoding(withAllowedCharacters: allowed) ?? id
+        let data = try await send("PATCH", path: "/gists/\(encodedID)", token: token, body: body)
         return try decode(data).htmlURL
     }
 

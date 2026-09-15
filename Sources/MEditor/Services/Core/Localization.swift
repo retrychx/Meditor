@@ -11,7 +11,7 @@ enum AppLanguage: String, CaseIterable, Identifiable {
 /// `L(...)` in its body re-renders when the language changes — no relaunch
 /// needed for in-window UI. (The main menu bar refreshes on next launch.)
 @Observable
-final class LocalizationManager {
+final class LocalizationManager: @unchecked Sendable {
     static let shared = LocalizationManager()
     private static let key = "MEditor.language"
 
@@ -476,7 +476,7 @@ extension LocalizationManager {
         "sharelink.baseURL": ("Share Service URL", "分享服务地址"),
         "sharelink.baseURLHint": ("Self-hosted share endpoint. Switch to your custom domain before release.", "自建分享服务地址，发布前可换成自定义域名。"),
         "sharelink.token": ("Share Token", "分享 Token"),
-        "sharelink.tokenHint": ("Must match the Worker's SHARE_TOKEN secret.", "需与 Worker 的 SHARE_TOKEN 密钥一致。"),
+        "sharelink.tokenHint": ("Your personal share token issued by the service operator (one of the Worker's SHARE_TOKENS).", "服务方分配给你的个人分享 Token（Worker 的 SHARE_TOKENS 之一）。"),
         "sharelink.tokenConfigured": ("Configured", "已配置"),
         "sharelink.clearToken": ("Clear", "清除"),
         "sharelink.saveToken": ("Save", "保存"),
@@ -656,6 +656,7 @@ extension LocalizationManager {
         // Status bar
         "statusBar.modified": ("Modified", "已修改"),
         "statusBar.saved":    ("Saved", "已保存"),
+        "statusBar.cursor":   ("Cursor position", "光标位置"),
         "statusBar.sharing": ("Sharing", "分享中"),
         "statusBar.copyLANLink": ("Copy LAN Link", "复制局域网链接"),
         "statusBar.copyGistLink": ("Copy Gist Link", "复制 Gist 链接"),
@@ -672,6 +673,7 @@ extension LocalizationManager {
         "preview.empty": ("Preview", "预览"),
         "preview.findPlaceholder": ("Find in Preview", "在预览中查找"),
         "preview.findNoResults": ("No results", "无结果"),
+        "toc.level": ("Level %d", "%d 级"),
 
         // Settings
         "settings.tab.general": ("General", "通用"),
@@ -680,6 +682,10 @@ extension LocalizationManager {
         "settings.section.preview": ("Preview", "预览"),
         "settings.fontSize": ("Font Size", "字体大小"),
         "settings.section.save": ("Save", "保存"),
+        "settings.section.spotlight": ("System Search", "系统搜索"),
+        "settings.spotlightContent": ("Index document text in Spotlight", "将文档正文索引进 Spotlight"),
+        "settings.desc.spotlightContent": ("Off by default — only file names are indexed. Turning this on makes document text searchable system-wide (and by other apps).",
+                                           "默认关闭——只索引文件名。开启后正文可被系统全局搜索（以及其他 App）检索到。"),
         "settings.section.about": ("About", "关于"),
         "settings.version": ("Version", "版本"),
         "settings.checkUpdates": ("Check for Updates…", "检查更新…"),
@@ -1145,8 +1151,8 @@ extension LocalizationManager {
         // MCP 客户端（内置 Agent 作为 MCP client 连接外部工具服务器）
         "settings.ai.mcpClient": ("MCP Client", "MCP 客户端"),
         "settings.ai.mcpClientLabel": ("External tool servers", "外部工具服务器"),
-        "settings.ai.mcpClientHint": ("Give the in-app Agent tools from external MCP servers. Config: ~/.meditor/mcp.json plus <workspace>/.meditor/mcp.json (same-name entries in the workspace file win)",
-                                      "让内置 Agent 调用外部 MCP server 的工具。配置文件：~/.meditor/mcp.json 与 <工作区>/.meditor/mcp.json（同名条目以工作区为准）"),
+        "settings.ai.mcpClientHint": ("Give the in-app Agent tools from external MCP servers. Config: ~/.meditor/mcp.json. A project's <workspace>/.meditor/mcp.json is ignored until you explicitly trust it below (it can run shell commands).",
+                                      "让内置 Agent 调用外部 MCP server 的工具。配置文件：~/.meditor/mcp.json；项目自带的 <工作区>/.meditor/mcp.json 默认忽略，需在下方显式信任后启用（它可执行 shell 命令）。"),
         "settings.ai.mcpClientEmpty": ("No MCP servers configured", "尚未配置 MCP server"),
         "settings.ai.mcpClientOpenConfig": ("Open Config File", "打开配置文件"),
         "settings.ai.mcpClientReconnect": ("Reconnect", "重新连接"),
@@ -1156,6 +1162,11 @@ extension LocalizationManager {
         "settings.ai.mcpClientDisconnected": ("Not connected", "未连接"),
         "settings.ai.mcpClientConnecting": ("Connecting…", "连接中…"),
         "settings.ai.mcpClientConfigIssue": ("Config issue: %@", "配置问题：%@"),
+        "settings.ai.mcpWorkspaceConfig": ("Project MCP config (.meditor/mcp.json)", "项目 MCP 配置（.meditor/mcp.json）"),
+        "settings.ai.mcpWorkspaceTrust": ("Trust & Enable", "信任并启用"),
+        "settings.ai.mcpWorkspaceRevoke": ("Revoke Trust", "撤销信任"),
+        "settings.ai.mcpWorkspaceHint": ("This project ships an MCP config that runs shell commands as soon as the Agent starts. It is ignored until you trust it; if the file changes, trust is revoked automatically.",
+                                          "该项目自带 MCP 配置，Agent 一启动就会执行其中的命令。未授权前一律忽略；配置文件变更后授权自动失效，需重新确认。"),
 
         // 技能导入/导出（用户间分享技能）
         "plugin.import": ("Import", "导入"),

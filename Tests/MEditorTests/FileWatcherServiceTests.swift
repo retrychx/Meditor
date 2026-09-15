@@ -1,6 +1,11 @@
 import XCTest
 @testable import MEditor
 
+/// @unchecked Sendable 计数器：onChange 现为 @Sendable，闭包内不能再捕获可变 var。
+private final class CallbackCounter: @unchecked Sendable {
+    var value = 0
+}
+
 final class FileWatcherServiceTests: XCTestCase {
 
     var watcher: FileWatcherService!
@@ -36,17 +41,17 @@ final class FileWatcherServiceTests: XCTestCase {
     }
 
     func test_startWatching_replacesExistingWatch() {
-        var count1 = 0
-        var count2 = 0
+        let count1 = CallbackCounter()
+        let count2 = CallbackCounter()
 
-        watcher.startWatching(urls: [tempDir]) { count1 += 1 }
-        watcher.startWatching(urls: [tempDir]) { count2 += 1 }
+        watcher.startWatching(urls: [tempDir]) { count1.value += 1 }
+        watcher.startWatching(urls: [tempDir]) { count2.value += 1 }
 
         // First callback should be replaced — only count2 should fire
         // We can't easily trigger FSEvents in a unit test, but at least
         // verify no crash on replacement
         watcher.stopWatching()
-        XCTAssertEqual(count1, 0)
+        XCTAssertEqual(count1.value, 0)
     }
 
     func test_deinit_stopsWatching() {

@@ -18,13 +18,13 @@ private actor StubMCPTransport: MCPClientTransport {
     private(set) var notified: [String] = []
     private(set) var closed = false
 
-    func request(method: String, params: [String: Any], timeout: TimeInterval) async throws -> [String: Any] {
+    func request(method: String, params: MCPPayload, timeout: TimeInterval) async throws -> MCPPayload {
         if method == "tools/call" { callCount += 1 }
-        if let canned = responses[method] { return canned }
+        if let canned = responses[method] { return MCPPayload(canned) }
         throw MCPError(code: MCPJSONRPC.methodNotFoundCode, message: "stub: no canned response for \(method)")
     }
 
-    func notify(method: String, params: [String: Any]) async { notified.append(method) }
+    func notify(method: String, params: MCPPayload) async { notified.append(method) }
     func close() async { closed = true }
 }
 
@@ -33,6 +33,7 @@ final class MCPToolTests: XCTestCase {
     // MARK: - Helpers
 
     /// 组装一个已连接的 client（initialize/tools/list 走 stub 回放）。
+    @MainActor
     private func makeConnectedClient(stub: StubMCPTransport) async throws -> MCPClient {
         await stub.setResponses([
             "initialize": ["protocolVersion": "2025-03-26", "capabilities": [:], "serverInfo": ["name": "fake", "version": "1.0"]],
@@ -85,6 +86,7 @@ final class MCPToolTests: XCTestCase {
 
     // MARK: - inputSchema 透传
 
+    @MainActor
     func test_spec_rawSchemaPassthrough() async throws {
         let stub = StubMCPTransport()
         let client = try await makeConnectedClient(stub: stub)

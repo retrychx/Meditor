@@ -32,7 +32,8 @@ enum ShareLinkError: LocalizedError {
 /// Stateless wrapper over the self-hosted share API (Cloudflare Worker + KV).
 /// Token lives in the Keychain (never on disk/logs); base URL lives in AppSettings
 /// （发布前把默认 workers.dev 换成自定义域名即可，只改一处）。
-struct ShareLinkService {
+/// @unchecked Sendable：仅持有注入的异步 transport 闭包，无共享可变状态。
+struct ShareLinkService: @unchecked Sendable {
 
     static let maxHTMLBytes = 4 * 1024 * 1024
 

@@ -218,11 +218,12 @@ private final class ScriptedBackend: AgentBackend, @unchecked Sendable {
     init(steps: [Step]) { self.steps = steps }
 
     func complete(messages: [AgentMessage], tools: [any AgentTool]) async throws -> AgentCompletionResponse {
-        lock.lock()
-        receivedMessages.append(messages)
-        let step = index < steps.count ? steps[index] : .text("done")
-        index += 1
-        lock.unlock()
+        let step = lock.withLock { () -> Step in
+            receivedMessages.append(messages)
+            let s = index < steps.count ? steps[index] : .text("done")
+            index += 1
+            return s
+        }
 
         switch step {
         case .text(let text):

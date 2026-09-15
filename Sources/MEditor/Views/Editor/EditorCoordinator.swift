@@ -3,6 +3,9 @@ import AppKit
 /// Core coordinator for NativeEditorView. Handles NSTextViewDelegate, scroll sync,
 /// AI text insertion, and drag & drop. Slash command logic delegates to SlashCommandHandler;
 /// markdown shortcuts live in EditorMarkdownShortcuts.swift.
+/// @MainActor：NSTextViewDelegate 回调、滚动同步、自检任务都在主线程；
+/// 标注后 self 成为 Sendable，可安全在 @Sendable 回调（DispatchQueue/PasteHTMLConverter）中捕获。
+@MainActor
 final class EditorCoordinator: NSObject, NSTextViewDelegate {
     var onContentChange: (String) -> Void
     var onCursorChange: ((Int, Int) -> Void)?
@@ -21,7 +24,10 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
         }
     }
 
-    var scrollObserver: NSObjectProtocol?
+    // deinit 是 nonisolated，访问 Timer/NSObjectProtocol/SlashCommandHandler 这类
+    // 非 Sendable 的主 actor 属性在 Swift 6 下会报错；它们在主线程创建/使用、
+    // 且在 deinit（唯一引用）中清理，标注 unsafe 即可。
+    nonisolated(unsafe) var scrollObserver: NSObjectProtocol?
     var lastAppliedTargetLine: Int = -1
     var lastAppliedRequestID: Int = -1
     var lastInsertRequestID: Int = 0
@@ -30,7 +36,7 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
 
     let highlighter: EditorHighlightScheduler
     let scrollSync: EditorScrollSyncHandler
-    let slashHandler = SlashCommandHandler()
+    nonisolated(unsafe) let slashHandler = SlashCommandHandler()
 
     // MARK: - Image paste / drop context
 
@@ -48,7 +54,7 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
         set { slashHandler.onAIAction = newValue }
     }
 
-    private var debounceTimer: Timer?
+    nonisolated(unsafe) private var debounceTimer: Timer?
     private var pendingAutoClose: Character?
     private static let autoPairs: [Character: Character] = [
         "(": ")", "[": "]", "{": "}",

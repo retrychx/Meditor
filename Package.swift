@@ -1,6 +1,13 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 6.2
 import Foundation
 import PackageDescription
+
+// Swift 6 语言模式：app 与测试 target 均在 Swift 6 严格并发检查下编译。
+// 注意：不能对测试 target 用 defaultIsolation(MainActor.self)——XCTestCase 的
+// setUp/tearDown/init(invocation:) 是 nonisolated，默认主 actor 会让所有重写
+// 报「different actor isolation from nonisolated overridden declaration」。
+let appSwiftSettings: [SwiftSetting] = [.swiftLanguageMode(.v6)]
+let testSwiftSettings: [SwiftSetting] = [.swiftLanguageMode(.v6)]
 
 // Sparkle 2（自动更新）。两种来源二选一：
 //   - 默认（CI/全新克隆）：远程 SPM 包，xcframework 由 SwiftPM 自行下载
@@ -20,7 +27,8 @@ var targets: [Target] = [
         exclude: ["Info.plist"],
         resources: [
             .copy("Resources")
-        ]
+        ],
+        swiftSettings: appSwiftSettings
     ),
     // Quick Look 预览扩展（Finder 空格预览 .md）。编译产物是裸可执行文件，
     // appex bundle 由 scripts/bundle.sh 手工组装（Info.plist / 资源 / 签名）。
@@ -31,6 +39,7 @@ var targets: [Target] = [
         resources: [
             .copy("Resources")
         ],
+        swiftSettings: appSwiftSettings,
         linkerSettings: [
             // appex 的入口必须是 Foundation 的 NSExtensionMain。该符号由
             // Foundation 导出但没有公开头文件声明（macOS SDK），Swift 侧无法
@@ -39,9 +48,11 @@ var targets: [Target] = [
             .unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"])
         ]
     ),
+    // 测试 target 与 app 同等严格（v6 + 默认主 actor 隔离）。
     .testTarget(
         name: "MEditorTests",
-        dependencies: ["MEditor"]
+        dependencies: ["MEditor"],
+        swiftSettings: testSwiftSettings
     ),
 ]
 if useVendoredSparkle {

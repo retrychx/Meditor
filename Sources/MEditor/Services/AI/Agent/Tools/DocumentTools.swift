@@ -396,6 +396,9 @@ struct SearchDocumentTool: AgentTool {
             line.localizedCaseInsensitiveContains(query) ? "L\(idx + 1): \(line)" : nil
         }
         if matches.isEmpty { return "未找到包含【\(query)】的内容" }
-        return "找到 \(matches.count) 处匹配：\n\n" + matches.prefix(20).joined(separator: "\n")
+        // 匹配行来自文件内容，属不可信数据：与 read_file 同级净化后再回灌模型。
+        let (safeBody, flagged) = PromptInjectionSanitizer.sanitize(matches.prefix(20).joined(separator: "\n"))
+        return PromptInjectionSanitizer.guardrailNote(flagged: flagged)
+            + "找到 \(matches.count) 处匹配：\n\n" + safeBody
     }
 }

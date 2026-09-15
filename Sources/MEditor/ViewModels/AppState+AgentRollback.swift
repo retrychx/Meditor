@@ -18,30 +18,58 @@ extension AppState {
     /// - Returns: 实际执行的动作序列（含跳过项），已在 checkpoint 上记录摘要；
     ///   重复回滚返回空序列（幂等）。
     @discardableResult
-    func rollbackAgentRun(_ checkpoint: AgentRunCheckpoint) -> [AgentRollbackAction] {
+    func rollbackAgentRun(_ checkpoint: AgentRunCheckpoint) async -> [AgentRollbackAction] {
         guard !checkpoint.isRolledBack else { return [] }
 
-        // 当前内容闭包：打开的 tab 内存内容优先（用户视角最新），否则读盘
-        let actions = checkpoint.planRollback { [weak self] url in
-            guard let self else { return nil }
-            if let tab = self.tabManager.openTabs.first(where: {
+        // 1) 主线程收集「当前内容」：打开的 tab 内存内容优先（用户视角最新），否则读盘。
+        //    一次读完，planRollback 的闭包只做字典查找（纯函数、无 I/O）。
+        var currentContent: [String: String] = [:]
+        for snapshot in checkpoint.snapshots {
+            let url = snapshot.url
+            if let tab = tabManager.openTabs.first(where: {
                 TabManager.urlsReferToSameFile($0.url, url)
             }), !tab.awaitingInitialContent {
-                return tab.content
+                currentContent[url.standardizedFileURL.path] = tab.content
+            } else if fileService.fileExists(at: url),
+                      let content = try? fileService.readFile(at: url) {
+                currentContent[url.standardizedFileURL.path] = content
             }
-            guard self.fileService.fileExists(at: url) else { return nil }
-            return try? self.fileService.readFile(at: url)
+        }
+        let actions = checkpoint.planRollback { url in
+            currentContent[url.standardizedFileURL.path]
         }
 
+        // 2) 磁盘写/删移到后台任务：多文件回滚不再在主线程上逐文件阻塞。
+        let fileService = self.fileService
+        let writeSucceeded: [Int: Bool] = await Task.detached(priority: .userInitiated) {
+            var succeeded: [Int: Bool] = [:]
+            for (index, action) in actions.enumerated() {
+                switch action {
+                case .restore(let url, let content):
+                    do {
+                        try fileService.writeFile(at: url, content: content)
+                        succeeded[index] = true
+                    } catch {
+                        succeeded[index] = false
+                    }
+                case .deleteCreated(let url):
+                    try? fileService.removeItem(at: url)
+                    succeeded[index] = true
+                case .skip:
+                    succeeded[index] = true
+                }
+            }
+            return succeeded
+        }.value
+
+        // 3) 回到主线程应用结果 + 同步 UI。
         var restored = 0, deleted = 0
         var skipped: [String] = []
 
-        for action in actions {
+        for (index, action) in actions.enumerated() {
             switch action {
             case .restore(let url, let content):
-                do {
-                    try fileService.writeFile(at: url, content: content)
-                } catch {
+                guard writeSucceeded[index] == true else {
                     skipped.append("\(url.lastPathComponent)（\(L("ai.rollback.skipWriteFailed"))）")
                     continue
                 }
@@ -63,7 +91,6 @@ extension AppState {
                 reloadHTMLPreviewIfShowing(url)
 
             case .deleteCreated(let url):
-                try? fileService.removeItem(at: url)
                 deleted += 1
                 // planRollback 已校验 tab 内容 == run 写入内容，直接关闭不丢用户编辑；
                 // 走 performCloseTab（不经 closeTab 的未保存确认弹窗）

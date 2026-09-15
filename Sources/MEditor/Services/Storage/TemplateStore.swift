@@ -139,9 +139,18 @@ final class TemplateStore: TemplateStoreProtocol {
         guard !(Self.builtins.contains { $0.id == id }) else {
             throw TemplateStoreError.cannotDeleteBuiltin
         }
+        // id 必须已是 slug 形态（save 总是 slugify 后落盘）。否则 `../../x` 这类
+        // 调用方传入的 id 会穿越 userDir，删除任意可写的 *.md / *.json。
+        guard id == Self.slugify(id) else { throw TemplateStoreError.invalidName }
+
         let fm = FileManager.default
         let mdURL = userDir.appendingPathComponent(id + ".md")
         let metaURL = userDir.appendingPathComponent(id + ".json")
+        let userPath = userDir.standardizedFileURL.path
+        for url in [mdURL, metaURL] {
+            let path = url.standardizedFileURL.path
+            guard path.hasPrefix(userPath + "/") else { throw TemplateStoreError.invalidName }
+        }
         try? fm.removeItem(at: mdURL)
         try? fm.removeItem(at: metaURL)
         cachedUserTemplates = nil

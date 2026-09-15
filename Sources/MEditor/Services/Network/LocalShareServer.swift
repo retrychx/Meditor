@@ -21,6 +21,13 @@ final class LocalShareServer {
     private var listener: NWListener?
     @ObservationIgnored
     private var connections: [NWConnection] = []
+    /// 未收齐请求头的连接的超时哨兵（防慢连接 Slowloris 式占用）。
+    @ObservationIgnored
+    private var connectionTimeouts: [ObjectIdentifier: DispatchWorkItem] = [:]
+    /// 并发连接上限：局域网内大量慢连接不应耗尽内存/句柄。
+    private static let maxConcurrentConnections = 32
+    /// 请求头读取超时（秒）。
+    private static let requestHeaderTimeout: TimeInterval = 15
 
     /// The root URL of the project.
     @ObservationIgnored
@@ -89,6 +96,8 @@ final class LocalShareServer {
     func stop() {
         listener?.cancel()
         listener = nil
+        connectionTimeouts.values.forEach { $0.cancel() }
+        connectionTimeouts.removeAll()
         connections.forEach { $0.cancel() }
         connections.removeAll()
         isRunning = false
@@ -103,7 +112,19 @@ final class LocalShareServer {
     // MARK: - Connection handling
 
     private func handleConnection(_ connection: NWConnection) {
+        // 连接数上限：超出直接拒绝，避免大量慢连接堆积。
+        guard connections.count < Self.maxConcurrentConnections else {
+            connection.cancel()
+            return
+        }
         connections.append(connection)
+        // 请求头读取超时：到期仍没收齐就关闭，防慢连接长期占用。
+        let key = ObjectIdentifier(connection)
+        let timeout = DispatchWorkItem { [weak self] in
+            Task { @MainActor [weak self] in self?.close(connection) }
+        }
+        connectionTimeouts[key] = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.requestHeaderTimeout, execute: timeout)
         connection.stateUpdateHandler = { [weak self] state in
             switch state {
             case .cancelled, .failed:
@@ -137,6 +158,7 @@ final class LocalShareServer {
                 }
 
                 if let request = self.completeRequest(from: buffer) {
+                    self.cancelTimeout(for: connection)
                     self.respond(to: request, on: connection)
                     return
                 }
@@ -208,10 +230,13 @@ final class LocalShareServer {
     }
 
     /// Resolve a relative request path against the project root and verify the
-    /// result stays inside it. Returns nil for anything that escapes (e.g. `../`).
+    /// result stays inside it. Returns nil for anything that escapes (e.g. `../`
+    /// or a symlink pointing outside the root).
     private func resolvedFileURL(_ relativePath: String, rootURL: URL) -> URL? {
-        let fileURL = rootURL.appendingPathComponent(relativePath).standardizedFileURL
-        let root = rootURL.standardizedFileURL
+        // 解析 symlink 后再比较：standardizedFileURL 只做词法规范化，工作区内一个
+        // 指向 ~/.ssh 的 symlink（如 logo.png -> id_rsa）能绕过 root 前缀检查。
+        let fileURL = CommandSandbox.resolveSymlinks(rootURL.appendingPathComponent(relativePath))
+        let root = CommandSandbox.resolveSymlinks(rootURL)
         guard fileURL.path == root.path || fileURL.path.hasPrefix(root.path + "/") else { return nil }
         return fileURL
     }
@@ -225,8 +250,13 @@ final class LocalShareServer {
     }
 
     private func close(_ connection: NWConnection) {
+        cancelTimeout(for: connection)
         connection.cancel()
         connections.removeAll { $0 === connection }
+    }
+
+    private func cancelTimeout(for connection: NWConnection) {
+        connectionTimeouts.removeValue(forKey: ObjectIdentifier(connection))?.cancel()
     }
 
     private func completeRequest(from data: Data) -> String? {
@@ -413,16 +443,28 @@ final class LocalShareServer {
         let resolved = fileURL.deletingLastPathComponent()
             .appendingPathComponent(reference)
             .standardizedFileURL
-        guard isSameOrDescendant(resolved, of: rootURL) else { return nil }
+        // 解析 symlink 后再判定是否在根内：否则工作区内 `logo.png -> ~/.ssh/id_rsa`
+        // 这类引用会在分享时把根目录外的文件暴露给持有 token 的局域网客户端。
+        let real = CommandSandbox.resolveSymlinks(resolved)
+        guard isSameOrDescendant(real, of: rootURL) else { return nil }
 
-        let ext = resolved.pathExtension.lowercased()
-        guard !ext.isEmpty, !["md", "html", "htm"].contains(ext) else { return nil }
-        return resolved
+        // 只放行真实的静态资源后缀：此前"排除 md/html 之外全放行"会把
+        // .env / .pem / .key / .json 等敏感文件当成 asset 提供出去。
+        let ext = real.pathExtension.lowercased()
+        guard Self.allowedAssetExtensions.contains(ext) else { return nil }
+        return real
     }
 
+    /// 分享时允许作为「资源」提供的扩展名（图片 / 样式 / 字体 / 脚本）。
+    static let allowedAssetExtensions: Set<String> = [
+        "png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp", "avif",
+        "css", "js", "mjs", "woff", "woff2", "ttf", "otf", "eot"
+    ]
+
     private func isSameOrDescendant(_ url: URL, of rootURL: URL) -> Bool {
-        let path = url.standardizedFileURL.path
-        let rootPath = rootURL.standardizedFileURL.path
+        // 两侧都解析 symlink：root 侧也要（macOS /tmp 本身是 /private/tmp 的 symlink）。
+        let path = CommandSandbox.resolveSymlinks(url).path
+        let rootPath = CommandSandbox.resolveSymlinks(rootURL).path
         return path == rootPath || path.hasPrefix(rootPath + "/")
     }
 
@@ -484,7 +526,7 @@ final class LocalShareServer {
         guard let data = try? Data(contentsOf: fileURL) else { return nil }
 
         let mime = mimeType(for: fileURL.pathExtension)
-        let header = "HTTP/1.1 200 OK\r\nContent-Type: \(mime)\r\nContent-Length: \(data.count)\r\nAccess-Control-Allow-Origin: *\r\n\r\n"
+        let header = "HTTP/1.1 200 OK\r\nContent-Type: \(mime)\r\nContent-Length: \(data.count)\r\nX-Content-Type-Options: nosniff\r\n\r\n"
         var response = Data(header.utf8)
         response.append(data)
         return response
@@ -494,7 +536,7 @@ final class LocalShareServer {
 
     private func buildHTMLResponse(_ html: String) -> Data {
         let body = Data(html.utf8)
-        let header = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(body.count)\r\nAccess-Control-Allow-Origin: *\r\n\r\n"
+        let header = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(body.count)\r\nX-Content-Type-Options: nosniff\r\n\r\n"
         var response = Data(header.utf8)
         response.append(body)
         return response

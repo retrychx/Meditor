@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 // MARK: - MCP 客户端配置（Claude Code 风格 mcp.json，纯逻辑可单测）
 //
@@ -129,6 +130,16 @@ enum MCPClientConfigLoader {
                   scheme == "http" || scheme == "https" else {
                 return (nil, "has an invalid 'url'")
             }
+            // 明文 http 仅允许本机回环：MCP 请求里可能带工作区内容/工具参数，
+            // 远程端点必须 https（并避免 SSRF 到内网明文服务）。
+            if scheme == "http" {
+                let host = url.host?.lowercased() ?? ""
+                let isLoopback = host == "localhost" || host == "127.0.0.1"
+                    || host == "::1" || host == "[::1]"
+                guard isLoopback else {
+                    return (nil, "uses plaintext http for a non-local host (https required)")
+                }
+            }
             return (MCPServerConfig(name: trimmedName, kind: .http(url: url)), nil)
         }
 
@@ -168,5 +179,14 @@ enum MCPClientConfigLoader {
         }
 
         return (MCPServerConfig(name: trimmedName, kind: .stdio(command: command, args: args, env: env)), nil)
+    }
+
+    /// 工作区级 mcp.json 的内容哈希（SHA-256 十六进制）；文件不存在或不可读返回 nil。
+    /// 用于把用户授权绑定到「这份具体配置」：内容一变 hash 就不匹配，信任自动失效。
+    static func workspaceConfigHash(root: URL) -> String? {
+        guard let data = FileManager.default.contents(atPath: workspaceConfigURL(root: root).path) else {
+            return nil
+        }
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 }

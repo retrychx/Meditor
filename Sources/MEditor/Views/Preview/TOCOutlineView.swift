@@ -86,6 +86,7 @@ struct TOCOutlineView: View {
                                 )
                             }
                             .buttonStyle(.plain)
+                            .accessibilityValue(L("toc.level", item.level))
                             .id(idx)
                         }
                     }
@@ -110,6 +111,7 @@ struct TOCOutlineView: View {
         // 初始（未滚动）内容也在渐隐区内，会被误伤成半透明。
         // 也不要传 .none：参数是 Optional，.none = nil = 系统默认效果。
         .topScrollEdgeHardClipIfAvailable()
+        .accessibilityLabel(L("rightPanel.outline"))
     }
 
     private static let scrollSpace = "tocOutlineScroll"
@@ -117,7 +119,7 @@ struct TOCOutlineView: View {
 
 /// TOC 滚动位置 preference（内容顶部在 named 坐标系中的 minY）。
 private struct TOCScrollOffsetKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
+    static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
     }

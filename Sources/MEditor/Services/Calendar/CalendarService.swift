@@ -103,7 +103,7 @@ extension CalendarService {
     var isAvailable: Bool {
         get async {
             let status = authorizationStatus
-            if status == .authorized || status == .fullAccess { return true }
+            if status == .fullAccess { return true }
             if status == .notDetermined { return await requestAccess() }
             return false
         }

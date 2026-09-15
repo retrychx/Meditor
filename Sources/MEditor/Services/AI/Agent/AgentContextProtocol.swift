@@ -19,7 +19,7 @@ enum FileResolveResult {
 
 /// 当前文档读写操作。
 @MainActor
-protocol DocumentContext: AnyObject {
+protocol DocumentContext: AnyObject, Sendable {
     var currentDocument: String? { get }
     var currentDocumentName: String? { get }
     /// 当前激活 tab 的稳定身份标识：写工具启动时捕获、写入前校验——diff 审阅
@@ -42,7 +42,7 @@ extension DocumentContext {
 
 /// 工作区文件操作。
 @MainActor
-protocol WorkspaceContext: AnyObject {
+protocol WorkspaceContext: AnyObject, Sendable {
     var workspaceURL: URL? { get }
     func listWorkspaceFiles(extensions: [String]) async -> [URL]
     func readFile(at url: URL) async throws -> String
@@ -58,7 +58,7 @@ protocol WorkspaceContext: AnyObject {
 
 /// 命令沙箱与权限控制。
 @MainActor
-protocol ShellContext: AnyObject {
+protocol ShellContext: AnyObject, Sendable {
     /// 向用户展示确认对话框，询问是否允许执行该命令。
     func confirmCommandExecution(_ command: String, cwd: String?) async -> Bool
     /// 取消挂起的命令确认（Runner 在超时/正常结束时调用）：拒绝并恢复工具内

@@ -1,5 +1,7 @@
 import SwiftUI
-import AppKit
+// NSEvent 非 Sendable，但本地事件监视器只在主线程同步回调；@preconcurrency 关闭
+// AppKit 类型的 Sendable 边界检查（Swift 6 下 NSEvent 无法跨 @Sendable 闭包）。
+@preconcurrency import AppKit
 
 /// 窗口配置：只做 titleVisibility 隐藏 + 双击放大手势。
 /// 布局是 Apple 原生方案（NavigationSplitView + hiddenTitleBar + 系统 toolbar），
@@ -15,6 +17,9 @@ struct WindowConfigurator: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
     func makeCoordinator() -> Coordinator { Coordinator() }
 
+    /// @MainActor：KVO 观察 NSWindow 的 @MainActor 属性（toolbar/titleVisibility），
+    /// 非隔离上下文中无法对这些属性形成 key path。
+    @MainActor
     class Coordinator: NSObject {
         private var observation: NSKeyValueObservation?
         private var titleObservation: NSKeyValueObservation?

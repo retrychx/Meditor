@@ -1,7 +1,9 @@
 import Foundation
 @testable import MEditor
 
-class MockFileService: FileServiceProtocol {
+/// @unchecked Sendable：测试替身，可跨线程被 AppState 的后台保存路径访问；
+/// 内部通过锁保护写盘计数（见下方 _writeCount）。
+class MockFileService: FileServiceProtocol, @unchecked Sendable {
     var fileExistsResult = true
     var readResult: String = "# Test"
     var readError: Error? = nil

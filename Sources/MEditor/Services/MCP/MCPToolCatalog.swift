@@ -21,9 +21,21 @@ enum MCPToolCatalog {
         "load_skill",
     ]
 
+    /// 无头模式默认禁用的高危工具：`run_command` 只有字符串黑名单 + safe 自动批准，
+    /// 在无 UI 弹确认的无头环境不构成安全边界（`base64 ~/.ssh/id_rsa` 之类可绕过）。
+    /// 需要时由用户显式传 `--allow-shell` 才暴露。
+    static let shellToolNames: Set<String> = ["run_command"]
+
+    /// 无头模式暴露的工具集（默认不含 shell 工具，见 `shellToolNames`）。
+    static var headlessTools: [any AgentTool] { headlessTools(allowShell: false) }
+
     /// 无头模式暴露的工具集（从全量内建工具实时筛选，注册表增删工具时自动跟随）。
-    static var headlessTools: [any AgentTool] {
-        BuiltinAgentTools.all.filter { !excludedToolNames.contains($0.spec.name) }
+    /// - Parameter allowShell: 是否暴露 `run_command`（默认否）。
+    static func headlessTools(allowShell: Bool) -> [any AgentTool] {
+        BuiltinAgentTools.all.filter { tool in
+            !excludedToolNames.contains(tool.spec.name)
+                && (allowShell || !shellToolNames.contains(tool.spec.name))
+        }
     }
 
     /// MCP tools/list 的单个工具条目；inputSchema 由 AgentToolSpec 的参数定义生成。

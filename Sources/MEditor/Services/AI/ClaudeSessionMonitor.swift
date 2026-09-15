@@ -68,7 +68,7 @@ final class ClaudeSessionMonitor {
             info: Unmanaged.passRetained(self).toOpaque(),
             retain: { ptr -> UnsafeRawPointer? in
                 guard let ptr else { return nil }
-                Unmanaged<ClaudeSessionMonitor>.fromOpaque(ptr).retain()
+                _ = Unmanaged<ClaudeSessionMonitor>.fromOpaque(ptr).retain()
                 return ptr
             },
             release: { ptr in

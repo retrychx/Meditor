@@ -69,6 +69,27 @@ final class ShareImageInlinerTests: XCTestCase {
         assertInlinedPNG(html, expected: pngData)
     }
 
+    /// 回归：绝对 `file://` / `meditor-asset://` 指向 baseDirectory 之外时不得内联，
+    /// 否则（用户点发布时）会把任意本地图片上传到公网链接。
+    func testFileURLOutsideBaseDirectoryNotInlined() {
+        let outside = tempDir.deletingLastPathComponent()
+            .appendingPathComponent("outside-file-\(UUID().uuidString).png")
+        try? pngData.write(to: outside)
+        defer { try? FileManager.default.removeItem(at: outside) }
+        let html = img(outside.absoluteString)
+        XCTAssertEqual(ShareImageInliner.inlineImages(in: html, baseDirectory: tempDir), html)
+    }
+
+    func testMeditorAssetURLOutsideBaseDirectoryNotInlined() {
+        let outside = tempDir.deletingLastPathComponent()
+            .appendingPathComponent("outside-asset-\(UUID().uuidString).png")
+        try? pngData.write(to: outside)
+        defer { try? FileManager.default.removeItem(at: outside) }
+        let encoded = outside.path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!
+        let html = img("meditor-asset://local/\(encoded)")
+        XCTAssertEqual(ShareImageInliner.inlineImages(in: html, baseDirectory: tempDir), html)
+    }
+
     func testRemoteAndDataURIsUntouched() {
         let remote = img("https://example.com/a.png") + img("http://example.com/b.png")
         let html = ShareImageInliner.inlineImages(in: remote, baseDirectory: tempDir)
